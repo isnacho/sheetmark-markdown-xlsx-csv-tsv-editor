@@ -7,7 +7,7 @@ export class ProjectsModal {
     private static overlay: HTMLElement | null = null;
 
     public static initialize() {
-        if (this.isInitialized) return;
+        if (this.isInitialized) {return;}
         this.isInitialized = true;
 
         this.overlay = document.createElement('div');

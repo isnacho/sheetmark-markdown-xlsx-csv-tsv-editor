@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+ 
 
 export function getExcelColumnLabel(n: number): string {
     let label = '';
@@ -13,32 +13,32 @@ export function getExcelColumnLabel(n: number): string {
 export function formatCellStyle(style: any): string {
     let css = '';
 
-    if (style.backgroundColor) css += 'background-color: ' + style.backgroundColor + ';';
+    if (style.backgroundColor) {css += 'background-color: ' + style.backgroundColor + ';';}
     if (style.color) {
         const isDefaultColor = style._isDefaultColor === true;
         css += 'color: ' + style.color + (isDefaultColor ? '' : ' !important') + ';';
     }
-    if (style.fontWeight) css += 'font-weight: ' + style.fontWeight + ';';
-    if (style.fontStyle) css += 'font-style: ' + style.fontStyle + ';';
-    if (style.textDecoration) css += 'text-decoration: ' + style.textDecoration + ';';
-    if (style.textDecorationLine) css += 'text-decoration-line: ' + style.textDecorationLine + ';';
-    if (style.textDecorationThickness) css += 'text-decoration-thickness: ' + style.textDecorationThickness + ';';
-    if (style.textDecorationSkipInk) css += 'text-decoration-skip-ink: ' + style.textDecorationSkipInk + ';';
-    if (style.fontSize) css += 'font-size: ' + style.fontSize + ';';
-    if (style.fontFamily) css += 'font-family: ' + style.fontFamily + ';';
-    if (style.textAlign) css += 'text-align: ' + style.textAlign + ';';
-    if (style.verticalAlign) css += 'vertical-align: ' + style.verticalAlign + ';';
-    if (style.whiteSpace) css += 'white-space: ' + style.whiteSpace + ';';
-    if (style.wordWrap) css += 'word-wrap: ' + style.wordWrap + ';';
-    if (style.overflow) css += 'overflow: ' + style.overflow + ';';
-    if (style.textOverflow) css += 'text-overflow: ' + style.textOverflow + ';';
-    if (style.paddingLeft) css += 'padding-left: ' + style.paddingLeft + ';';
+    if (style.fontWeight) {css += 'font-weight: ' + style.fontWeight + ';';}
+    if (style.fontStyle) {css += 'font-style: ' + style.fontStyle + ';';}
+    if (style.textDecoration) {css += 'text-decoration: ' + style.textDecoration + ';';}
+    if (style.textDecorationLine) {css += 'text-decoration-line: ' + style.textDecorationLine + ';';}
+    if (style.textDecorationThickness) {css += 'text-decoration-thickness: ' + style.textDecorationThickness + ';';}
+    if (style.textDecorationSkipInk) {css += 'text-decoration-skip-ink: ' + style.textDecorationSkipInk + ';';}
+    if (style.fontSize) {css += 'font-size: ' + style.fontSize + ';';}
+    if (style.fontFamily) {css += 'font-family: ' + style.fontFamily + ';';}
+    if (style.textAlign) {css += 'text-align: ' + style.textAlign + ';';}
+    if (style.verticalAlign) {css += 'vertical-align: ' + style.verticalAlign + ';';}
+    if (style.whiteSpace) {css += 'white-space: ' + style.whiteSpace + ';';}
+    if (style.wordWrap) {css += 'word-wrap: ' + style.wordWrap + ';';}
+    if (style.overflow) {css += 'overflow: ' + style.overflow + ';';}
+    if (style.textOverflow) {css += 'text-overflow: ' + style.textOverflow + ';';}
+    if (style.paddingLeft) {css += 'padding-left: ' + style.paddingLeft + ';';}
 
     if (style.border) {
-        if (style.border.top) css += 'border-top: ' + style.border.top + ';';
-        if (style.border.right) css += 'border-right: ' + style.border.right + ';';
-        if (style.border.bottom) css += 'border-bottom: ' + style.border.bottom + ';';
-        if (style.border.left) css += 'border-left: ' + style.border.left + ';';
+        if (style.border.top) {css += 'border-top: ' + style.border.top + ';';}
+        if (style.border.right) {css += 'border-right: ' + style.border.right + ';';}
+        if (style.border.bottom) {css += 'border-bottom: ' + style.border.bottom + ';';}
+        if (style.border.left) {css += 'border-left: ' + style.border.left + ';';}
     }
 
     return css;
@@ -58,7 +58,7 @@ function escapeAttribute(input: string): string {
 }
 
 function parseBooleanLike(value: unknown): boolean | null {
-    if (typeof value === 'boolean') return value;
+    if (typeof value === 'boolean') {return value;}
 
     if (value === null || value === undefined) {
         return null;
@@ -113,7 +113,7 @@ function normalizeDropdownOptions(raw: unknown): string[] {
     const unique = new Set<string>();
     raw.forEach((entry) => {
         const text = String(entry ?? '').trim();
-        if (text) unique.add(text);
+        if (text) {unique.add(text);}
     });
 
     return Array.from(unique.values());
@@ -259,7 +259,7 @@ function renderCellContent(cellData: any, isPlainView: boolean, allowInteractive
 
 function toPlainCellContent(value: unknown): string {
     const raw = value === null || value === undefined ? '' : String(value);
-    if (!raw) return '&nbsp;';
+    if (!raw) {return '&nbsp;';}
 
     const tmp = document.createElement('div');
     tmp.innerHTML = raw;
@@ -336,26 +336,26 @@ export function createXlsxRowHtml(params: XlsxRowHtmlParams): string {
             }
 
             if (!isPlainView) {
-                if (cellData.hasDefaultBg) html += ' data-default-bg="true"';
-                if (cellData.hasWhiteBackground) html += ' data-white-bg="true"';
-                if (cellData.isDefaultColor) html += ' data-default-color="true"';
-                if (cellData.hasBlackBorder) html += ' data-black-border="true"';
-                if (cellData.hasWhiteBorder) html += ' data-white-border="true"';
-                if (cellData.hasBlackBackground) html += ' data-black-bg="true"';
-                if (cellData.hasDefaultBorder) html += ' data-default-border="true"';
+                if (cellData.hasDefaultBg) {html += ' data-default-bg="true"';}
+                if (cellData.hasWhiteBackground) {html += ' data-white-bg="true"';}
+                if (cellData.isDefaultColor) {html += ' data-default-color="true"';}
+                if (cellData.hasBlackBorder) {html += ' data-black-border="true"';}
+                if (cellData.hasWhiteBorder) {html += ' data-white-border="true"';}
+                if (cellData.hasBlackBackground) {html += ' data-black-bg="true"';}
+                if (cellData.hasDefaultBorder) {html += ' data-default-border="true"';}
             }
-            if (cellData.isEmpty) html += ' data-empty="true"';
-            if (cellData.hyperlink) html += ' data-hyperlink="' + String(cellData.hyperlink).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;') + '"';
+            if (cellData.isEmpty) {html += ' data-empty="true"';}
+            if (cellData.hyperlink) {html += ' data-hyperlink="' + String(cellData.hyperlink).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;') + '"';}
             html += ' data-original-color="' + (cellData.originalColor || 'rgb(0, 0, 0)') + '"';
 
             if (!isPlainView) {
-                if (cellData.rowspan > 1) html += ' rowspan="' + cellData.rowspan + '"';
-                if (cellData.colspan > 1) html += ' colspan="' + cellData.colspan + '"';
+                if (cellData.rowspan > 1) {html += ' rowspan="' + cellData.rowspan + '"';}
+                if (cellData.colspan > 1) {html += ' colspan="' + cellData.colspan + '"';}
             }
 
             let classes = [];
-            if (!isPlainView && cellData.isMerged) classes.push('merged-cell');
-            if (isEditMode) classes.push('editable-cell');
+            if (!isPlainView && cellData.isMerged) {classes.push('merged-cell');}
+            if (isEditMode) {classes.push('editable-cell');}
             
             if (classes.length > 0) {
                 html += ' class="' + classes.join(' ') + '"';

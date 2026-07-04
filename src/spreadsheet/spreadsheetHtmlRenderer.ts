@@ -15,12 +15,6 @@ export function getWebviewContent(webviewPanel: vscode.WebviewPanel, context: vs
         const feedbackStyleUri = webview.asWebviewUri(
             vscode.Uri.joinPath(context.extensionUri, 'resources', 'shared', 'feedback.css')
         );
-        const imgUri = webview.asWebviewUri(
-            vscode.Uri.joinPath(context.extensionUri, 'resources', 'spreadsheet', 'spreadsheetView.png')
-        );
-        const svgUri = webview.asWebviewUri(
-            vscode.Uri.joinPath(context.extensionUri, 'resources', 'spreadsheet', 'spreadsheet.svg')
-        );
         const cspSource = webview.cspSource;
 
         return `<!DOCTYPE html>
@@ -33,10 +27,6 @@ export function getWebviewContent(webviewPanel: vscode.WebviewPanel, context: vs
     <link href="${themeStyleUri}" rel="stylesheet" />
     <link href="${styleUri}" rel="stylesheet" />
     <link href="${feedbackStyleUri}" rel="stylesheet" />
-    <script>
-        window.viewImgUri = "${imgUri}";
-        window.logoSvgUri = "${svgUri}";
-    </script>
 </head>
 <body>
     <div class="header-background"></div>

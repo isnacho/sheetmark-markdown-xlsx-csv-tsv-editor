@@ -10,7 +10,7 @@ import { convertTabularFile, readTabularFile, detectTabularFileType, writeTabula
 import { StyleStorageService } from './shared/styleStorageService';
 
 function borderEditToCssValue(enabled: boolean, style?: string, color?: string): string {
-    if (!enabled) return '';
+    if (!enabled) {return '';}
 
     const normalizedStyle = String(style || 'thin');
     const lower = normalizedStyle.toLowerCase();
@@ -290,10 +290,10 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
         };
 
         const toARGB = (hexOrColor: unknown): string | undefined => {
-            if (typeof hexOrColor !== 'string') return undefined;
+            if (typeof hexOrColor !== 'string') {return undefined;}
             const value = hexOrColor.trim();
             const hexMatch = value.match(/^#([0-9a-fA-F]{6})$/);
-            if (hexMatch) return ('FF' + hexMatch[1]).toUpperCase();
+            if (hexMatch) {return ('FF' + hexMatch[1]).toUpperCase();}
 
             const rgbMatch = value.match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
             if (rgbMatch) {
@@ -399,22 +399,22 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                     let finalBorderStyle = 'thin';
                     const sLower = borderStyle.toLowerCase();
 
-                    if (sLower.includes('thick') && sLower.includes('dash')) finalBorderStyle = 'mediumDashed';
-                    else if (sLower.includes('thick') && sLower.includes('dot')) finalBorderStyle = 'mediumDashDot';
-                    else if (sLower.includes('medium') && sLower.includes('dash')) finalBorderStyle = 'mediumDashed';
-                    else if (sLower.includes('medium') && sLower.includes('dot')) finalBorderStyle = 'mediumDashDot';
-                    else if (sLower.includes('dashdotdot')) finalBorderStyle = 'dashDotDot';
-                    else if (sLower.includes('dashdot')) finalBorderStyle = 'dashDot';
-                    else if (sLower.includes('dashed') || sLower === 'dashed' || sLower.includes('dash')) finalBorderStyle = 'mediumDashed';
-                    else if (allowedStyles.includes(borderStyle)) finalBorderStyle = borderStyle;
-                    else if (sLower === 'thick') finalBorderStyle = 'thick';
-                    else if (sLower === 'medium') finalBorderStyle = 'medium';
-                    else if (sLower === 'dotted') finalBorderStyle = 'dotted';
-                    else if (sLower === 'double') finalBorderStyle = 'double';
+                    if (sLower.includes('thick') && sLower.includes('dash')) {finalBorderStyle = 'mediumDashed';}
+                    else if (sLower.includes('thick') && sLower.includes('dot')) {finalBorderStyle = 'mediumDashDot';}
+                    else if (sLower.includes('medium') && sLower.includes('dash')) {finalBorderStyle = 'mediumDashed';}
+                    else if (sLower.includes('medium') && sLower.includes('dot')) {finalBorderStyle = 'mediumDashDot';}
+                    else if (sLower.includes('dashdotdot')) {finalBorderStyle = 'dashDotDot';}
+                    else if (sLower.includes('dashdot')) {finalBorderStyle = 'dashDot';}
+                    else if (sLower.includes('dashed') || sLower === 'dashed' || sLower.includes('dash')) {finalBorderStyle = 'mediumDashed';}
+                    else if (allowedStyles.includes(borderStyle)) {finalBorderStyle = borderStyle;}
+                    else if (sLower === 'thick') {finalBorderStyle = 'thick';}
+                    else if (sLower === 'medium') {finalBorderStyle = 'medium';}
+                    else if (sLower === 'dotted') {finalBorderStyle = 'dotted';}
+                    else if (sLower === 'double') {finalBorderStyle = 'double';}
 
                     const borderColorArgb = toARGB(styleEdit.border.color) || 'FF202124';
                     const toEdge = (enabled?: boolean) => {
-                        if (!enabled) return undefined;
+                        if (!enabled) {return undefined;}
                         return { style: finalBorderStyle as any, color: { argb: borderColorArgb } };
                     };
 
@@ -435,7 +435,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
 
             for (const [key, styleEdit] of Object.entries(storedStyles)) {
                 const address = parseStyleKey(key);
-                if (!address) continue;
+                if (!address) {continue;}
 
                 const cell = worksheet.getRow(address.row).getCell(address.col);
                 const cssStyle = normalizeStoredStyle(styleEdit);
@@ -509,7 +509,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                     const border = cssStyle.border as any;
                     const toEdge = (value: unknown) => {
                         const parsed = parseCssBorderForExcel(value);
-                        if (!parsed) return undefined;
+                        if (!parsed) {return undefined;}
                         return {
                             style: parsed.style,
                             color: { argb: toARGB(parsed.color || cssStyle.color || '#202124') || 'FF202124' }
@@ -539,7 +539,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
 
             for (const [key, value] of Object.entries(styles)) {
                 const address = parseStyleKey(key);
-                if (!address) continue;
+                if (!address) {continue;}
 
                 let nextRow = address.row;
                 let nextCol = address.col;
@@ -547,10 +547,10 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
 
                 switch (type) {
                     case 'insertRowAbove':
-                        if (address.row >= index) nextRow = address.row + 1;
+                        if (address.row >= index) {nextRow = address.row + 1;}
                         break;
                     case 'insertRowBelow':
-                        if (address.row > index) nextRow = address.row + 1;
+                        if (address.row > index) {nextRow = address.row + 1;}
                         break;
                     case 'deleteRow':
                         if (address.row === index) {
@@ -560,10 +560,10 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                         }
                         break;
                     case 'insertColumnLeft':
-                        if (address.col >= index) nextCol = address.col + 1;
+                        if (address.col >= index) {nextCol = address.col + 1;}
                         break;
                     case 'insertColumnRight':
-                        if (address.col > index) nextCol = address.col + 1;
+                        if (address.col > index) {nextCol = address.col + 1;}
                         break;
                     case 'deleteColumn':
                         if (address.col === index) {
@@ -629,12 +629,12 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
 
                 switch (type) {
                     case 'insertRowAbove':
-                        if (startRow >= index) startRow += 1;
-                        if (endRow >= index) endRow += 1;
+                        if (startRow >= index) {startRow += 1;}
+                        if (endRow >= index) {endRow += 1;}
                         break;
                     case 'insertRowBelow':
-                        if (startRow > index) startRow += 1;
-                        if (endRow > index) endRow += 1;
+                        if (startRow > index) {startRow += 1;}
+                        if (endRow > index) {endRow += 1;}
                         break;
                     case 'deleteRow':
                         if (startRow === index && endRow === index) {
@@ -652,12 +652,12 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                         }
                         break;
                     case 'insertColumnLeft':
-                        if (startCol >= index) startCol += 1;
-                        if (endCol >= index) endCol += 1;
+                        if (startCol >= index) {startCol += 1;}
+                        if (endCol >= index) {endCol += 1;}
                         break;
                     case 'insertColumnRight':
-                        if (startCol > index) startCol += 1;
-                        if (endCol > index) endCol += 1;
+                        if (startCol > index) {startCol += 1;}
+                        if (endCol > index) {endCol += 1;}
                         break;
                     case 'deleteColumn':
                         if (startCol === index && endCol === index) {
@@ -734,13 +734,13 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
 
             switch (type) {
                 case 'insertRowAbove':
-                    if (index > 0) rows.splice(index - 1, 0, []);
+                    if (index > 0) {rows.splice(index - 1, 0, []);}
                     break;
                 case 'insertRowBelow':
-                    if (index > 0) rows.splice(index, 0, []);
+                    if (index > 0) {rows.splice(index, 0, []);}
                     break;
                 case 'deleteRow':
-                    if (index > 0 && index <= rows.length) rows.splice(index - 1, 1);
+                    if (index > 0 && index <= rows.length) {rows.splice(index - 1, 1);}
                     break;
                 case 'insertColumnLeft':
                     if (index > 0) {
@@ -764,7 +764,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                 case 'insertCellShiftRight': {
                     if (row > 0 && col > 0 && row <= rows.length) {
                         const rowData = rows[row - 1];
-                        if (!rowData) break;
+                        if (!rowData) {break;}
                         while (rowData.length < col - 1) {
                             rowData.push('');
                         }
@@ -827,7 +827,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
             for (const edit of edits) {
                 const row = typeof edit?.row === 'number' ? edit.row : 0;
                 const col = typeof edit?.col === 'number' ? edit.col : 0;
-                if (!row || !col) continue;
+                if (!row || !col) {continue;}
 
                 while (rows.length < row) {
                     rows.push([]);
@@ -912,7 +912,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                 const row = typeof richEdit?.row === 'number' ? richEdit.row : 0;
                 const col = typeof richEdit?.col === 'number' ? richEdit.col : 0;
                 const runs = Array.isArray(richEdit?.runs) ? richEdit.runs : [];
-                if (!row || !col) continue;
+                if (!row || !col) {continue;}
 
                 const key = `${row}:${col}`;
                 const nextStyle = { ...(nextStyles[key] || {}) };
@@ -960,7 +960,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
             for (const styleEdit of styleEdits) {
                 const row = typeof styleEdit?.row === 'number' ? styleEdit.row : 0;
                 const col = typeof styleEdit?.col === 'number' ? styleEdit.col : 0;
-                if (!row || !col) continue;
+                if (!row || !col) {continue;}
 
                 const key = `${row}:${col}`;
                 if (styleEdit?.clearFormatting) {
@@ -1283,7 +1283,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
         };
 
         const trySendSettings = () => {
-            if (!isWebviewReady) return;
+            if (!isWebviewReady) {return;}
             try {
                 const persisted = getPersistedSettings();
                 webview.postMessage({
@@ -1303,7 +1303,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
         webviewPanel.onDidDispose(() => themeChangeDisposable.dispose());
 
         const trySendInit = () => {
-            if (!isWebviewReady || !worksheetsData.length) return;
+            if (!isWebviewReady || !worksheetsData.length) {return;}
             try {
                 // Send metadata for virtual scrolling instead of full data
                 // Include row heights for stable scroll calculations
@@ -1371,7 +1371,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                         for (const [key, cellMeta] of Object.entries(metadata.cells)) {
                             if (cellMeta?.control) {
                                 const address = parseStyleKey(key);
-                                if (!address) continue;
+                                if (!address) {continue;}
                                 const cell = ws.getRow(address.row).getCell(address.col);
                                 const { controlType, dropdownOptions, defaultValue } = cellMeta.control;
                                 if (controlType === 'checkbox') {
@@ -1682,14 +1682,6 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                 return;
             }
 
-            if (message?.command === 'toggleView') {
-                if (!message.isTableView) {
-                    await vscode.commands.executeCommand('vscode.openWith', document.uri, 'default');
-                    webviewPanel.dispose();
-                }
-                return;
-            }
-
             if (message?.command === 'openExternal') {
                 try {
                     const url = typeof message.url === 'string' ? message.url : '';
@@ -1846,14 +1838,14 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                     for (const op of operations) {
                         const type = typeof op?.type === 'string' ? op.type : '';
                         const index = typeof op?.index === 'number' ? op.index : 0;
-                        if (!type) continue;
+                        if (!type) {continue;}
 
                         switch (type) {
                             case 'insertRowAbove':
-                                if (index > 0) ws.spliceRows(index, 0, []);
+                                if (index > 0) {ws.spliceRows(index, 0, []);}
                                 break;
                             case 'insertRowBelow':
-                                if (index > 0) ws.spliceRows(index + 1, 0, []);
+                                if (index > 0) {ws.spliceRows(index + 1, 0, []);}
                                 break;
                             case 'deleteRow':
                                 if (index > 0 && ws.rowCount > 1) {
@@ -1861,10 +1853,10 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                                 }
                                 break;
                             case 'insertColumnLeft':
-                                if (index > 0) ws.spliceColumns(index, 0, []);
+                                if (index > 0) {ws.spliceColumns(index, 0, []);}
                                 break;
                             case 'insertColumnRight':
-                                if (index > 0) ws.spliceColumns(index + 1, 0, []);
+                                if (index > 0) {ws.spliceColumns(index + 1, 0, []);}
                                 break;
                             case 'deleteColumn':
                                 if (index > 0 && ws.columnCount > 1) {
@@ -1874,7 +1866,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                             case 'insertCellShiftRight': {
                                 const row = typeof op?.row === 'number' ? op.row : 0;
                                 const col = typeof op?.col === 'number' ? op.col : 0;
-                                if (!row || !col) break;
+                                if (!row || !col) {break;}
 
                                 const rowRef = ws.getRow(row);
                                 const lastColumn = Math.max(ws.columnCount, rowRef.cellCount || 0);
@@ -1889,7 +1881,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                             case 'insertCellShiftDown': {
                                 const row = typeof op?.row === 'number' ? op.row : 0;
                                 const col = typeof op?.col === 'number' ? op.col : 0;
-                                if (!row || !col) break;
+                                if (!row || !col) {break;}
 
                                 const lastRow = ws.rowCount;
                                 ws.spliceRows(lastRow + 1, 0, []);
@@ -1904,7 +1896,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                             case 'deleteCellShiftLeft': {
                                 const row = typeof op?.row === 'number' ? op.row : 0;
                                 const col = typeof op?.col === 'number' ? op.col : 0;
-                                if (!row || !col) break;
+                                if (!row || !col) {break;}
 
                                 for (let c = col; c < ws.columnCount; c++) {
                                     const src = ws.getRow(row).getCell(c + 1);
@@ -1917,7 +1909,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                             case 'deleteCellShiftUp': {
                                 const row = typeof op?.row === 'number' ? op.row : 0;
                                 const col = typeof op?.col === 'number' ? op.col : 0;
-                                if (!row || !col) break;
+                                if (!row || !col) {break;}
 
                                 for (let r = row; r < ws.rowCount; r++) {
                                     const src = ws.getRow(r + 1).getCell(col);
@@ -1932,7 +1924,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                                 const startCol = typeof op?.startCol === 'number' ? op.startCol : 0;
                                 const endRow = typeof op?.endRow === 'number' ? op.endRow : 0;
                                 const endCol = typeof op?.endCol === 'number' ? op.endCol : 0;
-                                if (!startRow || !startCol || !endRow || !endCol) break;
+                                if (!startRow || !startCol || !endRow || !endCol) {break;}
 
                                 try {
                                     ws.mergeCells(startRow, startCol, endRow, endCol);
@@ -1946,7 +1938,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                                 const startCol = typeof op?.startCol === 'number' ? op.startCol : 0;
                                 const endRow = typeof op?.endRow === 'number' ? op.endRow : 0;
                                 const endCol = typeof op?.endCol === 'number' ? op.endCol : 0;
-                                if (!startRow || !startCol || !endRow || !endCol) break;
+                                if (!startRow || !startCol || !endRow || !endCol) {break;}
 
                                 try {
                                     ws.unMergeCells(startRow, startCol, endRow, endCol);
@@ -1964,7 +1956,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                                     ? op.dropdownOptions.map((v: any) => String(v ?? '').trim()).filter((v: string) => !!v)
                                     : [];
 
-                                if (!row || !col || !controlType) break;
+                                if (!row || !col || !controlType) {break;}
 
                                 const cell = ws.getRow(row).getCell(col);
 
@@ -1985,7 +1977,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                                         .map((item: string) => item.replace(/[\r\n,]/g, ' ').trim())
                                         .filter((item: string, idx: number, arr: string[]) => !!item && arr.indexOf(item) === idx)
                                         .slice(0, 80);
-                                    if (!options.length) break;
+                                    if (!options.length) {break;}
 
                                     const first = options[0];
                                     const inline = options.join(',');
@@ -2032,25 +2024,25 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                         const row = typeof rich?.row === 'number' ? rich.row : 0;
                         const col = typeof rich?.col === 'number' ? rich.col : 0;
                         const runs = Array.isArray(rich?.runs) ? rich.runs : [];
-                        if (!row || !col || !runs.length) continue;
+                        if (!row || !col || !runs.length) {continue;}
 
                         const richText = runs
                             .map((r: any) => {
                                 const text = typeof r?.text === 'string' ? r.text : '';
-                                if (!text) return null;
+                                if (!text) {return null;}
 
                                 const font: any = {};
-                                if (r.bold === true) font.bold = true;
-                                if (r.italic === true) font.italic = true;
+                                if (r.bold === true) {font.bold = true;}
+                                if (r.italic === true) {font.italic = true;}
                                 const color = typeof r?.color === 'string' ? r.color : '';
                                 const hex = color.match(/^#([0-9a-fA-F]{6})$/);
-                                if (hex) font.color = { argb: ('FF' + hex[1]).toUpperCase() };
+                                if (hex) {font.color = { argb: ('FF' + hex[1]).toUpperCase() };}
 
                                 return Object.keys(font).length > 0 ? { text, font } : { text };
                             })
                             .filter((v: any) => !!v);
 
-                        if (!richText.length) continue;
+                        if (!richText.length) {continue;}
 
                         const cell = ws.getRow(row).getCell(col);
                         cell.value = { richText } as any;
@@ -2059,18 +2051,18 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
 
                     const parseBooleanText = (value: string): boolean | null => {
                         const normalized = value.trim().toLowerCase();
-                        if (normalized === 'true' || normalized === 'yes' || normalized === '1' || normalized === 'y') return true;
-                        if (normalized === 'false' || normalized === 'no' || normalized === '0' || normalized === 'n') return false;
+                        if (normalized === 'true' || normalized === 'yes' || normalized === '1' || normalized === 'y') {return true;}
+                        if (normalized === 'false' || normalized === 'no' || normalized === '0' || normalized === 'n') {return false;}
                         return null;
                     };
 
                     const isBooleanValidationCell = (cell: Excel.Cell): boolean => {
                         const dv = (cell as any)?.dataValidation;
-                        if (!dv || dv.type !== 'list') return false;
+                        if (!dv || dv.type !== 'list') {return false;}
                         const formula = Array.isArray(dv.formulae) ? String(dv.formulae[0] || '').trim() : '';
                         const direct = formula.startsWith('=') ? formula.slice(1) : formula;
                         const inlineMatch = direct.match(/^"([\s\S]*)"$/);
-                        if (!inlineMatch) return false;
+                        if (!inlineMatch) {return false;}
                         const options = inlineMatch[1]
                             .split(',')
                             .map((item) => parseBooleanText(item))
@@ -2085,7 +2077,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
 
                     const parseDateInput = (value: string): Date | null => {
                         const raw = String(value || '').trim();
-                        if (!raw) return null;
+                        if (!raw) {return null;}
 
                         const parsed = new Date(raw);
                         if (Number.isNaN(parsed.getTime())) {
@@ -2098,7 +2090,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                     for (const edit of edits) {
                         const row = typeof edit.row === 'number' ? edit.row : undefined;
                         const col = typeof edit.col === 'number' ? edit.col : undefined;
-                        if (!row || !col) continue;
+                        if (!row || !col) {continue;}
 
                         if (richEditedKeys.has(row + ':' + col)) {
                             continue;
@@ -2138,10 +2130,10 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                     }
 
                     const toARGB = (hexOrColor: string): string | undefined => {
-                        if (typeof hexOrColor !== 'string') return undefined;
+                        if (typeof hexOrColor !== 'string') {return undefined;}
                         const value = hexOrColor.trim();
                         const hexMatch = value.match(/^#([0-9a-fA-F]{6})$/);
-                        if (hexMatch) return ('FF' + hexMatch[1]).toUpperCase();
+                        if (hexMatch) {return ('FF' + hexMatch[1]).toUpperCase();}
 
                         const rgbMatch = value.match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
                         if (rgbMatch) {
@@ -2157,7 +2149,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                     for (const s of styleEdits) {
                         const row = typeof s?.row === 'number' ? s.row : 0;
                         const col = typeof s?.col === 'number' ? s.col : 0;
-                        if (!row || !col) continue;
+                        if (!row || !col) {continue;}
 
                         const cell = ws.getRow(row).getCell(col);
 
@@ -2251,25 +2243,25 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                                 let finalBorderStyle = 'thin';
                                 const sLower = borderStyle.toLowerCase();
 
-                                if (sLower.includes('thick') && sLower.includes('dash')) finalBorderStyle = 'mediumDashed'; // no thickDashed in exceljs? mediumDashed is closest
-                                else if (sLower.includes('thick') && sLower.includes('dot')) finalBorderStyle = 'mediumDashDot';
-                                else if (sLower.includes('medium') && sLower.includes('dash')) finalBorderStyle = 'mediumDashed';
-                                else if (sLower.includes('medium') && sLower.includes('dot')) finalBorderStyle = 'mediumDashDot';
-                                else if (sLower.includes('dashdotdot')) finalBorderStyle = 'dashDotDot';
-                                else if (sLower.includes('dashdot')) finalBorderStyle = 'dashDot';
-                                else if (sLower.includes('dashed') || sLower === 'dashed' || sLower.includes('dash')) finalBorderStyle = 'mediumDashed';
-                                else if (allowedStyles.includes(borderStyle)) finalBorderStyle = borderStyle;
-                                else if (sLower === 'thick') finalBorderStyle = 'thick';
-                                else if (sLower === 'medium') finalBorderStyle = 'medium';
-                                else if (sLower === 'dotted') finalBorderStyle = 'dotted';
-                                else if (sLower === 'double') finalBorderStyle = 'double';
-                                else finalBorderStyle = 'thin';
+                                if (sLower.includes('thick') && sLower.includes('dash')) {finalBorderStyle = 'mediumDashed';} // no thickDashed in exceljs? mediumDashed is closest
+                                else if (sLower.includes('thick') && sLower.includes('dot')) {finalBorderStyle = 'mediumDashDot';}
+                                else if (sLower.includes('medium') && sLower.includes('dash')) {finalBorderStyle = 'mediumDashed';}
+                                else if (sLower.includes('medium') && sLower.includes('dot')) {finalBorderStyle = 'mediumDashDot';}
+                                else if (sLower.includes('dashdotdot')) {finalBorderStyle = 'dashDotDot';}
+                                else if (sLower.includes('dashdot')) {finalBorderStyle = 'dashDot';}
+                                else if (sLower.includes('dashed') || sLower === 'dashed' || sLower.includes('dash')) {finalBorderStyle = 'mediumDashed';}
+                                else if (allowedStyles.includes(borderStyle)) {finalBorderStyle = borderStyle;}
+                                else if (sLower === 'thick') {finalBorderStyle = 'thick';}
+                                else if (sLower === 'medium') {finalBorderStyle = 'medium';}
+                                else if (sLower === 'dotted') {finalBorderStyle = 'dotted';}
+                                else if (sLower === 'double') {finalBorderStyle = 'double';}
+                                else {finalBorderStyle = 'thin';}
 
                                 const excelBorderStyle = finalBorderStyle;
                                 const borderColorArgb = toARGB(typeof s.border.color === 'string' ? s.border.color : '') || 'FF202124';
 
                                 const toEdge = (enabled?: boolean) => {
-                                    if (!enabled) return undefined;
+                                    if (!enabled) {return undefined;}
                                     return { style: excelBorderStyle as any, color: { argb: borderColorArgb } };
                                 };
 
@@ -2609,7 +2601,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                                 break;
                             }
                         }
-                        if (cellValue) break;
+                        if (cellValue) {break;}
                     }
                 }
 
@@ -2665,7 +2657,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
     private parseRange(rangeStr: string): any {
         try {
             const clean = String(rangeStr || '').trim().replace(/\$/g, '').toUpperCase();
-            if (!clean) return null;
+            if (!clean) {return null;}
 
             const parts = clean.split(':');
             const start = parts[0];
@@ -2796,14 +2788,14 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
     }
 
     private toIsoDateInputValue(value: unknown): string {
-        if (!value) return '';
+        if (!value) {return '';}
 
         let asDate: Date | null = null;
         if (value instanceof Date) {
             asDate = value;
         } else if (typeof value === 'string') {
             const raw = value.trim();
-            if (!raw) return '';
+            if (!raw) {return '';}
             if (!/^\d{4}-\d{2}-\d{2}$/.test(raw) && !/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}$/.test(raw)) {
                 return '';
             }
@@ -2867,7 +2859,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
             if (sheetRef) {
                 const sheetName = sheetRef[1];
                 const target = workbook.getWorksheet(sheetName);
-                if (!target) return [];
+                if (!target) {return [];}
                 targetWorksheet = target;
                 rangeExpr = sheetRef[2];
             }
@@ -2904,7 +2896,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
 
                     blankStreak = 0;
                     hasStarted = true;
-                    if (seen.has(value)) continue;
+                    if (seen.has(value)) {continue;}
                     seen.add(value);
                     options.push(value);
 
@@ -2922,7 +2914,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
 
     private getImageDataUri(image: any): string {
         try {
-            if (!image) return '';
+            if (!image) {return '';}
 
             const extRaw = typeof image.extension === 'string' ? image.extension.toLowerCase() : 'png';
             const ext = extRaw === 'jpg' ? 'jpeg' : extRaw;
@@ -2966,7 +2958,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                 try {
                     const image = workbook.getImage(imgRef.imageId);
                     const uri = this.getImageDataUri(image);
-                    if (!uri) return;
+                    if (!uri) {return;}
 
                     const range = imgRef.range;
                     let row = 0;
@@ -2998,15 +2990,15 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
     }
 
     private getCellValue(cell: Excel.Cell): string {
-        if (!cell || !cell.value) return '';
+        if (!cell || !cell.value) {return '';}
 
         // Some ExcelJS hyperlink cells expose the URL via cell.hyperlink even when cell.type isn't Hyperlink.
         // In those cases, keep showing the displayed text/value.
         const anyCell = cell as any;
         if (typeof anyCell.hyperlink === 'string' && anyCell.hyperlink) {
             const v = cell.value as any;
-            if (typeof v === 'string') return v;
-            if (v && typeof v === 'object' && typeof v.text === 'string') return v.text;
+            if (typeof v === 'string') {return v;}
+            if (v && typeof v === 'object' && typeof v.text === 'string') {return v.text;}
         }
 
         // Handle different value types with proper type checking
@@ -3020,8 +3012,8 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
             return richTextValue.richText.map((rt: any) => {
                 let txt = (rt.text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
                 if (rt.font) {
-                    if (rt.font.bold) txt = `<b>${txt}</b>`;
-                    if (rt.font.italic) txt = `<i>${txt}</i>`;
+                    if (rt.font.bold) {txt = `<b>${txt}</b>`;}
+                    if (rt.font.italic) {txt = `<i>${txt}</i>`;}
                     if (rt.font.color && rt.font.color.argb) {
                         const argb = rt.font.color.argb;
                         let hex = argb;
@@ -3052,7 +3044,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
 
     private getCellHyperlink(cell: Excel.Cell): string {
         try {
-            if (!cell) return '';
+            if (!cell) {return '';}
 
             const anyCell = cell as any;
             if (typeof anyCell.hyperlink === 'string' && anyCell.hyperlink) {
@@ -3108,12 +3100,12 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                 style.color = 'rgb(0, 0, 0)';
                 isDefaultColor = true;
             }
-            if (cell.font.bold) style.fontWeight = 'bold';
-            if (cell.font.italic) style.fontStyle = 'italic';
-            if (cell.font.underline) style.textDecoration = 'underline';
-            if (cell.font.strike) style.textDecoration = (style.textDecoration || '') + ' line-through';
-            if (cell.font.size) style.fontSize = `${cell.font.size}pt`;
-            if (cell.font.name) style.fontFamily = cell.font.name;
+            if (cell.font.bold) {style.fontWeight = 'bold';}
+            if (cell.font.italic) {style.fontStyle = 'italic';}
+            if (cell.font.underline) {style.textDecoration = 'underline';}
+            if (cell.font.strike) {style.textDecoration = (style.textDecoration || '') + ' line-through';}
+            if (cell.font.size) {style.fontSize = `${cell.font.size}pt`;}
+            if (cell.font.name) {style.fontFamily = cell.font.name;}
         } else {
             // No font styling at all, defaults to black
             style.color = 'rgb(0, 0, 0)';

@@ -32,7 +32,6 @@ import { Icons } from '../shared/icons';
 import { vscode, debounce } from '../shared/common';
 import { FeedbackModal } from '../shared/feedbackModal';
 import { ProjectsModal } from '../shared/projectsModal';
-import { InfoTooltip } from '../shared/infoTooltip';
 import TurndownService from 'turndown';
 // @ts-ignore
 import { gfm } from 'turndown-plugin-gfm';
@@ -44,7 +43,7 @@ import mermaid from 'mermaid';
 function markdownItMermaid(md: any) {
     md.mermaid = mermaid;
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     (mermaid as any).loadPreferences = function (preferences: any) {
         let theme = preferences.get('mermaid-theme');
         if (theme === undefined) {
@@ -89,7 +88,6 @@ function throttleRAF(fn: () => void): () => void {
 }
 
 // ===== State =====
-let isPreviewView = true;
 let isEditMode = false;
 let isPreviewEditMode = false;
 let isVersionPreviewMode = false;
@@ -176,7 +174,7 @@ function wrapCodeLines(html: string): string {
     if (lines.length > 0 && lines[lines.length - 1] === '') {
         lines.pop();
     }
-    if (lines.length === 0) return '<span class="code-line"> </span>';
+    if (lines.length === 0) {return '<span class="code-line"> </span>';}
 
     let openStack: string[] = [];
 
@@ -200,11 +198,11 @@ function wrapCodeLines(html: string): string {
 }
 
 function setButtonsEnabled(enabled: boolean) {
-    const ids = ['enableMdEditorButton', 'disableMdEditorButton', 'toggleViewButton', 'toggleEditModeButton', 'previewEditButton', 'saveEditsButton',
+    const ids = ['enableMdEditorButton', 'disableMdEditorButton', 'toggleEditModeButton', 'previewEditButton', 'saveEditsButton',
         'cancelEditsButton', 'toggleBackgroundButton', 'openSettingsButton', 'versionHistoryButton'];
     ids.forEach((id) => {
         const el = $(id) as HTMLButtonElement;
-        if (el) el.disabled = !enabled;
+        if (el) {el.disabled = !enabled;}
     });
 }
 
@@ -350,13 +348,13 @@ const md = new MarkdownIt({
     }
 });
 md.use(taskLists, { enabled: false, label: true, labelAfter: true });
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 md.use(container as any, 'warning');
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 md.use(container as any, 'info');
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 md.use(container as any, 'error');
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 md.use(container as any, 'success');
 
 md.use(deflist);
@@ -371,18 +369,18 @@ md.use(emoji);
 md.use(markdownItMermaid);
 
 // Inline code styling
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 const defaultInlineCode = md.renderer.rules.code_inline || function (tokens: any, idx: number, options: any, env: any, self: any) {
     return self.renderToken(tokens, idx, options);
 };
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 md.renderer.rules.code_inline = function (tokens: any, idx: number, options: any, env: any, self: any) {
     tokens[idx].attrJoin('class', 'inline-code');
     return defaultInlineCode(tokens, idx, options, env, self);
 };
 
 // Inject line numbers for sync scroll
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 function injectLineNumbers(tokens: any, idx: number, options: any, env: any, self: any) {
     const token = tokens[idx];
     if (token.map && token.level === 0) {
@@ -437,7 +435,7 @@ md.renderer.rules.image = function (tokens: any, idx: number, options: any, env:
 
 function requestLocalImageResolution() {
     const preview = $('markdownPreview');
-    if (!preview) return;
+    if (!preview) {return;}
 
     const pending = new Set<string>();
     preview.querySelectorAll('img[data-md-src]').forEach((node) => {
@@ -490,8 +488,8 @@ function applyResolvedImageUris(resolved: Record<string, string>) {
 }
 
 // Fence (code blocks) needs special handling as it's a self-closing block token in terms of rendering
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
+ 
 md.renderer.rules.fence = function (tokens: any, idx: number, options: any, env: any, self: any) {
     const token = tokens[idx];
     const info = token.info ? md.utils.unescapeAll(token.info).trim() : '';
@@ -535,7 +533,7 @@ function addHeadingIds(tokens: any[]) {
             const inline = tokens[i + 1];
             const text = inline && inline.type === 'inline' ? normalizeHeadingText(inline.content) : '';
             const baseSlug = slugify(text);
-            if (!baseSlug) continue;
+            if (!baseSlug) {continue;}
 
             const count = (slugCounts[baseSlug] || 0) + 1;
             slugCounts[baseSlug] = count;
@@ -603,7 +601,7 @@ function buildToc(tokens: any[]) {
 // ===== Rendering =====
 function renderMermaidFlowcharts() {
     const mermaidLib = (md as any).mermaid;
-    if (!mermaidLib) return;
+    if (!mermaidLib) {return;}
 
     const isDark = document.body.classList.contains('dark-mode') ||
         document.body.classList.contains('dark-theme') ||
@@ -634,7 +632,7 @@ function renderMarkdown(content: string) {
         addHeadingIds(tokens);
         preview.innerHTML = md.renderer.render(tokens, md.options, env);
         preview.querySelectorAll('img').forEach((node) => {
-            if (!(node instanceof HTMLImageElement)) return;
+            if (!(node instanceof HTMLImageElement)) {return;}
             if (!node.complete) {
                 node.addEventListener('load', refreshDataLineCache, { once: true });
             }
@@ -653,7 +651,7 @@ function renderMarkdown(content: string) {
 
 function updateToc(tokens: any[]) {
     const tocBody = $('tocBody');
-    if (!tocBody) return;
+    if (!tocBody) {return;}
     tocBody.innerHTML = buildToc(tokens);
 }
 
@@ -677,18 +675,18 @@ function setEditMode(enabled: boolean) {
     const editTarget = (editBtn?.closest('.tooltip') as HTMLElement | null) || editBtn;
     const previewEditTarget = (previewEditBtn?.closest('.tooltip') as HTMLElement | null) || previewEditBtn;
 
-    if (editTarget) editTarget.classList.toggle('hidden', enabled);
-    if (previewEditTarget) previewEditTarget.classList.toggle('hidden', enabled);
+    if (editTarget) {editTarget.classList.toggle('hidden', enabled);}
+    if (previewEditTarget) {previewEditTarget.classList.toggle('hidden', enabled);}
 
-    if (saveTarget) saveTarget.classList.toggle('hidden', !enabled);
-    if (cancelTarget) cancelTarget.classList.toggle('hidden', !enabled);
+    if (saveTarget) {saveTarget.classList.toggle('hidden', !enabled);}
+    if (cancelTarget) {cancelTarget.classList.toggle('hidden', !enabled);}
 
     // Toggle formatting toolbar
     const fmtToolbar = $('formattingToolbar');
-    if (fmtToolbar) fmtToolbar.classList.toggle('hidden', !enabled);
+    if (fmtToolbar) {fmtToolbar.classList.toggle('hidden', !enabled);}
 
     // Ensure preview is not contenteditable
-    if (preview) preview.contentEditable = 'false';
+    if (preview) {preview.contentEditable = 'false';}
 
     if (enabled) {
         originalContent = currentContent;
@@ -702,7 +700,7 @@ function setEditMode(enabled: boolean) {
             container?.classList.remove('preview-left');
         }
 
-        if (editor) editor.value = currentContent;
+        if (editor) {editor.value = currentContent;}
 
         // Cache line height after entering edit mode
         requestAnimationFrame(() => {
@@ -713,17 +711,17 @@ function setEditMode(enabled: boolean) {
                 editor.focus();
                 editor.setSelectionRange(0, 0);
             }
-            if (preview) preview.scrollTop = 0;
+            if (preview) {preview.scrollTop = 0;}
             // Scroll the container so the editor (left side) is visible
-            if (container) container.scrollLeft = 0;
+            if (container) {container.scrollLeft = 0;}
 
             setTimeout(() => {
                 if (editor) {
                     editor.scrollTop = 0;
                     editor.scrollLeft = 0;
                 }
-                if (preview) preview.scrollTop = 0;
-                if (container) container.scrollLeft = 0;
+                if (preview) {preview.scrollTop = 0;}
+                if (container) {container.scrollLeft = 0;}
             }, 50);
         });
     } else {
@@ -756,15 +754,15 @@ function setPreviewEditMode(enabled: boolean) {
     const editTarget = (editBtn?.closest('.tooltip') as HTMLElement | null) || editBtn;
     const previewEditTarget = (previewEditBtn?.closest('.tooltip') as HTMLElement | null) || previewEditBtn;
 
-    if (editTarget) editTarget.classList.toggle('hidden', enabled);
-    if (previewEditTarget) previewEditTarget.classList.toggle('hidden', enabled);
+    if (editTarget) {editTarget.classList.toggle('hidden', enabled);}
+    if (previewEditTarget) {previewEditTarget.classList.toggle('hidden', enabled);}
 
-    if (saveTarget) saveTarget.classList.toggle('hidden', !enabled);
-    if (cancelTarget) cancelTarget.classList.toggle('hidden', !enabled);
+    if (saveTarget) {saveTarget.classList.toggle('hidden', !enabled);}
+    if (cancelTarget) {cancelTarget.classList.toggle('hidden', !enabled);}
 
     // Show formatting toolbar in preview edit mode
     const fmtToolbar = $('formattingToolbar');
-    if (fmtToolbar) fmtToolbar.classList.toggle('hidden', !enabled);
+    if (fmtToolbar) {fmtToolbar.classList.toggle('hidden', !enabled);}
 
     if (enabled) {
         originalContent = currentContent;
@@ -836,7 +834,6 @@ function setVersionPreviewMode(enabled: boolean, label?: string) {
     isVersionPreviewMode = enabled;
     document.body.classList.toggle('version-preview-mode', enabled);
     if (enabled) {
-        isPreviewView = true;
         setEditMode(false);
         setPreviewEditMode(false);
         const banner = ensureVersionPreviewBanner();
@@ -854,7 +851,7 @@ function setVersionPreviewMode(enabled: boolean, label?: string) {
 }
 
 function performSave(exitAfterSave = false) {
-    if (isSaving || !isEditMode) return;
+    if (isSaving || !isEditMode) {return;}
     isSaving = true;
     shouldExitEditMode = exitAfterSave;
     setButtonsEnabled(false);
@@ -897,7 +894,7 @@ function cancelEdit() {
         editor.value = originalContent;
     }
     const preview = $('markdownPreview');
-    if (preview) preview.contentEditable = 'false';
+    if (preview) {preview.contentEditable = 'false';}
     renderMarkdown(originalContent);
     if (isPreviewEditMode) {
         setPreviewEditMode(false);
@@ -913,7 +910,7 @@ const debouncedRender = debounce((content: string) => {
 
 function onEditorInput() {
     const editor = $('markdownEditor') as HTMLTextAreaElement;
-    if (!editor) return;
+    if (!editor) {return;}
 
     currentContent = editor.value;
 
@@ -1105,21 +1102,21 @@ function getEditorLineHeight(): number {
 
 function updateCachedLineHeight() {
     const editor = $('markdownEditor') as HTMLTextAreaElement | null;
-    if (!editor) return;
+    if (!editor) {return;}
     const computed = parseFloat(getComputedStyle(editor).lineHeight);
     cachedEditorLineHeight = isNaN(computed) ? 21 : computed;
 }
 
 function syncEditorToPreview() {
-    if (!currentSettings.syncScroll || isPreviewEditMode) return;
-    if (activeScrollSource === 'preview') return;
+    if (!currentSettings.syncScroll || isPreviewEditMode) {return;}
+    if (activeScrollSource === 'preview') {return;}
 
     activeScrollSource = 'editor';
-    if (scrollTimeout) clearTimeout(scrollTimeout);
+    if (scrollTimeout) {clearTimeout(scrollTimeout);}
 
     const editor = $('markdownEditor') as HTMLTextAreaElement;
     const preview = $('markdownPreview');
-    if (!editor || !preview) return;
+    if (!editor || !preview) {return;}
 
     const editorMax = editor.scrollHeight - editor.clientHeight;
     const previewMax = preview.scrollHeight - preview.clientHeight;
@@ -1137,15 +1134,15 @@ function syncEditorToPreview() {
 }
 
 function syncPreviewToEditor() {
-    if (!currentSettings.syncScroll || isPreviewEditMode) return;
-    if (activeScrollSource === 'editor') return;
+    if (!currentSettings.syncScroll || isPreviewEditMode) {return;}
+    if (activeScrollSource === 'editor') {return;}
 
     activeScrollSource = 'preview';
-    if (scrollTimeout) clearTimeout(scrollTimeout);
+    if (scrollTimeout) {clearTimeout(scrollTimeout);}
 
     const editor = $('markdownEditor') as HTMLTextAreaElement;
     const preview = $('markdownPreview');
-    if (!editor || !preview) return;
+    if (!editor || !preview) {return;}
 
     const editorMax = editor.scrollHeight - editor.clientHeight;
     const previewMax = preview.scrollHeight - preview.clientHeight;
@@ -1184,7 +1181,7 @@ function showToast(message: string) {
     }
     if (toast) {
         const toastText = toast.querySelector('.toast-text') || $('toastText');
-        if (toastText) toastText.textContent = message;
+        if (toastText) {toastText.textContent = message;}
         toast.classList.add('show');
         setTimeout(() => toast!.classList.remove('show'), 2000);
     }
@@ -1192,7 +1189,7 @@ function showToast(message: string) {
 
 function updateStatusInfo() {
     const statusInfo = $('statusInfo');
-    if (!statusInfo) return;
+    if (!statusInfo) {return;}
 
     const lines = currentContent.split('\n').length;
     const chars = currentContent.length;
@@ -1206,7 +1203,7 @@ function updateStatusInfo() {
 function updateProgressBar() {
     const preview = $('markdownPreview');
     const bar = $('readingProgressBar');
-    if (!preview || !bar) return;
+    if (!preview || !bar) {return;}
     const scrollTop = preview.scrollTop;
     const scrollHeight = preview.scrollHeight - preview.clientHeight;
     const progress = scrollHeight > 0 ? (scrollTop / scrollHeight) * 100 : 0;
@@ -1217,7 +1214,7 @@ function updateProgressBar() {
 function updateScrollSpy() {
     const preview = $('markdownPreview');
     const tocBody = $('tocBody');
-    if (!preview || !tocBody) return;
+    if (!preview || !tocBody) {return;}
 
     const headings = Array.from(preview.querySelectorAll('.md-heading'));
     let current = '';
@@ -1235,7 +1232,7 @@ function updateScrollSpy() {
     links.forEach(a => {
         const isActive = a.getAttribute('data-target') === current;
         a.classList.toggle('active', isActive);
-        if (isActive) activeLink = a as HTMLElement;
+        if (isActive) {activeLink = a as HTMLElement;}
     });
 
     // Auto-scroll TOC body to keep active item visible
@@ -1261,7 +1258,7 @@ const throttledScrollSpy = throttleRAF(() => {
 
 function initScrollSpy() {
     const preview = $('markdownPreview');
-    if (!preview) return;
+    if (!preview) {return;}
 
     preview.addEventListener('scroll', throttledScrollSpy, { passive: true });
 }
@@ -1270,10 +1267,10 @@ function initScrollSpy() {
 function initLightbox() {
     const overlay = $('lightboxOverlay');
     const closeBtn = $('lightboxClose');
-    if (!overlay) return;
+    if (!overlay) {return;}
 
     overlay.addEventListener('click', (e) => {
-        if (e.target === overlay) closeLightbox();
+        if (e.target === overlay) {closeLightbox();}
     });
     if (closeBtn) {
         closeBtn.addEventListener('click', () => closeLightbox());
@@ -1283,7 +1280,7 @@ function initLightbox() {
 function showLightbox(src: string, alt: string) {
     const overlay = $('lightboxOverlay');
     const img = $('lightboxImage') as HTMLImageElement;
-    if (!overlay || !img) return;
+    if (!overlay || !img) {return;}
     img.src = src;
     img.alt = alt || '';
     overlay.classList.add('active');
@@ -1292,7 +1289,7 @@ function showLightbox(src: string, alt: string) {
 
 function closeLightbox() {
     const overlay = $('lightboxOverlay');
-    if (!overlay) return;
+    if (!overlay) {return;}
     overlay.classList.remove('active');
     document.body.classList.remove('lightbox-open');
 }
@@ -1304,7 +1301,7 @@ const debouncedSearch = debounce((query: string) => {
 
 function toggleSearchOverlay() {
     const overlay = $('searchOverlay');
-    if (!overlay) return;
+    if (!overlay) {return;}
     if (overlay.classList.contains('active')) {
         closeSearch();
     } else {
@@ -1315,7 +1312,7 @@ function toggleSearchOverlay() {
 function openSearch() {
     const overlay = $('searchOverlay');
     const input = $('searchInput') as HTMLInputElement;
-    if (!overlay) return;
+    if (!overlay) {return;}
     overlay.classList.add('active');
     if (input) {
         input.focus();
@@ -1325,7 +1322,7 @@ function openSearch() {
 
 function closeSearch() {
     const overlay = $('searchOverlay');
-    if (!overlay) return;
+    if (!overlay) {return;}
     overlay.classList.remove('active');
     clearSearchHighlights();
     searchMatches = [];
@@ -1344,7 +1341,7 @@ function doSearch(query: string) {
     }
 
     const preview = $('markdownPreview');
-    if (!preview) return;
+    if (!preview) {return;}
 
     const lowerQuery = query.toLowerCase();
     const walker = document.createTreeWalker(preview, NodeFilter.SHOW_TEXT, null);
@@ -1388,7 +1385,7 @@ function doSearch(query: string) {
 
 function clearSearchHighlights() {
     const preview = $('markdownPreview');
-    if (!preview) return;
+    if (!preview) {return;}
     preview.querySelectorAll('.search-highlight').forEach(mark => {
         const parent = mark.parentNode;
         if (parent) {
@@ -1408,7 +1405,7 @@ function highlightCurrentMatch() {
 }
 
 function navigateSearch(direction: 'next' | 'prev') {
-    if (searchMatches.length === 0) return;
+    if (searchMatches.length === 0) {return;}
     if (direction === 'next') {
         searchCurrentIndex = (searchCurrentIndex + 1) % searchMatches.length;
     } else {
@@ -1420,7 +1417,7 @@ function navigateSearch(direction: 'next' | 'prev') {
 
 function updateSearchCount() {
     const countEl = $('searchCount');
-    if (!countEl) return;
+    if (!countEl) {return;}
     if (searchMatches.length === 0) {
         countEl.textContent = 'No results';
     } else {
@@ -1457,9 +1454,9 @@ function initSearchOverlay() {
             }
         });
     }
-    if (prevBtn) prevBtn.addEventListener('click', () => navigateSearch('prev'));
-    if (nextBtn) nextBtn.addEventListener('click', () => navigateSearch('next'));
-    if (closeBtn) closeBtn.addEventListener('click', () => closeSearch());
+    if (prevBtn) {prevBtn.addEventListener('click', () => navigateSearch('prev'));}
+    if (nextBtn) {nextBtn.addEventListener('click', () => navigateSearch('next'));}
+    if (closeBtn) {closeBtn.addEventListener('click', () => closeSearch());}
 }
 
 // ===== Focus Mode =====
@@ -1468,13 +1465,13 @@ function toggleFocusMode() {
     document.body.classList.toggle('focus-mode', isFocusMode);
     if (toolbarManager) {
         const btn = toolbarManager.getButton('focusModeButton');
-        if (btn) btn.classList.toggle('active', isFocusMode);
+        if (btn) {btn.classList.toggle('active', isFocusMode);}
     }
 }
 
 // ===== Settings =====
 function applySettings(settings: any, persist = false) {
-    if (!settings) return;
+    if (!settings) {return;}
     currentSettings = { ...currentSettings, ...settings };
 
     const container = $('markdownContainer');
@@ -1535,24 +1532,24 @@ function applySettings(settings: any, persist = false) {
     const chkShowOutline = $('chkShowOutline') as HTMLInputElement;
     const chkShowLineNumbers = $('chkShowLineNumbers') as HTMLInputElement;
 
-    if (chkWordWrap) chkWordWrap.checked = currentSettings.wordWrap;
-    if (chkStickyToolbar) chkStickyToolbar.checked = currentSettings.stickyToolbar;
-    if (chkSyncScroll) chkSyncScroll.checked = currentSettings.syncScroll;
-    if (chkPreviewLeft) chkPreviewLeft.checked = currentSettings.previewPosition === 'left';
-    if (chkShowOutline) chkShowOutline.checked = currentSettings.showOutline;
-    if (chkShowLineNumbers) chkShowLineNumbers.checked = currentSettings.showLineNumbers;
+    if (chkWordWrap) {chkWordWrap.checked = currentSettings.wordWrap;}
+    if (chkStickyToolbar) {chkStickyToolbar.checked = currentSettings.stickyToolbar;}
+    if (chkSyncScroll) {chkSyncScroll.checked = currentSettings.syncScroll;}
+    if (chkPreviewLeft) {chkPreviewLeft.checked = currentSettings.previewPosition === 'left';}
+    if (chkShowOutline) {chkShowOutline.checked = currentSettings.showOutline;}
+    if (chkShowLineNumbers) {chkShowLineNumbers.checked = currentSettings.showLineNumbers;}
 
     // Line numbers
     document.body.classList.toggle('show-line-numbers', !!currentSettings.showLineNumbers);
 
     const tocPanel = $('tocPanel');
-    if (container) container.classList.toggle('toc-open', !!currentSettings.showOutline);
-    if (tocPanel) tocPanel.classList.toggle('hidden', !currentSettings.showOutline);
+    if (container) {container.classList.toggle('toc-open', !!currentSettings.showOutline);}
+    if (tocPanel) {tocPanel.classList.toggle('hidden', !currentSettings.showOutline);}
 
     if (toolbarManager) {
         reorderMdToolbarButtons();
         const btn = toolbarManager.getButton('toggleTocButton');
-        if (btn) btn.classList.toggle('active', !!currentSettings.showOutline);
+        if (btn) {btn.classList.toggle('active', !!currentSettings.showOutline);}
     }
 
     if (toolbarManager) {
@@ -1647,24 +1644,24 @@ function initializeSettings() {
 }
 
 function reorderMdToolbarButtons() {
-    if (!toolbarManager) return;
+    if (!toolbarManager) {return;}
 
     const toolbar = document.getElementById('toolbar');
     const enableBtn = toolbarManager.getButton('enableMdEditorButton');
     const disableBtn = toolbarManager.getButton('disableMdEditorButton');
-    const toggleViewBtn = toolbarManager.getButton('toggleViewButton');
+    const anchorBtn = toolbarManager.getButton('toggleEditModeButton');
     const helpBtn = toolbarManager.getButton('helpButton');
 
-    if (!toolbar || !enableBtn || !disableBtn || !toggleViewBtn || !helpBtn) {
+    if (!toolbar || !enableBtn || !disableBtn || !anchorBtn || !helpBtn) {
         return;
     }
 
     const enableWrap = enableBtn.closest('.tooltip') as HTMLElement | null;
     const disableWrap = disableBtn.closest('.tooltip') as HTMLElement | null;
-    const toggleViewWrap = toggleViewBtn.closest('.tooltip') as HTMLElement | null;
+    const anchorWrap = anchorBtn.closest('.tooltip') as HTMLElement | null;
     const helpWrap = helpBtn.closest('.tooltip') as HTMLElement | null;
 
-    if (!enableWrap || !disableWrap || !toggleViewWrap || !helpWrap) {
+    if (!enableWrap || !disableWrap || !anchorWrap || !helpWrap) {
         return;
     }
 
@@ -1672,8 +1669,8 @@ function reorderMdToolbarButtons() {
         toolbar.insertBefore(enableWrap, helpWrap);
         toolbar.insertBefore(disableWrap, helpWrap);
     } else {
-        toolbar.insertBefore(enableWrap, toggleViewWrap);
-        toolbar.insertBefore(disableWrap, toggleViewWrap);
+        toolbar.insertBefore(enableWrap, anchorWrap);
+        toolbar.insertBefore(disableWrap, anchorWrap);
     }
 }
 
@@ -1691,7 +1688,7 @@ window.addEventListener('message', (event) => {
     switch (m.command) {
         case 'initMarkdown':
             const loading = $('loadingIndicator');
-            if (loading) loading.style.display = 'none';
+            if (loading) {loading.style.display = 'none';}
 
             currentContent = m.content || '';
             originalContent = currentContent;
@@ -1760,8 +1757,6 @@ function wireButtons() {
     toolbarManager.setButtons(buildToolbarButtons());
     reorderMdToolbarButtons();
 
-    // Inject tooltip if variables are present
-    InfoTooltip.inject('toolbar', (window as any).viewImgUri, (window as any).logoSvgUri, 'GitHub Flavored Markdown');
 
     // Theme manager
     new ThemeManager('toggleBackgroundButton', {
@@ -1799,16 +1794,6 @@ function buildToolbarButtons() {
             cls: 'edit-mode-hide',
             onClick: () => {
                 vscode.postMessage({ command: 'disableMdEditor' });
-            }
-        },
-        {
-            id: 'toggleViewButton',
-            icon: Icons.EditFile,
-            label: 'Edit File',
-            tooltip: 'Edit File in Vscode Default Editor',
-            onClick: () => {
-                isPreviewView = !isPreviewView;
-                vscode.postMessage({ command: 'toggleView', isPreviewView });
             }
         },
         {
@@ -2143,17 +2128,17 @@ function multiLineIndent(editor: HTMLTextAreaElement, outdent: boolean) {
     const newLines = lines.map((line, i) => {
         if (outdent) {
             if (line.startsWith('    ')) {
-                if (i === 0) firstLineShift = -4;
+                if (i === 0) {firstLineShift = -4;}
                 totalShift -= 4;
                 return line.substring(4);
             } else if (line.startsWith('\t')) {
-                if (i === 0) firstLineShift = -1;
+                if (i === 0) {firstLineShift = -1;}
                 totalShift -= 1;
                 return line.substring(1);
             }
             return line;
         } else {
-            if (i === 0) firstLineShift = 4;
+            if (i === 0) {firstLineShift = 4;}
             totalShift += 4;
             return '    ' + line;
         }
@@ -2175,15 +2160,15 @@ let lastSavedHistoryText = '';
 
 function pushUndoState(editor: HTMLTextAreaElement) {
     const text = editor.value;
-    if (text === lastSavedHistoryText) return;
+    if (text === lastSavedHistoryText) {return;}
     undoStack.push({ text, selStart: editor.selectionStart, selEnd: editor.selectionEnd });
-    if (undoStack.length > 200) undoStack.shift();
+    if (undoStack.length > 200) {undoStack.shift();}
     redoStack.length = 0;
     lastSavedHistoryText = text;
 }
 
 function performUndo(editor: HTMLTextAreaElement) {
-    if (undoStack.length === 0) return;
+    if (undoStack.length === 0) {return;}
     redoStack.push({ text: editor.value, selStart: editor.selectionStart, selEnd: editor.selectionEnd });
     const state = undoStack.pop()!;
     editor.value = state.text;
@@ -2195,7 +2180,7 @@ function performUndo(editor: HTMLTextAreaElement) {
 }
 
 function performRedo(editor: HTMLTextAreaElement) {
-    if (redoStack.length === 0) return;
+    if (redoStack.length === 0) {return;}
     undoStack.push({ text: editor.value, selStart: editor.selectionStart, selEnd: editor.selectionEnd });
     const state = redoStack.pop()!;
     editor.value = state.text;
@@ -2247,7 +2232,7 @@ function moveLineUp(editor: HTMLTextAreaElement) {
     const lineEnd = value.indexOf('\n', end - (end > start && value[end - 1] === '\n' ? 1 : 0));
     const lineEndFix = lineEnd === -1 ? value.length : lineEnd;
 
-    if (lineStart === 0) return; // Already at top
+    if (lineStart === 0) {return;} // Already at top
 
     const prevLineStart = value.lastIndexOf('\n', lineStart - 2) + 1;
     const currentBlock = value.substring(lineStart, lineEndFix);
@@ -2269,7 +2254,7 @@ function moveLineDown(editor: HTMLTextAreaElement) {
     const lineEnd = value.indexOf('\n', end - (end > start && value[end - 1] === '\n' ? 1 : 0));
     const lineEndFix = lineEnd === -1 ? value.length : lineEnd;
 
-    if (lineEndFix >= value.length) return; // Already at bottom
+    if (lineEndFix >= value.length) {return;} // Already at bottom
 
     const nextLineEnd = value.indexOf('\n', lineEndFix + 1);
     const nextLineEndFix = nextLineEnd === -1 ? value.length : nextLineEnd;
@@ -2290,8 +2275,8 @@ function selectWord(editor: HTMLTextAreaElement) {
     const wordChars = /[\w\-]/;
     let wStart = pos;
     let wEnd = pos;
-    while (wStart > 0 && wordChars.test(value[wStart - 1])) wStart--;
-    while (wEnd < value.length && wordChars.test(value[wEnd])) wEnd++;
+    while (wStart > 0 && wordChars.test(value[wStart - 1])) {wStart--;}
+    while (wEnd < value.length && wordChars.test(value[wEnd])) {wEnd++;}
     editor.selectionStart = wStart;
     editor.selectionEnd = wEnd;
     editor.focus();
@@ -2300,9 +2285,9 @@ function selectWord(editor: HTMLTextAreaElement) {
 function jumpToLine(editor: HTMLTextAreaElement) {
     const lineCount = editor.value.split('\n').length;
     const input = prompt(`Go to line (1-${lineCount}):`);
-    if (!input) return;
+    if (!input) {return;}
     const lineNum = parseInt(input, 10);
-    if (isNaN(lineNum) || lineNum < 1 || lineNum > lineCount) return;
+    if (isNaN(lineNum) || lineNum < 1 || lineNum > lineCount) {return;}
 
     const lines = editor.value.split('\n');
     let offset = 0;
@@ -2320,7 +2305,7 @@ function jumpToLine(editor: HTMLTextAreaElement) {
 function transformCase(editor: HTMLTextAreaElement, mode: 'upper' | 'lower' | 'title') {
     const start = editor.selectionStart;
     const end = editor.selectionEnd;
-    if (start === end) return;
+    if (start === end) {return;}
     const selected = editor.value.substring(start, end);
     let transformed: string;
     switch (mode) {
@@ -2338,7 +2323,7 @@ function transformCase(editor: HTMLTextAreaElement, mode: 'upper' | 'lower' | 't
 function sortSelectedLines(editor: HTMLTextAreaElement, descending = false) {
     const start = editor.selectionStart;
     const end = editor.selectionEnd;
-    if (start === end) return;
+    if (start === end) {return;}
     const value = editor.value;
     const firstLineStart = value.lastIndexOf('\n', start - 1) + 1;
     const lastLineEnd = value.indexOf('\n', end - 1);
@@ -2376,7 +2361,7 @@ function applyFormat(action: string) {
     }
 
     const editor = $('markdownEditor') as HTMLTextAreaElement;
-    if (!editor) return;
+    if (!editor) {return;}
     pushUndoState(editor);
     switch (action) {
         case 'bold': wrapSelection(editor, '**', '**'); break;
@@ -2940,7 +2925,7 @@ function removeCurrentTableColumn() {
 
 function applyWysiwygFormat(action: string) {
     const preview = $('markdownPreview');
-    if (!preview) return;
+    if (!preview) {return;}
     preview.focus();
 
     if (action === 'undo') {
@@ -2977,12 +2962,12 @@ function applyWysiwygFormat(action: string) {
         case 'blockquote': document.execCommand('formatBlock', false, 'BLOCKQUOTE'); break;
         case 'link': {
             const url = prompt('Enter URL:', 'https://');
-            if (url) document.execCommand('createLink', false, url);
+            if (url) {document.execCommand('createLink', false, url);}
             break;
         }
         case 'image': {
             const imgUrl = prompt('Enter image URL:', 'https://');
-            if (imgUrl) document.execCommand('insertImage', false, imgUrl);
+            if (imgUrl) {document.execCommand('insertImage', false, imgUrl);}
             break;
         }
         case 'hr': document.execCommand('insertHorizontalRule'); break;
@@ -3038,7 +3023,7 @@ function applyWysiwygFormat(action: string) {
 // ===== Resizable Panels =====
 function initResizeHandles() {
     const container = $('markdownContainer');
-    if (!container) return;
+    if (!container) {return;}
 
     // Create resize handle for TOC panel
     const tocHandle = document.createElement('div');
@@ -3053,8 +3038,8 @@ function initResizeHandles() {
     // Insert handles into container
     const tocPanel = $('tocPanel');
     const editorWrapper = container.querySelector('.editor-wrapper');
-    if (tocPanel) tocPanel.after(tocHandle);
-    if (editorWrapper) editorWrapper.after(splitHandle);
+    if (tocPanel) {tocPanel.after(tocHandle);}
+    if (editorWrapper) {editorWrapper.after(splitHandle);}
 
     // Wire drag for TOC resize
     wireResizeHandle(tocHandle, 'toc');
@@ -3073,18 +3058,18 @@ function wireResizeHandle(handle: HTMLElement, type: 'toc' | 'split') {
 
         if (type === 'toc') {
             const tocPanel = $('tocPanel');
-            if (tocPanel) startLeftWidth = tocPanel.getBoundingClientRect().width;
+            if (tocPanel) {startLeftWidth = tocPanel.getBoundingClientRect().width;}
         } else {
             // For split handle: measure the visual left and right panels
             // The handle is between whatever is visually on its left and right
             const handleRect = handle.getBoundingClientRect();
             const container = $('markdownContainer');
-            if (!container) return;
+            if (!container) {return;}
 
             // Find the sibling panels by their visual position
             const editorWrapper = container.querySelector('.editor-wrapper') as HTMLElement;
             const preview = $('markdownPreview');
-            if (!editorWrapper || !preview) return;
+            if (!editorWrapper || !preview) {return;}
 
             const editorRect = editorWrapper.getBoundingClientRect();
             const previewRect = preview.getBoundingClientRect();
@@ -3107,7 +3092,7 @@ function wireResizeHandle(handle: HTMLElement, type: 'toc' | 'split') {
     function onMouseMove(e: MouseEvent) {
         const dx = e.clientX - startX;
         const container = $('markdownContainer');
-        if (!container) return;
+        if (!container) {return;}
 
         if (type === 'toc') {
             const newWidth = Math.max(120, Math.min(500, startLeftWidth + dx));
@@ -3135,7 +3120,7 @@ function wireResizeHandle(handle: HTMLElement, type: 'toc' | 'split') {
 function wireEditor() {
     const editor = $('markdownEditor') as HTMLTextAreaElement;
     const preview = $('markdownPreview');
-    if (!editor) return;
+    if (!editor) {return;}
 
     editor.addEventListener('input', onEditorInput);
 
@@ -3328,14 +3313,14 @@ function wireEditor() {
 // ===== Preview Interactions =====
 function wirePreviewInteractions() {
     const preview = $('markdownPreview');
-    if (!preview) return;
+    if (!preview) {return;}
     const wired = (preview as any)._wired;
-    if (wired) return;
+    if (wired) {return;}
     (preview as any)._wired = true;
 
     // WYSIWYG keyboard shortcuts when preview is contenteditable
     preview.addEventListener('keydown', (e) => {
-        if (!isPreviewEditMode) return;
+        if (!isPreviewEditMode) {return;}
         const isMod = e.ctrlKey || e.metaKey;
 
         if (isMod && e.key.toLowerCase() === 's') {
@@ -3504,10 +3489,10 @@ function wireTocPanel() {
         tocBody.addEventListener('click', (e) => {
             const target = e.target as HTMLElement;
             const link = target.closest('a[data-target]') as HTMLAnchorElement | null;
-            if (!link) return;
+            if (!link) {return;}
             e.preventDefault();
             const id = link.getAttribute('data-target') || '';
-            if (!id) return;
+            if (!id) {return;}
             const preview = $('markdownPreview');
             const el = preview?.querySelector(`#${CSS.escape(id)}`) as HTMLElement | null;
             if (el) {
@@ -3525,13 +3510,13 @@ function wireTocPanel() {
 }
 
 // ===== Hover Tooltip =====
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 let hoverHideTimer: any = null;
 
 function wireHoverTooltip() {
     const trigger = $('hoverPicTrigger');
     const tooltip = $('hoverTooltip');
-    if (!trigger || !tooltip) return;
+    if (!trigger || !tooltip) {return;}
 
     function showTooltip() {
         if (hoverHideTimer) {
@@ -3615,16 +3600,16 @@ const formatIconMap: Record<string, string> = {
 
 function wireFormattingToolbar() {
     const fmtToolbar = $('formattingToolbar');
-    if (!fmtToolbar) return;
+    if (!fmtToolbar) {return;}
 
     const buttons = fmtToolbar.querySelectorAll('.fmt-btn');
     buttons.forEach(btn => {
         const format = btn.getAttribute('data-format');
-        if (!format) return;
+        if (!format) {return;}
 
         // Set icon
         const icon = formatIconMap[format];
-        if (icon) btn.innerHTML = icon;
+        if (icon) {btn.innerHTML = icon;}
 
         btn.addEventListener('click', (e) => {
             e.preventDefault();

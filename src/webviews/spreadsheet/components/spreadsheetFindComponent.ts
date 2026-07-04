@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+ 
 
 export interface XlsxFindMatch {
     row: number;
@@ -29,7 +29,7 @@ export class XlsxFindManager {
 
     open() {
         this.ensureOverlay();
-        if (!this.overlayEl || !this.inputEl) return;
+        if (!this.overlayEl || !this.inputEl) {return;}
 
         const toolbarEl = document.getElementById('toolbar');
         if (toolbarEl) {
@@ -51,7 +51,7 @@ export class XlsxFindManager {
     }
 
     close() {
-        if (!this.overlayEl || !this.inputEl) return;
+        if (!this.overlayEl || !this.inputEl) {return;}
         this.overlayEl.classList.add('hidden');
         this.inputEl.blur();
     }
@@ -73,11 +73,11 @@ export class XlsxFindManager {
 
         for (let r = 0; r < sourceRows.length; r++) {
             const rowData = sourceRows[r];
-            if (!rowData || !Array.isArray(rowData.cells)) continue;
+            if (!rowData || !Array.isArray(rowData.cells)) {continue;}
 
             rowData.cells.forEach((cellData: any) => {
                 const text = this.options.normalizeCellText(cellData.value || '').toLowerCase();
-                if (!text.includes(normalized)) return;
+                if (!text.includes(normalized)) {return;}
                 const col = Math.max(0, (cellData.colNumber || 1) - 1);
                 this.matches.push({ row: r, col });
             });
@@ -120,7 +120,7 @@ export class XlsxFindManager {
         const cells = document.querySelectorAll(`${this.tableSelector} td[data-row][data-col]`) as NodeListOf<HTMLElement>;
         cells.forEach((cell) => {
             const value = this.options.normalizeCellText(cell.textContent || '').toLowerCase();
-            if (!value || !value.includes(this.queryNormalized)) return;
+            if (!value || !value.includes(this.queryNormalized)) {return;}
             if (this.highlightFirstTextMatch(cell, this.queryNormalized)) {
                 cell.classList.add('find-hit-cell');
             }
@@ -204,7 +204,7 @@ export class XlsxFindManager {
     }
 
     private updateCount() {
-        if (!this.countEl) return;
+        if (!this.countEl) {return;}
         if (this.matches.length === 0 || this.matchIndex < 0) {
             this.countEl.textContent = '0 / 0';
             return;
@@ -220,7 +220,7 @@ export class XlsxFindManager {
         document.querySelectorAll(`${this.tableSelector} td span.find-text-highlight, ${this.tableSelector} td span.find-text-highlight-active`).forEach((node) => {
             const el = node as HTMLElement;
             const parent = el.parentNode;
-            if (!parent) return;
+            if (!parent) {return;}
             while (el.firstChild) {
                 parent.insertBefore(el.firstChild, el);
             }
@@ -230,7 +230,7 @@ export class XlsxFindManager {
     }
 
     private highlightFirstTextMatchInCell(cell: HTMLElement, queryLower: string) {
-        if (!queryLower) return false;
+        if (!queryLower) {return false;}
 
         const walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT);
         let current = walker.nextNode();

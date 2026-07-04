@@ -33,6 +33,3 @@ General utilities.
 
 ### `icons.ts`
 Contains SVG icon strings used in the toolbar.
-
-### `infoTooltip.ts`
-Injects an informational tooltip into the toolbar, typically used to explain how to switch views.

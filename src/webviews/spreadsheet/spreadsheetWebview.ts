@@ -1,5 +1,5 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-/* eslint-disable @typescript-eslint/no-non-null-assertion */
+ 
+ 
 
 import { ThemeManager } from '../shared/themeManager';
 import { SettingsManager } from '../shared/settingsManager';
@@ -9,7 +9,6 @@ import { Utils } from '../shared/utils';
 import { Icons } from '../shared/icons';
 import { vscode, VirtualScrollConfig, debounce } from '../shared/common';
 import { VirtualLoader } from '../shared/virtualLoader';
-import { InfoTooltip } from '../shared/infoTooltip';
 import { createXlsxRowHtml, getExcelColumnLabel, renderDropdownCellContent } from './components/spreadsheetRenderComponent';
 import { XlsxSelectionManager } from './components/spreadsheetSelectionComponent';
 import { createXlsxToolbarButtons } from './components/spreadsheetToolbarComponent';
@@ -253,8 +252,8 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
     function setButtonsEnabled(enabled: boolean) {
         const saveBtn = document.getElementById('saveTableEditsButton') as HTMLButtonElement;
         const cancelBtn = document.getElementById('cancelTableEditsButton') as HTMLButtonElement;
-        if (saveBtn) saveBtn.disabled = !enabled;
-        if (cancelBtn) cancelBtn.disabled = !enabled;
+        if (saveBtn) {saveBtn.disabled = !enabled;}
+        if (cancelBtn) {cancelBtn.disabled = !enabled;}
     }
 
     function updateColorPreview(target: 'text' | 'background' | 'border', color: string) {
@@ -265,12 +264,12 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
                 : ['stripBorderColorButton'];
         ids.forEach(id => {
             const btn = document.getElementById(id);
-            if (btn) btn.style.setProperty('--format-color-preview', color);
+            if (btn) {btn.style.setProperty('--format-color-preview', color);}
         });
     }
 
     function buildBorderCss(enabled: boolean, style?: BorderLineStyle, color?: string) {
-        if (!enabled) return '';
+        if (!enabled) {return '';}
         const nextStyle = style || selectedBorderLineStyle;
         const nextColor = color || selectedBorderColor;
         return buildBorderCssValue(true, nextStyle, nextColor);
@@ -291,27 +290,27 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
     }
 
     function updateBorderPopupActiveButtons(border?: BorderStyleEdit) {
-        if (!borderPopupEl) return;
+        if (!borderPopupEl) {return;}
         const activeModes = getActiveBorderModes(border);
         borderPopupEl.querySelectorAll('.border-mode-btn').forEach((btn) => {
             const mode = (btn as HTMLElement).getAttribute('data-mode') as BorderMode | null;
-            if (!mode) return;
+            if (!mode) {return;}
             btn.classList.toggle('active', activeModes.has(mode));
         });
     }
 
     function syncBorderControlsToUi() {
         const thicknessEl = document.getElementById('editBorderThickness') as HTMLSelectElement | null;
-        if (thicknessEl) thicknessEl.value = selectedBorderThickness;
+        if (thicknessEl) {thicknessEl.value = selectedBorderThickness;}
 
         const patternEl = document.getElementById('editBorderPattern') as HTMLSelectElement | null;
-        if (patternEl) patternEl.value = selectedBorderPattern;
+        if (patternEl) {patternEl.value = selectedBorderPattern;}
 
         updateColorPreview('border', selectedBorderColor);
     }
 
     function syncBorderSelectionFromCell(cell: HTMLElement | null) {
-        if (!cell) return;
+        if (!cell) {return;}
 
         const rowNum = parseInt(cell.getAttribute('data-rownum') || '0', 10);
         const colNum = parseInt(cell.getAttribute('data-colnum') || '0', 10);
@@ -320,7 +319,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
 
         const copied = copyFormattingFromCell(cell);
         const border = (pending?.border || copied.border) as BorderStyleEdit | undefined;
-        if (!border) return;
+        if (!border) {return;}
 
         selectedBorderMode = inferBorderModeFromStyle(border, selectedBorderMode);
         if (border.style) {
@@ -366,7 +365,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
         popup.querySelectorAll('.border-mode-btn').forEach((btn) => {
             btn.addEventListener('click', () => {
                 const mode = (btn as HTMLElement).getAttribute('data-mode') as BorderMode | null;
-                if (!mode) return;
+                if (!mode) {return;}
                 selectedBorderMode = mode;
                 applyBorderPreset(mode);
                 if (activeCell) {
@@ -413,7 +412,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
                 event.stopPropagation();
                 const btn = item as HTMLButtonElement;
                 const type = (btn.getAttribute('data-control-type') || '') as InsertControlType;
-                if (!type) return;
+                if (!type) {return;}
                 await insertControlIntoSelection(type);
             });
         });
@@ -424,7 +423,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
     }
 
     function hideInsertControlPopup() {
-        if (!insertControlPopupEl) return;
+        if (!insertControlPopupEl) {return;}
         insertControlPopupEl.classList.add('hidden');
     }
 
@@ -454,7 +453,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
     }
 
     function hideDropdownOptionsPopup(options: string[] | null = null) {
-        if (!dropdownOptionsPopupEl) return;
+        if (!dropdownOptionsPopupEl) {return;}
         dropdownOptionsPopupEl.classList.add('hidden');
 
         const resolver = dropdownOptionsResolver;
@@ -830,7 +829,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
         for (let r = bounds.minRow; r <= bounds.maxRow; r++) {
             for (let c = bounds.minCol; c <= bounds.maxCol; c++) {
                 const domCell = document.querySelector(`td[data-row="${r}"][data-col="${c}"]`) as HTMLElement | null;
-                if (!domCell) continue;
+                if (!domCell) {continue;}
                 applyInsertedControlToDomCell(domCell, controlType, defaultValue, dropdownOptions);
             }
         }
@@ -847,7 +846,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
         try {
             const raw = window.localStorage.getItem(MERGE_WARNING_SUPPRESS_UNTIL_KEY);
             const until = raw ? parseInt(raw, 10) : 0;
-            if (!until || Number.isNaN(until)) return false;
+            if (!until || Number.isNaN(until)) {return false;}
             return Date.now() < until;
         } catch {
             return false;
@@ -864,7 +863,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
     }
 
     function hideMergeWarningPopup(confirmed: boolean) {
-        if (!mergeWarningPopupEl || !mergeWarningResolver) return;
+        if (!mergeWarningPopupEl || !mergeWarningResolver) {return;}
 
         const skip = mergeWarningPopupEl.querySelector('#mergeWarningSkipDay') as HTMLInputElement | null;
         if (confirmed && skip?.checked) {
@@ -878,7 +877,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
     }
 
     function ensureMergeWarningPopup() {
-        if (mergeWarningPopupEl) return mergeWarningPopupEl;
+        if (mergeWarningPopupEl) {return mergeWarningPopupEl;}
 
         const popup = document.createElement('div');
         popup.id = 'xlsxMergeWarningPopup';
@@ -916,12 +915,12 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
     }
 
     async function confirmMergePreserveTopLeftContent() {
-        if (!currentSettings.mergeWarningEnabled) return true;
-        if (isMergeWarningSuppressedForToday()) return true;
+        if (!currentSettings.mergeWarningEnabled) {return true;}
+        if (isMergeWarningSuppressedForToday()) {return true;}
 
         const popup = ensureMergeWarningPopup();
         const skip = popup.querySelector('#mergeWarningSkipDay') as HTMLInputElement | null;
-        if (skip) skip.checked = false;
+        if (skip) {skip.checked = false;}
         popup.classList.remove('hidden');
 
         return await new Promise<boolean>((resolve) => {
@@ -930,7 +929,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
     }
 
     function hideStyleModeNoticePopup() {
-        if (!styleModeNoticePopupEl) return;
+        if (!styleModeNoticePopupEl) {return;}
         styleModeNoticePopupEl.classList.add('hidden');
     }
 
@@ -943,7 +942,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
     }
 
     function ensureStyleModeNoticePopup() {
-        if (styleModeNoticePopupEl) return styleModeNoticePopupEl;
+        if (styleModeNoticePopupEl) {return styleModeNoticePopupEl;}
 
         const popup = document.createElement('div');
         popup.id = 'xlsxStyleModeNoticePopup';
@@ -1055,10 +1054,10 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
         if (container) {
             const rect = cell.getBoundingClientRect();
             const containerRect = container.getBoundingClientRect();
-            if (rect.bottom > containerRect.bottom) container.scrollTop += rect.bottom - containerRect.bottom + 16;
-            if (rect.top < containerRect.top) container.scrollTop -= containerRect.top - rect.top + 16;
-            if (rect.right > containerRect.right) container.scrollLeft += rect.right - containerRect.right + 16;
-            if (rect.left < containerRect.left) container.scrollLeft -= containerRect.left - rect.left + 16;
+            if (rect.bottom > containerRect.bottom) {container.scrollTop += rect.bottom - containerRect.bottom + 16;}
+            if (rect.top < containerRect.top) {container.scrollTop -= containerRect.top - rect.top + 16;}
+            if (rect.right > containerRect.right) {container.scrollLeft += rect.right - containerRect.right + 16;}
+            if (rect.left < containerRect.left) {container.scrollLeft -= containerRect.left - rect.left + 16;}
         }
     }
 
@@ -1083,7 +1082,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
     }
 
     async function ensureAllRowsLoadedForStructureEdits(withOverlay = true) {
-        if (rowCache.size >= totalRows && totalRows > 0) return true;
+        if (rowCache.size >= totalRows && totalRows > 0) {return true;}
 
         if (withOverlay) {
             setLoadingText('Preparing full sheet for structure changes...');
@@ -1167,14 +1166,14 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
     }
 
     function getRowTopOffset(rowIndex: number): number {
-        if (totalRows <= 0) return 0;
+        if (totalRows <= 0) {return 0;}
         ensureRowOffsetPrefix();
         const clamped = Math.max(0, Math.min(rowIndex, totalRows));
         return rowOffsetPrefix[clamped] || 0;
     }
 
     function getRowHeightRange(startIndex: number, endIndex: number): number {
-        if (totalRows <= 0) return 0;
+        if (totalRows <= 0) {return 0;}
         ensureRowOffsetPrefix();
         const safeStart = Math.max(0, Math.min(startIndex, totalRows));
         const safeEnd = Math.max(safeStart, Math.min(endIndex, totalRows));
@@ -1182,7 +1181,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
     }
 
     function findRowIndexByOffset(offset: number): number {
-        if (totalRows <= 0) return 0;
+        if (totalRows <= 0) {return 0;}
         ensureRowOffsetPrefix();
 
         const target = Math.max(0, Math.min(offset, totalContentHeight));
@@ -1203,7 +1202,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
 
     function rerenderCurrentSheetFromLocalState() {
         const container = document.getElementById('tableContainer');
-        if (!container) return;
+        if (!container) {return;}
 
         currentVisibleStart = 0;
         currentVisibleEnd = 0;
@@ -1247,10 +1246,10 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
     }
 
     async function applyStructureOperation(op: StructuralOp) {
-        if (!canApplyStructureEdits()) return;
+        if (!canApplyStructureEdits()) {return;}
 
         const loaded = await ensureAllRowsLoadedForStructureEdits();
-        if (!loaded) return;
+        if (!loaded) {return;}
 
         const beforeSnapshot = captureWorksheetStateSnapshot();
         const rows = getMutableRowsSnapshot();
@@ -1285,18 +1284,18 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
             const atCol = op.type === 'insertColumnLeft' ? target : (op.type === 'insertColumnRight' ? target + 1 : target);
 
             rows.forEach((row: any) => {
-                if (!Array.isArray(row.cells)) row.cells = [];
+                if (!Array.isArray(row.cells)) {row.cells = [];}
 
                 if (op.type === 'deleteColumn') {
                     row.cells = row.cells
                         .filter((cell: any) => cell.colNumber !== atCol)
                         .map((cell: any) => {
-                            if (cell.colNumber > atCol) cell.colNumber -= 1;
+                            if (cell.colNumber > atCol) {cell.colNumber -= 1;}
                             return cell;
                         });
                 } else {
                     row.cells = row.cells.map((cell: any) => {
-                        if (cell.colNumber >= atCol) cell.colNumber += 1;
+                        if (cell.colNumber >= atCol) {cell.colNumber += 1;}
                         return cell;
                     });
                 }
@@ -1323,8 +1322,8 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
             const pivot = op.type === 'insertRowAbove' ? target - 1 : (op.type === 'insertRowBelow' ? target : target - 1);
             prevSelectedRows.forEach(r => {
                 let next = r;
-                if (op.type === 'insertRowAbove' && r >= pivot) next = r + 1;
-                if (op.type === 'insertRowBelow' && r > pivot) next = r + 1;
+                if (op.type === 'insertRowAbove' && r >= pivot) {next = r + 1;}
+                if (op.type === 'insertRowBelow' && r > pivot) {next = r + 1;}
                 if (op.type === 'deleteRow') {
                     if (r === pivot) {
                         next = Math.min(pivot, totalRows - 1);
@@ -1342,8 +1341,8 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
             const pivot = op.type === 'insertColumnLeft' ? target - 1 : (op.type === 'insertColumnRight' ? target : target - 1);
             prevSelectedCols.forEach(c => {
                 let next = c;
-                if (op.type === 'insertColumnLeft' && c >= pivot) next = c + 1;
-                if (op.type === 'insertColumnRight' && c > pivot) next = c + 1;
+                if (op.type === 'insertColumnLeft' && c >= pivot) {next = c + 1;}
+                if (op.type === 'insertColumnRight' && c > pivot) {next = c + 1;}
                 if (op.type === 'deleteColumn') {
                     if (c === pivot) {
                         next = Math.min(pivot, columnCount - 1);
@@ -1366,11 +1365,11 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
     }
 
     async function applyCellInsertOperation(type: 'insertCellShiftRight' | 'insertCellShiftDown', rowNumber: number, colNumber: number) {
-        if (!canApplyStructureEdits()) return;
-        if (rowNumber <= 0 || colNumber <= 0) return;
+        if (!canApplyStructureEdits()) {return;}
+        if (rowNumber <= 0 || colNumber <= 0) {return;}
 
         const loaded = await ensureAllRowsLoadedForStructureEdits();
-        if (!loaded) return;
+        if (!loaded) {return;}
 
         const beforeSnapshot = captureWorksheetStateSnapshot();
         const rows = getMutableRowsSnapshot();
@@ -1378,7 +1377,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
         if (type === 'insertCellShiftRight') {
             const rowIndex = rowNumber - 1;
             const row = rows[rowIndex];
-            if (!row) return;
+            if (!row) {return;}
 
             const previousColumnCount = columnCount;
             columnCount += 1;
@@ -1427,11 +1426,11 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
     }
 
     async function applyCellDeleteOperation(type: 'deleteCellShiftLeft' | 'deleteCellShiftUp', rowNumber: number, colNumber: number) {
-        if (!canApplyStructureEdits()) return;
-        if (rowNumber <= 0 || colNumber <= 0) return;
+        if (!canApplyStructureEdits()) {return;}
+        if (rowNumber <= 0 || colNumber <= 0) {return;}
 
         const loaded = await ensureAllRowsLoadedForStructureEdits();
-        if (!loaded) return;
+        if (!loaded) {return;}
 
         const beforeSnapshot = captureWorksheetStateSnapshot();
         const rows = getMutableRowsSnapshot();
@@ -1439,7 +1438,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
         if (type === 'deleteCellShiftLeft') {
             const rowIndex = rowNumber - 1;
             const row = rows[rowIndex];
-            if (!row) return;
+            if (!row) {return;}
 
             for (let col = colNumber; col < columnCount; col++) {
                 const nextCell = getCellFromRow(row, col + 1);
@@ -1476,7 +1475,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
     }
 
     function ensureHeaderContextMenu() {
-        if (headerContextMenuEl) return headerContextMenuEl;
+        if (headerContextMenuEl) {return headerContextMenuEl;}
 
         const menu = document.createElement('div');
         menu.id = 'headerContextMenu';
@@ -1487,7 +1486,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
     }
 
     function hideHeaderContextMenu() {
-        if (!headerContextMenuEl) return;
+        if (!headerContextMenuEl) {return;}
         headerContextMenuEl.classList.add('hidden');
         headerContextMenuEl.innerHTML = '';
     }
@@ -1577,7 +1576,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
 
             const applyColumnFilter = async (mode: FilterMode, query: string, caseSensitive: boolean) => {
                 const ready = await ensureSourceRowsSnapshot();
-                if (!ready) return;
+                if (!ready) {return;}
 
                 const trimmedQuery = query.trim();
                 if (mode === 'nonEmpty') {
@@ -1767,7 +1766,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
 
             appendAction('Sort A to Z' + (isAscSorted ? ' ✓' : ''), async () => {
                 const ready = await ensureSourceRowsSnapshot();
-                if (!ready) return;
+                if (!ready) {return;}
 
                 if (isAscSorted) {
                     // Already sorted A-Z, toggle off
@@ -1782,7 +1781,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
 
             appendAction('Sort Z to A' + (isDescSorted ? ' ✓' : ''), async () => {
                 const ready = await ensureSourceRowsSnapshot();
-                if (!ready) return;
+                if (!ready) {return;}
 
                 if (isDescSorted) {
                     // Already sorted Z-A, toggle off
@@ -1833,7 +1832,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
 
         const rowNumber = parseInt(cell.getAttribute('data-rownum') || '0', 10);
         const colNumber = parseInt(cell.getAttribute('data-colnum') || '0', 10);
-        if (!rowNumber || !colNumber) return;
+        if (!rowNumber || !colNumber) {return;}
         const appendAction = (label: string, onClick: () => void, cls = 'header-context-item') => {
             const btn = document.createElement('button');
             btn.type = 'button';
@@ -1915,34 +1914,34 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
     }
 
     function captureEditSelectionRange() {
-        if (!isEditMode) return;
+        if (!isEditMode) {return;}
         const selection = window.getSelection();
-        if (!selection || selection.rangeCount === 0) return;
+        if (!selection || selection.rangeCount === 0) {return;}
 
         const range = selection.getRangeAt(0);
         const node = range.commonAncestorContainer;
         const element = (node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement) as HTMLElement | null;
-        if (!element) return;
+        if (!element) {return;}
 
         const editableCell = element.closest('td[contenteditable="true"]');
-        if (!editableCell) return;
+        if (!editableCell) {return;}
 
         lastEditRange = range.cloneRange();
     }
 
     function restoreEditSelectionRange() {
-        if (!lastEditRange) return false;
+        if (!lastEditRange) {return false;}
 
         const node = lastEditRange.commonAncestorContainer;
         const element = (node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement) as HTMLElement | null;
-        if (!element) return false;
+        if (!element) {return false;}
 
         const editableCell = element.closest('td[contenteditable="true"]') as HTMLElement | null;
-        if (!editableCell || !document.contains(editableCell)) return false;
+        if (!editableCell || !document.contains(editableCell)) {return false;}
 
         editableCell.focus();
         const selection = window.getSelection();
-        if (!selection) return false;
+        if (!selection) {return false;}
         selection.removeAllRanges();
         selection.addRange(lastEditRange);
         return true;
@@ -1950,9 +1949,9 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
 
     function applyInlineStyleToSelection(styleName: 'color' | 'backgroundColor', value: string) {
         const selection = window.getSelection();
-        if (!selection || selection.rangeCount === 0) return;
+        if (!selection || selection.rangeCount === 0) {return;}
         const range = selection.getRangeAt(0);
-        if (range.collapsed) return;
+        if (range.collapsed) {return;}
 
         const wrapper = document.createElement('span');
         wrapper.style[styleName] = value;
@@ -1974,7 +1973,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
 
     function updatePlainViewButtonLabel() {
         const btn = document.getElementById('togglePlainViewButton');
-        if (!btn) return;
+        if (!btn) {return;}
 
         const labelSpan = btn.querySelector('.btn-label');
         if (labelSpan) {
@@ -1998,26 +1997,21 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
 
     function syncSheetSelectorVisibility() {
         const selector = document.getElementById('sheetSelector');
-        if (!selector) return;
+        if (!selector) {return;}
         selector.classList.toggle('hidden', isEditMode || !shouldShowSheetSelector());
     }
 
     function syncTemporaryFileToolbarActions() {
-        const editFileButton = document.getElementById('editFileButton');
         const togglePlainViewButton = document.getElementById('togglePlainViewButton');
         const toggleTableEditButton = document.getElementById('toggleTableEditButton');
         const hideEditTableButton = isPlainDirectEditMode();
 
         if (toolbarManager) {
-            toolbarManager.setButtonVisibility('editFileButton', !!isTemporaryStyleFile && !isEditMode);
             toolbarManager.setButtonVisibility('togglePlainViewButton', !isEditMode || isPlainView);
             toolbarManager.setButtonVisibility('toggleTableEditButton', !isEditMode && !hideEditTableButton);
             return;
         }
 
-        if (editFileButton) {
-            editFileButton.classList.toggle('hidden', !isTemporaryStyleFile || isEditMode);
-        }
         if (togglePlainViewButton) {
             togglePlainViewButton.classList.toggle('hidden', isEditMode && !isPlainView);
         }
@@ -2149,7 +2143,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
             return;
         }
 
-        if (!isEditMode) return;
+        if (!isEditMode) {return;}
 
         const selection = window.getSelection();
         const hasLiveSelection = !!selection && selection.rangeCount > 0 && !selection.isCollapsed;
@@ -2172,11 +2166,11 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
         if (!ok && value !== undefined) {
             if (command === 'hiliteColor') {
                 const fallbackOk = document.execCommand('backColor', false, value);
-                if (!fallbackOk) applyInlineStyleToSelection('backgroundColor', value);
+                if (!fallbackOk) {applyInlineStyleToSelection('backgroundColor', value);}
             } else if (command === 'foreColor') {
                 // Fallback for engines that only support lower-case command alias.
                 const fallbackOk = document.execCommand('forecolor', false, value);
-                if (!fallbackOk) applyInlineStyleToSelection('color', value);
+                if (!fallbackOk) {applyInlineStyleToSelection('color', value);}
             }
         }
 
@@ -2193,7 +2187,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
             })
             .filter(Boolean) as HTMLElement[];
 
-        if (targets.length > 0) return targets;
+        if (targets.length > 0) {return targets;}
 
         if (activeCell && document.contains(activeCell) && activeCell.tagName === 'TD') {
             return [activeCell];
@@ -2256,9 +2250,9 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
                         }
                     } else if (domCell) {
                         // Extract from DOM
-                        if (toggleKey === 'bold') currentlyEnabled = domCell.style.fontWeight === 'bold';
-                        else if (toggleKey === 'italic') currentlyEnabled = domCell.style.fontStyle === 'italic';
-                        else if (toggleKey === 'strike') currentlyEnabled = domCell.style.textDecorationLine === 'line-through';
+                        if (toggleKey === 'bold') {currentlyEnabled = domCell.style.fontWeight === 'bold';}
+                        else if (toggleKey === 'italic') {currentlyEnabled = domCell.style.fontStyle === 'italic';}
+                        else if (toggleKey === 'strike') {currentlyEnabled = domCell.style.textDecorationLine === 'line-through';}
                     } else {
                         // Unmounted cell fallback
                         // We would ideally look up from rowCache, but for toggle we assume false if unknown unmounted
@@ -2514,7 +2508,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
     function recordCellStyleEdit(cell: HTMLElement, style: Partial<CellStyleEdit>) {
         const rowNum = parseInt(cell.getAttribute('data-rownum') || '0', 10);
         const colNum = parseInt(cell.getAttribute('data-colnum') || '0', 10);
-        if (!rowNum || !colNum) return;
+        if (!rowNum || !colNum) {return;}
 
         const key = rowNum + ':' + colNum;
         const existing = pendingCellStyleEdits.get(key) || { row: rowNum, col: colNum };
@@ -2533,7 +2527,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
         const col = parseInt(cell.getAttribute('data-col') || '-1', 10);
         const rowNum = parseInt(cell.getAttribute('data-rownum') || '0', 10);
         const colNum = parseInt(cell.getAttribute('data-colnum') || '0', 10);
-        if (row < 0 || col < 0 || !rowNum || !colNum) return null;
+        if (row < 0 || col < 0 || !rowNum || !colNum) {return null;}
 
         const key = `${rowNum}:${colNum}`;
         const pendingStyle = pendingCellStyleEdits.has(key)
@@ -2634,7 +2628,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
     }
 
     function pushEditUndoEntry(entry: { before: CellUndoState[]; after: CellUndoState[] }) {
-        if (!entry.before.length || !entry.after.length) return;
+        if (!entry.before.length || !entry.after.length) {return;}
         editUndoStack.push({ kind: 'style', before: entry.before, after: entry.after });
         if (editUndoStack.length > 100) {
             editUndoStack.shift();
@@ -2652,7 +2646,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
 
     function undoEditAction() {
         const entry = editUndoStack.pop();
-        if (!entry) return false;
+        if (!entry) {return false;}
 
         if (entry.kind === 'style') {
             entry.before.forEach((state: CellUndoState) => applyCellUndoState(state));
@@ -2672,7 +2666,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
 
     function redoEditAction() {
         const entry = editRedoStack.pop();
-        if (!entry) return false;
+        if (!entry) {return false;}
 
         if (entry.kind === 'style') {
             entry.after.forEach((state: CellUndoState) => applyCellUndoState(state));
@@ -2723,7 +2717,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
         }
 
         const cells = getEditableCellsOrToast('Select cells to align');
-        if (!cells.length) return;
+        if (!cells.length) {return;}
 
         cells.forEach(cell => {
             cell.style.textAlign = value;
@@ -2737,7 +2731,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
         }
 
         const cells = getEditableCellsOrToast('Select cells to align');
-        if (!cells.length) return;
+        if (!cells.length) {return;}
 
         cells.forEach(cell => {
             cell.style.verticalAlign = value;
@@ -2751,7 +2745,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
         }
 
         const cells = getEditableCellsOrToast('Select cells to set font size');
-        if (!cells.length) return;
+        if (!cells.length) {return;}
 
         const next = Math.max(6, Math.min(72, value));
         cells.forEach(cell => {
@@ -2779,7 +2773,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
         }
 
         const cells = getEditableCellsOrToast('Select cells to set font family');
-        if (!cells.length) return;
+        if (!cells.length) {return;}
 
         cells.forEach(cell => {
             cell.style.fontFamily = value;
@@ -2793,7 +2787,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
         }
 
         const cells = getEditableCellsOrToast('Select cells to set wrapping');
-        if (!cells.length) return;
+        if (!cells.length) {return;}
 
         cells.forEach(cell => {
             const content = cell.querySelector('.cell-content') as HTMLElement | null;
@@ -2891,7 +2885,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
         }
 
         const cells = getEditableCellsOrToast('Select cells to indent');
-        if (!cells.length) return;
+        if (!cells.length) {return;}
 
         cells.forEach(cell => {
             const current = parseInt(cell.style.paddingLeft || '0', 10) || 0;
@@ -2918,7 +2912,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
         }
 
         const cells = getEditableCellsOrToast('Select cells to strike through');
-        if (!cells.length) return;
+        if (!cells.length) {return;}
 
         cells.forEach(cell => {
             const hasStrike = (cell.style.textDecoration || '').includes('line-through');
@@ -2998,20 +2992,20 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
                     border.bottom = true;
                     border.left = true;
                 } else if (mode === 'inner') {
-                    if (r > bounds.minRow) border.top = true;
-                    if (r < bounds.maxRow) border.bottom = true;
-                    if (c > bounds.minCol) border.left = true;
-                    if (c < bounds.maxCol) border.right = true;
+                    if (r > bounds.minRow) {border.top = true;}
+                    if (r < bounds.maxRow) {border.bottom = true;}
+                    if (c > bounds.minCol) {border.left = true;}
+                    if (c < bounds.maxCol) {border.right = true;}
                 } else if (mode === 'outside') {
-                    if (r === bounds.minRow) border.top = true;
-                    if (r === bounds.maxRow) border.bottom = true;
-                    if (c === bounds.minCol) border.left = true;
-                    if (c === bounds.maxCol) border.right = true;
+                    if (r === bounds.minRow) {border.top = true;}
+                    if (r === bounds.maxRow) {border.bottom = true;}
+                    if (c === bounds.minCol) {border.left = true;}
+                    if (c === bounds.maxCol) {border.right = true;}
                 } else {
-                    if (mode === 'top') border.top = true;
-                    if (mode === 'bottom') border.bottom = true;
-                    if (mode === 'left') border.left = true;
-                    if (mode === 'right') border.right = true;
+                    if (mode === 'top') {border.top = true;}
+                    if (mode === 'bottom') {border.bottom = true;}
+                    if (mode === 'left') {border.left = true;}
+                    if (mode === 'right') {border.right = true;}
                 }
 
                 recordLogicalStyleEdit(r, c, { border });
@@ -3150,12 +3144,12 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
         }, 'set');
 
         const bounds = getLogicalSelectionBounds();
-        if (!bounds) return;
+        if (!bounds) {return;}
 
         for (let r = bounds.minRow; r <= bounds.maxRow; r++) {
             for (let c = bounds.minCol; c <= bounds.maxCol; c++) {
                 const cell = document.querySelector(`td[data-row="${r}"][data-col="${c}"]`) as HTMLElement | null;
-                if (!cell) continue;
+                if (!cell) {continue;}
 
                 cell.style.backgroundColor = '';
                 cell.style.color = '';
@@ -3195,10 +3189,10 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
     }
 
     function resolveCellTypeForClear(cell: HTMLElement | null, rowIndex: number, colIndex: number): string {
-        if (cell) return getCellType(cell);
+        if (cell) {return getCellType(cell);}
 
         const rowData = rowCache.get(rowIndex);
-        if (!rowData) return 'text';
+        if (!rowData) {return 'text';}
 
         const cellData = getCellFromRow(rowData, colIndex + 1);
         const rawType = typeof cellData?.cellType === 'string' ? cellData.cellType.trim().toLowerCase() : '';
@@ -3209,8 +3203,8 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
     }
 
     function getClearedValueForCellType(cellType: string): string {
-        if (cellType === 'checkbox') return 'FALSE';
-        if (cellType === 'rating') return '0';
+        if (cellType === 'checkbox') {return 'FALSE';}
+        if (cellType === 'rating') {return '0';}
         return '';
     }
 
@@ -3294,7 +3288,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
 
                 if (domCell) {
                     const before = captureCellUndoState(domCell);
-                    if (before) beforeStates.push(before);
+                    if (before) {beforeStates.push(before);}
                 }
 
                 const rowData = rowCache.get(r);
@@ -3313,7 +3307,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
                 if (domCell) {
                     applyClearedValueToDomCell(domCell, cellType, clearedValue);
                     const after = captureCellUndoState(domCell);
-                    if (after) afterStates.push(after);
+                    if (after) {afterStates.push(after);}
                 }
             }
         }
@@ -3322,7 +3316,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
             pushEditUndoEntry({ before: beforeStates, after: afterStates });
         }
 
-        if (!hasChanges) return;
+        if (!hasChanges) {return;}
 
         if (isEditMode) {
             scheduleAutoSave('text');
@@ -3351,11 +3345,11 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
 
         if (type === 'mergeRange') {
             const confirmed = await confirmMergePreserveTopLeftContent();
-            if (!confirmed) return;
+            if (!confirmed) {return;}
         }
 
         const loaded = await ensureAllRowsLoadedForStructureEdits();
-        if (!loaded) return;
+        if (!loaded) {return;}
 
         const scrollContainer = getTableContainer();
         const preservedScrollTop = scrollContainer ? scrollContainer.scrollTop : 0;
@@ -3370,7 +3364,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
 
         if (type === 'mergeRange') {
             const anchorRow = rows[startRow - 1];
-            if (!anchorRow) return;
+            if (!anchorRow) {return;}
 
             const anchorSource = getCellFromRow(anchorRow, startCol) || {
                 rowNumber: startRow,
@@ -3392,9 +3386,9 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
 
             for (let r = startRow; r <= endRow; r++) {
                 const rowData = rows[r - 1];
-                if (!rowData) continue;
+                if (!rowData) {continue;}
                 for (let c = startCol; c <= endCol; c++) {
-                    if (r === startRow && c === startCol) continue;
+                    if (r === startRow && c === startCol) {continue;}
 
                     const coveredExisting = getCellFromRow(rowData, c);
                     const covered = cloneCellData(coveredExisting || {
@@ -3425,7 +3419,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
 
             for (let r = startRow; r <= endRow; r++) {
                 const rowData = rows[r - 1];
-                if (!rowData) continue;
+                if (!rowData) {continue;}
                 for (let c = startCol; c <= endCol; c++) {
                     const existing = getCellFromRow(rowData, c);
                     const next = cloneCellData(existing || {
@@ -3456,7 +3450,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
         rerenderCurrentSheetFromLocalState();
         requestAnimationFrame(() => {
             const containerAfter = getTableContainer();
-            if (!containerAfter) return;
+            if (!containerAfter) {return;}
             containerAfter.scrollTop = preservedScrollTop;
             containerAfter.scrollLeft = preservedScrollLeft;
             void updateVisibleRows();
@@ -3482,8 +3476,8 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
 
         const isExplicitBorderValue = (value?: string) => {
             const s = (value || '').trim().toLowerCase();
-            if (!s || s === 'none') return false;
-            if (s === '0' || s === '0px' || s.startsWith('0px ')) return false;
+            if (!s || s === 'none') {return false;}
+            if (s === '0' || s === '0px' || s.startsWith('0px ')) {return false;}
             return true;
         };
 
@@ -3495,10 +3489,10 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
 
         const parseInlineBorder = (value?: string): { width: string; style: string; color: string } | null => {
             const raw = (value || '').trim();
-            if (!isExplicitBorderValue(raw)) return null;
+            if (!isExplicitBorderValue(raw)) {return null;}
 
             const match = raw.match(/^([\d.]+px)\s+([a-zA-Z]+)\s+(.+)$/);
-            if (!match) return null;
+            if (!match) {return null;}
 
             return {
                 width: match[1],
@@ -3524,7 +3518,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
         const activeBorderLine = topBorderLine || rightBorderLine || bottomBorderLine || leftBorderLine;
 
         const pickBorderStyle = () => {
-            if (!hasInlineBorders) return 'thin';
+            if (!hasInlineBorders) {return 'thin';}
             if (activeBorderLine) {
                 return inferBorderLineStyleFromCss(activeBorderLine.style, activeBorderLine.width);
             }
@@ -3548,15 +3542,15 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
         };
 
         const pickBorderColor = () => {
-            if (!hasInlineBorders) return selectedBorderColor;
-            if (topBorderLine?.color) return topBorderLine.color;
-            if (rightBorderLine?.color) return rightBorderLine.color;
-            if (bottomBorderLine?.color) return bottomBorderLine.color;
-            if (leftBorderLine?.color) return leftBorderLine.color;
-            if (topEnabled) return normalizeColorToHex(computed.borderTopColor);
-            if (rightEnabled) return normalizeColorToHex(computed.borderRightColor);
-            if (bottomEnabled) return normalizeColorToHex(computed.borderBottomColor);
-            if (leftEnabled) return normalizeColorToHex(computed.borderLeftColor);
+            if (!hasInlineBorders) {return selectedBorderColor;}
+            if (topBorderLine?.color) {return topBorderLine.color;}
+            if (rightBorderLine?.color) {return rightBorderLine.color;}
+            if (bottomBorderLine?.color) {return bottomBorderLine.color;}
+            if (leftBorderLine?.color) {return leftBorderLine.color;}
+            if (topEnabled) {return normalizeColorToHex(computed.borderTopColor);}
+            if (rightEnabled) {return normalizeColorToHex(computed.borderRightColor);}
+            if (bottomEnabled) {return normalizeColorToHex(computed.borderBottomColor);}
+            if (leftEnabled) {return normalizeColorToHex(computed.borderLeftColor);}
             return normalizeColorToHex(computed.borderColor) || selectedBorderColor;
         };
 
@@ -3780,7 +3774,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
     }
 
     function ensureColorPalette() {
-        if (colorPaletteEl) return colorPaletteEl;
+        if (colorPaletteEl) {return colorPaletteEl;}
 
         const palette = document.createElement('div');
         palette.id = 'sheetsColorPalette';
@@ -3856,7 +3850,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
     }
 
     function hideColorPalette() {
-        if (!colorPaletteEl) return;
+        if (!colorPaletteEl) {return;}
         colorPaletteEl.classList.add('hidden');
         activeColorTarget = null;
     }
@@ -3893,7 +3887,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
 
         buttonIds.forEach(id => {
             const button = document.getElementById(id);
-            if (!button) return;
+            if (!button) {return;}
             button.addEventListener('mousedown', (e) => {
                 // Keep text selection in the editable cell while clicking toolbar controls.
                 e.preventDefault();
@@ -3939,10 +3933,10 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
     }
 
     function ensureEditFormattingStrip() {
-        if (editFormattingStripEl) return;
+        if (editFormattingStripEl) {return;}
 
         const toolbar = document.getElementById('toolbar');
-        if (!toolbar) return;
+        if (!toolbar) {return;}
 
         const strip = document.createElement('div');
         strip.id = 'xlsxEditFormattingStrip';
@@ -4048,7 +4042,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
         });
         byId<HTMLSelectElement>('editFontSize')?.addEventListener('change', (e) => {
             const value = parseInt((e.target as HTMLSelectElement).value, 10);
-            if (!isNaN(value)) applyFontSize(value);
+            if (!isNaN(value)) {applyFontSize(value);}
         });
         byId<HTMLButtonElement>('fontMinusButton')?.addEventListener('click', () => shiftFontSize(-1));
         byId<HTMLButtonElement>('fontPlusButton')?.addEventListener('click', () => shiftFontSize(1));
@@ -4125,7 +4119,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
 
     function reorderToolbarAroundFind(isEditModeEnabled: boolean) {
         const toolbar = document.getElementById('toolbar');
-        if (!toolbar) return;
+        if (!toolbar) {return;}
 
         const findButton = document.getElementById('findButton');
         const settingsButton = document.getElementById('openSettingsButton');
@@ -4170,12 +4164,12 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
     }
 
     function normalizeCellText(text: string | null | undefined): string {
-        if (!text) return '';
+        if (!text) {return '';}
         return String(text).replace(/\u00a0/g, '').replace(/\r?\n/g, ' ').trimEnd();
     }
 
     function getCellType(cell: HTMLElement | null): string {
-        if (!cell) return 'text';
+        if (!cell) {return 'text';}
         const raw = (cell.getAttribute('data-cell-type') || 'text').trim().toLowerCase();
         if (raw === 'checkbox' || raw === 'dropdown' || raw === 'image' || raw === 'rating' || raw === 'date') {
             return raw;
@@ -4185,10 +4179,10 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
 
     function normalizeDateInputValue(value: string | null | undefined): string {
         const raw = (value || '').trim();
-        if (!raw) return '';
+        if (!raw) {return '';}
 
         const isoMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-        if (isoMatch) return raw;
+        if (isoMatch) {return raw;}
 
         const parsed = new Date(raw);
         if (Number.isNaN(parsed.getTime())) {
@@ -4203,7 +4197,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
 
     function normalizeRatingValue(value: string | number | null | undefined): number {
         const parsed = typeof value === 'number' ? value : parseInt(String(value || ''), 10);
-        if (!Number.isFinite(parsed)) return 0;
+        if (!Number.isFinite(parsed)) {return 0;}
         return Math.max(0, Math.min(5, parsed));
     }
 
@@ -4264,7 +4258,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
     }
 
     function pushSingleCellUndo(before: CellUndoState | null, after: CellUndoState | null) {
-        if (!before || !after) return;
+        if (!before || !after) {return;}
         pushEditUndoEntry({ before: [before], after: [after] });
     }
 
@@ -4404,11 +4398,11 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
     }
 
     function persistInteractiveControlEdit(cell: HTMLElement) {
-        if (isVersionPreviewMode || isEditMode) return;
+        if (isVersionPreviewMode || isEditMode) {return;}
 
         const row = parseInt(cell.getAttribute('data-rownum') || '0', 10);
         const col = parseInt(cell.getAttribute('data-colnum') || '0', 10);
-        if (!row || !col) return;
+        if (!row || !col) {return;}
 
         const value = getCellNormalizedValue(cell).replace(/\u00a0/g, '');
         syncLocalSnapshotValue(row, col, value);
@@ -4432,11 +4426,11 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
     }
 
     function persistPlainTextEdit(cell: HTMLElement) {
-        if (isVersionPreviewMode || isEditMode) return;
+        if (isVersionPreviewMode || isEditMode) {return;}
 
         const row = parseInt(cell.getAttribute('data-rownum') || '0', 10);
         const col = parseInt(cell.getAttribute('data-colnum') || '0', 10);
-        if (!row || !col) return;
+        if (!row || !col) {return;}
 
         const value = getCellNormalizedValue(cell).replace(/\u00a0/g, '');
         syncLocalSnapshotValue(row, col, value);
@@ -4463,9 +4457,9 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
 
     function syncLocalSnapshotValue(rowNumber: number, colNumber: number, value: string) {
         const applyValue = (rows: any[] | null) => {
-            if (!rows || rowNumber <= 0 || colNumber <= 0) return;
+            if (!rows || rowNumber <= 0 || colNumber <= 0) {return;}
             const row = rows.find((entry) => Number(entry?.rowNumber) === rowNumber);
-            if (!row) return;
+            if (!row) {return;}
 
             const existing = getCellFromRow(row, colNumber);
             if (existing) {
@@ -4494,7 +4488,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
         }
 
         const table = document.querySelector('#tableContainer table');
-        if (!table) return false;
+        if (!table) {return false;}
 
         const editedCell = Array.from(table.querySelectorAll('td.editable-cell')).find((td) => {
             const htmlTd = td as HTMLElement;
@@ -4568,8 +4562,8 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
     }
 
     function getActiveRowsSnapshot(): any[] | null {
-        if (transformedRowsSnapshot) return transformedRowsSnapshot;
-        if (sourceRowsSnapshot) return sourceRowsSnapshot;
+        if (transformedRowsSnapshot) {return transformedRowsSnapshot;}
+        if (sourceRowsSnapshot) {return sourceRowsSnapshot;}
         return null;
     }
 
@@ -4585,7 +4579,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
 
     function readCellTextForDataOps(rowData: any, colZeroBased: number): string {
         const cell = getCellFromRow(rowData, colZeroBased + 1);
-        if (!cell) return '';
+        if (!cell) {return '';}
 
         const value = cell.value;
         if (value === null || value === undefined) {
@@ -4621,30 +4615,30 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
 
     function parseSortableNumber(value: string): number | null {
         const trimmed = value.trim();
-        if (!trimmed) return null;
+        if (!trimmed) {return null;}
 
         const negativeByParens = /^\(.*\)$/.test(trimmed);
         const normalized = trimmed
             .replace(/^\((.*)\)$/, '$1')
             .replace(/[%,$\s]/g, '')
             .replace(/,/g, '');
-        if (!normalized || normalized === '-' || normalized === '.') return null;
+        if (!normalized || normalized === '-' || normalized === '.') {return null;}
 
         const parsed = Number(normalized);
-        if (!Number.isFinite(parsed)) return null;
+        if (!Number.isFinite(parsed)) {return null;}
         return negativeByParens ? -parsed : parsed;
     }
 
     function parseSortableBoolean(value: string): number | null {
         const normalized = value.trim().toLowerCase();
-        if (normalized === 'true' || normalized === 'yes' || normalized === '1' || normalized === 'y') return 1;
-        if (normalized === 'false' || normalized === 'no' || normalized === '0' || normalized === 'n') return 0;
+        if (normalized === 'true' || normalized === 'yes' || normalized === '1' || normalized === 'y') {return 1;}
+        if (normalized === 'false' || normalized === 'no' || normalized === '0' || normalized === 'n') {return 0;}
         return null;
     }
 
     function parseSortableDate(value: string): number | null {
         const trimmed = value.trim();
-        if (!trimmed) return null;
+        if (!trimmed) {return null;}
         if (!/^\d{4}-\d{1,2}-\d{1,2}/.test(trimmed) && !/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}$/.test(trimmed)) {
             return null;
         }
@@ -4660,9 +4654,9 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
 
         const aEmpty = a === '';
         const bEmpty = b === '';
-        if (aEmpty && !bEmpty) return 1;
-        if (!aEmpty && bEmpty) return -1;
-        if (aEmpty && bEmpty) return 0;
+        if (aEmpty && !bEmpty) {return 1;}
+        if (!aEmpty && bEmpty) {return -1;}
+        if (aEmpty && bEmpty) {return 0;}
 
         const aBool = parseSortableBoolean(a);
         const bBool = parseSortableBoolean(b);
@@ -4822,14 +4816,14 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
     function adjustColumnWidths(mode: 'expand' | 'default') {
         try {
             const table = document.getElementById('xlsxTable') as HTMLTableElement | null;
-            if (!table) return;
+            if (!table) {return;}
 
             const headerCells = table.querySelectorAll('th.col-header');
-            if (headerCells.length === 0) return;
+            if (headerCells.length === 0) {return;}
 
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
-            if (!ctx) return;
+            if (!ctx) {return;}
             ctx.font = '10pt Arial, sans-serif';
 
             const visibleRows = table.querySelectorAll('tbody tr:not(.virtual-spacer)');
@@ -4839,9 +4833,9 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
             for (let r = 0; r < limit; r++) {
                 const row = visibleRows[r] as HTMLTableRowElement;
                 const cell = row.children[0] as HTMLElement | undefined;
-                if (!cell) continue;
+                if (!cell) {continue;}
                 const width = ctx.measureText((cell.textContent || '').trim()).width + 24;
-                if (width > firstColMax) firstColMax = width;
+                if (width > firstColMax) {firstColMax = width;}
             }
 
             const cornerCell = table.querySelector('th.corner-cell') as HTMLElement | null;
@@ -4860,9 +4854,9 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
                 for (let r = 0; r < limit; r++) {
                     const row = visibleRows[r] as HTMLTableRowElement;
                     const cell = row.children[index + 1] as HTMLElement | undefined;
-                    if (!cell) continue;
+                    if (!cell) {continue;}
                     const width = ctx.measureText((cell.textContent || '').trim()).width + 32;
-                    if (width > maxWidth) maxWidth = width;
+                    if (width > maxWidth) {maxWidth = width;}
                 }
 
                 const finalWidth = mode === 'expand'
@@ -4879,8 +4873,8 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
 
     function setRowHeaderWidth(widthPx: number, allowShrink = false) {
         const nextWidth = Math.max(MIN_ROW_HEADER_WIDTH, Math.ceil(widthPx));
-        if (!allowShrink && nextWidth <= currentRowHeaderWidth) return;
-        if (allowShrink && nextWidth === currentRowHeaderWidth) return;
+        if (!allowShrink && nextWidth <= currentRowHeaderWidth) {return;}
+        if (allowShrink && nextWidth === currentRowHeaderWidth) {return;}
 
         currentRowHeaderWidth = nextWidth;
         document.documentElement.style.setProperty('--row-header-width', `${nextWidth}px`);
@@ -4893,7 +4887,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
     }
 
     function ensureRowHeaderWidthForVisibleRange(startRow: number, endRowExclusive: number) {
-        if (totalRows <= 0) return;
+        if (totalRows <= 0) {return;}
 
         const maxVisibleRow = Math.max(startRow, endRowExclusive - 1);
         const clampedMaxVisibleRow = Math.max(0, Math.min(totalRows - 1, maxVisibleRow));
@@ -4902,12 +4896,12 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
     }
 
     const syncColumnWidthsToCurrentMode = debounce(() => {
-        if (isEditMode) return;
+        if (isEditMode) {return;}
         adjustColumnWidths(document.body.classList.contains('expanded-mode') ? 'expand' : 'default');
     }, 100);
 
     function renderVirtualRows(startIndex: number, endIndex: number, rowsData: any[], cacheRows = true) {
-        if (isRendering) return;
+        if (isRendering) {return;}
         isRendering = true;
 
         const tbody = document.querySelector('#xlsxTable tbody');
@@ -4964,10 +4958,10 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
     }
 
     async function updateVisibleRows() {
-        if (isRendering) return;
+        if (isRendering) {return;}
 
         const container = getTableContainer();
-        if (!container || totalRows === 0) return;
+        if (!container || totalRows === 0) {return;}
 
         const scrollTop = container.scrollTop;
         const clientHeight = container.clientHeight;
@@ -5093,7 +5087,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
 
     function initializeVirtualScrolling() {
         const container = getTableContainer();
-        if (!container) return;
+        if (!container) {return;}
 
         if (activeScrollContainer && activeScrollContainer !== container) {
             activeScrollContainer.removeEventListener('scroll', onScroll);
@@ -5110,8 +5104,8 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
     function reapplySelection() {
         selectionManager.reapplySelection();
 
-        if (!selectionStart || !selectionEnd) return;
-        if (selectedRowIndices.size > 0 || selectedColumnIndices.size > 0) return;
+        if (!selectionStart || !selectionEnd) {return;}
+        if (selectedRowIndices.size > 0 || selectedColumnIndices.size > 0) {return;}
 
         const minRow = Math.min(selectionStart.row, selectionEnd.row);
         const maxRow = Math.max(selectionStart.row, selectionEnd.row);
@@ -5122,14 +5116,14 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
         visibleCells.forEach((cell) => {
             const row = parseInt(cell.dataset.row || '-1', 10);
             const col = parseInt(cell.dataset.col || '-1', 10);
-            if (row < 0 || col < 0) return;
+            if (row < 0 || col < 0) {return;}
 
             if (row >= minRow && row <= maxRow && col >= minCol && col <= maxCol) {
                 cell.classList.add('selected');
-                if (row === minRow) cell.classList.add('selection-top');
-                if (row === maxRow) cell.classList.add('selection-bottom');
-                if (col === minCol) cell.classList.add('selection-left');
-                if (col === maxCol) cell.classList.add('selection-right');
+                if (row === minRow) {cell.classList.add('selection-top');}
+                if (row === maxRow) {cell.classList.add('selection-bottom');}
+                if (col === minCol) {cell.classList.add('selection-left');}
+                if (col === maxCol) {cell.classList.add('selection-right');}
                 selectedCells.add(cell);
             }
         });
@@ -5182,7 +5176,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
             const restoreBtn = document.getElementById('restoreVersionButton') as HTMLButtonElement | null;
             const cancelBtn = document.getElementById('cancelVersionPreviewButton') as HTMLButtonElement | null;
             restoreBtn?.addEventListener('click', () => {
-                if (!previewVersionId) return;
+                if (!previewVersionId) {return;}
                 vscode.postMessage({ command: 'restoreVersion', versionId: previewVersionId });
             });
             cancelBtn?.addEventListener('click', () => {
@@ -5215,21 +5209,21 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
 
     function setLoadingText(text: string) {
         const el = document.querySelector('.loading-text');
-        if (el) el.textContent = text;
+        if (el) {el.textContent = text;}
     }
 
     function showLoading() {
         const el = document.getElementById('loadingOverlay');
-        if (el) el.classList.remove('hidden');
+        if (el) {el.classList.remove('hidden');}
     }
 
     function hideLoading() {
         const el = document.getElementById('loadingOverlay');
-        if (el) el.classList.add('hidden');
+        if (el) {el.classList.add('hidden');}
     }
 
     function renderWorksheet(index: number) {
-        if (!worksheetsMeta || !worksheetsMeta.length) return;
+        if (!worksheetsMeta || !worksheetsMeta.length) {return;}
 
         showLoading();
 
@@ -5268,7 +5262,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
         setTimeout(() => {
             try {
                 const container = document.getElementById('tableContainer');
-                if (!container) return;
+                if (!container) {return;}
 
                 container.innerHTML = createTableShell();
                 ensureHeaderVisible();
@@ -5298,7 +5292,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
 
     function initializeResize() {
         const table = document.querySelector('table');
-        if (!table) return;
+        if (!table) {return;}
 
         // Column/row resize handles
         table.addEventListener('mousedown', (e) => {
@@ -5317,12 +5311,12 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
 
                 document.body.style.cursor = 'col-resize';
                 const indicator = document.getElementById('resizeIndicator');
-                if (indicator) indicator.style.display = 'block';
+                if (indicator) {indicator.style.display = 'block';}
                 return false;
             }
 
             if (target && target.classList && target.classList.contains('row-resize-handle')) {
-                if (isEditMode) return;
+                if (isEditMode) {return;}
                 e.preventDefault();
                 e.stopPropagation();
 
@@ -5336,16 +5330,16 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
 
                 document.body.style.cursor = 'row-resize';
                 const indicator = document.getElementById('resizeIndicator');
-                if (indicator) indicator.style.display = 'block';
+                if (indicator) {indicator.style.display = 'block';}
                 return false;
             }
         });
 
         document.addEventListener('mousemove', (e) => {
-            if (!isResizing) return;
+            if (!isResizing) {return;}
 
             const tableEl = document.querySelector('table');
-            if (!tableEl) return;
+            if (!tableEl) {return;}
 
             const indicator = document.getElementById('resizeIndicator');
 
@@ -5409,7 +5403,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
                 resizeIndex = -1;
                 document.body.style.cursor = '';
                 const indicator = document.getElementById('resizeIndicator');
-                if (indicator) indicator.style.display = 'none';
+                if (indicator) {indicator.style.display = 'none';}
             }
         });
 
@@ -5420,7 +5414,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
                 e.preventDefault();
                 autoFitColumn(parseInt(target.dataset.col!, 10));
             } else if (target && target.classList && target.classList.contains('row-resize-handle')) {
-                if (isEditMode) return;
+                if (isEditMode) {return;}
                 e.preventDefault();
                 autoFitRow(parseInt(target.dataset.row!, 10));
             } else if (!isVersionPreviewMode) {
@@ -5462,7 +5456,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
 
     function autoFitRow(rowIndex: number) {
         const row = document.querySelectorAll('tr')[rowIndex + 1] as HTMLElement; // +1 for header row
-        if (!row) return;
+        if (!row) {return;}
 
         const cells = row.querySelectorAll('td') as NodeListOf<HTMLElement>;
         let maxHeight = 20;
@@ -5488,7 +5482,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
     }
 
     function autoFitAllColumns() {
-        if (!worksheetsMeta || !worksheetsMeta.length) return;
+        if (!worksheetsMeta || !worksheetsMeta.length) {return;}
         // Note: worksheetsData was not defined in original JS, assuming it meant worksheetsMeta or similar
         // But autoFitAllColumns was not called anywhere in the original JS.
         // Keeping it but commenting out usage if any.
@@ -5535,7 +5529,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
                 const c1 = Math.max(c0, (range?.endCol || c0 + 1) - 1);
 
                 const intersects = !(r1 < expandedMinRow || r0 > expandedMaxRow || c1 < expandedMinCol || c0 > expandedMaxCol);
-                if (!intersects) return;
+                if (!intersects) {return;}
 
                 const nextMinRow = Math.min(expandedMinRow, r0);
                 const nextMaxRow = Math.max(expandedMaxRow, r1);
@@ -5641,12 +5635,12 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
 
         for (let r = 0; r < grid.length; r++) {
             const rowIndex = startRow + r;
-            if (rowIndex >= totalRows) continue;
+            if (rowIndex >= totalRows) {continue;}
             const rowNumber = rowIndex + 1;
 
             for (let c = 0; c < grid[r].length; c++) {
                 const colIndex = startCol + c;
-                if (colIndex >= columnCount) continue;
+                if (colIndex >= columnCount) {continue;}
                 const colNumber = colIndex + 1;
 
                 const rawValue = grid[r][c];
@@ -5710,7 +5704,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
 
     function invertColor(color: string) {
         const match = String(color || '').match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/);
-        if (!match) return color;
+        if (!match) {return color;}
 
         const r = 255 - parseInt(match[1], 10);
         const g = 255 - parseInt(match[2], 10);
@@ -5722,12 +5716,12 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
     function initializeSelection() {
         const tableContainer = document.getElementById('tableContainer');
         const table = tableContainer ? tableContainer.querySelector('table') : null;
-        if (!table) return;
+        if (!table) {return;}
 
         if (!pasteListenerAttached) {
             pasteListenerAttached = true;
             document.addEventListener('paste', (e) => {
-                if (isCellEditing) return;
+                if (isCellEditing) {return;}
                 const activeEl = document.activeElement;
                 if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'SELECT')) {
                     if (!activeEl.closest('#xlsxTable')) {
@@ -5735,7 +5729,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
                     }
                 }
                 const clipboardData = e.clipboardData;
-                if (!clipboardData) return;
+                if (!clipboardData) {return;}
                 const text = clipboardData.getData('text/plain');
                 if (text) {
                     pasteTextAtSelection(text);
@@ -5748,7 +5742,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
             const rowHeader = target.closest('th.row-header') as HTMLElement | null;
             const colHeader = target.closest('th.col-header') as HTMLElement | null;
             const cell = target.closest('td') as HTMLElement | null;
-            if (!rowHeader && !colHeader && !cell) return;
+            if (!rowHeader && !colHeader && !cell) {return;}
 
             if (isVersionPreviewMode && (rowHeader || cell)) {
                 showToast('Version preview is read-only');
@@ -5765,24 +5759,24 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
 
             if (rowHeader) {
                 const row = parseInt(rowHeader.dataset.row || '-1', 10);
-                if (row >= 0) showHeaderContextMenu(e, 'row', row);
+                if (row >= 0) {showHeaderContextMenu(e, 'row', row);}
                 return;
             }
 
             if (colHeader) {
                 const col = parseInt(colHeader.dataset.col || '-1', 10);
-                if (col >= 0) showHeaderContextMenu(e, 'column', col);
+                if (col >= 0) {showHeaderContextMenu(e, 'column', col);}
             }
         });
 
         table.addEventListener('click', (e) => {
             const target = e.target as HTMLElement;
-            if (target.closest('.col-resize-handle') || target.closest('.row-resize-handle')) return;
+            if (target.closest('.col-resize-handle') || target.closest('.row-resize-handle')) {return;}
 
             const rowHeader = target.closest('th.row-header') as HTMLElement | null;
             const colHeader = target.closest('th.col-header') as HTMLElement | null;
-            if (!rowHeader && !colHeader) return;
-            if (e.ctrlKey || e.metaKey || e.shiftKey) return;
+            if (!rowHeader && !colHeader) {return;}
+            if (e.ctrlKey || e.metaKey || e.shiftKey) {return;}
 
             if (isVersionPreviewMode && rowHeader) {
                 showToast('Version preview is read-only');
@@ -5791,18 +5785,18 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
 
             if (rowHeader) {
                 const row = parseInt(rowHeader.dataset.row || '-1', 10);
-                if (row >= 0) showHeaderContextMenu(e, 'row', row);
+                if (row >= 0) {showHeaderContextMenu(e, 'row', row);}
                 return;
             }
 
             if (colHeader) {
                 const col = parseInt(colHeader.dataset.col || '-1', 10);
-                if (col >= 0) showHeaderContextMenu(e, 'column', col);
+                if (col >= 0) {showHeaderContextMenu(e, 'column', col);}
             }
         });
 
         table.addEventListener('selectstart', (e) => {
-            if (isEditMode) return;
+            if (isEditMode) {return;}
             e.preventDefault();
             return false;
         });
@@ -5814,7 +5808,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
             }
 
             const cellTarget = target.closest('td, th') as HTMLElement;
-            if (!cellTarget) return;
+            if (!cellTarget) {return;}
 
             if (cellTarget.tagName === 'TD' && target.closest('.xlsx-cell-checkbox, .xlsx-cell-dropdown, .xlsx-dropdown-edit-button, .xlsx-rating-star, .xlsx-cell-date')) {
                 const state = captureCellUndoState(cellTarget);
@@ -6005,10 +5999,10 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
                     cell.classList.add('selected');
                     const row = parseInt(cell.dataset.row || '-1', 10);
                     const col = parseInt(cell.dataset.col || '-1', 10);
-                    if (row === 0) cell.classList.add('selection-top');
-                    if (row === totalRows - 1) cell.classList.add('selection-bottom');
-                    if (col === 0) cell.classList.add('selection-left');
-                    if (col === columnCount - 1) cell.classList.add('selection-right');
+                    if (row === 0) {cell.classList.add('selection-top');}
+                    if (row === totalRows - 1) {cell.classList.add('selection-bottom');}
+                    if (col === 0) {cell.classList.add('selection-left');}
+                    if (col === columnCount - 1) {cell.classList.add('selection-right');}
                     selectedCells.add(cell);
                 });
                 if (allCells.length > 0) {
@@ -6066,14 +6060,14 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
         });
 
         table.addEventListener('mousemove', (e) => {
-            if (isCellEditing) return;
-            if (!isSelecting || !selectionStart) return;
+            if (isCellEditing) {return;}
+            if (!isSelecting || !selectionStart) {return;}
 
             // Track last mouse position for auto-scroll
             lastMousePos = { x: e.clientX, y: e.clientY };
 
             const target = (e.target as HTMLElement).closest('td') as HTMLElement;
-            if (!target) return;
+            if (!target) {return;}
 
             const row = parseInt(target.dataset.row!, 10);
             const col = parseInt(target.dataset.col!, 10);
@@ -6089,26 +6083,26 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
         });
 
         table.addEventListener('input', (e) => {
-            if (!isEditMode) return;
+            if (!isEditMode) {return;}
 
             const target = e.target as HTMLElement | null;
-            if (!target) return;
+            if (!target) {return;}
 
             const editableCell = target.closest('td[contenteditable="true"]') as HTMLElement | null;
-            if (!editableCell) return;
+            if (!editableCell) {return;}
 
             scheduleAutoSave('text');
         });
 
         table.addEventListener('focusin', (e) => {
             const target = e.target as HTMLElement | null;
-            if (!target) return;
+            if (!target) {return;}
 
             const controlTarget = target.closest('.xlsx-cell-checkbox, .xlsx-cell-dropdown, .xlsx-dropdown-edit-button, .xlsx-rating-star, .xlsx-cell-date') as HTMLElement | null;
-            if (!controlTarget) return;
+            if (!controlTarget) {return;}
 
             const cell = controlTarget.closest('td') as HTMLElement | null;
-            if (!cell) return;
+            if (!cell) {return;}
 
             const state = captureCellUndoState(cell);
             if (state) {
@@ -6118,15 +6112,15 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
 
         table.addEventListener('change', (e) => {
             const controlsEditable = areInteractiveControlsEnabled();
-            if (!controlsEditable) return;
+            if (!controlsEditable) {return;}
 
             const target = e.target as HTMLElement | null;
-            if (!target) return;
+            if (!target) {return;}
 
             const checkbox = target.closest('.xlsx-cell-checkbox') as HTMLInputElement | null;
             if (checkbox) {
                 const cell = checkbox.closest('td') as HTMLElement | null;
-                if (!cell) return;
+                if (!cell) {return;}
                 const before = pendingControlUndoState.get(cell) || captureCellUndoState(cell);
                 pendingControlUndoState.delete(cell);
                 updateCheckboxCellPresentation(cell, !!checkbox.checked);
@@ -6143,7 +6137,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
             const dropdown = target.closest('.xlsx-cell-dropdown') as HTMLSelectElement | null;
             if (dropdown) {
                 const cell = dropdown.closest('td') as HTMLElement | null;
-                if (!cell) return;
+                if (!cell) {return;}
                 const before = pendingControlUndoState.get(cell) || captureCellUndoState(cell);
                 pendingControlUndoState.delete(cell);
                 updateDropdownCellPresentation(cell, dropdown.value);
@@ -6160,7 +6154,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
             const dateInput = target.closest('.xlsx-cell-date') as HTMLInputElement | null;
             if (dateInput) {
                 const cell = dateInput.closest('td') as HTMLElement | null;
-                if (!cell) return;
+                if (!cell) {return;}
                 const before = pendingControlUndoState.get(cell) || captureCellUndoState(cell);
                 pendingControlUndoState.delete(cell);
                 updateDateCellPresentation(cell, dateInput.value);
@@ -6176,12 +6170,12 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
 
         table.addEventListener('click', (e) => {
             const target = e.target as HTMLElement | null;
-            if (!target) return;
+            if (!target) {return;}
 
             const editButton = target.closest('.xlsx-dropdown-edit-button') as HTMLButtonElement | null;
             if (editButton) {
                 const cell = editButton.closest('td') as HTMLElement | null;
-                if (!cell || editButton.disabled) return;
+                if (!cell || editButton.disabled) {return;}
 
                 void editDropdownOptionsForCell(cell);
                 e.preventDefault();
@@ -6192,7 +6186,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
             const ratingStar = target.closest('.xlsx-rating-star') as HTMLButtonElement | null;
             if (ratingStar) {
                 const cell = ratingStar.closest('td') as HTMLElement | null;
-                if (!cell || ratingStar.disabled) return;
+                if (!cell || ratingStar.disabled) {return;}
 
                 const before = pendingControlUndoState.get(cell) || captureCellUndoState(cell);
                 pendingControlUndoState.delete(cell);
@@ -6215,14 +6209,14 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
             }
 
             const imageTarget = target.closest('.xlsx-cell-image, .cell-image-content') as HTMLElement | null;
-            if (!imageTarget) return;
+            if (!imageTarget) {return;}
 
             const cell = imageTarget.closest('td') as HTMLElement | null;
-            if (!cell || getCellType(cell) !== 'image') return;
+            if (!cell || getCellType(cell) !== 'image') {return;}
 
             const imageEl = cell.querySelector('.xlsx-cell-image') as HTMLImageElement | null;
             const src = imageEl?.getAttribute('src') || '';
-            if (!src) return;
+            if (!src) {return;}
 
             e.preventDefault();
             e.stopPropagation();
@@ -6230,7 +6224,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
         });
 
         function startAutoScroll() {
-            if (autoScrollRequest) return;
+            if (autoScrollRequest) {return;}
             autoScrollLoop();
         }
 
@@ -6259,11 +6253,11 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
                 let dx = 0;
                 let dy = 0;
 
-                if (lastMousePos.x < rect.left + AUTO_SCROLL_THRESHOLD) dx = -AUTO_SCROLL_STEP;
-                else if (lastMousePos.x > rect.right - AUTO_SCROLL_THRESHOLD) dx = AUTO_SCROLL_STEP;
+                if (lastMousePos.x < rect.left + AUTO_SCROLL_THRESHOLD) {dx = -AUTO_SCROLL_STEP;}
+                else if (lastMousePos.x > rect.right - AUTO_SCROLL_THRESHOLD) {dx = AUTO_SCROLL_STEP;}
 
-                if (lastMousePos.y < rect.top + AUTO_SCROLL_THRESHOLD) dy = -AUTO_SCROLL_STEP;
-                else if (lastMousePos.y > rect.bottom - AUTO_SCROLL_THRESHOLD) dy = AUTO_SCROLL_STEP;
+                if (lastMousePos.y < rect.top + AUTO_SCROLL_THRESHOLD) {dy = -AUTO_SCROLL_STEP;}
+                else if (lastMousePos.y > rect.bottom - AUTO_SCROLL_THRESHOLD) {dy = AUTO_SCROLL_STEP;}
 
                 if (dx !== 0 || dy !== 0) {
                     scrollArea.scrollBy({ left: dx, top: dy, behavior: 'auto' });
@@ -6287,13 +6281,13 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
             });
         }
 
-        if (selectionGlobalListenersAttached) return;
+        if (selectionGlobalListenersAttached) {return;}
         selectionGlobalListenersAttached = true;
 
         document.addEventListener('pointerdown', (e) => {
             const target = e.target as HTMLElement | null;
-            if (!target) return;
-            if (!(target.closest('#tableContainer') || target.closest('.toolbar') || target.closest('#xlsxTable'))) return;
+            if (!target) {return;}
+            if (!(target.closest('#tableContainer') || target.closest('.toolbar') || target.closest('#xlsxTable'))) {return;}
 
             // Ignore interactions with dropdown edit button and most native inputs/selects
             // but allow pointerdown on checkbox inputs so selection can start from them.
@@ -6302,17 +6296,17 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
             }
 
             const selEl = target.closest('select');
-            if (selEl) return;
+            if (selEl) {return;}
 
             const inputEl = target.closest('input');
             if (inputEl) {
                 // Allow checkbox inputs used as cell controls to participate in selection start.
                 const isCheckboxControl = inputEl.classList && inputEl.classList.contains('xlsx-cell-checkbox');
-                if (!isCheckboxControl) return;
+                if (!isCheckboxControl) {return;}
             }
 
             const container = document.getElementById('tableContainer') as HTMLElement | null;
-            if (!container) return;
+            if (!container) {return;}
             if (!container.hasAttribute('tabindex')) {
                 container.setAttribute('tabindex', '-1');
             }
@@ -6470,10 +6464,10 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
 
                     let rowDelta = 0;
                     let colDelta = 0;
-                    if (key === 'ArrowUp') rowDelta = -1;
-                    if (key === 'ArrowDown') rowDelta = 1;
-                    if (key === 'ArrowLeft' || (key === 'Tab' && e.shiftKey)) colDelta = -1;
-                    if (key === 'ArrowRight' || (key === 'Tab' && !e.shiftKey)) colDelta = 1;
+                    if (key === 'ArrowUp') {rowDelta = -1;}
+                    if (key === 'ArrowDown') {rowDelta = 1;}
+                    if (key === 'ArrowLeft' || (key === 'Tab' && e.shiftKey)) {colDelta = -1;}
+                    if (key === 'ArrowRight' || (key === 'Tab' && !e.shiftKey)) {colDelta = 1;}
 
                     moveSelection(rowDelta, colDelta, e.shiftKey);
                     return;
@@ -6509,7 +6503,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
                         active.innerHTML = active.dataset.originalHtml || '';
                     }
                     exitCellEditMode();
-                    if (activeCell) activeCell.focus();
+                    if (activeCell) {activeCell.focus();}
                     return;
                 }
             }
@@ -6552,7 +6546,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
             if (isCmdOrCtrl && e.key.toLowerCase() === 'a') {
                 e.preventDefault();
                 const currentTable = document.querySelector('#tableContainer table');
-                if (!currentTable) return;
+                if (!currentTable) {return;}
                 const allCells = currentTable.querySelectorAll('td') as NodeListOf<HTMLElement>;
                 clearSelection();
 
@@ -6568,10 +6562,10 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
                     cell.classList.add('selected');
                     const row = parseInt(cell.dataset.row || '-1', 10);
                     const col = parseInt(cell.dataset.col || '-1', 10);
-                    if (row === 0) cell.classList.add('selection-top');
-                    if (row === totalRows - 1) cell.classList.add('selection-bottom');
-                    if (col === 0) cell.classList.add('selection-left');
-                    if (col === columnCount - 1) cell.classList.add('selection-right');
+                    if (row === 0) {cell.classList.add('selection-top');}
+                    if (row === totalRows - 1) {cell.classList.add('selection-bottom');}
+                    if (col === 0) {cell.classList.add('selection-left');}
+                    if (col === columnCount - 1) {cell.classList.add('selection-right');}
                     selectedCells.add(cell);
                 });
                 if (allCells.length > 0) {
@@ -6594,7 +6588,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
                 exitCellEditMode();
             }
 
-            if (isEditMode) return;
+            if (isEditMode) {return;}
             if (!target.closest('table') && !target.closest('.toolbar')) {
                 clearSelection();
             }
@@ -6602,7 +6596,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
     }
 
     function ensureLinkTooltip(): HTMLElement {
-        if (linkTooltip) return linkTooltip;
+        if (linkTooltip) {return linkTooltip;}
         linkTooltip = document.createElement('div');
         linkTooltip.id = 'linkTooltip';
         linkTooltip.className = 'link-tooltip hidden';
@@ -6630,14 +6624,14 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
     }
 
     function showLinkTooltipForCell(cellEl: HTMLElement | null) {
-        if (!currentSettings.hyperlinkPreview) return;
-        if (!cellEl) return;
+        if (!currentSettings.hyperlinkPreview) {return;}
+        if (!cellEl) {return;}
         const url = cellEl.getAttribute('data-hyperlink') || '';
-        if (!url) return;
+        if (!url) {return;}
 
         const tt = ensureLinkTooltip();
         const urlEl = tt.querySelector('#linkTooltipUrl');
-        if (urlEl) urlEl.textContent = url;
+        if (urlEl) {urlEl.textContent = url;}
 
         const openBtn = tt.querySelector('#linkTooltipOpen') as HTMLElement;
         const copyBtn = tt.querySelector('#linkTooltipCopy') as HTMLElement;
@@ -6676,14 +6670,14 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
     }
 
     function hideLinkTooltip() {
-        if (!linkTooltip) return;
+        if (!linkTooltip) {return;}
         linkTooltip.classList.add('hidden');
         linkTooltip.style.left = '';
         linkTooltip.style.top = '';
     }
 
     function scheduleHideLinkTooltip() {
-        if (linkTooltipHideTimer) clearTimeout(linkTooltipHideTimer);
+        if (linkTooltipHideTimer) {clearTimeout(linkTooltipHideTimer);}
         linkTooltipHideTimer = setTimeout(() => {
             hideLinkTooltip();
             linkTooltipHideTimer = null;
@@ -6691,7 +6685,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
     }
 
     function ensureImagePreviewOverlay(): HTMLElement {
-        if (imagePreviewOverlayEl) return imagePreviewOverlayEl;
+        if (imagePreviewOverlayEl) {return imagePreviewOverlayEl;}
 
         const overlay = document.createElement('div');
         overlay.id = 'xlsxImagePreviewOverlay';
@@ -6718,10 +6712,10 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
     }
 
     function showImagePreview(src: string) {
-        if (!src) return;
+        if (!src) {return;}
         const overlay = ensureImagePreviewOverlay();
         const img = overlay.querySelector('#xlsxImagePreviewImg') as HTMLImageElement | null;
-        if (!img) return;
+        if (!img) {return;}
 
         img.src = src;
         overlay.classList.remove('hidden');
@@ -6729,7 +6723,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
     }
 
     function hideImagePreview() {
-        if (!imagePreviewOverlayEl) return;
+        if (!imagePreviewOverlayEl) {return;}
         const img = imagePreviewOverlayEl.querySelector('#xlsxImagePreviewImg') as HTMLImageElement | null;
         if (img) {
             img.removeAttribute('src');
@@ -6740,14 +6734,14 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
 
     function initializeHyperlinkHover() {
         const table = document.querySelector('table');
-        if (!table) return;
+        if (!table) {return;}
 
         table.addEventListener('mouseover', (e) => {
-            if (isEditMode) return;
+            if (isEditMode) {return;}
             const t = e && (e.target as HTMLElement);
             const el = t && t.nodeType === 3 ? t.parentElement : t;
             const cell = el && el.closest ? el.closest('td[data-hyperlink]') : null;
-            if (!cell) return;
+            if (!cell) {return;}
             if (linkTooltipHideTimer) {
                 clearTimeout(linkTooltipHideTimer);
                 linkTooltipHideTimer = null;
@@ -6756,7 +6750,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
         });
 
         table.addEventListener('mouseout', (e) => {
-            if (isEditMode) return;
+            if (isEditMode) {return;}
             const toEl = e.relatedTarget as HTMLElement;
             if (!toEl) {
                 scheduleHideLinkTooltip();
@@ -6782,7 +6776,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
     function setSettingItemHidden(id: string, hidden: boolean) {
         const input = document.getElementById(id);
         const settingItem = input?.closest('.setting-item') as HTMLElement | null;
-        if (!settingItem) return;
+        if (!settingItem) {return;}
         settingItem.style.display = hidden ? 'none' : '';
     }
 
@@ -6860,7 +6854,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
             onLayoutApplied: initializeVirtualScrolling
         });
 
-        if (!currentSettings.hyperlinkPreview) hideLinkTooltip();
+        if (!currentSettings.hyperlinkPreview) {hideLinkTooltip();}
         applyInteractiveControlState();
 
         const spaciousChanged = previousSpacious !== !!currentSettings.spaciousCells;
@@ -6881,7 +6875,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
     }
 
     function enterCellEditMode(cell: HTMLElement, clearContent = false) {
-        if (isVersionPreviewMode) return;
+        if (isVersionPreviewMode) {return;}
 
         const cellType = getCellType(cell);
         if (cellType === 'checkbox') {
@@ -6965,7 +6959,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
     }
 
     function exitCellEditMode() {
-        if (!isCellEditing) return;
+        if (!isCellEditing) {return;}
         isCellEditing = false;
 
         const editableCell = (document.querySelector('td[contenteditable="true"]') as HTMLElement | null)
@@ -7014,7 +7008,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
     }
 
     async function moveSelection(rowDelta: number, colDelta: number, shiftKey: boolean) {
-        if (!activeCell) return;
+        if (!activeCell) {return;}
 
         let currentR = parseInt(activeCell.getAttribute('data-row') || '0', 10);
         let currentC = parseInt(activeCell.getAttribute('data-col') || '0', 10);
@@ -7114,7 +7108,6 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
         });
 
         const sheetSelector = document.getElementById('sheetSelector');
-        const editFileButton = document.getElementById('editFileButton');
         const toggleExpandButton = document.getElementById('toggleExpandButton');
         const togglePlainViewButton = document.getElementById('togglePlainViewButton');
         const versionHistoryButton = document.getElementById('versionHistoryButton');
@@ -7134,7 +7127,6 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
         const formatBackgroundColorButton = document.getElementById('formatBackgroundColorButton');
 
         if (toolbarManager) {
-            toolbarManager.setButtonVisibility('editFileButton', !!isTemporaryStyleFile && !isEditMode);
             toolbarManager.setButtonVisibility('toggleTableEditButton', !isEditMode && !isPlainDirectEditMode());
             toolbarManager.setButtonVisibility('saveTableEditsButton', isEditMode);
             toolbarManager.setButtonVisibility('cancelTableEditsButton', isEditMode);
@@ -7145,15 +7137,14 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
             toolbarManager.setButtonVisibility('formatBackgroundColorButton', false);
             toolbarManager.setButtonVisibility('refreshButton', !isEditMode);
         } else {
-            if (toggleTableEditButton) toggleTableEditButton.classList.toggle('hidden', isEditMode || isPlainDirectEditMode());
-            if (saveTableEditsButton) saveTableEditsButton.classList.toggle('hidden', !isEditMode);
-            if (cancelTableEditsButton) cancelTableEditsButton.classList.toggle('hidden', !isEditMode);
-            if (insertControlButton) insertControlButton.classList.toggle('hidden', !isEditMode);
-            if (formatBoldButton) formatBoldButton.classList.add('hidden');
-            if (formatItalicButton) formatItalicButton.classList.add('hidden');
-            if (formatTextColorButton) formatTextColorButton.classList.add('hidden');
-            if (formatBackgroundColorButton) formatBackgroundColorButton.classList.add('hidden');
-            if (editFileButton) editFileButton.classList.toggle('hidden', !isTemporaryStyleFile || isEditMode);
+            if (toggleTableEditButton) {toggleTableEditButton.classList.toggle('hidden', isEditMode || isPlainDirectEditMode());}
+            if (saveTableEditsButton) {saveTableEditsButton.classList.toggle('hidden', !isEditMode);}
+            if (cancelTableEditsButton) {cancelTableEditsButton.classList.toggle('hidden', !isEditMode);}
+            if (insertControlButton) {insertControlButton.classList.toggle('hidden', !isEditMode);}
+            if (formatBoldButton) {formatBoldButton.classList.add('hidden');}
+            if (formatItalicButton) {formatItalicButton.classList.add('hidden');}
+            if (formatTextColorButton) {formatTextColorButton.classList.add('hidden');}
+            if (formatBackgroundColorButton) {formatBackgroundColorButton.classList.add('hidden');}
         }
 
         if (editFormattingStripEl) {
@@ -7161,15 +7152,14 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
         }
 
         syncSheetSelectorVisibility();
-        if (toggleExpandButton) toggleExpandButton.classList.remove('hidden');
-        if (togglePlainViewButton) togglePlainViewButton.classList.toggle('hidden', isEditMode && !isPlainView);
-        if (editFileButton) editFileButton.classList.toggle('hidden', !isTemporaryStyleFile || isEditMode);
-        if (versionHistoryButton) versionHistoryButton.classList.toggle('hidden', isEditMode);
-        if (openSettingsButton) openSettingsButton.classList.remove('hidden');
-        if (toggleBackgroundButton) toggleBackgroundButton.classList.toggle('hidden', isEditMode);
-        if (helpButton) helpButton.classList.toggle('hidden', isEditMode);
-        if (convertFileButton) convertFileButton.classList.toggle('hidden', isEditMode);
-        if (refreshButton) refreshButton.classList.toggle('hidden', isEditMode);
+        if (toggleExpandButton) {toggleExpandButton.classList.remove('hidden');}
+        if (togglePlainViewButton) {togglePlainViewButton.classList.toggle('hidden', isEditMode && !isPlainView);}
+        if (versionHistoryButton) {versionHistoryButton.classList.toggle('hidden', isEditMode);}
+        if (openSettingsButton) {openSettingsButton.classList.remove('hidden');}
+        if (toggleBackgroundButton) {toggleBackgroundButton.classList.toggle('hidden', isEditMode);}
+        if (helpButton) {helpButton.classList.toggle('hidden', isEditMode);}
+        if (convertFileButton) {convertFileButton.classList.toggle('hidden', isEditMode);}
+        if (refreshButton) {refreshButton.classList.toggle('hidden', isEditMode);}
 
         reorderToolbarAroundFind(isEditMode);
 
@@ -7183,7 +7173,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
             clearAutoSaveTimer();
             applyInteractiveControlState();
 
-            if (!preserveSelection) clearSelection();
+            if (!preserveSelection) {clearSelection();}
             lastEditRange = null;
             pendingWorksheetOps = [];
             pendingCellStyleEdits.clear();
@@ -7195,14 +7185,14 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
             return;
         }
 
-        if (!preserveSelection) clearSelection();
+        if (!preserveSelection) {clearSelection();}
         editUndoStack.length = 0;
         editRedoStack.length = 0;
         hideInsertControlPopup();
 
         // Enable contenteditable for table cells
         const table = document.querySelector('#tableContainer table');
-        if (!table) return;
+        if (!table) {return;}
 
         // Rebuild visible dropdown controls when entering edit mode so the inline Edit button appears immediately.
         table.querySelectorAll('td[data-cell-type="dropdown"]').forEach((td) => {
@@ -7234,7 +7224,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
 
     function captureOriginalCellValues() {
         const table = document.querySelector('#tableContainer table');
-        if (!table) return;
+        if (!table) {return;}
         table.querySelectorAll('td.editable-cell').forEach(td => {
             const htmlTd = td as HTMLElement;
             const currentText = getCellNormalizedValue(htmlTd);
@@ -7244,8 +7234,8 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
     }
 
     function saveEdits(shouldExit = false, isAutosave = false) {
-        if (isSaving) return;
-        if (isAutosave && !currentSettings.autoSave) return;
+        if (isSaving) {return;}
+        if (isAutosave && !currentSettings.autoSave) {return;}
 
         const table = document.querySelector('#tableContainer table');
         const hasPendingStyleOrStructureChanges = pendingCellStyleEdits.size > 0 || pendingWorksheetOps.length > 0;
@@ -7283,7 +7273,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
                 const htmlTd = td as HTMLElement;
                 const row = parseInt(htmlTd.getAttribute('data-rownum') || '0', 10);
                 const col = parseInt(htmlTd.getAttribute('data-colnum') || '0', 10);
-                if (!row || !col) return;
+                if (!row || !col) {return;}
 
                 const cellType = getCellType(htmlTd);
                 const original = (htmlTd.dataset.originalText || '').replace(/\u00a0/g, '');
@@ -7362,9 +7352,9 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
         const collapseIcon = document.getElementById('collapseIcon');
         const text = document.getElementById('expandButtonText');
 
-        if (expandIcon) expandIcon.style.display = isExpanded ? 'none' : 'block';
-        if (collapseIcon) collapseIcon.style.display = isExpanded ? 'block' : 'none';
-        if (text) text.textContent = isExpanded ? 'Default' : 'Expand';
+        if (expandIcon) {expandIcon.style.display = isExpanded ? 'none' : 'block';}
+        if (collapseIcon) {collapseIcon.style.display = isExpanded ? 'block' : 'none';}
+        if (text) {text.textContent = isExpanded ? 'Default' : 'Expand';}
 
         adjustColumnWidths(isExpanded ? 'expand' : 'default');
     }
@@ -7388,7 +7378,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
     }
 
     function attachHandlersOnce() {
-        if (handlersAttached) return;
+        if (handlersAttached) {return;}
         handlersAttached = true;
 
         toolbarManager = new ToolbarManager('toolbar');
@@ -7400,7 +7390,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
         sheetSelector.className = 'sheet-selector';
         sheetSelector.title = 'Select sheet';
         sheetSelector.addEventListener('change', (e) => {
-            if (isEditMode) return;
+            if (isEditMode) {return;}
             currentWorksheet = parseInt((e.target as HTMLSelectElement).value, 10);
             clearDataTransforms();
             clearSelection();
@@ -7411,10 +7401,6 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
             onFind: () => openFindOverlay(),
             textColorIcon,
             bgColorIcon,
-            onEditFile: () => {
-                if (!isTemporaryStyleFile) return;
-                vscode.postMessage({ command: 'toggleView', isTableView: false });
-            },
             onToggleTableEdit: () => setEditMode(true),
             onSaveTableEdits: () => saveEdits(true),
             onCancelTableEdits: () => {
@@ -7446,16 +7432,16 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
                 const state = btn?.getAttribute('data-state') || 'default';
                 if (state === 'default') {
                     btn?.setAttribute('data-state', 'expanded');
-                    if (btn) btn.innerHTML = Icons.Collapse + ' <span class="btn-label">Default</span>';
+                    if (btn) {btn.innerHTML = Icons.Collapse;}
                     setExpandedMode(true);
                 } else {
                     btn?.setAttribute('data-state', 'default');
-                    if (btn) btn.innerHTML = Icons.Expand + ' <span class="btn-label">Expand</span>';
+                    if (btn) {btn.innerHTML = Icons.Expand;}
                     setExpandedMode(false);
                 }
             },
             onTogglePlainView: () => {
-                if (isEditMode) return;
+                if (isEditMode) {return;}
                 if (isPlainView && isTemporaryStyleFile) {
                     requestStyledMode();
                     return;
@@ -7473,7 +7459,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
                 renderWorksheet(currentWorksheet);
             },
             onVersionHistory: () => {
-                if (isEditMode) return;
+                if (isEditMode) {return;}
                 vscode.postMessage({ command: 'showVersionHistory' });
             },
             onOpenSettings: () => { },
@@ -7485,14 +7471,14 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
                 ProjectsModal.show();
             },
             onConvertFile: () => {
-                if (isEditMode) return;
+                if (isEditMode) {return;}
                 vscode.postMessage({ command: 'convertFile' });
             },
             onEnableAsDefault: () => {
                 vscode.postMessage({ command: 'enableAsDefault' });
             },
             onRefresh: () => {
-                if (isEditMode) return;
+                if (isEditMode) {return;}
                 vscode.postMessage({ command: 'requestFreshData' });
             }
         }));
@@ -7500,7 +7486,6 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
         toolbar.prependElement(sheetSelector);
 
         // Inject tooltip if variables are present
-        InfoTooltip.inject('toolbar', (window as any).viewImgUri, (window as any).logoSvgUri, 'table view');
 
         // Ensure the "Plain/Styled" toggle shows the correct label on initial render
         const togglePlainViewBtn = document.getElementById('togglePlainViewButton');
@@ -7520,7 +7505,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
 
         document.addEventListener('click', (e) => {
             const target = e.target as HTMLElement | null;
-            if (!target) return;
+            if (!target) {return;}
 
             if (!target.closest('#insertControlButton') && !target.closest('#xlsxInsertControlPopup') && !target.closest('#xlsxDropdownOptionsPopup')) {
                 hideInsertControlPopup();
@@ -7538,7 +7523,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
 
     function populateSheetSelector() {
         const selector = document.getElementById('sheetSelector') as HTMLSelectElement;
-        if (!selector) return;
+        if (!selector) {return;}
 
         selector.innerHTML = '';
         worksheetsMeta.forEach((ws, i) => {
@@ -7564,7 +7549,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
 
     window.addEventListener('message', (event) => {
         const message = event.data;
-        if (!message || typeof message !== 'object') return;
+        if (!message || typeof message !== 'object') {return;}
 
         if (message.command === 'initSettings') {
             consumeIncomingSettingsPayload(message);
@@ -7583,7 +7568,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
             setButtonsEnabled(true);
             if (message.ok) {
                 const thead = document.querySelector('#xlsxTable thead') as HTMLElement | null;
-                if (thead) thead.style.display = 'table-header-group';
+                if (thead) {thead.style.display = 'table-header-group';}
                 const isAutosaveResult = !!message.isAutosave;
                 showToast(isAutosaveResult ? 'Autosaved' : 'Saved', isAutosaveResult, 1000);
                 pendingWorksheetOps = [];
@@ -7661,11 +7646,11 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
             syncTemporaryFileToolbarActions();
             populateSheetSelector();
             const selector = document.getElementById('sheetSelector') as HTMLSelectElement | null;
-            if (selector) selector.value = String(currentWorksheet);
+            if (selector) {selector.value = String(currentWorksheet);}
 
             applySettingsForScope(getCurrentSettingsScope());
             const expandBtn = document.getElementById('toggleExpandButton');
-            if (expandBtn) expandBtn.setAttribute('data-state', 'default');
+            if (expandBtn) {expandBtn.setAttribute('data-state', 'default');}
             setExpandedMode(false);
 
             if (message.previewMode) {
@@ -7714,9 +7699,9 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
             attachHandlersOnce();
             populateSheetSelector();
             const selector = document.getElementById('sheetSelector') as HTMLSelectElement | null;
-            if (selector) selector.value = String(currentWorksheet);
+            if (selector) {selector.value = String(currentWorksheet);}
             const expandBtn = document.getElementById('toggleExpandButton');
-            if (expandBtn) expandBtn.setAttribute('data-state', 'default');
+            if (expandBtn) {expandBtn.setAttribute('data-state', 'default');}
             setExpandedMode(false);
             setVersionPreviewMode(false);
             renderWorksheet(currentWorksheet);

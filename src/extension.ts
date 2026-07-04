@@ -54,10 +54,10 @@ function parseStyleKey(key: string): { row: number; col: number } | null {
 }
 
 function toARGB(hexOrColor: unknown): string | undefined {
-    if (typeof hexOrColor !== 'string') return undefined;
+    if (typeof hexOrColor !== 'string') {return undefined;}
     const value = hexOrColor.trim();
     const hexMatch = value.match(/^#([0-9a-fA-F]{6})$/);
-    if (hexMatch) return ('FF' + hexMatch[1]).toUpperCase();
+    if (hexMatch) {return ('FF' + hexMatch[1]).toUpperCase();}
 
     const rgbMatch = value.match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
     if (rgbMatch) {
@@ -200,22 +200,22 @@ function applyStyleEditToCell(cell: Excel.Cell, styleEdit: any) {
             let finalBorderStyle = 'thin';
             const sLower = borderStyle.toLowerCase();
 
-            if (sLower.includes('thick') && sLower.includes('dash')) finalBorderStyle = 'mediumDashed';
-            else if (sLower.includes('thick') && sLower.includes('dot')) finalBorderStyle = 'mediumDashDot';
-            else if (sLower.includes('medium') && sLower.includes('dash')) finalBorderStyle = 'mediumDashed';
-            else if (sLower.includes('medium') && sLower.includes('dot')) finalBorderStyle = 'mediumDashDot';
-            else if (sLower.includes('dashdotdot')) finalBorderStyle = 'dashDotDot';
-            else if (sLower.includes('dashdot')) finalBorderStyle = 'dashDot';
-            else if (sLower.includes('dashed') || sLower === 'dashed' || sLower.includes('dash')) finalBorderStyle = 'mediumDashed';
-            else if (allowedStyles.includes(borderStyle)) finalBorderStyle = borderStyle;
-            else if (sLower === 'thick') finalBorderStyle = 'thick';
-            else if (sLower === 'medium') finalBorderStyle = 'medium';
-            else if (sLower === 'dotted') finalBorderStyle = 'dotted';
-            else if (sLower === 'double') finalBorderStyle = 'double';
+            if (sLower.includes('thick') && sLower.includes('dash')) {finalBorderStyle = 'mediumDashed';}
+            else if (sLower.includes('thick') && sLower.includes('dot')) {finalBorderStyle = 'mediumDashDot';}
+            else if (sLower.includes('medium') && sLower.includes('dash')) {finalBorderStyle = 'mediumDashed';}
+            else if (sLower.includes('medium') && sLower.includes('dot')) {finalBorderStyle = 'mediumDashDot';}
+            else if (sLower.includes('dashdotdot')) {finalBorderStyle = 'dashDotDot';}
+            else if (sLower.includes('dashdot')) {finalBorderStyle = 'dashDot';}
+            else if (sLower.includes('dashed') || sLower === 'dashed' || sLower.includes('dash')) {finalBorderStyle = 'mediumDashed';}
+            else if (allowedStyles.includes(borderStyle)) {finalBorderStyle = borderStyle;}
+            else if (sLower === 'thick') {finalBorderStyle = 'thick';}
+            else if (sLower === 'medium') {finalBorderStyle = 'medium';}
+            else if (sLower === 'dotted') {finalBorderStyle = 'dotted';}
+            else if (sLower === 'double') {finalBorderStyle = 'double';}
 
             const borderColorArgb = toARGB(styleEdit.border.color || firstCssBorder?.color) || 'FF202124';
             const toEdge = (enabled?: boolean | string) => {
-                if (!enabled) return undefined;
+                if (!enabled) {return undefined;}
                 const parsed = parseCssBorderForExcel(enabled);
                 if (parsed) {
                     return { style: parsed.style, color: { argb: toARGB(parsed.color || styleEdit.border.color || firstCssBorder?.color) || borderColorArgb } };
@@ -247,7 +247,7 @@ async function applyStoredStylesToXlsxFile(filePath: string, storedStyles: Recor
 
     for (const [key, styleEdit] of Object.entries(storedStyles)) {
         const address = parseStyleKey(key);
-        if (!address) continue;
+        if (!address) {continue;}
 
         applyStyleEditToCell(worksheet.getRow(address.row).getCell(address.col), styleEdit);
     }

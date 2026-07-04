@@ -7,7 +7,7 @@ export class Utils {
     }
 
     static normalizeCellText(text: string | null | undefined): string {
-        if (!text) return '';
+        if (!text) {return '';}
         return String(text).replace(/\u00a0/g, '').replace(/\r?\n/g, ' ').trimEnd();
     }
 
@@ -35,7 +35,7 @@ export class Utils {
         }
         
         const textSpan = toast.querySelector('.toast-text');
-        if (textSpan) textSpan.textContent = message;
+        if (textSpan) {textSpan.textContent = message;}
         
         if (isAutosave) {
             toast.classList.add('autosave-toast');

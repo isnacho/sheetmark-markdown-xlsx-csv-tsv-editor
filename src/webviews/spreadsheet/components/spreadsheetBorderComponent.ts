@@ -26,9 +26,9 @@ export function borderStyleToCss(style: BorderLineStyle): { width: string; line:
     const s = String(style || 'thin').toLowerCase();
     const rules = { width: '1px', line: 'solid' };
 
-    if (s.includes('thick')) rules.width = '3px';
-    else if (s.includes('medium')) rules.width = '2px';
-    else rules.width = '1px';
+    if (s.includes('thick')) {rules.width = '3px';}
+    else if (s.includes('medium')) {rules.width = '2px';}
+    else {rules.width = '1px';}
 
     if (s === 'double') {
         rules.line = 'double';
@@ -43,7 +43,7 @@ export function borderStyleToCss(style: BorderLineStyle): { width: string; line:
 }
 
 export function buildBorderCss(enabled: boolean, style: BorderLineStyle, color: string): string {
-    if (!enabled) return '';
+    if (!enabled) {return '';}
     const css = borderStyleToCss(style);
     return `${css.width} ${css.line} ${color}`;
 }
@@ -58,13 +58,13 @@ export function composeBorderLineStyle(thickness: BorderThickness, pattern: Bord
     }
 
     if (pattern === 'dashed') {
-        if (thickness === 'thick') return 'thickDashed';
-        if (thickness === 'medium') return 'mediumDashed';
+        if (thickness === 'thick') {return 'thickDashed';}
+        if (thickness === 'medium') {return 'mediumDashed';}
         return 'dashed';
     }
 
-    if (thickness === 'thick') return 'thickDotted';
-    if (thickness === 'medium') return 'mediumDotted';
+    if (thickness === 'thick') {return 'thickDotted';}
+    if (thickness === 'medium') {return 'mediumDotted';}
     return 'dotted';
 }
 
@@ -92,44 +92,44 @@ export function inferBorderLineStyleFromCss(cssStyle: string, cssWidth: string):
     const line = String(cssStyle || '').toLowerCase();
     const width = parseFloat(cssWidth || '1') || 1;
 
-    if (line === 'double') return 'double';
+    if (line === 'double') {return 'double';}
 
     if (line === 'dashed') {
-        if (width >= 3) return 'thickDashed';
-        if (width >= 2) return 'mediumDashed';
+        if (width >= 3) {return 'thickDashed';}
+        if (width >= 2) {return 'mediumDashed';}
         return 'dashed';
     }
 
     if (line === 'dotted') {
-        if (width >= 3) return 'thickDotted';
-        if (width >= 2) return 'mediumDotted';
+        if (width >= 3) {return 'thickDotted';}
+        if (width >= 2) {return 'mediumDotted';}
         return 'dotted';
     }
 
-    if (width >= 3) return 'thick';
-    if (width >= 2) return 'medium';
+    if (width >= 3) {return 'thick';}
+    if (width >= 2) {return 'medium';}
     return 'thin';
 }
 
 export function inferBorderModeFromStyle(border: BorderLike | undefined, fallbackMode: BorderMode = 'all'): BorderMode {
-    if (!border || border.clear) return 'none';
+    if (!border || border.clear) {return 'none';}
 
     const t = !!border.top;
     const r = !!border.right;
     const b = !!border.bottom;
     const l = !!border.left;
 
-    if (t && r && b && l) return 'all';
+    if (t && r && b && l) {return 'all';}
 
     const enabledCount = [t, r, b, l].filter(Boolean).length;
     if (enabledCount === 1) {
-        if (t) return 'top';
-        if (r) return 'right';
-        if (b) return 'bottom';
+        if (t) {return 'top';}
+        if (r) {return 'right';}
+        if (b) {return 'bottom';}
         return 'left';
     }
 
-    if (enabledCount === 0) return 'none';
+    if (enabledCount === 0) {return 'none';}
     return fallbackMode === 'none' ? 'all' : fallbackMode;
 }
 
@@ -145,10 +145,10 @@ export function getActiveBorderModes(border?: BorderLike): Set<BorderMode> {
     const b = !!border.bottom;
     const l = !!border.left;
 
-    if (t) modes.add('top');
-    if (r) modes.add('right');
-    if (b) modes.add('bottom');
-    if (l) modes.add('left');
+    if (t) {modes.add('top');}
+    if (r) {modes.add('right');}
+    if (b) {modes.add('bottom');}
+    if (l) {modes.add('left');}
 
     if (t && r && b && l) {
         modes.add('all');

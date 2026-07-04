@@ -67,7 +67,7 @@ export function syncSettingsCheckboxes(settings: XlsxViewSettings): void {
     const chkTextWrap = document.getElementById('chkTextWrap') as HTMLInputElement | null;
     const chkMergeWarning = document.getElementById('chkMergeWarningEnabled') as HTMLInputElement | null;
 
-    if (chkHeader) chkHeader.checked = !!settings.firstRowIsHeader;
+    if (chkHeader) {chkHeader.checked = !!settings.firstRowIsHeader;}
     if (chkSticky) {
         chkSticky.checked = !!settings.stickyHeader;
         chkSticky.disabled = !settings.firstRowIsHeader;
@@ -76,16 +76,16 @@ export function syncSettingsCheckboxes(settings: XlsxViewSettings): void {
             chkSticky.parentElement.style.pointerEvents = !settings.firstRowIsHeader ? 'none' : 'auto';
         }
     }
-    if (chkToolbar) chkToolbar.checked = !!settings.stickyToolbar;
-    if (chkAutoSave) chkAutoSave.checked = !!settings.autoSave;
-    if (radioAutoSaveAll) radioAutoSaveAll.checked = settings.autoSaveMode !== 'controlsOnly';
-    if (radioAutoSaveControlsOnly) radioAutoSaveControlsOnly.checked = settings.autoSaveMode === 'controlsOnly';
-    if (chkManualSavePopup) chkManualSavePopup.checked = !!settings.showManualSavePopup;
-    if (chkOutsideControls) chkOutsideControls.checked = !!settings.allowInteractiveControlsOutsideEditMode;
-    if (chkHyperlink) chkHyperlink.checked = !!settings.hyperlinkPreview;
-    if (chkSpacious) chkSpacious.checked = !!settings.spaciousCells;
-    if (chkTextWrap) chkTextWrap.checked = !!settings.textWrap;
-    if (chkMergeWarning) chkMergeWarning.checked = !!settings.mergeWarningEnabled;
+    if (chkToolbar) {chkToolbar.checked = !!settings.stickyToolbar;}
+    if (chkAutoSave) {chkAutoSave.checked = !!settings.autoSave;}
+    if (radioAutoSaveAll) {radioAutoSaveAll.checked = settings.autoSaveMode !== 'controlsOnly';}
+    if (radioAutoSaveControlsOnly) {radioAutoSaveControlsOnly.checked = settings.autoSaveMode === 'controlsOnly';}
+    if (chkManualSavePopup) {chkManualSavePopup.checked = !!settings.showManualSavePopup;}
+    if (chkOutsideControls) {chkOutsideControls.checked = !!settings.allowInteractiveControlsOutsideEditMode;}
+    if (chkHyperlink) {chkHyperlink.checked = !!settings.hyperlinkPreview;}
+    if (chkSpacious) {chkSpacious.checked = !!settings.spaciousCells;}
+    if (chkTextWrap) {chkTextWrap.checked = !!settings.textWrap;}
+    if (chkMergeWarning) {chkMergeWarning.checked = !!settings.mergeWarningEnabled;}
 
     const autoSaveEnabled = !!settings.autoSave;
     const manualSaveItem = chkManualSavePopup?.closest('.setting-item') as HTMLElement | null;

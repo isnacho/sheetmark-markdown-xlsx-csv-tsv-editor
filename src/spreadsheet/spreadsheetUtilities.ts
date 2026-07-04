@@ -14,7 +14,7 @@ export function convertARGBToRGBA(argb: string): string {
 export function isShadeOfBlack(color: string): boolean {
     // Parse RGB/RGBA values
     const match = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*[\d.]+)?\)/);
-    if (!match) return false;
+    if (!match) {return false;}
     
     const r = parseInt(match[1]);
     const g = parseInt(match[2]);
@@ -31,7 +31,7 @@ export function isShadeOfBlack(color: string): boolean {
 export function isShadeOfWhite(color: string): boolean {
     // Parse RGB/RGBA values
     const match = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*[\d.]+)?\)/);
-    if (!match) return false;
+    if (!match) {return false;}
 
     const r = parseInt(match[1]);
     const g = parseInt(match[2]);

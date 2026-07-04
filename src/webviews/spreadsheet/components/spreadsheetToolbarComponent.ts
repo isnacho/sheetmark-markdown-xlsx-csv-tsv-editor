@@ -5,7 +5,6 @@ export interface CreateXlsxToolbarButtonsOptions {
     onFind: () => void;
     textColorIcon: string;
     bgColorIcon: string;
-    onEditFile: () => void;
     onToggleTableEdit: () => void;
     onSaveTableEdits: () => void;
     onCancelTableEdits: () => void;
@@ -42,14 +41,6 @@ export function createXlsxToolbarButtons(options: CreateXlsxToolbarButtonsOption
             tooltip: 'Reload file from disk',
             cls: 'icon-only',
             onClick: options.onRefresh
-        },
-        {
-            id: 'editFileButton',
-            icon: Icons.EditFile,
-            label: 'Edit File',
-            tooltip: 'Open this file in the default text editor',
-            hidden: true,
-            onClick: options.onEditFile
         },
         {
             id: 'toggleTableEditButton',
@@ -109,7 +100,7 @@ export function createXlsxToolbarButtons(options: CreateXlsxToolbarButtonsOption
         {
             id: 'toggleExpandButton',
             icon: Icons.Expand,
-            label: 'Expand',
+            cls: 'icon-only',
             tooltip: 'Toggle Column Widths (Default / Expand All)',
             onClick: options.onToggleExpand
         },
@@ -123,7 +114,7 @@ export function createXlsxToolbarButtons(options: CreateXlsxToolbarButtonsOption
         {
             id: 'togglePlainViewButton',
             icon: Icons.Table,
-            label: 'Plain',
+            cls: 'icon-only',
             tooltip: 'Toggle Plain View (removes all styling)',
             onClick: options.onTogglePlainView
         },
@@ -158,7 +149,7 @@ export function createXlsxToolbarButtons(options: CreateXlsxToolbarButtonsOption
         {
             id: 'convertFileButton',
             icon: Icons.Convert,
-            label: 'Convert',
+            cls: 'icon-only',
             tooltip: 'Convert this file to CSV, TSV, or XLSX',
             onClick: options.onConvertFile
         },

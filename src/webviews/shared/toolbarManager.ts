@@ -18,7 +18,7 @@ export class ToolbarManager {
 
     constructor(containerId: string) {
         const el = document.getElementById(containerId);
-        if (!el) throw new Error(`Toolbar container ${containerId} not found`); 
+        if (!el) {throw new Error(`Toolbar container ${containerId} not found`);} 
         this.container = el;
     }
 
@@ -52,7 +52,7 @@ export class ToolbarManager {
             }
             container.classList.remove('not-sticky');
             container.classList.add('expanded-toolbar');
-            if (headerBg) headerBg.style.display = '';
+            if (headerBg) {headerBg.style.display = '';}
 
             if (!this.resizeObserver) {
                 this.resizeObserver = new ResizeObserver(() => this.updateHeaderHeight());
@@ -73,7 +73,7 @@ export class ToolbarManager {
             }
             container.classList.add('not-sticky');
             container.classList.remove('expanded-toolbar');
-            if (headerBg) headerBg.style.display = 'none';
+            if (headerBg) {headerBg.style.display = 'none';}
 
             if (this.resizeObserver) {
                 this.resizeObserver.disconnect();
@@ -88,7 +88,7 @@ export class ToolbarManager {
 
         if (!this.isSticky) {
             document.documentElement.style.setProperty('--header-height', '0px');
-            if (headerBg) headerBg.style.height = '';
+            if (headerBg) {headerBg.style.height = '';}
             return;
         }
 
@@ -113,12 +113,12 @@ export class ToolbarManager {
     addButton(btn: ToolbarButton) {
         const wrapper = document.createElement('div');
         wrapper.className = `tooltip ${btn.cls || ''}`;
-        if (btn.hidden) wrapper.classList.add('hidden');
+        if (btn.hidden) {wrapper.classList.add('hidden');}
 
         const buttonEl = document.createElement('button');
         buttonEl.id = btn.id;
         buttonEl.className = `toggle-button`;
-        if (btn.enabled === false) buttonEl.disabled = true;
+        if (btn.enabled === false) {buttonEl.disabled = true;}
         
         const tooltipText = document.createElement('span');
         tooltipText.className = 'tooltiptext';
@@ -150,7 +150,7 @@ export class ToolbarManager {
 
     setButtonEnabled(id: string, enabled: boolean) {
         const btn = this.buttons.get(id);
-        if (btn) btn.disabled = !enabled;
+        if (btn) {btn.disabled = !enabled;}
     }
 
     setButtonVisibility(id: string, visible: boolean) {
@@ -158,8 +158,8 @@ export class ToolbarManager {
         if (btn) {
             const wrapper = btn.closest('.tooltip');
             const target = wrapper || btn;
-            if (visible) target.classList.remove('hidden');
-            else target.classList.add('hidden');
+            if (visible) {target.classList.remove('hidden');}
+            else {target.classList.add('hidden');}
         }
     }
 
@@ -169,7 +169,7 @@ export class ToolbarManager {
             const wrapper = btn.closest('.tooltip');
             if (wrapper) {
                 const tip = wrapper.querySelector('.tooltiptext');
-                if (tip) tip.innerHTML = tooltip;
+                if (tip) {tip.innerHTML = tooltip;}
             } else {
                 btn.title = tooltip;
             }

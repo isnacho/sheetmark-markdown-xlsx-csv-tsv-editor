@@ -10,7 +10,7 @@ export class FeedbackModal {
     private static emailInput: HTMLInputElement | null = null;
 
     public static initialize() {
-        if (this.isInitialized) return;
+        if (this.isInitialized) {return;}
         this.isInitialized = true;
 
         this.overlay = document.createElement('div');
@@ -133,7 +133,7 @@ export class FeedbackModal {
                     Utils.showToast('Feedback submitted successfully!');
                     this.hide();
                     const form = document.getElementById('feedbackForm') as HTMLFormElement;
-                    if (form) form.reset();
+                    if (form) {form.reset();}
                     this.updateEmailVisibility();
                 } else {
                     Utils.showToast('Failed to submit feedback.', false);
@@ -200,7 +200,7 @@ export class FeedbackModal {
     }
 
     private static updateEmailVisibility() {
-        if (!this.emailContainer || !this.emailInput) return;
+        if (!this.emailContainer || !this.emailInput) {return;}
 
         const followUpYes = document.getElementById('followUpYes') as HTMLInputElement;
 

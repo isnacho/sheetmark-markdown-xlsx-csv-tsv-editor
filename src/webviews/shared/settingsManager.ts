@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+ 
 
 export interface SettingDefinition {
     id: string;
@@ -71,7 +71,7 @@ export class SettingsManager {
     }
 
     private init() {
-        if (!this.openBtn || !this.panel) return;
+        if (!this.openBtn || !this.panel) {return;}
 
         this.openBtn.addEventListener('click', () => {
             if (this.panel!.classList.contains('hidden')) {
@@ -117,7 +117,7 @@ export class SettingsManager {
 
     private repositionPanel() {
         const container = document.querySelector('.toolbar');
-        if (!container) return;
+        if (!container) {return;}
         const rect = container.getBoundingClientRect();
         
         this.panel!.style.position = 'fixed';
@@ -128,7 +128,7 @@ export class SettingsManager {
         this.panel!.style.width = Math.max(280, maxWidth) + 'px';
         this.panel!.style.zIndex = '10001';
         
-        if (this.onReposition) this.onReposition();
+        if (this.onReposition) {this.onReposition();}
     }
 
     private openPanel() {

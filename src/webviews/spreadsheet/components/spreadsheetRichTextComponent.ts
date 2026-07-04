@@ -8,10 +8,10 @@ export interface RichRun {
 export function normalizeColorToHex(color: string): string | undefined {
     const value = (color || '').trim();
     const hexMatch = value.match(/^#([0-9a-fA-F]{6})$/);
-    if (hexMatch) return ('#' + hexMatch[1]).toLowerCase();
+    if (hexMatch) {return ('#' + hexMatch[1]).toLowerCase();}
 
     const rgbMatch = value.match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
-    if (!rgbMatch) return undefined;
+    if (!rgbMatch) {return undefined;}
     const r = Math.max(0, Math.min(255, parseInt(rgbMatch[1], 10)));
     const g = Math.max(0, Math.min(255, parseInt(rgbMatch[2], 10)));
     const b = Math.max(0, Math.min(255, parseInt(rgbMatch[3], 10)));
@@ -21,28 +21,28 @@ export function normalizeColorToHex(color: string): string | undefined {
 function collectRichRunsFromNode(node: Node, inherited: Omit<RichRun, 'text'>, output: RichRun[]) {
     if (node.nodeType === Node.TEXT_NODE) {
         const txt = node.textContent || '';
-        if (!txt) return;
+        if (!txt) {return;}
         output.push({ text: txt, ...inherited });
         return;
     }
 
-    if (node.nodeType !== Node.ELEMENT_NODE) return;
+    if (node.nodeType !== Node.ELEMENT_NODE) {return;}
     const el = node as HTMLElement;
     const tag = el.tagName.toLowerCase();
 
     const next = { ...inherited };
-    if (tag === 'b' || tag === 'strong') next.bold = true;
-    if (tag === 'i' || tag === 'em') next.italic = true;
+    if (tag === 'b' || tag === 'strong') {next.bold = true;}
+    if (tag === 'i' || tag === 'em') {next.italic = true;}
 
     const style = window.getComputedStyle(el);
     const fw = style.fontWeight || '';
-    if (fw === 'bold' || parseInt(fw, 10) >= 600) next.bold = true;
-    if (style.fontStyle === 'italic') next.italic = true;
+    if (fw === 'bold' || parseInt(fw, 10) >= 600) {next.bold = true;}
+    if (style.fontStyle === 'italic') {next.italic = true;}
 
     const explicitColor = el.style && el.style.color ? el.style.color : '';
     if (explicitColor) {
         const hexColor = normalizeColorToHex(explicitColor);
-        if (hexColor) next.color = hexColor;
+        if (hexColor) {next.color = hexColor;}
     }
 
     for (const child of Array.from(el.childNodes)) {
@@ -53,7 +53,7 @@ function collectRichRunsFromNode(node: Node, inherited: Omit<RichRun, 'text'>, o
 function collapseRuns(runs: RichRun[]): RichRun[] {
     const merged: RichRun[] = [];
     runs.forEach(run => {
-        if (!run.text) return;
+        if (!run.text) {return;}
         const prev = merged[merged.length - 1];
         if (prev && prev.bold === run.bold && prev.italic === run.italic && prev.color === run.color) {
             prev.text += run.text;

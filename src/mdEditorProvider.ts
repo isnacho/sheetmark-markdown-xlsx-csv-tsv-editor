@@ -230,13 +230,6 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                         }
                         break;
 
-                    case 'toggleView':
-                        if (!message.isPreviewView) {
-                            await vscode.commands.executeCommand('vscode.openWith', document.uri, 'default');
-                            webviewPanel.dispose();
-                        }
-                        break;
-
                     case 'requestFreshData':
                         try {
                             const content = await fs.promises.readFile(filePath, 'utf-8');
@@ -587,8 +580,6 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
 
     private getWebviewContent(webviewPanel: vscode.WebviewPanel): string {
         const webview = webviewPanel.webview;
-        const imgUri = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'md', 'view.png'));
-        const svgUri = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'md', 'logo.svg'));
         const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'dist', 'md', 'mdWebview.js'));
         const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'md', 'mdWebview.css'));
         const themeUri = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'shared', 'theme.css'));
@@ -609,10 +600,6 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
             <link href="${highlightUri}" rel="stylesheet" />
             <link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.6.0/katex.min.css" rel="stylesheet" />
             <link href="${feedbackStyleUri}" rel="stylesheet" />
-            <script>
-                window.viewImgUri = "${imgUri}";
-                window.logoSvgUri = "${svgUri}";
-            </script>
         </head>
         <body>
             <div id="readingProgressBar" class="reading-progress-bar"></div>

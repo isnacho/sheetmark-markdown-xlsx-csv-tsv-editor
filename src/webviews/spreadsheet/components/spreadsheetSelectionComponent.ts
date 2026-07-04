@@ -32,7 +32,7 @@ export class XlsxSelectionManager {
         this.bindings.setLastSelectedColumn(null);
 
         const info = document.getElementById('selectionInfo');
-        if (info) info.style.display = 'none';
+        if (info) {info.style.display = 'none';}
 
         this.applyHeaderHighlightsFromCurrentSelection();
     }
@@ -66,10 +66,10 @@ export class XlsxSelectionManager {
 
             if (row >= minRow && row <= maxRow && col >= minCol && col <= maxCol) {
                 cell.classList.add('selected');
-                if (row === minRow) cell.classList.add('selection-top');
-                if (row === maxRow) cell.classList.add('selection-bottom');
-                if (col === minCol) cell.classList.add('selection-left');
-                if (col === maxCol) cell.classList.add('selection-right');
+                if (row === minRow) {cell.classList.add('selection-top');}
+                if (row === maxRow) {cell.classList.add('selection-bottom');}
+                if (col === minCol) {cell.classList.add('selection-left');}
+                if (col === maxCol) {cell.classList.add('selection-right');}
                 this.bindings.selectedCells.add(cell);
             }
         });
@@ -110,8 +110,8 @@ export class XlsxSelectionManager {
                             this.bindings.selectedCells.add(cell as HTMLElement);
                             cell.classList.add('selection-top', 'selection-bottom');
                             const col = parseInt((cell as HTMLElement).dataset.col!, 10);
-                            if (col === 0) cell.classList.add('selection-left');
-                            if (col === this.bindings.getColumnCount() - 1) cell.classList.add('selection-right');
+                            if (col === 0) {cell.classList.add('selection-left');}
+                            if (col === this.bindings.getColumnCount() - 1) {cell.classList.add('selection-right');}
                         }
                     });
                 }
@@ -123,7 +123,7 @@ export class XlsxSelectionManager {
                 const cells = document.querySelectorAll('td[data-row="' + rowIndex + '"], th[data-row="' + rowIndex + '"]');
                 cells.forEach(cell => {
                     cell.classList.remove('row-selected', 'selection-top', 'selection-bottom', 'selection-left', 'selection-right');
-                    if (cell.tagName === 'TD') this.bindings.selectedCells.delete(cell as HTMLElement);
+                    if (cell.tagName === 'TD') {this.bindings.selectedCells.delete(cell as HTMLElement);}
                 });
             } else {
                 this.bindings.selectedRows.add(rowIndex);
@@ -135,8 +135,8 @@ export class XlsxSelectionManager {
                         this.bindings.selectedCells.add(cell as HTMLElement);
                         cell.classList.add('selection-top', 'selection-bottom');
                         const col = parseInt((cell as HTMLElement).dataset.col!, 10);
-                        if (col === 0) cell.classList.add('selection-left');
-                        if (col === this.bindings.getColumnCount() - 1) cell.classList.add('selection-right');
+                        if (col === 0) {cell.classList.add('selection-left');}
+                        if (col === this.bindings.getColumnCount() - 1) {cell.classList.add('selection-right');}
                     }
                 });
             }
@@ -150,8 +150,8 @@ export class XlsxSelectionManager {
                     this.bindings.selectedCells.add(cell as HTMLElement);
                     cell.classList.add('selection-top', 'selection-bottom');
                     const col = parseInt((cell as HTMLElement).dataset.col!, 10);
-                    if (col === 0) cell.classList.add('selection-left');
-                    if (col === this.bindings.getColumnCount() - 1) cell.classList.add('selection-right');
+                    if (col === 0) {cell.classList.add('selection-left');}
+                    if (col === this.bindings.getColumnCount() - 1) {cell.classList.add('selection-right');}
                 }
             });
         }
@@ -186,8 +186,8 @@ export class XlsxSelectionManager {
                             this.bindings.selectedCells.add(cell as HTMLElement);
                             cell.classList.add('selection-left', 'selection-right');
                             const row = parseInt((cell as HTMLElement).dataset.row!, 10);
-                            if (row === 0) cell.classList.add('selection-top');
-                            if (row === this.bindings.getTotalRows() - 1) cell.classList.add('selection-bottom');
+                            if (row === 0) {cell.classList.add('selection-top');}
+                            if (row === this.bindings.getTotalRows() - 1) {cell.classList.add('selection-bottom');}
                         }
                     });
                 }
@@ -199,7 +199,7 @@ export class XlsxSelectionManager {
                 const cells = document.querySelectorAll('td[data-col="' + colIndex + '"], th[data-col="' + colIndex + '"]');
                 cells.forEach(cell => {
                     cell.classList.remove('column-selected', 'selection-top', 'selection-bottom', 'selection-left', 'selection-right');
-                    if (cell.tagName === 'TD') this.bindings.selectedCells.delete(cell as HTMLElement);
+                    if (cell.tagName === 'TD') {this.bindings.selectedCells.delete(cell as HTMLElement);}
                 });
             } else {
                 this.bindings.selectedColumns.add(colIndex);
@@ -211,8 +211,8 @@ export class XlsxSelectionManager {
                         this.bindings.selectedCells.add(cell as HTMLElement);
                         cell.classList.add('selection-left', 'selection-right');
                         const row = parseInt((cell as HTMLElement).dataset.row!, 10);
-                        if (row === 0) cell.classList.add('selection-top');
-                        if (row === this.bindings.getTotalRows() - 1) cell.classList.add('selection-bottom');
+                        if (row === 0) {cell.classList.add('selection-top');}
+                        if (row === this.bindings.getTotalRows() - 1) {cell.classList.add('selection-bottom');}
                     }
                 });
             }
@@ -226,8 +226,8 @@ export class XlsxSelectionManager {
                     this.bindings.selectedCells.add(cell as HTMLElement);
                     cell.classList.add('selection-left', 'selection-right');
                     const row = parseInt((cell as HTMLElement).dataset.row!, 10);
-                    if (row === 0) cell.classList.add('selection-top');
-                    if (row === this.bindings.getTotalRows() - 1) cell.classList.add('selection-bottom');
+                    if (row === 0) {cell.classList.add('selection-top');}
+                    if (row === this.bindings.getTotalRows() - 1) {cell.classList.add('selection-bottom');}
                 }
             });
         }
@@ -243,15 +243,15 @@ export class XlsxSelectionManager {
         previousSelectedCells.forEach((cell) => {
             const row = cell.dataset?.row;
             const col = cell.dataset?.col;
-            if (row === undefined || col === undefined) return;
+            if (row === undefined || col === undefined) {return;}
 
             const mapped = document.querySelector('td[data-row="' + row + '"][data-col="' + col + '"]') as HTMLElement | null;
             if (mapped) {
                 mapped.classList.add('selected');
-                if (cell.classList.contains('selection-top')) mapped.classList.add('selection-top');
-                if (cell.classList.contains('selection-bottom')) mapped.classList.add('selection-bottom');
-                if (cell.classList.contains('selection-left')) mapped.classList.add('selection-left');
-                if (cell.classList.contains('selection-right')) mapped.classList.add('selection-right');
+                if (cell.classList.contains('selection-top')) {mapped.classList.add('selection-top');}
+                if (cell.classList.contains('selection-bottom')) {mapped.classList.add('selection-bottom');}
+                if (cell.classList.contains('selection-left')) {mapped.classList.add('selection-left');}
+                if (cell.classList.contains('selection-right')) {mapped.classList.add('selection-right');}
                 this.bindings.selectedCells.add(mapped);
             }
         });
@@ -263,8 +263,8 @@ export class XlsxSelectionManager {
                     this.bindings.selectedCells.add(cell as HTMLElement);
                     cell.classList.add('selection-left', 'selection-right');
                     const row = parseInt((cell as HTMLElement).dataset.row!, 10);
-                    if (row === 0) cell.classList.add('selection-top');
-                    if (row === this.bindings.getTotalRows() - 1) cell.classList.add('selection-bottom');
+                    if (row === 0) {cell.classList.add('selection-top');}
+                    if (row === this.bindings.getTotalRows() - 1) {cell.classList.add('selection-bottom');}
                 }
             });
         });
@@ -276,8 +276,8 @@ export class XlsxSelectionManager {
                     this.bindings.selectedCells.add(cell as HTMLElement);
                     cell.classList.add('selection-top', 'selection-bottom');
                     const col = parseInt((cell as HTMLElement).dataset.col!, 10);
-                    if (col === 0) cell.classList.add('selection-left');
-                    if (col === this.bindings.getColumnCount() - 1) cell.classList.add('selection-right');
+                    if (col === 0) {cell.classList.add('selection-left');}
+                    if (col === this.bindings.getColumnCount() - 1) {cell.classList.add('selection-right');}
                 }
             });
         });
@@ -304,7 +304,7 @@ export class XlsxSelectionManager {
         this.applyHeaderHighlightsFromCurrentSelection();
 
         const info = document.getElementById('selectionInfo');
-        if (!info) return;
+        if (!info) {return;}
 
         if (this.bindings.selectedColumnIndices.size > 0 || this.bindings.selectedRowIndices.size > 0) {
             let rowCount = this.bindings.selectedRowIndices.size > 0 ? this.bindings.selectedRowIndices.size : this.bindings.getTotalRows();
@@ -357,16 +357,16 @@ export class XlsxSelectionManager {
         this.bindings.selectedCells.forEach((cell) => {
             const row = parseInt(cell.dataset.row || '-1', 10);
             const col = parseInt(cell.dataset.col || '-1', 10);
-            if (row >= 0) impliedRows.add(row);
-            if (col >= 0) impliedCols.add(col);
+            if (row >= 0) {impliedRows.add(row);}
+            if (col >= 0) {impliedCols.add(col);}
         });
 
         const activeCell = this.bindings.getActiveCell();
         if (activeCell) {
             const row = parseInt(activeCell.dataset.row || '-1', 10);
             const col = parseInt(activeCell.dataset.col || '-1', 10);
-            if (row >= 0) impliedRows.add(row);
-            if (col >= 0) impliedCols.add(col);
+            if (row >= 0) {impliedRows.add(row);}
+            if (col >= 0) {impliedCols.add(col);}
         }
 
         explicitRows.forEach((rowIdx) => {
@@ -382,14 +382,14 @@ export class XlsxSelectionManager {
         });
 
         impliedRows.forEach((rowIdx) => {
-            if (explicitRows.has(rowIdx)) return;
+            if (explicitRows.has(rowIdx)) {return;}
             document.querySelectorAll('th.row-header[data-row="' + rowIdx + '"]').forEach((cell) => {
                 cell.classList.add('row-selected-implied');
             });
         });
 
         impliedCols.forEach((colIdx) => {
-            if (explicitCols.has(colIdx)) return;
+            if (explicitCols.has(colIdx)) {return;}
             document.querySelectorAll('th.col-header[data-col="' + colIdx + '"]').forEach((cell) => {
                 cell.classList.add('column-selected-implied');
             });

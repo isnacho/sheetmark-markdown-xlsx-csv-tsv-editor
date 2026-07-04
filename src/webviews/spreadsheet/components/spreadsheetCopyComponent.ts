@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+ 
 
 export interface XlsxCopyContext {
     selectedCells: Set<HTMLElement>;
@@ -57,8 +57,8 @@ export async function writeToClipboardAsync(text: string) {
             textarea.setSelectionRange(0, text.length);
             const ok = document.execCommand('copy');
             document.body.removeChild(textarea);
-            if (ok) resolve();
-            else reject(new Error('execCommand("copy") returned false'));
+            if (ok) {resolve();}
+            else {reject(new Error('execCommand("copy") returned false'));}
         } catch (err) {
             document.body.removeChild(textarea);
             reject(err);
@@ -70,8 +70,8 @@ export async function copySelectionToClipboard(ctx: XlsxCopyContext): Promise<vo
     const hasFullColumnSelection = ctx.selectedColumnIndices.size > 0;
     const hasFullRowSelection = ctx.selectedRowIndices.size > 0;
 
-    if (!hasFullColumnSelection && !hasFullRowSelection && ctx.selectedCells.size === 0) return;
-    if (ctx.isCopying) return;
+    if (!hasFullColumnSelection && !hasFullRowSelection && ctx.selectedCells.size === 0) {return;}
+    if (ctx.isCopying) {return;}
 
     ctx.setIsCopying(true);
 

@@ -418,10 +418,6 @@ body.dark-mode.edit-mode #content {
     outline-width: 2px;
 }
 
-body.edit-mode .edit-mode-hide {
-    display: none !important;
-}
-
 body.edit-mode td.editable-cell {
     cursor: text;
     user-select: text;

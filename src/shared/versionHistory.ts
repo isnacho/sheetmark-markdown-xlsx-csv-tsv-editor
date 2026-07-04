@@ -33,9 +33,9 @@ export function formatVersionHistoryGroupLabel(timestamp: number): string {
     const entryDay = new Date(entryDate.getFullYear(), entryDate.getMonth(), entryDate.getDate());
     const dayDiff = Math.round((today.getTime() - entryDay.getTime()) / (24 * 60 * 60 * 1000));
 
-    if (dayDiff === 0) return 'Today';
-    if (dayDiff === 1) return 'Yesterday';
-    if (dayDiff >= 2 && dayDiff <= 6) return 'This Week';
+    if (dayDiff === 0) {return 'Today';}
+    if (dayDiff === 1) {return 'Yesterday';}
+    if (dayDiff >= 2 && dayDiff <= 6) {return 'This Week';}
     return entryDate.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 }
 

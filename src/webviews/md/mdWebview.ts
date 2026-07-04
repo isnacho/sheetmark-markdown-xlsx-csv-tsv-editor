@@ -23,7 +23,7 @@ import { full as emoji } from 'markdown-it-emoji';
 import katex from 'markdown-it-katex';
 
 import hljs from 'highlight.js';
-import { ThemeManager } from '../shared/themeManager';
+import { ThemeManager, renderThemeToggleSettingItem } from '../shared/themeManager';
 import { SettingsManager } from '../shared/settingsManager';
 import { ToolbarManager } from '../shared/toolbarManager';
 import { applyToolbarLayout } from '../shared/toolbarLayout';
@@ -198,12 +198,13 @@ function wrapCodeLines(html: string): string {
 }
 
 function setButtonsEnabled(enabled: boolean) {
-    const ids = ['enableMdEditorButton', 'disableMdEditorButton', 'toggleEditModeButton', 'previewEditButton', 'saveEditsButton',
+    const ids = ['enableMdEditorButton', 'disableMdEditorButton', 'saveEditsButton',
         'cancelEditsButton', 'toggleBackgroundButton', 'openSettingsButton', 'versionHistoryButton'];
     ids.forEach((id) => {
         const el = $(id) as HTMLButtonElement;
         if (el) {el.disabled = !enabled;}
     });
+    syncViewModeSelect();
 }
 
 function getPreviewSnapshot(): string {
@@ -662,8 +663,6 @@ function setEditMode(enabled: boolean) {
     document.body.classList.toggle('edit-mode', enabled);
     document.body.classList.remove('preview-edit-mode');
 
-    const editBtn = $('toggleEditModeButton');
-    const previewEditBtn = $('previewEditButton');
     const saveBtn = $('saveEditsButton');
     const cancelBtn = $('cancelEditsButton');
     const container = $('markdownContainer');
@@ -672,11 +671,6 @@ function setEditMode(enabled: boolean) {
 
     const saveTarget = (saveBtn?.closest('.tooltip') as HTMLElement | null) || saveBtn;
     const cancelTarget = (cancelBtn?.closest('.tooltip') as HTMLElement | null) || cancelBtn;
-    const editTarget = (editBtn?.closest('.tooltip') as HTMLElement | null) || editBtn;
-    const previewEditTarget = (previewEditBtn?.closest('.tooltip') as HTMLElement | null) || previewEditBtn;
-
-    if (editTarget) {editTarget.classList.toggle('hidden', enabled);}
-    if (previewEditTarget) {previewEditTarget.classList.toggle('hidden', enabled);}
 
     if (saveTarget) {saveTarget.classList.toggle('hidden', !enabled);}
     if (cancelTarget) {cancelTarget.classList.toggle('hidden', !enabled);}
@@ -733,6 +727,7 @@ function setEditMode(enabled: boolean) {
     }
 
     updateStatusInfo();
+    syncViewModeSelect();
 }
 
 // ===== Preview Edit Mode (WYSIWYG) =====
@@ -742,8 +737,6 @@ function setPreviewEditMode(enabled: boolean) {
     document.body.classList.toggle('edit-mode', enabled);
     document.body.classList.toggle('preview-edit-mode', enabled);
 
-    const editBtn = $('toggleEditModeButton');
-    const previewEditBtn = $('previewEditButton');
     const saveBtn = $('saveEditsButton');
     const cancelBtn = $('cancelEditsButton');
     const container = $('markdownContainer');
@@ -751,11 +744,6 @@ function setPreviewEditMode(enabled: boolean) {
 
     const saveTarget = (saveBtn?.closest('.tooltip') as HTMLElement | null) || saveBtn;
     const cancelTarget = (cancelBtn?.closest('.tooltip') as HTMLElement | null) || cancelBtn;
-    const editTarget = (editBtn?.closest('.tooltip') as HTMLElement | null) || editBtn;
-    const previewEditTarget = (previewEditBtn?.closest('.tooltip') as HTMLElement | null) || previewEditBtn;
-
-    if (editTarget) {editTarget.classList.toggle('hidden', enabled);}
-    if (previewEditTarget) {previewEditTarget.classList.toggle('hidden', enabled);}
 
     if (saveTarget) {saveTarget.classList.toggle('hidden', !enabled);}
     if (cancelTarget) {cancelTarget.classList.toggle('hidden', !enabled);}
@@ -798,6 +786,77 @@ function setPreviewEditMode(enabled: boolean) {
     }
 
     updateStatusInfo();
+    syncViewModeSelect();
+}
+
+// ===== Unified View Mode (dropdown) =====
+type ViewMode = 'reading' | 'split' | 'preview';
+
+function getCurrentViewMode(): ViewMode {
+    if (isPreviewEditMode) {return 'preview';}
+    if (isEditMode) {return 'split';}
+    return 'reading';
+}
+
+function extractCurrentEditorContent(): string {
+    if (isPreviewEditMode) {
+        const preview = $('markdownPreview');
+        if (!preview) {return currentContent;}
+        const clone = preview.cloneNode(true) as HTMLElement;
+        clone.querySelectorAll('.table-hover-tools').forEach(node => node.remove());
+        clone.querySelectorAll('.heading-anchor').forEach(node => node.remove());
+        clone.querySelectorAll('td, th').forEach((cellNode) => {
+            const cell = cellNode as HTMLTableCellElement;
+            if ((cell.textContent || '').replace(/ /g, '').trim() === '') {
+                cell.innerHTML = '';
+            }
+        });
+        return sanitizeMarkdownCopyLinkArtifacts(turndownService.turndown(clone.innerHTML));
+    }
+    if (isEditMode) {
+        const editor = $('markdownEditor') as HTMLTextAreaElement | null;
+        return editor ? sanitizeMarkdownCopyLinkArtifacts(editor.value) : currentContent;
+    }
+    return currentContent;
+}
+
+function syncViewModeSelect() {
+    const select = $('viewModeSelect') as HTMLSelectElement | null;
+    if (!select) {return;}
+    select.value = getCurrentViewMode();
+    select.disabled = isVersionPreviewMode || isSaving;
+}
+
+function setViewMode(next: ViewMode) {
+    const current = getCurrentViewMode();
+    if (current === next) {return;}
+
+    if (current !== 'reading') {
+        currentContent = extractCurrentEditorContent();
+    }
+
+    if (next === 'reading') {
+        if (currentContent === originalContent) {
+            if (current === 'preview') {setPreviewEditMode(false);}
+            else {setEditMode(false);}
+        } else {
+            performSave(true);
+        }
+        return;
+    }
+
+    if (current === 'reading') {
+        if (next === 'split') {setEditMode(true);}
+        else {setPreviewEditMode(true);}
+        return;
+    }
+
+    // Lateral switch between split <-> preview: carry the unsaved text across
+    // without letting setEditMode/setPreviewEditMode clobber originalContent.
+    const preservedOriginal = originalContent;
+    if (next === 'split') {setEditMode(true);}
+    else {setPreviewEditMode(true);}
+    originalContent = preservedOriginal;
 }
 
 function ensureVersionPreviewBanner(): HTMLElement {
@@ -847,6 +906,7 @@ function setVersionPreviewMode(enabled: boolean, label?: string) {
         if (banner) {
             banner.classList.add('hidden');
         }
+        syncViewModeSelect();
     }
 }
 
@@ -856,29 +916,7 @@ function performSave(exitAfterSave = false) {
     shouldExitEditMode = exitAfterSave;
     setButtonsEnabled(false);
 
-    if (isPreviewEditMode) {
-        // Convert preview HTML back to markdown
-        const preview = $('markdownPreview');
-        if (preview) {
-            const clone = preview.cloneNode(true) as HTMLElement;
-            clone.querySelectorAll('.table-hover-tools').forEach(node => node.remove());
-            clone.querySelectorAll('.heading-anchor').forEach(node => node.remove());
-            clone.querySelectorAll('td, th').forEach((cellNode) => {
-                const cell = cellNode as HTMLTableCellElement;
-                if ((cell.textContent || '').replace(/\u00a0/g, '').trim() === '') {
-                    cell.innerHTML = '';
-                }
-            });
-            currentContent = turndownService.turndown(clone.innerHTML);
-        }
-    } else {
-        const editor = $('markdownEditor') as HTMLTextAreaElement;
-        if (editor) {
-            currentContent = editor.value;
-        }
-    }
-
-    currentContent = sanitizeMarkdownCopyLinkArtifacts(currentContent);
+    currentContent = extractCurrentEditorContent();
     const editor = $('markdownEditor') as HTMLTextAreaElement | null;
     if (editor && editor.value !== currentContent) {
         editor.value = currentContent;
@@ -1639,8 +1677,18 @@ function initializeSettings() {
     // Render panel
     SettingsManager.renderPanel(document.body, 'settingsPanel', 'settingsCancelButton', settingsDefs);
 
+    const settingsGroup = document.querySelector('#settingsPanel .settings-group');
+    if (settingsGroup) {
+        settingsGroup.insertAdjacentHTML('beforeend', renderThemeToggleSettingItem('toggleBackgroundButton'));
+    }
+
     // Initialize manager
     new SettingsManager('openSettingsButton', 'settingsPanel', 'settingsCancelButton', settingsDefs);
+
+    // Theme manager
+    new ThemeManager('toggleBackgroundButton', {
+        onBeforeCycle: () => true
+    }, vscode);
 }
 
 function reorderMdToolbarButtons() {
@@ -1649,16 +1697,15 @@ function reorderMdToolbarButtons() {
     const toolbar = document.getElementById('toolbar');
     const enableBtn = toolbarManager.getButton('enableMdEditorButton');
     const disableBtn = toolbarManager.getButton('disableMdEditorButton');
-    const anchorBtn = toolbarManager.getButton('toggleEditModeButton');
+    const anchorWrap = $('viewModeSelectWrapper');
     const helpBtn = toolbarManager.getButton('helpButton');
 
-    if (!toolbar || !enableBtn || !disableBtn || !anchorBtn || !helpBtn) {
+    if (!toolbar || !enableBtn || !disableBtn || !anchorWrap || !helpBtn) {
         return;
     }
 
     const enableWrap = enableBtn.closest('.tooltip') as HTMLElement | null;
     const disableWrap = disableBtn.closest('.tooltip') as HTMLElement | null;
-    const anchorWrap = anchorBtn.closest('.tooltip') as HTMLElement | null;
     const helpWrap = helpBtn.closest('.tooltip') as HTMLElement | null;
 
     if (!enableWrap || !disableWrap || !anchorWrap || !helpWrap) {
@@ -1755,13 +1802,41 @@ function wireButtons() {
     toolbarManager = new ToolbarManager('toolbar');
 
     toolbarManager.setButtons(buildToolbarButtons());
+    insertViewModeSelect();
     reorderMdToolbarButtons();
+}
 
+function insertViewModeSelect() {
+    if (!toolbarManager || $('viewModeSelectWrapper')) {return;}
 
-    // Theme manager
-    new ThemeManager('toggleBackgroundButton', {
-        onBeforeCycle: () => true
-    }, vscode);
+    const wrapper = document.createElement('div');
+    wrapper.id = 'viewModeSelectWrapper';
+    wrapper.className = 'view-mode-select-wrapper';
+
+    const select = document.createElement('select');
+    select.id = 'viewModeSelect';
+    select.className = 'view-mode-select';
+    select.title = 'Choose how to view/edit this Markdown file';
+    select.innerHTML = `
+        <option value="reading">Reading</option>
+        <option value="split">Split Edit</option>
+        <option value="preview">Preview Edit</option>
+    `;
+    select.addEventListener('change', () => {
+        setViewMode(select.value as ViewMode);
+    });
+
+    wrapper.appendChild(select);
+
+    const saveWrapper = toolbarManager.getButton('saveEditsButton')?.closest('.tooltip') as HTMLElement | null;
+    const toolbar = document.getElementById('toolbar');
+    if (saveWrapper && saveWrapper.parentElement) {
+        saveWrapper.parentElement.insertBefore(wrapper, saveWrapper);
+    } else if (toolbar) {
+        toolbar.appendChild(wrapper);
+    }
+
+    syncViewModeSelect();
 }
 
 function buildToolbarButtons() {
@@ -1795,20 +1870,6 @@ function buildToolbarButtons() {
             onClick: () => {
                 vscode.postMessage({ command: 'disableMdEditor' });
             }
-        },
-        {
-            id: 'toggleEditModeButton',
-            icon: Icons.SplitEdit,
-            label: 'Split Edit',
-            tooltip: 'Edit Markdown side-by-side',
-            onClick: () => setEditMode(true)
-        },
-        {
-            id: 'previewEditButton',
-            icon: Icons.ReviewOnly,
-            label: 'Preview Edit',
-            tooltip: 'Edit directly in preview (WYSIWYG)',
-            onClick: () => setPreviewEditMode(true)
         },
         {
             id: 'saveEditsButton',
@@ -1849,13 +1910,6 @@ function buildToolbarButtons() {
             tooltip: 'Settings',
             cls: 'icon-only',
             onClick: () => { /* Handled by wireSettingsUI */ }
-        },
-        {
-            id: 'toggleBackgroundButton',
-            icon: Icons.ThemeLight + Icons.ThemeDark + Icons.ThemeVSCode,
-            tooltip: 'Toggle Theme',
-            cls: 'edit-mode-hide',
-            onClick: () => { /* Handled by ThemeManager */ }
         },
         {
             id: 'focusModeButton',

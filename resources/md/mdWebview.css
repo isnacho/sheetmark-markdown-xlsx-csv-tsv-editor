@@ -49,6 +49,34 @@ body.edit-mode #content {
     stroke: var(--accent-color);
 }
 
+.view-mode-select-wrapper {
+    display: flex;
+    align-items: center;
+}
+
+.view-mode-select {
+    height: 32px;
+    padding: 0 8px;
+    font-size: 13px;
+    font-weight: 500;
+    font-family: var(--font-family);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    cursor: pointer;
+    background-color: transparent;
+    color: var(--text-color);
+    transition: background-color 0.15s ease;
+}
+
+.view-mode-select:hover {
+    background-color: var(--hover-bg);
+}
+
+.view-mode-select:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
 /* ===== Version Preview Banner ===== */
 .version-preview-banner {
     display: flex;

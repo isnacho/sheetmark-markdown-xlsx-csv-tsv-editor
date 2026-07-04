@@ -1,4 +1,8 @@
- 
+import { Icons } from './icons';
+
+export function renderThemeToggleSettingItem(buttonId: string): string {
+    return `<div class="setting-item theme-setting-item"><span>Theme</span><button id="${buttonId}" class="toggle-button" title="Toggle Theme">${Icons.ThemeLight}${Icons.ThemeDark}${Icons.ThemeVSCode}</button></div>`;
+}
 
 export interface ThemeManagerOptions {
     persistKey?: string;

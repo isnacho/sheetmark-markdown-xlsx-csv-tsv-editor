@@ -1,7 +1,7 @@
  
  
 
-import { ThemeManager } from '../shared/themeManager';
+import { ThemeManager, renderThemeToggleSettingItem } from '../shared/themeManager';
 import { SettingsManager } from '../shared/settingsManager';
 import { ToolbarManager } from '../shared/toolbarManager';
 import { applyToolbarLayout } from '../shared/toolbarLayout';
@@ -7112,7 +7112,6 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
         const togglePlainViewButton = document.getElementById('togglePlainViewButton');
         const versionHistoryButton = document.getElementById('versionHistoryButton');
         const openSettingsButton = document.getElementById('openSettingsButton');
-        const toggleBackgroundButton = document.getElementById('toggleBackgroundButton');
         const helpButton = document.getElementById('helpButton');
         const convertFileButton = document.getElementById('convertFileButton');
         const refreshButton = document.getElementById('refreshButton');
@@ -7156,7 +7155,6 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
         if (togglePlainViewButton) {togglePlainViewButton.classList.toggle('hidden', isEditMode && !isPlainView);}
         if (versionHistoryButton) {versionHistoryButton.classList.toggle('hidden', isEditMode);}
         if (openSettingsButton) {openSettingsButton.classList.remove('hidden');}
-        if (toggleBackgroundButton) {toggleBackgroundButton.classList.toggle('hidden', isEditMode);}
         if (helpButton) {helpButton.classList.toggle('hidden', isEditMode);}
         if (convertFileButton) {convertFileButton.classList.toggle('hidden', isEditMode);}
         if (refreshButton) {refreshButton.classList.toggle('hidden', isEditMode);}
@@ -7372,9 +7370,20 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
 
         SettingsManager.renderPanel(document.getElementById('toolbar')!, 'settingsPanel', 'settingsCancelButton', settings);
 
+        const settingsGroup = document.querySelector('#settingsPanel .settings-group');
+        if (settingsGroup) {
+            settingsGroup.insertAdjacentHTML('beforeend', renderThemeToggleSettingItem('toggleBackgroundButton'));
+        }
+
         new SettingsManager('openSettingsButton', 'settingsPanel', 'settingsCancelButton', settings, () => {
             toolbarManager?.updateHeaderHeight();
         });
+
+        if (typeof ThemeManager !== 'undefined') {
+            new ThemeManager('toggleBackgroundButton', {
+                onBeforeCycle: () => !isEditMode
+            }, vscode);
+        }
     }
 
     function attachHandlersOnce() {
@@ -7463,7 +7472,6 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
                 vscode.postMessage({ command: 'showVersionHistory' });
             },
             onOpenSettings: () => { },
-            onToggleBackground: () => { },
             onHelp: () => {
                 FeedbackModal.show();
             },
@@ -7494,12 +7502,6 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
         }
 
         wireEditFormattingControls();
-
-        if (typeof ThemeManager !== 'undefined') {
-            new ThemeManager('toggleBackgroundButton', {
-                onBeforeCycle: () => !isEditMode
-            }, vscode);
-        }
 
         wireSettingsUI();
 

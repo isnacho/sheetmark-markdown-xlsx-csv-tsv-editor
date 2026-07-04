@@ -17,7 +17,6 @@ export interface CreateXlsxToolbarButtonsOptions {
     onTogglePlainView: () => void;
     onVersionHistory: () => void;
     onOpenSettings: () => void;
-    onToggleBackground: () => void;
     onHelp: () => void;
     onConvertFile: () => void;
     onEnableAsDefault: () => void;
@@ -132,12 +131,6 @@ export function createXlsxToolbarButtons(options: CreateXlsxToolbarButtonsOption
             tooltip: 'Insert checkbox, dropdown, rating, or date into selected cells',
             hidden: true,
             onClick: options.onInsertControl
-        },
-        {
-            id: 'toggleBackgroundButton',
-            icon: Icons.ThemeLight + Icons.ThemeDark + Icons.ThemeVSCode,
-            tooltip: 'Toggle Theme',
-            onClick: options.onToggleBackground
         },
         {
             id: 'versionHistoryButton',

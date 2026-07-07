@@ -1,0 +1,225 @@
+// CodeMirror 6 editor for Markdown "Preview Edit" mode.
+//
+// Runtime: WEBVIEW (browser). No Node / no `vscode` module here — only DOM +
+// the CM6 packages, which esbuild bundles into dist/md/mdWebview.js.
+//
+// ============================================================================
+// DUAL-SURFACE STATE-SYNC CONTRACT (acceptance criterion for the Phase 1 spike)
+// ============================================================================
+// There are two editing surfaces: Split mode owns the <textarea> (editor.value);
+// Preview Edit mode (CM6 engine) owns this EditorView's doc. The rules that keep
+// them from drifting — the whole reason the turndown round-trip is being removed:
+//
+//   1. `currentContent` (a string in mdWebview.ts) is the SINGLE SOURCE OF TRUTH.
+//      Neither surface is authoritative; both are views over it.
+//   2. On ENTERING a mode, seed that surface FROM `currentContent`
+//      (editor.value = currentContent for Split; mountLivePreview({doc}) for CM6).
+//   3. On LEAVING a mode / on SAVE / on ANY READ, pull live text OUT of the active
+//      surface and write it back to `currentContent` BEFORE the other surface is
+//      touched. `getActiveEditorContent()` in mdWebview.ts is the ONLY reader; its
+//      CM6 branch calls getLivePreviewContent() here.
+//   4. On Split<->Preview switch: read active surface -> write currentContent ->
+//      seed incoming surface. Never seed the incoming surface from the outgoing
+//      surface directly.
+//   5. Dirty tracking compares currentContent to originalContent, unchanged. CM6's
+//      own change events feed currentContent via the updateListener below (this
+//      replaces the onEditorInput() side-effect the old textarea path relied on).
+// ============================================================================
+
+import { EditorState, Compartment, Annotation } from '@codemirror/state';
+import { EditorView, keymap, drawSelection, highlightActiveLine } from '@codemirror/view';
+import { history, historyKeymap, defaultKeymap, undo, redo } from '@codemirror/commands';
+import { markdown } from '@codemirror/lang-markdown';
+import { GFM } from '@lezer/markdown';
+import { syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language';
+import { cm6Theme } from './cm6Theme';
+import {
+    livePreviewSearchField, findCm6Matches, setCm6SearchHighlights,
+    clearCm6SearchHighlights, scrollCm6ToMatch,
+} from './livePreviewSearch';
+import type { Cm6Match } from './livePreviewSearch';
+import { detectInteractionAtPos } from './livePreviewInteractions';
+import type { Cm6Interaction } from './livePreviewInteractions';
+import { livePreviewRevealPlugin } from './revealDecorations';
+import { codeStylingPlugin } from './codeStyling';
+import { tableWidgetPlugin } from './tableWidget';
+
+export interface LivePreviewMountOptions {
+    /** Element to mount the editor into (its children are cleared first). */
+    parent: HTMLElement;
+    /** Initial document text (seed from currentContent — see contract rule 2). */
+    doc: string;
+    /** Fired on genuine user edits (not programmatic seeds) — feeds currentContent. */
+    onDocChanged: (doc: string) => void;
+    /** Whether to soft-wrap long lines (mirrors the md.wordWrap setting). */
+    lineWrapping?: boolean;
+    /** Fired on scroll (viewport change) — drives scroll-spy/TOC/progress-bar re-integration. */
+    onScroll?: () => void;
+    /** Fired on Ctrl/Cmd+Click at a doc position — mdWebview.ts resolves the interaction and acts. */
+    onModifierClick?: (pos: number) => void;
+    /** Whether reveal-on-cursor decorations are on (mirrors the md.livePreviewReveal setting). */
+    reveal?: boolean;
+}
+
+let view: EditorView | null = null;
+const wrapCompartment = new Compartment();
+const revealCompartment = new Compartment();
+
+// Marks a transaction as a programmatic seed so the updateListener does not echo
+// it back into currentContent (avoids feedback during mode switches / seeding).
+const programmatic = Annotation.define<boolean>();
+
+/**
+ * Lazily construct and mount the CM6 EditorView. Called on FIRST (and each)
+ * entry into Preview Edit mode; CM6 core is only *constructed* here, so
+ * Reading/Split-only sessions pay parse cost but not construction cost.
+ */
+export function mountLivePreview(opts: LivePreviewMountOptions): EditorView {
+    // Defensive: never leak a previous view.
+    unmountLivePreview();
+
+    const { parent, doc, onDocChanged, lineWrapping = true, onScroll, onModifierClick, reveal = true } = opts;
+    parent.innerHTML = '';
+
+    const updateListener = EditorView.updateListener.of((update) => {
+        if (update.viewportChanged) { onScroll?.(); }
+        if (!update.docChanged) { return; }
+        const isProgrammatic = update.transactions.some(tr => tr.annotation(programmatic));
+        if (isProgrammatic) { return; }
+        onDocChanged(update.state.doc.toString());
+    });
+
+    const clickHandler = EditorView.domEventHandlers({
+        mousedown(event, editorView) {
+            if (!onModifierClick || !(event.ctrlKey || event.metaKey)) { return false; }
+            const pos = editorView.posAtCoords({ x: event.clientX, y: event.clientY });
+            if (pos === null) { return false; }
+            onModifierClick(pos);
+            return true;
+        },
+        scroll() { onScroll?.(); },
+    });
+
+    const state = EditorState.create({
+        doc,
+        extensions: [
+            history(),
+            drawSelection(),
+            highlightActiveLine(),
+            markdown({ extensions: GFM }),
+            syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+            wrapCompartment.of(lineWrapping ? EditorView.lineWrapping : []),
+            keymap.of([...defaultKeymap, ...historyKeymap]),
+            cm6Theme(),
+            livePreviewSearchField(),
+            revealCompartment.of(reveal ? [livePreviewRevealPlugin, tableWidgetPlugin] : []),
+            codeStylingPlugin,
+            clickHandler,
+            updateListener,
+        ],
+    });
+
+    view = new EditorView({ state, parent });
+    return view;
+}
+
+/** Destroy the view and clear its DOM. Idempotent — safe to call when unmounted. */
+export function unmountLivePreview(): void {
+    if (view) {
+        const parent = view.dom.parentElement;
+        view.destroy();
+        if (parent) { parent.innerHTML = ''; }
+        view = null;
+    }
+}
+
+export function isLivePreviewActive(): boolean {
+    return view !== null;
+}
+
+/** Read the live document out of CM6 (contract rule 3). null when not mounted. */
+export function getLivePreviewContent(): string | null {
+    return view ? view.state.doc.toString() : null;
+}
+
+/** Replace the whole document programmatically (does NOT fire onDocChanged). */
+export function setLivePreviewContent(text: string): void {
+    if (!view) { return; }
+    view.dispatch({
+        changes: { from: 0, to: view.state.doc.length, insert: text },
+        annotations: programmatic.of(true),
+    });
+}
+
+export function focusLivePreview(): void {
+    view?.focus();
+}
+
+export function livePreviewUndo(): boolean {
+    return view ? undo(view) : false;
+}
+
+export function livePreviewRedo(): boolean {
+    return view ? redo(view) : false;
+}
+
+/** Toggle soft-wrap without rebuilding the view (reconfigures a compartment). */
+export function setLivePreviewLineWrapping(on: boolean): void {
+    view?.dispatch({
+        effects: wrapCompartment.reconfigure(on ? EditorView.lineWrapping : []),
+    });
+}
+
+/** Toggle reveal-on-cursor decorations without rebuilding the view. */
+export function setLivePreviewReveal(on: boolean): void {
+    view?.dispatch({
+        effects: revealCompartment.reconfigure(on ? [livePreviewRevealPlugin, tableWidgetPlugin] : []),
+    });
+}
+
+// ===== Re-integration (Phase 2): scroll metrics, TOC scroll, search, click =====
+// `.cm-scroller` is the actual scrolling element — `view.dom`'s parent
+// (#markdownPreview) does not scroll itself, unlike the old contentEditable.
+
+/** null when not mounted. Mirrors what updateProgressBar/updateScrollSpy read off `preview` in legacy mode. */
+export function getLivePreviewScrollMetrics(): { scrollTop: number; scrollHeight: number; clientHeight: number } | null {
+    if (!view) { return null; }
+    const scroller = view.scrollDOM;
+    return { scrollTop: scroller.scrollTop, scrollHeight: scroller.scrollHeight, clientHeight: scroller.clientHeight };
+}
+
+/** 1-indexed line number nearest the top of the viewport, for scroll-spy. */
+export function getLivePreviewTopLine(): number | null {
+    if (!view) { return null; }
+    const top = view.scrollDOM.scrollTop + 8;
+    const block = view.lineBlockAtHeight(Math.min(top, view.scrollDOM.scrollHeight));
+    return view.state.doc.lineAt(block.from).number;
+}
+
+/** TOC click target — scroll CM6 so the given 1-indexed line sits at the top. */
+export function scrollLivePreviewToLine(line: number): void {
+    if (!view) { return; }
+    const clamped = Math.max(1, Math.min(line, view.state.doc.lines));
+    const pos = view.state.doc.line(clamped).from;
+    view.dispatch({ effects: EditorView.scrollIntoView(pos, { y: 'start' }) });
+}
+
+export function resolveLivePreviewInteraction(pos: number): Cm6Interaction | null {
+    return view ? detectInteractionAtPos(view.state, pos) : null;
+}
+
+export function findLivePreviewMatches(query: string): Cm6Match[] {
+    return view ? findCm6Matches(view.state, query) : [];
+}
+
+export function setLivePreviewSearchHighlights(matches: Cm6Match[], current: number): void {
+    if (view) { setCm6SearchHighlights(view, matches, current); }
+}
+
+export function clearLivePreviewSearchHighlights(): void {
+    if (view) { clearCm6SearchHighlights(view); }
+}
+
+export function scrollLivePreviewToMatch(match: Cm6Match): void {
+    if (view) { scrollCm6ToMatch(view, match); }
+}

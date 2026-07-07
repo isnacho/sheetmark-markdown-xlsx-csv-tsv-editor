@@ -165,6 +165,8 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                                 previewPosition: cfg.get('md.previewPosition', 'right'),
                                 showOutline: cfg.get('md.showOutline', true),
                                 showLineNumbers: cfg.get('md.showLineNumbers', true),
+                                livePreviewReveal: cfg.get('md.livePreviewReveal', true),
+                                livePreviewEngine: cfg.get('md.livePreviewEngine', 'cm6'),
                                 moveMdButtonsToEnd: cfg.get('md.moveMdButtonsToEnd', false),
                                 isMdEnabled: isMdEnabled
                             };
@@ -224,6 +226,12 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                             }
                             if (typeof s.showLineNumbers === 'boolean') {
                                 await cfg.update('md.showLineNumbers', !!s.showLineNumbers, vscode.ConfigurationTarget.Global);
+                            }
+                            if (typeof s.livePreviewReveal === 'boolean') {
+                                await cfg.update('md.livePreviewReveal', !!s.livePreviewReveal, vscode.ConfigurationTarget.Global);
+                            }
+                            if (s.livePreviewEngine === 'cm6' || s.livePreviewEngine === 'legacy') {
+                                await cfg.update('md.livePreviewEngine', s.livePreviewEngine, vscode.ConfigurationTarget.Global);
                             }
                         } catch (err) {
                             console.error('Failed to persist settings:', err);
@@ -488,6 +496,8 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                                  previewPosition: cfg.get('md.previewPosition', 'right'),
                                  showOutline: cfg.get('md.showOutline', true),
                                  showLineNumbers: cfg.get('md.showLineNumbers', true),
+                                 livePreviewReveal: cfg.get('md.livePreviewReveal', true),
+                                 livePreviewEngine: cfg.get('md.livePreviewEngine', 'cm6'),
                                  moveMdButtonsToEnd: cfg.get('md.moveMdButtonsToEnd', false),
                                  isMdEnabled: true
                              };
@@ -527,6 +537,8 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                         previewPosition: cfg.get('md.previewPosition', 'right'),
                         showOutline: cfg.get('md.showOutline', true),
                         showLineNumbers: cfg.get('md.showLineNumbers', true),
+                        livePreviewReveal: cfg.get('md.livePreviewReveal', true),
+                        livePreviewEngine: cfg.get('md.livePreviewEngine', 'cm6'),
                         moveMdButtonsToEnd: cfg.get('md.moveMdButtonsToEnd', false),
                         isMdEnabled: isMdEnabled
                     };

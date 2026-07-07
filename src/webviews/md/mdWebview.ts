@@ -32,6 +32,23 @@ import { Icons } from '../shared/icons';
 import { vscode, debounce } from '../shared/common';
 import { FeedbackModal } from '../shared/feedbackModal';
 import { ProjectsModal } from '../shared/projectsModal';
+import {
+    mountLivePreview,
+    unmountLivePreview,
+    isLivePreviewActive,
+    getLivePreviewContent,
+    focusLivePreview,
+    getLivePreviewScrollMetrics,
+    getLivePreviewTopLine,
+    scrollLivePreviewToLine,
+    resolveLivePreviewInteraction,
+    findLivePreviewMatches,
+    setLivePreviewSearchHighlights,
+    clearLivePreviewSearchHighlights,
+    scrollLivePreviewToMatch,
+    setLivePreviewReveal,
+} from './livePreview/livePreviewEditor';
+import type { Cm6Match } from './livePreview/livePreviewSearch';
 import TurndownService from 'turndown';
 // @ts-ignore
 import { gfm } from 'turndown-plugin-gfm';
@@ -97,6 +114,9 @@ let originalContent = '';
 let currentContent = '';
 let toolbarManager: ToolbarManager | null = null;
 const resolvedImageUriCache = new Map<string, string>();
+// Set while a CM6 Ctrl/Cmd+Click image lightbox is waiting on an async 'resolveImageUris'
+// round-trip (see handleLivePreviewModifierClick / applyResolvedImageUris).
+let pendingCm6LightboxSrc: string | null = null;
 let documentUri = '';
 let documentDirUri = '';
 let workspaceFolderUri: string | null = null;
@@ -120,12 +140,15 @@ let currentSettings = {
     previewPosition: 'right',
     showOutline: true,
     showLineNumbers: true,
+    livePreviewReveal: true,
+    livePreviewEngine: 'cm6' as 'cm6' | 'legacy',
     moveMdButtonsToEnd: false,
     isMdEnabled: true
 };
 
 let isFocusMode = false;
 let searchMatches: Element[] = [];
+let cm6SearchMatches: Cm6Match[] = [];
 let searchCurrentIndex = -1;
 const previewOnlyTableActions = new Set(['tableAddRowBelow', 'tableRemoveRow', 'tableAddColumnRight', 'tableRemoveColumn']);
 const tableControlActions = ['tableAddRowBelow', 'tableRemoveRow', 'tableAddColumnRight', 'tableRemoveColumn'];
@@ -469,6 +492,11 @@ function applyResolvedImageUris(resolved: Record<string, string>) {
         resolvedImageUriCache.set(source, uri);
     });
 
+    if (pendingCm6LightboxSrc && resolved[pendingCm6LightboxSrc]) {
+        showLightbox(resolved[pendingCm6LightboxSrc], '');
+        pendingCm6LightboxSrc = null;
+    }
+
     const preview = $('markdownPreview');
     if (!preview) {
         return;
@@ -574,7 +602,17 @@ function sanitizeMarkdownCopyLinkArtifacts(markdown: string): string {
     }).join('\n');
 }
 
+// id <-> CM6 line number (1-indexed), refreshed every buildToc() call. CM6 shows
+// raw markdown text, not the rendered HTML the reading/split TOC-click and
+// scroll-spy logic uses `#id` elements for — this is how the CM6 branch of that
+// logic (updateScrollSpy, wireTocPanel's click handler) finds a heading's line.
+const tocIdToLine = new Map<string, number>();
+const tocLineToId = new Map<number, string>();
+
 function buildToc(tokens: any[]) {
+    tocIdToLine.clear();
+    tocLineToId.clear();
+
     const items: Array<{ id: string; level: number; text: string }> = [];
     for (let i = 0; i < tokens.length; i++) {
         const token = tokens[i];
@@ -585,6 +623,11 @@ function buildToc(tokens: any[]) {
             const level = parseInt((token.tag || 'h2').replace('h', ''), 10);
             if (id && text) {
                 items.push({ id, level, text });
+                if (Array.isArray(token.map)) {
+                    const line = token.map[0] + 1;
+                    tocIdToLine.set(id, line);
+                    tocLineToId.set(line, id);
+                }
             }
         }
     }
@@ -598,6 +641,15 @@ function buildToc(tokens: any[]) {
         return `<div class="toc-item toc-level-${item.level}"><a href="#${item.id}" data-target="${item.id}">${safeText}</a></div>`;
     }).join('');
 }
+
+/** Re-derive the TOC + its id<->line map from live CM6 content (renderMarkdown/updateToc aren't called in CM6 mode). */
+function refreshCm6Toc(content: string) {
+    const tokens = md.parse(sanitizeMarkdownCopyLinkArtifacts(content || ''), {});
+    addHeadingIds(tokens);
+    updateToc(tokens);
+}
+
+const debouncedCm6TocRefresh = debounce((content: string) => refreshCm6Toc(content), 300);
 
 // ===== Rendering =====
 function renderMermaidFlowcharts() {
@@ -679,6 +731,11 @@ function setEditMode(enabled: boolean) {
     const fmtToolbar = $('formattingToolbar');
     if (fmtToolbar) {fmtToolbar.classList.toggle('hidden', !enabled);}
 
+    // If we're arriving from CM6 Preview Edit, the CM6 view currently owns
+    // #markdownPreview — tear it down before this mode reuses that element.
+    const cameFromCm6 = isLivePreviewActive();
+    if (cameFromCm6) {unmountLivePreview();}
+
     // Ensure preview is not contenteditable
     if (preview) {preview.contentEditable = 'false';}
 
@@ -695,6 +752,9 @@ function setEditMode(enabled: boolean) {
         }
 
         if (editor) {editor.value = currentContent;}
+
+        // The split preview pane held the CM6 editor; refill it with rendered HTML.
+        if (cameFromCm6) {renderMarkdown(currentContent);}
 
         // Cache line height after entering edit mode
         requestAnimationFrame(() => {
@@ -752,6 +812,8 @@ function setPreviewEditMode(enabled: boolean) {
     const fmtToolbar = $('formattingToolbar');
     if (fmtToolbar) {fmtToolbar.classList.toggle('hidden', !enabled);}
 
+    const useCm6 = currentSettings.livePreviewEngine === 'cm6';
+
     if (enabled) {
         originalContent = currentContent;
 
@@ -759,17 +821,49 @@ function setPreviewEditMode(enabled: boolean) {
         container?.classList.add('preview-edit');
         container?.classList.remove('preview-left');
 
-        // Render the markdown then make preview editable
-        renderMarkdown(currentContent);
-
-        if (preview) {
-            preview.contentEditable = 'true';
-            enhancePreviewTablesForEditing();
-            initializePreviewHistory();
-            preview.focus();
+        if (useCm6) {
+            // CM6 engine: raw markdown stays the source of truth. Mount the
+            // editor into #markdownPreview — no markdown-it render, no
+            // contentEditable, no turndown. Lazily constructed on first entry
+            // (mountLivePreview builds the EditorView here, not at webview load).
+            if (preview) {
+                preview.contentEditable = 'false';
+                mountLivePreview({
+                    parent: preview,
+                    doc: currentContent,
+                    lineWrapping: currentSettings.wordWrap,
+                    // CM6 change events feed currentContent (contract rule 5),
+                    // replacing the old onEditorInput() side-effect.
+                    onDocChanged: (doc) => {
+                        currentContent = doc;
+                        updateStatusInfo();
+                        debouncedCm6TocRefresh(doc);
+                        reapplySearch();
+                    },
+                    // Re-integration (Phase 2): scroll-spy/TOC + progress bar track
+                    // CM6's own `.cm-scroller`, not #markdownPreview.
+                    onScroll: throttledScrollSpy,
+                    onModifierClick: handleLivePreviewModifierClick,
+                    reveal: currentSettings.livePreviewReveal,
+                });
+                refreshCm6Toc(currentContent);
+                focusLivePreview();
+            }
+        } else {
+            // Legacy engine (kill-switch): render HTML + contentEditable + turndown.
+            renderMarkdown(currentContent);
+            if (preview) {
+                preview.contentEditable = 'true';
+                enhancePreviewTablesForEditing();
+                initializePreviewHistory();
+                preview.focus();
+            }
         }
     } else {
-        // Exit preview edit mode
+        // Exit preview edit mode — tear down whichever engine was active.
+        if (isLivePreviewActive()) {
+            unmountLivePreview();
+        }
         if (preview) {
             preview.contentEditable = 'false';
         }
@@ -789,6 +883,57 @@ function setPreviewEditMode(enabled: boolean) {
     syncViewModeSelect();
 }
 
+// Ctrl/Cmd+Click actions inside CM6 Preview Edit — the click-handling port of
+// wirePreviewInteractions' link/image/heading-anchor/code-copy behaviors. Plain
+// click keeps CM6's normal "place the caret" behavior since this surface (unlike
+// the old non-editable render) is real editable text.
+function handleLivePreviewModifierClick(pos: number) {
+    const interaction = resolveLivePreviewInteraction(pos);
+    if (!interaction) {return;}
+
+    if (interaction.kind === 'link') {
+        const href = interaction.href;
+        if (href.startsWith('#')) {
+            const line = tocIdToLine.get(href.slice(1));
+            if (line !== undefined) {scrollLivePreviewToLine(line);}
+        } else if (href.startsWith('http://') || href.startsWith('https://') || href.startsWith('mailto:')) {
+            vscode.postMessage({ command: 'openExternal', url: href });
+        } else if (href) {
+            vscode.postMessage({ command: 'openRelativeFile', href, documentUri });
+        }
+        return;
+    }
+
+    if (interaction.kind === 'image') {
+        const src = interaction.src.trim();
+        if (!src) {return;}
+        if (!shouldResolveLocalImage(src)) {
+            showLightbox(src, '');
+            return;
+        }
+        const resolved = resolvedImageUriCache.get(src);
+        if (resolved) {
+            showLightbox(resolved, '');
+        } else {
+            pendingCm6LightboxSrc = src;
+            vscode.postMessage({ command: 'resolveImageUris', sources: [src] });
+        }
+        return;
+    }
+
+    if (interaction.kind === 'heading') {
+        const id = tocLineToId.get(interaction.line);
+        if (id && navigator.clipboard) {
+            navigator.clipboard.writeText(`#${id}`).then(() => showToast('Link copied')).catch(() => showToast('Copy failed'));
+        }
+        return;
+    }
+
+    if (interaction.kind === 'code' && navigator.clipboard) {
+        navigator.clipboard.writeText(interaction.text).then(() => showToast('Copied')).catch(() => showToast('Copy failed'));
+    }
+}
+
 // ===== Unified View Mode (dropdown) =====
 type ViewMode = 'reading' | 'split' | 'preview';
 
@@ -798,8 +943,19 @@ function getCurrentViewMode(): ViewMode {
     return 'reading';
 }
 
-function extractCurrentEditorContent(): string {
+// The single reader over the two editing surfaces (dual-surface contract rule 3).
+// Branches on mode; the CM6 preview-edit branch reads raw markdown directly
+// (no turndown), the legacy branch converts HTML back to markdown.
+function getActiveEditorContent(): string {
     if (isPreviewEditMode) {
+        // CM6 engine: the document already IS raw markdown.
+        if (isLivePreviewActive()) {
+            const cm6 = getLivePreviewContent();
+            if (cm6 !== null) {
+                return sanitizeMarkdownCopyLinkArtifacts(cm6);
+            }
+        }
+        // Legacy engine (kill-switch): HTML -> markdown via turndown.
         const preview = $('markdownPreview');
         if (!preview) {return currentContent;}
         const clone = preview.cloneNode(true) as HTMLElement;
@@ -832,7 +988,7 @@ function setViewMode(next: ViewMode) {
     if (current === next) {return;}
 
     if (current !== 'reading') {
-        currentContent = extractCurrentEditorContent();
+        currentContent = getActiveEditorContent();
     }
 
     if (next === 'reading') {
@@ -916,7 +1072,7 @@ function performSave(exitAfterSave = false) {
     shouldExitEditMode = exitAfterSave;
     setButtonsEnabled(false);
 
-    currentContent = extractCurrentEditorContent();
+    currentContent = getActiveEditorContent();
     const editor = $('markdownEditor') as HTMLTextAreaElement | null;
     if (editor && editor.value !== currentContent) {
         editor.value = currentContent;
@@ -931,12 +1087,16 @@ function cancelEdit() {
     if (editor) {
         editor.value = originalContent;
     }
-    const preview = $('markdownPreview');
-    if (preview) {preview.contentEditable = 'false';}
-    renderMarkdown(originalContent);
     if (isPreviewEditMode) {
+        // setPreviewEditMode(false) tears down the active engine (CM6 unmount or
+        // legacy contentEditable) and re-renders reading view from currentContent.
+        // Do NOT renderMarkdown() first — that would clobber a mounted CM6 view's
+        // DOM without destroying it.
         setPreviewEditMode(false);
     } else {
+        const preview = $('markdownPreview');
+        if (preview) {preview.contentEditable = 'false';}
+        renderMarkdown(originalContent);
         setEditMode(false);
     }
 }
@@ -1239,29 +1399,57 @@ function updateStatusInfo() {
 
 // ===== Reading Progress Bar =====
 function updateProgressBar() {
-    const preview = $('markdownPreview');
     const bar = $('readingProgressBar');
-    if (!preview || !bar) {return;}
-    const scrollTop = preview.scrollTop;
-    const scrollHeight = preview.scrollHeight - preview.clientHeight;
-    const progress = scrollHeight > 0 ? (scrollTop / scrollHeight) * 100 : 0;
+    if (!bar) {return;}
+
+    // CM6's own `.cm-scroller` scrolls; #markdownPreview (view.dom's parent) does not.
+    const cm6Metrics = isLivePreviewActive() ? getLivePreviewScrollMetrics() : null;
+    let scrollTop: number, usableHeight: number;
+    if (cm6Metrics) {
+        scrollTop = cm6Metrics.scrollTop;
+        usableHeight = cm6Metrics.scrollHeight - cm6Metrics.clientHeight;
+    } else {
+        const preview = $('markdownPreview');
+        if (!preview) {return;}
+        scrollTop = preview.scrollTop;
+        usableHeight = preview.scrollHeight - preview.clientHeight;
+    }
+
+    const progress = usableHeight > 0 ? (scrollTop / usableHeight) * 100 : 0;
     bar.style.width = progress + '%';
 }
 
 // ===== Scroll Spy (Active TOC Tracking) =====
+function nearestTocIdForLine(line: number): string {
+    let bestLine = -1;
+    let id = '';
+    tocLineToId.forEach((headingId, headingLine) => {
+        if (headingLine <= line && headingLine > bestLine) {
+            bestLine = headingLine;
+            id = headingId;
+        }
+    });
+    return id;
+}
+
 function updateScrollSpy() {
-    const preview = $('markdownPreview');
     const tocBody = $('tocBody');
-    if (!preview || !tocBody) {return;}
+    if (!tocBody) {return;}
 
-    const headings = Array.from(preview.querySelectorAll('.md-heading'));
     let current = '';
-    const scrollTop = preview.scrollTop;
-
-    for (const heading of headings) {
-        const el = heading as HTMLElement;
-        if (el.offsetTop - 16 <= scrollTop + 100) {
-            current = heading.id;
+    if (isLivePreviewActive()) {
+        const topLine = getLivePreviewTopLine();
+        current = topLine !== null ? nearestTocIdForLine(topLine) : '';
+    } else {
+        const preview = $('markdownPreview');
+        if (!preview) {return;}
+        const headings = Array.from(preview.querySelectorAll('.md-heading'));
+        const scrollTop = preview.scrollTop;
+        for (const heading of headings) {
+            const el = heading as HTMLElement;
+            if (el.offsetTop - 16 <= scrollTop + 100) {
+                current = heading.id;
+            }
         }
     }
 
@@ -1371,9 +1559,21 @@ function closeSearch() {
 function doSearch(query: string) {
     clearSearchHighlights();
     searchMatches = [];
+    cm6SearchMatches = [];
     searchCurrentIndex = -1;
 
     if (!query || query.length < 2) {
+        updateSearchCount();
+        return;
+    }
+
+    if (isLivePreviewActive()) {
+        // CM6 doc is raw text — no rendered DOM to TreeWalker, use CM6's own SearchCursor.
+        cm6SearchMatches = findLivePreviewMatches(query);
+        if (cm6SearchMatches.length > 0) {
+            searchCurrentIndex = 0;
+            highlightCurrentMatch();
+        }
         updateSearchCount();
         return;
     }
@@ -1422,6 +1622,10 @@ function doSearch(query: string) {
 }
 
 function clearSearchHighlights() {
+    if (isLivePreviewActive()) {
+        clearLivePreviewSearchHighlights();
+        return;
+    }
     const preview = $('markdownPreview');
     if (!preview) {return;}
     preview.querySelectorAll('.search-highlight').forEach(mark => {
@@ -1434,6 +1638,12 @@ function clearSearchHighlights() {
 }
 
 function highlightCurrentMatch() {
+    if (isLivePreviewActive()) {
+        setLivePreviewSearchHighlights(cm6SearchMatches, searchCurrentIndex);
+        const match = cm6SearchMatches[searchCurrentIndex];
+        if (match) {scrollLivePreviewToMatch(match);}
+        return;
+    }
     searchMatches.forEach((m, i) => {
         m.classList.toggle('current', i === searchCurrentIndex);
     });
@@ -1443,11 +1653,12 @@ function highlightCurrentMatch() {
 }
 
 function navigateSearch(direction: 'next' | 'prev') {
-    if (searchMatches.length === 0) {return;}
+    const count = isLivePreviewActive() ? cm6SearchMatches.length : searchMatches.length;
+    if (count === 0) {return;}
     if (direction === 'next') {
-        searchCurrentIndex = (searchCurrentIndex + 1) % searchMatches.length;
+        searchCurrentIndex = (searchCurrentIndex + 1) % count;
     } else {
-        searchCurrentIndex = (searchCurrentIndex - 1 + searchMatches.length) % searchMatches.length;
+        searchCurrentIndex = (searchCurrentIndex - 1 + count) % count;
     }
     highlightCurrentMatch();
     updateSearchCount();
@@ -1456,10 +1667,11 @@ function navigateSearch(direction: 'next' | 'prev') {
 function updateSearchCount() {
     const countEl = $('searchCount');
     if (!countEl) {return;}
-    if (searchMatches.length === 0) {
+    const count = isLivePreviewActive() ? cm6SearchMatches.length : searchMatches.length;
+    if (count === 0) {
         countEl.textContent = 'No results';
     } else {
-        countEl.textContent = `${searchCurrentIndex + 1} / ${searchMatches.length}`;
+        countEl.textContent = `${searchCurrentIndex + 1} / ${count}`;
     }
 }
 
@@ -1523,6 +1735,10 @@ function applySettings(settings: any, persist = false) {
         editor.style.whiteSpace = currentSettings.wordWrap ? 'pre-wrap' : 'pre';
     }
 
+    if (isLivePreviewActive()) {
+        setLivePreviewReveal(currentSettings.livePreviewReveal);
+    }
+
     refreshSyncMetrics();
 
     // Sticky toolbar
@@ -1569,6 +1785,7 @@ function applySettings(settings: any, persist = false) {
     const chkPreviewLeft = $('chkPreviewLeft') as HTMLInputElement;
     const chkShowOutline = $('chkShowOutline') as HTMLInputElement;
     const chkShowLineNumbers = $('chkShowLineNumbers') as HTMLInputElement;
+    const chkLivePreviewReveal = $('chkLivePreviewReveal') as HTMLInputElement;
 
     if (chkWordWrap) {chkWordWrap.checked = currentSettings.wordWrap;}
     if (chkStickyToolbar) {chkStickyToolbar.checked = currentSettings.stickyToolbar;}
@@ -1576,6 +1793,7 @@ function applySettings(settings: any, persist = false) {
     if (chkPreviewLeft) {chkPreviewLeft.checked = currentSettings.previewPosition === 'left';}
     if (chkShowOutline) {chkShowOutline.checked = currentSettings.showOutline;}
     if (chkShowLineNumbers) {chkShowLineNumbers.checked = currentSettings.showLineNumbers;}
+    if (chkLivePreviewReveal) {chkLivePreviewReveal.checked = currentSettings.livePreviewReveal;}
 
     // Line numbers
     document.body.classList.toggle('show-line-numbers', !!currentSettings.showLineNumbers);
@@ -1659,6 +1877,16 @@ function initializeSettings() {
             defaultValue: currentSettings.showLineNumbers,
             onChange: (val: boolean) => {
                 currentSettings.showLineNumbers = val;
+                applySettings(currentSettings, true);
+            }
+        },
+        {
+            id: 'chkLivePreviewReveal',
+            label: 'Live Preview Reveal',
+            tooltip: 'In Preview Edit mode, reveal raw markdown syntax (##, **, *) near the cursor and hide it elsewhere.',
+            defaultValue: currentSettings.livePreviewReveal,
+            onChange: (val: boolean) => {
+                currentSettings.livePreviewReveal = val;
                 applySettings(currentSettings, true);
             }
         },
@@ -1981,13 +2209,15 @@ function buildToolbarButtons() {
 document.addEventListener('keydown', (e) => {
     const isCmdOrCtrl = e.ctrlKey || e.metaKey;
 
-    if (isPreviewEditMode && isCmdOrCtrl && e.key.toLowerCase() === 'z' && !e.shiftKey) {
+    // CM6 preview edit: its own history() + historyKeymap handle undo/redo on the
+    // editor DOM. Skip the legacy contentEditable undo path so we don't double-apply.
+    if (isPreviewEditMode && !isLivePreviewActive() && isCmdOrCtrl && e.key.toLowerCase() === 'z' && !e.shiftKey) {
         e.preventDefault();
         performPreviewUndo();
         return;
     }
 
-    if (isPreviewEditMode && isCmdOrCtrl && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) {
+    if (isPreviewEditMode && !isLivePreviewActive() && isCmdOrCtrl && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) {
         e.preventDefault();
         performPreviewRedo();
         return;
@@ -3547,6 +3777,11 @@ function wireTocPanel() {
             e.preventDefault();
             const id = link.getAttribute('data-target') || '';
             if (!id) {return;}
+            if (isLivePreviewActive()) {
+                const line = tocIdToLine.get(id);
+                if (line !== undefined) {scrollLivePreviewToLine(line);}
+                return;
+            }
             const preview = $('markdownPreview');
             const el = preview?.querySelector(`#${CSS.escape(id)}`) as HTMLElement | null;
             if (el) {

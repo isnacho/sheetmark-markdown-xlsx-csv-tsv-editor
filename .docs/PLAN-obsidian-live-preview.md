@@ -31,9 +31,10 @@ Confirmed scope for v1 (from user):
 - Slash-menu works in **Preview Edit mode only**.
 - Slash-menu's "Callout" option reuses the **existing `:::info/warning/error/success`**
   container syntax (already parsed by `markdown-it-container`) — no new syntax.
-- Tables become **plain always-visible markdown text** in the new editor —
-  today's hover add/remove row/col buttons are dropped for v1 (revisit as a
-  follow-up if missed).
+- ~~Tables become plain always-visible markdown text~~ — **superseded**, see
+  "Post-phase-4 fix: tables reopened" below. Tables now render as a real widget
+  (`livePreview/tableWidget.ts`); this bullet is kept only so the "revisit as a
+  follow-up if missed" line reads as resolved, not forgotten.
 - Delivered **phased**, compiling + smoke-testing after each phase, on one branch.
 
 ## Architecture

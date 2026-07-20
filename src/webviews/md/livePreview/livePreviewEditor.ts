@@ -26,13 +26,14 @@
 //      replaces the onEditorInput() side-effect the old textarea path relied on).
 // ============================================================================
 
-import { EditorState, Compartment, Annotation } from '@codemirror/state';
-import { EditorView, keymap, drawSelection, highlightActiveLine } from '@codemirror/view';
+import { EditorState, Compartment, Annotation, EditorSelection } from '@codemirror/state';
+import { EditorView, keymap, drawSelection, highlightActiveLine, lineNumbers } from '@codemirror/view';
 import { history, historyKeymap, defaultKeymap, undo, redo } from '@codemirror/commands';
 import { markdown } from '@codemirror/lang-markdown';
 import { GFM } from '@lezer/markdown';
-import { syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language';
+import { autocompletion } from '@codemirror/autocomplete';
 import { cm6Theme } from './cm6Theme';
+import { livePreviewSlashSource } from './slashMenu';
 import {
     livePreviewSearchField, findCm6Matches, setCm6SearchHighlights,
     clearCm6SearchHighlights, scrollCm6ToMatch,
@@ -40,9 +41,10 @@ import {
 import type { Cm6Match } from './livePreviewSearch';
 import { detectInteractionAtPos } from './livePreviewInteractions';
 import type { Cm6Interaction } from './livePreviewInteractions';
-import { livePreviewRevealPlugin } from './revealDecorations';
+import { livePreviewRevealPlugin, orderedListAtomicRanges } from './revealDecorations';
 import { codeStylingPlugin } from './codeStyling';
-import { tableWidgetPlugin } from './tableWidget';
+import { tableWidgetField, columnWidthsField, setColumnWidthsEffect } from './tableWidget';
+import { runFormatCommand, livePreviewFormatKeymap } from './formatCommands';
 
 export interface LivePreviewMountOptions {
     /** Element to mount the editor into (its children are cleared first). */
@@ -59,11 +61,32 @@ export interface LivePreviewMountOptions {
     onModifierClick?: (pos: number) => void;
     /** Whether reveal-on-cursor decorations are on (mirrors the md.livePreviewReveal setting). */
     reveal?: boolean;
+    /** Whether to show the line-number gutter (mirrors the md.livePreviewLineNumbers setting). */
+    showLineNumbers?: boolean;
+    /** Persisted table column widths (table order-index -> px per column), read from the host on load. */
+    columnWidths?: Record<number, readonly number[]>;
+    /** Fired once per completed column-resize drag (never per-pixel) — mdWebview.ts persists it to the host. */
+    onColumnWidthsChanged?: (widths: Record<number, readonly number[]>) => void;
+    /** Fired on any selection/cursor change (including plain cursor moves with no doc change) — drives the status-bar Ln/Col display. */
+    onSelectionChange?: () => void;
 }
 
 let view: EditorView | null = null;
 const wrapCompartment = new Compartment();
 const revealCompartment = new Compartment();
+const gutterCompartment = new Compartment();
+
+/** Line-number gutter: clicking a line number selects that line's text. */
+function buildLineNumbersGutter() {
+    return lineNumbers({
+        domEventHandlers: {
+            click: (v, line) => {
+                v.dispatch({ selection: EditorSelection.range(line.from, line.to) });
+                return true;
+            },
+        },
+    });
+}
 
 // Marks a transaction as a programmatic seed so the updateListener does not echo
 // it back into currentContent (avoids feedback during mode switches / seeding).
@@ -78,11 +101,21 @@ export function mountLivePreview(opts: LivePreviewMountOptions): EditorView {
     // Defensive: never leak a previous view.
     unmountLivePreview();
 
-    const { parent, doc, onDocChanged, lineWrapping = true, onScroll, onModifierClick, reveal = true } = opts;
+    const {
+        parent, doc, onDocChanged, lineWrapping = true, onScroll, onModifierClick, reveal = true,
+        showLineNumbers = false, columnWidths, onColumnWidthsChanged, onSelectionChange,
+    } = opts;
     parent.innerHTML = '';
 
     const updateListener = EditorView.updateListener.of((update) => {
         if (update.viewportChanged) { onScroll?.(); }
+        if (update.selectionSet) { onSelectionChange?.(); }
+        // Checked before the docChanged early-return below: a column-resize
+        // commit is an effects-only transaction (see wireResizeHandle in
+        // tableWidget.ts) with no doc change at all.
+        if (update.transactions.some(tr => tr.effects.some(e => e.is(setColumnWidthsEffect)))) {
+            onColumnWidthsChanged?.(update.state.field(columnWidthsField));
+        }
         if (!update.docChanged) { return; }
         const isProgrammatic = update.transactions.some(tr => tr.annotation(programmatic));
         if (isProgrammatic) { return; }
@@ -107,13 +140,33 @@ export function mountLivePreview(opts: LivePreviewMountOptions): EditorView {
             drawSelection(),
             highlightActiveLine(),
             markdown({ extensions: GFM }),
-            syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+            // No `syntaxHighlighting(defaultHighlightStyle)` here — it was
+            // unused boilerplate, not a real dependency: no `codeLanguages` is
+            // configured for `markdown()`, so its programming-language tags
+            // (keyword/string/comment/...) never fire; its heading/emphasis/
+            // strong/strikethrough tags are all already styled, better, by
+            // this file's own decorations. Its only OBSERVABLE effect was an
+            // unwanted underline+bold on headings from its generic
+            // `tags.heading` rule (`@lezer/markdown` tags ATXHeading1-6 as
+            // `heading1`-`heading6`, which fall back to matching the more
+            // general `heading` tag). Removing the rule at the source beats
+            // trying to out-rank it with a `!important` override of unclear
+            // cascade precedence against a same-range decoration from a
+            // different plugin.
             wrapCompartment.of(lineWrapping ? EditorView.lineWrapping : []),
+            gutterCompartment.of(showLineNumbers ? [buildLineNumbersGutter()] : []),
+            keymap.of(livePreviewFormatKeymap),
             keymap.of([...defaultKeymap, ...historyKeymap]),
             cm6Theme(),
             livePreviewSearchField(),
-            revealCompartment.of(reveal ? [livePreviewRevealPlugin, tableWidgetPlugin] : []),
+            // Deliberately OUTSIDE revealCompartment: toggling the reveal
+            // setting off/on reconfigures that compartment's extensions,
+            // which would re-`create()` (i.e. reset to `{}`) any StateField
+            // living inside it. Column widths must survive that toggle.
+            columnWidthsField.init(() => columnWidths ?? {}),
+            revealCompartment.of(reveal ? [livePreviewRevealPlugin, tableWidgetField, orderedListAtomicRanges] : []),
             codeStylingPlugin,
+            autocompletion({ override: [livePreviewSlashSource], icons: false }),
             clickHandler,
             updateListener,
         ],
@@ -163,6 +216,16 @@ export function livePreviewRedo(): boolean {
     return view ? redo(view) : false;
 }
 
+/** Toolbar/keyboard-shortcut entry point (Phase 5). `view` never leaks past this module. */
+export function applyLivePreviewFormat(action: string): boolean {
+    if (!view) { return false; }
+    if (action === 'undo') { return livePreviewUndo(); }
+    if (action === 'redo') { return livePreviewRedo(); }
+    const handled = runFormatCommand(view, action);
+    if (handled) { view.focus(); }
+    return handled;
+}
+
 /** Toggle soft-wrap without rebuilding the view (reconfigures a compartment). */
 export function setLivePreviewLineWrapping(on: boolean): void {
     view?.dispatch({
@@ -173,7 +236,14 @@ export function setLivePreviewLineWrapping(on: boolean): void {
 /** Toggle reveal-on-cursor decorations without rebuilding the view. */
 export function setLivePreviewReveal(on: boolean): void {
     view?.dispatch({
-        effects: revealCompartment.reconfigure(on ? [livePreviewRevealPlugin, tableWidgetPlugin] : []),
+        effects: revealCompartment.reconfigure(on ? [livePreviewRevealPlugin, tableWidgetField, orderedListAtomicRanges] : []),
+    });
+}
+
+/** Toggle the line-number gutter without rebuilding the view. */
+export function setLivePreviewLineNumbers(on: boolean): void {
+    view?.dispatch({
+        effects: gutterCompartment.reconfigure(on ? [buildLineNumbersGutter()] : []),
     });
 }
 
@@ -194,6 +264,14 @@ export function getLivePreviewTopLine(): number | null {
     const top = view.scrollDOM.scrollTop + 8;
     const block = view.lineBlockAtHeight(Math.min(top, view.scrollDOM.scrollHeight));
     return view.state.doc.lineAt(block.from).number;
+}
+
+/** 1-indexed line + 1-indexed column of the current selection head. null when not mounted. */
+export function getLivePreviewCursorPosition(): { line: number; col: number } | null {
+    if (!view) { return null; }
+    const head = view.state.selection.main.head;
+    const line = view.state.doc.lineAt(head);
+    return { line: line.number, col: head - line.from + 1 };
 }
 
 /** TOC click target — scroll CM6 so the given 1-indexed line sits at the top. */

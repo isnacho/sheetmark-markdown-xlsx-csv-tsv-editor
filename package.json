@@ -289,6 +289,11 @@
                     "default": true,
                     "description": "In Markdown Preview Edit mode, reveal raw syntax markers (##, **, etc.) near the cursor and hide them elsewhere (Obsidian-style live preview)."
                 },
+                "xlsxViewer.md.livePreviewLineNumbers": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "In Markdown Preview Edit mode, show line numbers in the editor gutter."
+                },
                 "xlsxViewer.md.livePreviewEngine": {
                     "type": "string",
                     "default": "cm6",
@@ -301,6 +306,21 @@
                         "Legacy contentEditable + turndown editor (fallback kill-switch)."
                     ],
                     "description": "Engine for Markdown Preview Edit mode. 'cm6' uses the CodeMirror 6 live-preview editor; 'legacy' falls back to the old contentEditable editor."
+                },
+                "xlsxViewer.md.defaultViewMode": {
+                    "type": "string",
+                    "default": "preview",
+                    "enum": [
+                        "preview",
+                        "split",
+                        "reading"
+                    ],
+                    "enumDescriptions": [
+                        "Preview Edit — Obsidian/Notion-style live WYSIWYG editing (recommended).",
+                        "Split Edit — raw markdown textarea alongside a rendered preview.",
+                        "Reading — static rendered preview, no editing."
+                    ],
+                    "description": "View mode a Markdown file opens in. Split Edit and Reading remain available at any time from the editor's view-mode dropdown."
                 }
             }
         }

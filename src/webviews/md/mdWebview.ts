@@ -37,6 +37,7 @@ import {
     unmountLivePreview,
     isLivePreviewActive,
     getLivePreviewContent,
+    setLivePreviewContent,
     focusLivePreview,
     getLivePreviewScrollMetrics,
     getLivePreviewTopLine,
@@ -47,6 +48,9 @@ import {
     clearLivePreviewSearchHighlights,
     scrollLivePreviewToMatch,
     setLivePreviewReveal,
+    setLivePreviewLineNumbers,
+    getLivePreviewCursorPosition,
+    applyLivePreviewFormat,
 } from './livePreview/livePreviewEditor';
 import type { Cm6Match } from './livePreview/livePreviewSearch';
 import TurndownService from 'turndown';
@@ -109,7 +113,15 @@ let isEditMode = false;
 let isPreviewEditMode = false;
 let isVersionPreviewMode = false;
 let isSaving = false;
+let isReloadingFromDisk = false;
+let pendingDiskContent: string | null = null;
 let shouldExitEditMode = false;
+// Applies `currentSettings.defaultViewMode` exactly once, on the panel's
+// first-ever `initSettings` (true fresh load — see the 'initSettings' case
+// below). Must never re-fire on `settingsUpdated` (live config edits) or on
+// `enableMdEditor`'s mid-session `initSettings` resend, which would yank the
+// user out of whatever mode they're already in.
+let hasAppliedInitialViewMode = false;
 let originalContent = '';
 let currentContent = '';
 let toolbarManager: ToolbarManager | null = null;
@@ -120,6 +132,11 @@ let pendingCm6LightboxSrc: string | null = null;
 let documentUri = '';
 let documentDirUri = '';
 let workspaceFolderUri: string | null = null;
+// Persisted table column widths (table order-index -> px per column), read
+// once from the host on load and kept in sync locally after every resize —
+// see tableColumnWidthStorageService.ts on the host side for why this can't
+// live in the .md file's own table syntax.
+let currentTableColumnWidths: Record<number, readonly number[]> = {};
 
 // Turndown (HTML -> Markdown)
 const turndownService = new TurndownService({
@@ -141,7 +158,9 @@ let currentSettings = {
     showOutline: true,
     showLineNumbers: true,
     livePreviewReveal: true,
+    livePreviewLineNumbers: false,
     livePreviewEngine: 'cm6' as 'cm6' | 'legacy',
+    defaultViewMode: 'preview' as 'preview' | 'split' | 'reading',
     moveMdButtonsToEnd: false,
     isMdEnabled: true
 };
@@ -222,7 +241,7 @@ function wrapCodeLines(html: string): string {
 
 function setButtonsEnabled(enabled: boolean) {
     const ids = ['enableMdEditorButton', 'disableMdEditorButton', 'saveEditsButton',
-        'cancelEditsButton', 'toggleBackgroundButton', 'openSettingsButton', 'versionHistoryButton'];
+        'cancelEditsButton', 'reloadFromDiskButton', 'toggleBackgroundButton', 'openSettingsButton', 'versionHistoryButton'];
     ids.forEach((id) => {
         const el = $(id) as HTMLButtonElement;
         if (el) {el.disabled = !enabled;}
@@ -717,15 +736,18 @@ function setEditMode(enabled: boolean) {
 
     const saveBtn = $('saveEditsButton');
     const cancelBtn = $('cancelEditsButton');
+    const reloadBtn = $('reloadFromDiskButton');
     const container = $('markdownContainer');
     const editor = $('markdownEditor') as HTMLTextAreaElement;
     const preview = $('markdownPreview');
 
     const saveTarget = (saveBtn?.closest('.tooltip') as HTMLElement | null) || saveBtn;
     const cancelTarget = (cancelBtn?.closest('.tooltip') as HTMLElement | null) || cancelBtn;
+    const reloadTarget = (reloadBtn?.closest('.tooltip') as HTMLElement | null) || reloadBtn;
 
     if (saveTarget) {saveTarget.classList.toggle('hidden', !enabled);}
     if (cancelTarget) {cancelTarget.classList.toggle('hidden', !enabled);}
+    if (reloadTarget) {reloadTarget.classList.toggle('hidden', !enabled);}
 
     // Toggle formatting toolbar
     const fmtToolbar = $('formattingToolbar');
@@ -799,14 +821,17 @@ function setPreviewEditMode(enabled: boolean) {
 
     const saveBtn = $('saveEditsButton');
     const cancelBtn = $('cancelEditsButton');
+    const reloadBtn = $('reloadFromDiskButton');
     const container = $('markdownContainer');
     const preview = $('markdownPreview');
 
     const saveTarget = (saveBtn?.closest('.tooltip') as HTMLElement | null) || saveBtn;
     const cancelTarget = (cancelBtn?.closest('.tooltip') as HTMLElement | null) || cancelBtn;
+    const reloadTarget = (reloadBtn?.closest('.tooltip') as HTMLElement | null) || reloadBtn;
 
     if (saveTarget) {saveTarget.classList.toggle('hidden', !enabled);}
     if (cancelTarget) {cancelTarget.classList.toggle('hidden', !enabled);}
+    if (reloadTarget) {reloadTarget.classList.toggle('hidden', !enabled);}
 
     // Show formatting toolbar in preview edit mode
     const fmtToolbar = $('formattingToolbar');
@@ -845,6 +870,16 @@ function setPreviewEditMode(enabled: boolean) {
                     onScroll: throttledScrollSpy,
                     onModifierClick: handleLivePreviewModifierClick,
                     reveal: currentSettings.livePreviewReveal,
+                    showLineNumbers: currentSettings.livePreviewLineNumbers,
+                    onSelectionChange: updateStatusInfo,
+                    columnWidths: currentTableColumnWidths,
+                    // Fired once per completed drag, never per-pixel (see
+                    // wireResizeHandle in tableWidget.ts) — cheap to persist
+                    // on every call.
+                    onColumnWidthsChanged: (widths) => {
+                        currentTableColumnWidths = widths;
+                        vscode.postMessage({ command: 'saveTableColumnWidths', widths });
+                    },
                 });
                 refreshCm6Toc(currentContent);
                 focusLivePreview();
@@ -1099,6 +1134,96 @@ function cancelEdit() {
         renderMarkdown(originalContent);
         setEditMode(false);
     }
+}
+
+// Pushes freshly-read disk content into whichever surface is currently active.
+// isPreviewEditMode implies isEditMode (see setPreviewEditMode), so it must be
+// checked first or the legacy (non-CM6) Preview Edit engine gets misrouted into
+// the split-textarea branch below.
+function applyReloadedContent(text: string) {
+    currentContent = text;
+    originalContent = text;
+    resolvedImageUriCache.clear();
+
+    if (isPreviewEditMode && isLivePreviewActive()) {
+        // CM6 owns #markdownPreview's DOM here — patch its doc in place via a
+        // transaction. Never call renderMarkdown(), which would stomp that DOM
+        // without unmounting the view first (see cancelEdit's warning above).
+        setLivePreviewContent(text);
+        refreshCm6Toc(text);
+        reapplySearch();
+    } else if (isPreviewEditMode) {
+        // Legacy engine: mirror setPreviewEditMode(true)'s mount sequence —
+        // renderMarkdown() alone doesn't re-wire table edit affordances or reset
+        // the undo/redo history.
+        renderMarkdown(text);
+        const preview = $('markdownPreview');
+        if (preview) {preview.contentEditable = 'true';}
+        enhancePreviewTablesForEditing();
+        initializePreviewHistory();
+    } else if (isEditMode) {
+        const editor = $('markdownEditor') as HTMLTextAreaElement | null;
+        if (editor) {editor.value = text;}
+        renderMarkdown(text);
+    } else {
+        renderMarkdown(text);
+    }
+
+    updateStatusInfo();
+}
+
+// VS Code webviews are sandboxed without `allow-modals` — window.confirm()/alert()/
+// prompt() are silently blocked, so a real dialog is built here reusing the shared
+// .feedback-overlay/.feedback-modal pattern (same one FeedbackModal/ProjectsModal use).
+function confirmDiscardAndReload(): Promise<boolean> {
+    return new Promise((resolve) => {
+        const overlay = document.createElement('div');
+        overlay.className = 'feedback-overlay';
+        const modal = document.createElement('div');
+        modal.className = 'feedback-modal';
+        modal.innerHTML = `
+            <div class="feedback-header">
+                <h2>Reload from Disk</h2>
+            </div>
+            <div class="feedback-body" style="padding: 20px 24px 24px 24px; gap: 20px;">
+                <p style="margin: 0; font-size: 13.5px; color: var(--text-color); line-height: 1.5;">
+                    Discard unsaved changes and reload from disk?
+                </p>
+                <div style="display: flex; justify-content: flex-end; gap: 8px;">
+                    <button class="reload-confirm-cancel" type="button" style="background: none; border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-color); font-size: 13px; font-weight: 500; padding: 6px 14px; cursor: pointer;">Cancel</button>
+                    <button class="reload-confirm-ok" type="button" style="background: var(--warning-color); border: none; border-radius: 6px; color: var(--contrast-text); font-size: 13px; font-weight: 600; padding: 6px 14px; cursor: pointer;">Discard &amp; Reload</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+        document.body.appendChild(modal);
+        requestAnimationFrame(() => {
+            overlay.classList.add('active');
+            modal.classList.add('active');
+        });
+
+        const finish = (result: boolean) => {
+            overlay.remove();
+            modal.remove();
+            resolve(result);
+        };
+        overlay.addEventListener('click', () => finish(false));
+        modal.querySelector('.reload-confirm-cancel')?.addEventListener('click', () => finish(false));
+        modal.querySelector('.reload-confirm-ok')?.addEventListener('click', () => finish(true));
+    });
+}
+
+// Manual "Reload from disk" toolbar button handler.
+async function requestReloadFromDisk() {
+    if (isSaving || isReloadingFromDisk || !isEditMode) {return;}
+    currentContent = getActiveEditorContent();
+    const dirty = currentContent !== originalContent;
+    if (dirty && !(await confirmDiscardAndReload())) {
+        return;
+    }
+    isReloadingFromDisk = true;
+    setButtonsEnabled(false);
+    vscode.postMessage({ command: 'requestFreshData' });
 }
 
 // ===== Live Preview =====
@@ -1361,7 +1486,9 @@ const throttledSyncEditorToPreview = throttleRAF(syncEditorToPreview);
 const throttledSyncPreviewToEditor = throttleRAF(syncPreviewToEditor);
 
 // ===== UI Helpers =====
-function showToast(message: string) {
+let toastDismissTimer: number | null = null;
+
+function showToast(message: string, action?: { label: string; onClick: () => void }) {
     let toast = $('toastNotification');
     if (!toast) {
         toast = document.createElement('div');
@@ -1374,15 +1501,54 @@ function showToast(message: string) {
                 </svg>
             </div>
             <span class="toast-text"></span>
+            <button class="toast-action hidden" type="button"></button>
         `;
         document.body.appendChild(toast);
     }
     if (toast) {
         const toastText = toast.querySelector('.toast-text') || $('toastText');
         if (toastText) {toastText.textContent = message;}
+
+        const actionBtn = toast.querySelector('.toast-action') as HTMLButtonElement | null;
+        if (actionBtn) {
+            if (action) {
+                actionBtn.textContent = action.label;
+                actionBtn.classList.remove('hidden');
+                actionBtn.onclick = action.onClick;
+            } else {
+                actionBtn.classList.add('hidden');
+                actionBtn.onclick = null;
+            }
+        }
+
         toast.classList.add('show');
-        setTimeout(() => toast!.classList.remove('show'), 2000);
+        if (toastDismissTimer !== null) {window.clearTimeout(toastDismissTimer);}
+        toastDismissTimer = window.setTimeout(() => {
+            toast!.classList.remove('show');
+            toastDismissTimer = null;
+        }, action ? 8000 : 2000);
     }
+}
+
+/** 1-indexed {line, col} for a character offset into `text` (col is character-based, like VS Code's own). */
+function lineColFromOffset(text: string, offset: number): { line: number; col: number } {
+    const upTo = text.slice(0, offset);
+    const line = upTo.split('\n').length;
+    const col = offset - upTo.lastIndexOf('\n');
+    return { line, col };
+}
+
+/** Current cursor position for the active editing surface. null in Reading mode or the legacy (non-CM6) Preview Edit engine. */
+function getCurrentCursorPosition(): { line: number; col: number } | null {
+    const viewMode = getCurrentViewMode();
+    if (viewMode === 'split') {
+        const editor = $('markdownEditor') as HTMLTextAreaElement;
+        return editor ? lineColFromOffset(editor.value, editor.selectionStart) : null;
+    }
+    if (viewMode === 'preview' && isLivePreviewActive()) {
+        return getLivePreviewCursorPosition();
+    }
+    return null;
 }
 
 function updateStatusInfo() {
@@ -1393,7 +1559,9 @@ function updateStatusInfo() {
     const chars = currentContent.length;
     const words = currentContent.trim().split(/\s+/).filter(w => w).length;
     const readingTime = Math.max(1, Math.ceil(words / 200));
-    statusInfo.textContent = `${lines} lines \u00B7 ${words} words \u00B7 ${chars} chars \u00B7 ~${readingTime} min read`;
+    const cursor = getCurrentCursorPosition();
+    const cursorPrefix = cursor ? `Ln ${cursor.line}, Col ${cursor.col} \u00B7 ` : '';
+    statusInfo.textContent = `${cursorPrefix}${lines} lines \u00B7 ${words} words \u00B7 ${chars} chars \u00B7 ~${readingTime} min read`;
     statusInfo.style.display = 'block';
 }
 
@@ -1737,6 +1905,7 @@ function applySettings(settings: any, persist = false) {
 
     if (isLivePreviewActive()) {
         setLivePreviewReveal(currentSettings.livePreviewReveal);
+        setLivePreviewLineNumbers(currentSettings.livePreviewLineNumbers);
     }
 
     refreshSyncMetrics();
@@ -1786,6 +1955,7 @@ function applySettings(settings: any, persist = false) {
     const chkShowOutline = $('chkShowOutline') as HTMLInputElement;
     const chkShowLineNumbers = $('chkShowLineNumbers') as HTMLInputElement;
     const chkLivePreviewReveal = $('chkLivePreviewReveal') as HTMLInputElement;
+    const chkLivePreviewLineNumbers = $('chkLivePreviewLineNumbers') as HTMLInputElement;
 
     if (chkWordWrap) {chkWordWrap.checked = currentSettings.wordWrap;}
     if (chkStickyToolbar) {chkStickyToolbar.checked = currentSettings.stickyToolbar;}
@@ -1794,6 +1964,7 @@ function applySettings(settings: any, persist = false) {
     if (chkShowOutline) {chkShowOutline.checked = currentSettings.showOutline;}
     if (chkShowLineNumbers) {chkShowLineNumbers.checked = currentSettings.showLineNumbers;}
     if (chkLivePreviewReveal) {chkLivePreviewReveal.checked = currentSettings.livePreviewReveal;}
+    if (chkLivePreviewLineNumbers) {chkLivePreviewLineNumbers.checked = currentSettings.livePreviewLineNumbers;}
 
     // Line numbers
     document.body.classList.toggle('show-line-numbers', !!currentSettings.showLineNumbers);
@@ -1891,6 +2062,16 @@ function initializeSettings() {
             }
         },
         {
+            id: 'chkLivePreviewLineNumbers',
+            label: 'Line Numbers (Preview Edit)',
+            tooltip: 'In Preview Edit mode, show line numbers in the editor gutter. Click a number to select that line.',
+            defaultValue: currentSettings.livePreviewLineNumbers,
+            onChange: (val: boolean) => {
+                currentSettings.livePreviewLineNumbers = val;
+                applySettings(currentSettings, true);
+            }
+        },
+        {
             id: 'chkMoveMdButtonsToEnd',
             label: 'Move Enable/Disable MD Buttons Near Help',
             tooltip: 'Place the Enable/Disable MD buttons just before Help & Feedback instead of at the start of the toolbar.',
@@ -1970,12 +2151,65 @@ window.addEventListener('message', (event) => {
             documentUri = m.documentUri || '';
             documentDirUri = m.documentDirUri || '';
             workspaceFolderUri = m.workspaceFolderUri || null;
+            currentTableColumnWidths = m.tableColumnWidths || {};
             resolvedImageUriCache.clear();
             renderMarkdown(currentContent);
             updateStatusInfo();
             break;
 
+        case 'diskChangedExternally': {
+            documentUri = m.documentUri || documentUri;
+            documentDirUri = m.documentDirUri || documentDirUri;
+            workspaceFolderUri = m.workspaceFolderUri || workspaceFolderUri;
+            currentTableColumnWidths = m.tableColumnWidths || currentTableColumnWidths;
+
+            if (isReloadingFromDisk) {
+                isReloadingFromDisk = false;
+                setButtonsEnabled(true);
+            }
+
+            const dirty = isEditMode && getActiveEditorContent() !== originalContent;
+            if (dirty) {
+                pendingDiskContent = m.content || '';
+                showToast('File changed on disk', {
+                    label: 'Reload',
+                    onClick: () => {
+                        if (pendingDiskContent === null) {return;}
+                        confirmDiscardAndReload().then((confirmed) => {
+                            if (confirmed && pendingDiskContent !== null) {
+                                applyReloadedContent(pendingDiskContent);
+                                pendingDiskContent = null;
+                                showToast('Reloaded from disk');
+                            }
+                        });
+                    }
+                });
+            } else {
+                applyReloadedContent(m.content || '');
+                showToast('Reloaded from disk');
+            }
+            break;
+        }
+
+        case 'reloadFromDiskError':
+            if (isReloadingFromDisk) {
+                isReloadingFromDisk = false;
+                setButtonsEnabled(true);
+            }
+            showToast('Error reloading from disk');
+            break;
+
         case 'initSettings':
+            applySettings(m.settings, false);
+            if (!hasAppliedInitialViewMode) {
+                hasAppliedInitialViewMode = true;
+                const mode = currentSettings.defaultViewMode;
+                if (mode === 'preview' || mode === 'split' || mode === 'reading') {
+                    setViewMode(mode);
+                }
+            }
+            break;
+
         case 'settingsUpdated':
             applySettings(m.settings, false);
             break;
@@ -2100,12 +2334,20 @@ function buildToolbarButtons() {
             }
         },
         {
+            id: 'reloadFromDiskButton',
+            icon: Icons.Refresh,
+            tooltip: 'Reload from Disk',
+            cls: 'icon-only',
+            hidden: true,
+            onClick: () => requestReloadFromDisk()
+        },
+        {
             id: 'saveEditsButton',
             icon: Icons.Save,
             tooltip: 'Save Changes (Ctrl+S)',
             cls: 'icon-only',
             hidden: true,
-            onClick: () => performSave(true)
+            onClick: () => performSave(false)
         },
         {
             id: 'cancelEditsButton',
@@ -2633,7 +2875,17 @@ function trimTrailingWhitespace(editor: HTMLTextAreaElement) {
 
 // Apply formatting from external call (toolbar buttons)
 function applyFormat(action: string) {
-    // WYSIWYG preview-edit mode: use execCommand
+    // CM6 Preview Edit mode: dispatch a transaction against the live doc.
+    if (isPreviewEditMode && isLivePreviewActive()) {
+        if (previewOnlyTableActions.has(action)) {
+            showToast('Table structure actions are available in WYSIWYG mode');
+            return;
+        }
+        applyLivePreviewFormat(action);
+        return;
+    }
+
+    // Legacy WYSIWYG preview-edit mode: use execCommand
     if (isPreviewEditMode) {
         applyWysiwygFormat(action);
         return;
@@ -3408,6 +3660,10 @@ function wireEditor() {
 
     editor.addEventListener('input', onEditorInput);
 
+    // Cursor-move-only events (no content change, so `input` doesn't fire) — keeps the status bar's Ln/Col live.
+    editor.addEventListener('click', updateStatusInfo);
+    editor.addEventListener('keyup', updateStatusInfo);
+
     editor.addEventListener('scroll', throttledSyncEditorToPreview, { passive: true });
 
     if (preview) {
@@ -3605,6 +3861,11 @@ function wirePreviewInteractions() {
     // WYSIWYG keyboard shortcuts when preview is contenteditable
     preview.addEventListener('keydown', (e) => {
         if (!isPreviewEditMode) {return;}
+        // CM6 mode handles its own shortcuts via livePreviewFormatKeymap +
+        // historyKeymap (bound directly on the EditorView); this legacy branch
+        // is contentEditable/execCommand-only and would no-op (or double-fire)
+        // against the CM6 DOM.
+        if (isLivePreviewActive()) {return;}
         const isMod = e.ctrlKey || e.metaKey;
 
         if (isMod && e.key.toLowerCase() === 's') {

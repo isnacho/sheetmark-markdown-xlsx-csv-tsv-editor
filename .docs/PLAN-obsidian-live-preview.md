@@ -685,3 +685,505 @@ lint errors. Manual F5 smoke test still outstanding — add to the checklist:
 table renders as a real grid when cursor is elsewhere; clicking into it reveals
 raw pipe text; clicking away re-renders the grid; edits to the raw text are
 reflected in the re-rendered grid.
+
+---
+
+## Phase 5 — completion notes (formatting parity)
+
+**Status:** code complete. `npm run test:unit`: 55/55 pass (30 new + 25 carried
+over). `npm run compile`: 0 type + 0 lint errors. Manual F5 smoke test still
+outstanding (same GUI constraint as every prior phase).
+
+**What landed**
+- New `livePreview/formatCommands.ts`: rewritten bodies (per the Architecture
+  section's explicit "rewrite, not accessor-swap" framing) of all 18 commands
+  the plan named — `wrapSelection` (bold/italic/strikethrough/inlineCode),
+  `toggleLinePrefix` (heading1-3/bulletList/orderedList/checkbox/blockquote),
+  `insertAtCursor`/`insertLink`/`insertImage`/`insertTable`/`insertHorizontalRule`,
+  `toggleCodeBlock`, `multiLineIndent`, `duplicateLine`, `deleteLine`,
+  `moveLineUp`/`moveLineDown`, `selectWord`, `transformCase`,
+  `sortSelectedLines`, `trimTrailingWhitespace` — each split into a pure
+  `computeXxx(state, ...) -> TransactionSpec | null` (headlessly testable, same
+  shape as `computeRevealDecorations`/`computeTableDecorations`) plus
+  `runFormatCommand(view, action)`, one dispatch table shared by the toolbar
+  and the keymap. Also added `jumpToLine` (prompt + `scrollIntoView`) — not in
+  the plan's literal command list, but the toolbar has a "Go to Line" button
+  that's live in both modes, so leaving it CM6-inert would be a silent
+  regression for that button specifically in Preview Edit mode.
+- `livePreviewFormatKeymap` (`KeyBinding[]`): Tab/Shift-Tab (no CM6 default
+  exists — without this, Tab would move focus out of the editor) plus the
+  full Split-mode Mod-key shortcut set (`Mod-b/i/k/e/Shift-e/Shift-x/l/Shift-l/
+  1/2/3/Shift-d/Shift-k/d/g/Shift-u/u`, `Alt-ArrowUp/Down`). Wired into
+  `livePreviewEditor.ts`'s extensions *before* `keymap.of([...defaultKeymap,
+  ...historyKeymap])` so it wins over any colliding default binding (e.g.
+  defaultKeymap's own `Mod-i` → `selectParentSyntax`).
+- `livePreviewEditor.ts` gained `applyLivePreviewFormat(action)` — the one new
+  export mdWebview.ts calls; it keeps the module-private `view` singleton from
+  leaking out (same encapsulation as every other exported wrapper here),
+  branches `undo`/`redo` to the existing `livePreviewUndo`/`livePreviewRedo`,
+  and otherwise delegates to `runFormatCommand` + refocuses the view.
+- `mdWebview.ts` wiring: `applyFormat` gained a third branch — `isPreviewEditMode
+  && isLivePreviewActive()` now gates the four WYSIWYG-only table-structure
+  actions behind the existing toast (same as Split mode) and otherwise calls
+  `applyLivePreviewFormat`. The legacy `preview.addEventListener('keydown', …)`
+  block (Mod+B/I/K/etc. → `applyWysiwygFormat`) now bails immediately when
+  `isLivePreviewActive()`, so it no longer double-fires (or no-ops against a
+  DOM that no longer exists) once a CM6 keydown bubbles up to `#markdownPreview`.
+
+**Design decision: Enter/Backspace list continuation is NOT hand-rolled**
+
+The plan's Architecture section says Enter-key list continuation should
+"become a CM6 keymap command." Before writing one, checked what
+`@codemirror/lang-markdown`'s `markdown({ extensions: GFM })` call (already in
+`livePreviewEditor.ts` since Phase 1) installs by default: `addKeymap` defaults
+to `true`, which installs `markdownKeymap` — `Enter` → `insertNewlineContinueMarkup`,
+`Backspace` → `deleteMarkupBackward` — at `Prec.high`. That's already active
+and already handles bullet/ordered/checkbox continuation *and* blockquote
+continuation, which the legacy regex (`mdWebview.ts`'s old Enter handler) never
+supported. Reimplementing it by hand would both duplicate an already-shipped
+mechanism and regress the blockquote case. Same reasoning the plan itself
+already applied to the slash menu (`@codemirror/autocomplete` over a
+hand-rolled popup, r1→r2) — reused rather than re-litigated here. Net effect:
+Phase 5 needed zero new code for Enter continuation; it verified the existing
+default rather than adding to it.
+
+**Design decision: hand-rolled commands, not CM6's built-in equivalents**
+
+`@codemirror/commands` exports its own `deleteLine`/`moveLineUp`/`moveLineDown`/
+`indentMore`/`indentLess` — tempting to reuse instead of porting. Went with a
+port anyway: those built-ins are multi-cursor/language-indent-aware and
+deliberately don't match the legacy single-cursor, hardcoded-4-space semantics
+this phase is required to preserve ("match today's Split-mode behavior" is the
+phase's own acceptance bar). `computeTabIndent`/`computeMultiLineIndent` hard-code
+4 spaces exactly like the legacy `multiLineIndent`, not the language's
+`indentUnit` facet.
+
+**Explicitly deferred / unchanged**
+- The four WYSIWYG-only table-structure actions (`tableAddRowBelow` etc.) still
+  show "available in WYSIWYG mode" in CM6 mode — unchanged from the Phase 4
+  table-widget v1 gap (no hover row/col buttons), just now gated consistently
+  instead of silently no-oping.
+- `sortLinesDesc` has no toolbar button in either mode (pre-existing); ported
+  and unit-tested anyway since it's one line of dispatch-table reuse once
+  `sortSelectedLines(state, descending)` exists.
+
+**Bundle-size delta (`dist/md/mdWebview.js`)**
+- Dev (unminified): 11,001,672 → 11,018,170 B (**+16.1 KB**)
+- Production (minified): 5,242,298 → 5,249,704 B (**+7.2 KB**)
+- Small relative to Phases 1/4 — no new dependency, just new source.
+
+**Verification**
+- `npm run test:unit`: 55/55 (30 new cases in `formatCommands.test.mts`, one
+  wrap/unwrap or boundary pair per ported command).
+- `npm run compile`: 0 type errors, 0 lint warnings.
+- Manual F5 smoke test **not run** (no GUI in this session). Checklist for
+  whoever runs it, in addition to Phases 1-4's: every formatting toolbar button
+  in Preview Edit mode (bold/italic/strikethrough/inline-code/code-block/
+  headings 1-3/bullet+ordered+checkbox lists/blockquote/link/image/table/hr/
+  duplicate+delete+move line/select word/go-to-line/upper+lower+title case/sort
+  lines/trim whitespace) against a CM6-mounted document; the four table-structure
+  buttons show the "WYSIWYG mode" toast instead of no-op; every Mod-key shortcut
+  from the list above plus Tab/Shift-Tab (single line and multi-line selection)
+  and Alt+Up/Down; pressing Enter inside a bullet/ordered/checkbox/blockquote
+  list continues it; toggle `livePreviewEngine` to `legacy` and confirm the old
+  WYSIWYG toolbar/shortcuts still work unchanged.
+
+---
+
+## Phase 6 — completion notes (slash menu, Improvement 2)
+
+**Status:** code complete. `npm run test:unit`: 65/65 pass (10 new + 55 carried
+over). `npm run compile`: 0 type + 0 lint errors. Manual F5 smoke test still
+outstanding (unchanged constraint from every prior phase).
+
+**What landed**
+- New `livePreview/slashMenu.ts`: a 12-entry option table — `Text`, `Heading
+  1`-`4`, `Bulleted List`, `Numbered List`, `To-do List`, `Callout`, `Quote`,
+  `Table`, `Divider` — covering every block transform the plan named. Split
+  the same way as every other module here: a pure `computeSlashApply(option,
+  from, to) -> TransactionSpec` (headlessly testable) plus a thin
+  `slashMenuCompletions: Completion[]` whose `apply` just calls it and
+  `view.dispatch`s. `slashMenuSource` (a `CompletionSource`) fires only when
+  the *entire current line* is `/` plus letters — i.e. a lone slash at the
+  start of an otherwise-empty line, per the plan's exact wording — and its
+  `from` starts right *after* the `/` so CM6's built-in fuzzy filter matches
+  against the typed word, not the slash itself; `apply` reaches one position
+  further back (`from - 1`) to remove the slash too.
+- `livePreviewEditor.ts`: one new extension, `autocompletion({ override:
+  [livePreviewSlashSource], icons: false })`. `override` replaces
+  `@codemirror/lang-markdown`'s incidental HTML-tag-completion default (an
+  unrelated side effect of `markdown({..})`, not something the plan asked to
+  keep) — deliberate, since the plan frames autocomplete as *the* slash-menu
+  mechanism here, not a shared multi-purpose completer.
+- `cm6Theme.ts`: styled `.cm-tooltip.cm-tooltip-autocomplete` and its option
+  list off the same `--bg-color`/`--border-color`/`--selection-bg` vars
+  everything else here uses. Confirmed this reaches the tooltip DOM despite it
+  not being a literal descendant of `.cm-editor`: `@codemirror/view`'s tooltip
+  manager re-applies `view.themeClasses` onto the tooltip's own container
+  (`this.container.className = this.view.themeClasses`), so `EditorView.theme()`
+  rules keep matching it exactly as if it were nested normally — verified by
+  reading `TooltipViewManager`/`createContainer` in `@codemirror/view`'s
+  source rather than assuming.
+
+**Design decision: no new hand-rolled Enter/Tab handling needed**
+
+`autocompletion()` installs its own keymap (`completionKeymap`) at
+`Prec.highest` — above `@codemirror/lang-markdown`'s `Prec.high` Enter/Backspace
+binding and above `livePreviewFormatKeymap`'s Tab binding from Phase 5. Its
+commands (`acceptCompletion`, `moveCompletionSelection`, etc.) check "is a
+completion active" internally and return `false` (falling through to the next
+keymap) when it isn't. So while the slash menu is open, Enter/Tab/Arrow keys
+pick an option; the moment it closes, those same keys revert to Phase 5's
+formatting shortcuts and `markdownKeymap`'s list continuation with no
+coordination code of this phase's own — this is exactly the "gives all of
+that for free" reasoning the plan's r1→r2 diff already used to justify
+`@codemirror/autocomplete` over a hand-rolled popup, now also covering the
+precedence question against the keymaps Phase 4/5 added after r2 was written.
+
+**CSP:** re-verified for this specific package (Phase 1's grep predated
+`@codemirror/autocomplete` actually being imported): `grep` over
+`@codemirror/autocomplete/dist` finds no `eval`/`new Function`/`fetch`/
+`XMLHttpRequest`/`WebSocket`. No CSP change.
+
+**Explicitly deferred**
+- No slash-menu entry for tables/callouts/etc. carries a preview icon or
+  description — `icons: false` was chosen for a plainer, Notion-style text
+  list; if a future pass wants icons per type, that's a per-option `type`
+  field change plus CSS, not a structural one.
+
+**Bundle-size delta (`dist/md/mdWebview.js`)**
+- Dev (unminified): 11,018,170 → 11,081,258 B (**+61.6 KB**)
+- Production (minified): 5,249,704 → 5,281,801 B (**+31.3 KB**)
+- Larger than Phase 5's delta because `@codemirror/autocomplete` was installed
+  since Phase 1 but never actually imported until now — this is the first
+  phase paying for that package's parse/bundle cost.
+
+**Verification**
+- `npm run test:unit`: 65/65 (10 new cases in `slashMenu.test.mts`: source
+  fires/doesn't-fire across 5 trigger-condition cases, the full option-label
+  list, and `computeSlashApply` for Heading/Callout/Table/Text).
+- `npm run compile`: 0 type errors, 0 lint warnings.
+- Manual F5 smoke test **not run** (no GUI in this session). Checklist for
+  whoever runs it, in addition to Phases 1-5's: typing `/` at the start of an
+  empty line opens the menu; typing more letters filters it; Arrow keys +
+  Enter (and Tab) pick an option; Escape closes it without inserting anything;
+  typing `/` mid-sentence or after other line content does *not* open it;
+  each of the 12 options produces the right block (headings visually resize
+  per Phase 4's reveal engine once the cursor leaves the line; Callout renders
+  via the existing `:::info` container styling; Table renders via Phase 4's
+  `TableWidget` once the cursor leaves it); toggle `livePreviewEngine` to
+  `legacy` and confirm the legacy WYSIWYG mode is unaffected (it has no slash
+  menu, by design — Preview Edit's CM6 engine only, per the plan's confirmed
+  v1 scope).
+
+---
+
+## Phase 7 — completion notes (extend reveal set)
+
+**Status:** code complete. `npm run test:unit`: 75/75 pass (10 new + 65
+carried over). `npm run compile`: 0 type + 0 lint errors. Manual F5 smoke test
+still outstanding (unchanged constraint from every prior phase).
+
+**What landed** — all in `revealDecorations.ts`/`revealDecorations.test.mts`,
+reusing `computeRevealDecorations`'s existing hide-marker/style-content shape,
+per the plan's "reusing this machinery" framing:
+- **Strikethrough**: `handlePairedMarks` (Phase 4's bold/italic helper)
+  generalized to take a mark-node-name parameter instead of a hardcoded
+  `'EmphasisMark'`, then reused as-is for `Strikethrough`/`StrikethroughMark` →
+  `cm-md-strike-content`. Zero new logic, one parameter.
+- **Inline code**: hides/dims the two `CodeMark` backticks only — no content
+  span. `codeStylingPlugin` (Phase 4) already owns the always-on monospace/
+  background look for `InlineCode`; this phase only layers the marker
+  hide/dim on top of it, exactly the split the Phase 4 notes called for
+  ("hiding them is reveal-marker territory... stays Phase 7 scope"). The two
+  decoration sets are independent `ViewPlugin`s composed by CM6, not merged —
+  confirmed no conflict from a `Decoration.mark` (codeStyling) and a
+  `Decoration.replace` (reveal) both touching the same backtick position.
+- **Links**: verified the real parse tree first (same discipline as Phase 4's
+  `***bold-italic***` check) rather than assuming CommonMark's usual shape —
+  `Link` → `LinkMark("[")`, `LinkMark("]")`, `LinkMark("(")`, `URL`,
+  `LinkMark(")")`, with the label as bare text (no wrapping node). Hides `[`
+  alone and `](url)` as one combined span; styles the label text
+  `cm-md-link-content` (accent color + underline). Images (`![alt](url)`)
+  are untouched — not named in the plan's Phase 7 list.
+- **Blockquotes**: hides/dims each line's `QuoteMark` (`>`) and adds a
+  `Decoration.line` per line (`cm-md-blockquote-line` — left border + tint,
+  mirroring the legacy renderer's `blockquote` CSS) for the indent/border
+  look, mixing inline and line decorations in one `Decoration.set` the same
+  way `codeStyling.ts` already mixes `InlineCode` marks with `FencedCode`
+  lines. "Active" is node-wide — cursor anywhere in the quote dims every
+  line's `>` together, not just the line the caret is on — same granularity
+  as headings/paired marks, to avoid marks flickering independently as the
+  caret moves within one quote.
+- **List markers + task checkboxes**: `ListMark` (bullet/number) gets an
+  always-on `cm-md-list-mark` accent class; `TaskMarker` (`[ ]`/`[x]`) gets
+  `cm-md-task-marker`/`cm-md-task-marker-done`, and a done item's remaining
+  text gets `cm-md-task-done-content` (strikethrough + muted) — see the
+  design note below for why these never hide. Note this is narrower than
+  `codeStyling.ts`'s "always-on": list/task styling still lives inside
+  `computeRevealDecorations`, so — like every other content class in this
+  file — it disappears if `livePreviewReveal` is switched off. Only the
+  *cursor-position* independence (never hides/dims based on where the caret
+  is) is the actual claim; independence from the setting is not.
+
+**Design decision: list/task markers are styled, never hidden**
+
+Every other mark this engine touches (`#`, `**`, `*`, `~~`, `` ` ``, `[]()`,
+`>`) is pure decoration layered on otherwise-plain text — once the styled
+content is visible, the marker itself is redundant clutter, so hiding it on
+cursor-away is a pure improvement. A list bullet or number is not decoration
+on top of something else; it is the *only* signal that a line is a list item
+at all. Hiding it would make list items indistinguishable from indented
+paragraphs the moment the cursor leaves — a worse reveal than no reveal, and
+not what Obsidian's own Live Preview does either (it restyles bullets, never
+hides them). So list/task markers get the same "always-on baseline look"
+treatment as `codeStyling.ts`'s monospace/background — restyled, never
+`Decoration.replace`d — rather than being folded into the hide/dim branch
+alongside everything else in this file.
+
+**Bug caught by testing, not by inspection: blockquote continuation lines
+aren't direct children of `Blockquote`**
+
+First implementation called `node.getChildren('QuoteMark')` on the
+`Blockquote` node itself, assuming every line's `>` was a direct child
+(sibling per-line marks) — modeled on how heading/paired-mark handling already
+worked. Wrong: dumping the real tree for a 2-line quote (`node.parent` at each
+step, not just node names) showed line 1's `QuoteMark` *is* a direct child of
+`Blockquote`, but line 2's is nested **inside the continuing `Paragraph`**
+instead — CommonMark's lazy-continuation rule merges un-blank-line-separated
+quote lines into one paragraph, and the parser nests the second line's marker
+inside that paragraph rather than keeping it a `Blockquote` sibling. The unit
+test (2 lines, cursor away, expecting 4 hidden spans) caught this immediately
+— got 2, not 4. Fixed by moving mark-handling out of the `Blockquote` node's
+handler entirely: `QuoteMark` is now its own top-level dispatch case,
+handled wherever `iterate()` finds it regardless of nesting depth, walking
+`.parent` up to the enclosing `Blockquote` for the node-wide active check.
+`handleBlockquote` itself now only owns the per-line block decoration (which
+was never affected by this bug, since it derives from `node.from`/`node.to`
+line numbers, not child traversal). Same lesson as Phase 4's nested-emphasis
+verification, this time caught by the test rather than by inspection first —
+worth remembering for any future per-line block-node child lookup in this
+grammar.
+
+**Explicitly out of scope for this phase**
+- Fenced-code fence delimiters are unaffected — the plan's Phase 7 list names
+  "inline-code," not fenced code; `codeStyling.ts`'s always-visible fences are
+  unchanged.
+- No interactive checkbox widget (click-to-toggle `[ ]`/`[x]`) — styling only,
+  consistent with "extend reveal set," not "build a new widget" (that would be
+  Phase-4-table-widget-scale work, not asked for here).
+- Image reveal (`![alt](url)`) — not named in the plan's Phase 7 list.
+
+**Bundle-size delta (`dist/md/mdWebview.js`)**
+- Dev (unminified): 11,081,258 → 11,085,965 B (**+4.6 KB**)
+- Production (minified): 5,281,801 → 5,283,936 B (**+2.1 KB**)
+- Smallest delta of any phase so far — no new dependency, and the new logic
+  reuses `computeRevealDecorations`'s existing machinery almost entirely.
+
+**Verification**
+- `npm run test:unit`: 75/75 (10 new cases: strikethrough/inline-code/link
+  cursor-in/out pairs, blockquote away + node-wide-active, list-marker
+  always-on across bulleted/ordered, task-marker todo/done).
+- `npm run compile`: 0 type errors, 0 lint warnings.
+- Manual F5 smoke test **not run** (no GUI in this session). Checklist for
+  whoever runs it, in addition to Phases 1-6's: type `~~strike~~`/`` `code` ``/
+  `[text](url)` and confirm marks hide away from the cursor and dim (styling
+  persists) when the cursor is in them; type a multi-line `>` blockquote and
+  confirm the left-border/tint renders on every line and the `>` on ALL lines
+  dims together when the cursor is anywhere in the quote; type `- `/`1. `/
+  `- [ ]` list items and confirm the bullet/number/checkbox gets the accent
+  styling and never disappears regardless of cursor position; check a task
+  item (`- [x]`) and confirm its text renders struck-through; toggle
+  `livePreviewReveal` off and confirm ALL of the above content styling
+  disappears (list/task included — that styling lives in the same
+  compartment-gated plugin as headings/bold/italic, unlike `codeStyling.ts`'s
+  inline-code/fenced-code look, which is a separate always-on plugin and
+  should be the only thing still styled once reveal is off).
+
+**Post-phase-7 fix (real F5 feedback, 2026-07-07): typing a new heading
+blanked EVERY heading in the document**
+
+First real manual-testing feedback across all 7 phases (via `samples/test.md`
+in the actual Extension Development Host — something this session couldn't
+do itself, no GUI available). Reported symptom: create a new heading, and
+immediately every existing heading in the document drops to body size and
+shows its raw `#`s, recovering only after a save.
+
+Root cause, confirmed by reproducing headlessly rather than guessed: typing
+`#` or `# ` is a valid, title-less `ATXHeading` per CommonMark (a heading with
+empty content is legal) — for that state, `handleHeading`'s final line pushed
+a `Decoration.mark()` over a **zero-length** content span (`gapEnd === node.to`
+when there's no title text yet). CM6 throws `"Mark decorations may not be
+empty"` for that. Confirmed directly:
+```
+computeRevealDecorations(stateFor('#'), 0, 0, [{from:0,to:1}])
+// -> throws "Mark decorations may not be empty"
+```
+A `ViewPlugin` that throws inside `update()`/its decorations getter loses its
+decorations for the **whole plugin**, not just the node that triggered it — so
+every other heading in the document lost its reveal styling simultaneously,
+exactly matching the report. It self-heals once the heading gets non-empty
+title text (confirmed by typing it character-by-character in a repro script),
+which is why it looked save-dependent rather than permanent: by the time you
+finish typing a title and reach for Ctrl+S, the exception has usually already
+stopped recurring.
+
+The same zero-length-range hazard existed at two more call sites doing the
+identical "push a content `Decoration.mark` between two marks" pattern: an
+empty link label (`[]()`) in `handleLink`, and (defensively, could not
+actually make it throw, but the shape is identical) a done task item with
+nothing after the checkbox in `handleTaskMarker`. `handlePairedMarks`
+(bold/italic/strikethrough) turned out not to be reachable empty in
+practice — lezer doesn't parse `****`/`~~~~` as `StrongEmphasis`/`Strikethrough`
+at all when the content would be empty, so the node never exists — but guarded
+it anyway rather than leave an unguarded call site relying on "the grammar
+happens not to do that," given this whole bug was exactly that kind of
+assumption failing.
+
+Fix: guard every content-span push in `revealDecorations.ts` with a
+non-empty-range check (`if (from < to) { specs.push(...) }`) before calling
+`Decoration.mark()`. Four new regression tests in
+`revealDecorations.test.mts`: empty heading/empty link don't throw, a done
+task with nothing after the checkbox doesn't throw, and — the one that
+actually encodes the reported bug — typing a brand-new heading character by
+character never disturbs an *existing* heading elsewhere in the same document
+(79/79 total, `npm run compile` clean).
+
+This is also the first concrete payoff of the "no GUI in this session"
+caveat repeated in every phase's notes above: a real F5 session found a bug
+in under a minute that seven phases of headless testing and code review had
+not, because the specific failure mode (an exception silently blanking a
+*different* node than the one being edited) only shows up when something is
+actually rendering pixels.
+
+**Post-phase-7 fix #2 (same F5 session): dimmed "#" rendered smaller than the
+heading text next to it, and headings were underlined**
+
+Two more visual reports from the same manual pass.
+
+*Marker size mismatch.* When the cursor is on a heading, the dimmed `#` used
+plain `cm-md-reveal-mark` (color + opacity only, no font-size rule) — at the
+base editor font size, next to heading content sitting at up to `2em`. Fixed
+by giving the active-state marker decoration a level-matched class,
+`cm-md-reveal-mark cm-md-h${level}`, and merging the marker + its trailing gap
+space into one combined span (previously two separate pushes) so the space
+between them isn't yet a third, unstyled size. Same treatment applied to the
+rare `## Title ##` closing-marker form. One existing test's expected shape
+changed to match (marker range widened from 1 char to 2, class gained the
+`cm-md-hN` suffix) — updated rather than left broken.
+
+*Underline — two attempts, only the second one actually verified working.*
+First attempt: added `textDecoration: 'none !important'` to `.cm-md-h1`-`.cm-md-h6`
+in `cm6Theme.ts`, reasoning that `@codemirror/language`'s `defaultHighlightStyle`
+underlines anything tagged `tags.heading` (`@lezer/markdown` tags ATXHeading1-6
+as `heading1`-`heading6`, which fall back to matching the more general
+`heading` tag when no specific rule exists) and `!important` should win
+regardless of cascade order. **User reported the underline was still there
+after that fix.** Rather than keep guessing at *why* `!important` didn't
+visibly win (competing hypotheses considered: stale build — ruled out, `grep`
+confirmed the change was in `dist/md/mdWebview.js`; CSS's `text-decoration`
+historically not being cancelable by a descendant when set on an ancestor —
+plausible but unverifiable here, no jsdom/browser available in this session
+to inspect actual rendered class lists) — removed the competing rule at its
+source instead of continuing to fight it blind: dropped
+`syntaxHighlighting(defaultHighlightStyle, { fallback: true })` from
+`livePreviewEditor.ts`'s extensions entirely, and reverted the now-pointless
+`!important` back to plain `fontSize`-only rules in `cm6Theme.ts`.
+
+Checked this was safe to remove outright, not just for headings: `markdown({
+extensions: GFM })` is never given a `codeLanguages` config, so
+`defaultHighlightStyle`'s programming-language rules (keyword/string/comment/
+regexp/...) were never reachable in the first place; its `heading`/`emphasis`/
+`strong`/`strikethrough` rules were always redundant with this file's own
+(more capable — hide/reveal, not just static color) decorations; its `meta`/
+`link`/`url` colors are hardcoded light-theme hex values that were never
+theme-aware to begin with, same as every other rule in it. It was unexamined
+Phase-1 boilerplate (the kind of default every CM6 tutorial includes) rather
+than a real dependency — its only *observed* effect this whole time was the
+bug just reported. If embedded fenced-code language highlighting is ever
+added (a `codeLanguages` config for `markdown()`), whoever adds it should
+bring back a highlighter scoped to what's actually needed then, not restore
+this one blind.
+
+**Lesson for this plan doc going forward:** a fix that "should work" per
+static reasoning about a library's internals is not verified until it's
+been *seen* to work, or until the competing mechanism has been removed
+outright rather than merely out-ranked. The first underline fix is the first
+documented instance in this plan of a fix landing, compiling clean, and
+still being wrong — worth remembering given every phase above has been
+proceeding on code-review + headless-test confidence alone.
+
+**Post-phase-7 fix #3 (same F5 session): inserting a table froze the editor**
+
+The most serious bug of this whole plan, and the clearest illustration yet of
+the "no GUI in this session" gap. Reported symptom: type `/table` (or click
+the toolbar's Insert Table button) in Preview Edit mode — nothing happens, the
+cursor doesn't move, and the editor appears to freeze.
+
+Every layer of this was already covered by an existing passing headless test
+(`computeInsertTable`, `computeSlashApply`'s Table case, `computeTableDecorations`
+all pass in isolation), which is exactly why it survived 7 phases undetected —
+none of those tests ever construct a real `EditorView`. Phase 3 scoped that
+out on purpose ("no VS Code host, no DOM"), and no manual F5 smoke test had
+been run by anyone until this session.
+
+With no display available in this sandbox either, installed `jsdom` as a
+temporary, unsaved dependency (`npm install --no-save jsdom`, never touched
+`package.json`/the lockfile) to construct a *real* `EditorView` — the only way
+to get past pure code-reading for a bug that only manifests when something
+actually renders. First repro attempt (typing "/table" character by character,
+then manually invoking the found completion's `apply`) hit the actual failure
+immediately:
+```
+RangeError: Block decorations may not be specified via plugins
+    at ... TileUpdate.emit ... at ... DocView.update ...
+```
+Root cause, confirmed by reading @codemirror/view's actual installed source
+(not assumed): a block-level `Decoration.replace({ block: true, widget })` —
+what `tableWidget.ts` uses, since there's no inline way to render a real
+`<table>` grid — **cannot come from a `ViewPlugin`**. CM6's decorations facet
+tracks whether each source is a plain value or a function
+(`typeof d == "function"`); `ViewPlugin.fromClass(..., { decorations: v =>
+v.decorations })` registers a function, which gets flagged in
+`dynamicDecorationMap`/`disallowBlockEffectsFor`, and `TileUpdate.emit` throws
+the moment it hits a `block: true` point-decoration from a flagged source. A
+`StateField`'s `provide: f => EditorView.decorations.from(f)` registers the
+field's plain value instead — not flagged, block decorations allowed. This is
+a real, if easy to miss, CM6 API rule: block widgets need a `StateField`,
+ordinary mark/replace/line decorations (everything else in this engine,
+including the `Decoration.line` blockquote/fenced-code decorations added in
+Phases 4 and 7) don't care and work fine from either.
+
+Fix: `tableWidget.ts`'s `tableWidgetPlugin` (`ViewPlugin`) became
+`tableWidgetField` (`StateField<DecorationSet>`). The one real cost: a
+`StateField` has no `view.visibleRanges` — it only sees `EditorState`/
+`Transaction` — so `computeTableDecorations` (unchanged, still takes the same
+`visibleRanges` parameter for the headless tests) is now always called with
+the whole document as its one "visible range," rather than the true viewport.
+Accepted: it's filtered to just `Table` nodes, which are comparatively rare
+next to what `revealDecorations.ts` scans for on every keystroke, so full-doc
+scope here doesn't carry the same cost the "never the whole doc" rule was
+guarding against for the mark-level reveal engine.
+
+Re-ran the same jsdom repro against the fix: insert → renders as a widget →
+click away → click back in (reveals raw text) → type inside it, all in single-
+digit milliseconds, no throw. `livePreviewEditor.ts` updated at both of
+`tableWidgetPlugin`'s two use sites (initial mount, `setLivePreviewReveal`'s
+compartment reconfigure). No test changes needed — `computeTableDecorations`'s
+signature and behavior are untouched; only *what calls it and how* changed.
+79/79 tests still pass, `npm run compile` clean.
+
+**Why this one is worth calling out beyond the other post-phase-7 fixes:** the
+heading-empty-range bug earlier in this session was silent (decorations
+quietly vanished); the underline bug was cosmetic. This one is an *uncaught
+exception inside CM6's synchronous render path* — a category of bug that can
+leave the editor in a broken state rather than just looking wrong, and it's
+the first bug in this entire plan that pure code review and 79 passing
+headless tests were structurally incapable of catching, because the failure
+condition is a property of *which CM6 primitive provides a decoration*, not
+of what the decoration contains — invisible to any test that never
+constructs a real `EditorView`. Recorded here as a flag for Phase 8: if any
+future addition to this engine needs a block-level widget, it needs to go
+through `EditorView.decorations.from(field)`, not `ViewPlugin`, and there is
+currently no test in this repo that would catch it if someone got that wrong
+again.

@@ -585,6 +585,7 @@ body.resizing * {
 .markdown-preview .inline-code {
     font-family: var(--font-mono);
     font-size: 85%;
+    font-weight: 600;
     background: var(--code-bg);
     padding: 0.2em 0.4em;
     border-radius: 6px;
@@ -677,6 +678,7 @@ body.show-line-numbers .markdown-preview pre {
     padding: 0;
     border: none;
     font-size: inherit;
+    font-weight: 600;
     color: inherit;
 }
 
@@ -709,13 +711,11 @@ body.show-line-numbers .markdown-preview pre {
 
 /* Blockquotes */
 .markdown-preview blockquote {
-    margin: 16px 0;
-    padding: 12px 20px;
-    border-left: 4px solid;
-    border-image: linear-gradient(180deg, var(--accent-color), color-mix(in srgb, var(--accent-color) 20%, transparent)) 1;
+    margin: 16px 0 16px 4px;
+    padding: 12px 16px;
+    border-left: 2px solid var(--text-color);
     color: var(--text-color);
-    background: var(--accent-bg);
-    border-radius: 0 8px 8px 0;
+    background: transparent;
     position: relative;
 }
 
@@ -775,14 +775,13 @@ body.show-line-numbers .markdown-preview pre {
     border-color: var(--success-color);
 }
 
-/* Horizontal Rule - Gradient */
+/* Horizontal Rule */
 .markdown-preview hr {
     border: none;
-    height: 2px;
-    background: linear-gradient(90deg, transparent, var(--accent-color), var(--accent-color), transparent);
+    height: 1px;
+    background: var(--text-muted);
     margin: 32px 0;
-    border-radius: 1px;
-    opacity: 0.5;
+    opacity: 0.6;
 }
 
 /* Tables */
@@ -798,7 +797,7 @@ body.show-line-numbers .markdown-preview pre {
 
 .markdown-preview table.md-table th,
 .markdown-preview table.md-table td {
-    padding: 6px 13px;
+    padding: 6px 6px;
     border: 1px solid var(--border-color);
 }
 
@@ -815,6 +814,89 @@ body.preview-edit-mode .markdown-preview table.md-table td {
 
 .markdown-preview table.md-table tr:nth-child(2n) {
     background: var(--header-bg);
+}
+
+/* CM6 live-preview table widget: drag-to-resize columns (tableWidget.ts) */
+.markdown-preview table.md-table.cm-md-table-resized {
+    /* Force `display: table` (overriding the block rule above) so
+       `table-layout: fixed` is guaranteed to apply per spec — the anonymous
+       table-box generation that would otherwise let a block-level <table>'s
+       table-model children still lay out isn't something to rely on for a
+       property (table-layout) declared on the <table> element itself. */
+    display: table;
+    table-layout: fixed;
+    width: auto;
+}
+
+.cm-md-col-resize-handle {
+    position: absolute;
+    top: 0;
+    right: -3px;
+    bottom: 0;
+    width: 6px;
+    cursor: col-resize;
+    z-index: 3;
+}
+
+.cm-md-col-resize-handle:hover,
+.cm-md-col-resize-handle:active {
+    background: var(--accent-color);
+    opacity: 0.5;
+}
+
+/* CM6 live-preview table widget: the single active/editable cell (tableWidget.ts) */
+.markdown-preview table.md-table .cm-md-table-cell-editing {
+    outline: 2px solid var(--accent-color);
+    outline-offset: -2px;
+    background: var(--bg-color);
+    white-space: pre;
+}
+
+/* CM6 live-preview table widget: right-click row/column menu (tableWidget.ts) */
+.cm-md-table-context-menu {
+    position: fixed;
+    z-index: 10020;
+    min-width: 200px;
+    background: var(--glass-bg-strong);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    box-shadow: var(--shadow-lg);
+    backdrop-filter: blur(12px) saturate(160%);
+    -webkit-backdrop-filter: blur(12px) saturate(160%);
+    padding: 6px;
+}
+
+.cm-md-table-context-menu.hidden {
+    display: none;
+}
+
+.cm-md-table-context-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    border: none;
+    background: transparent;
+    color: var(--text-color);
+    border-radius: 6px;
+    padding: 7px 10px;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.cm-md-table-context-item:hover:not(:disabled) {
+    background: var(--row-hover-bg);
+}
+
+.cm-md-table-context-item:disabled {
+    color: var(--text-muted);
+    cursor: not-allowed;
+}
+
+.cm-md-table-context-separator {
+    height: 1px;
+    margin: 6px 4px;
+    background: var(--border-color);
+    opacity: 0.7;
 }
 
 /* Hover controls under editable tables (preview-edit mode only) */
@@ -976,6 +1058,22 @@ body.preview-edit-mode .markdown-preview .table-tool-btn[data-table-action="tabl
     white-space: nowrap;
 }
 
+.toast-action {
+    pointer-events: auto;
+    background: none;
+    border: 1px solid var(--border-color);
+    border-radius: 100px;
+    color: var(--text-color);
+    font-size: 13px;
+    font-weight: 600;
+    padding: 4px 12px;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.toast-action.hidden {
+    display: none;
+}
 
 
 /* Hide elements when in edit mode */

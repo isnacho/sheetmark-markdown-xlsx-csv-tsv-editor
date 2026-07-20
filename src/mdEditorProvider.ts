@@ -3,9 +3,14 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { IncomingMessage } from 'http';
 import { VERSION_HISTORY_RETENTION_MS, VERSION_HISTORY_SNAPSHOT_DEBOUNCE_MS, buildGroupedVersionHistoryItems, formatVersionHistoryTimestamp, getVersionHistoryFile } from './shared/versionHistory';
+import { TableColumnWidthStorageService } from './shared/tableColumnWidthStorageService';
 
 export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
-    constructor(private readonly context: vscode.ExtensionContext) { }
+    private readonly tableColumnWidthStorage: TableColumnWidthStorageService;
+
+    constructor(private readonly context: vscode.ExtensionContext) {
+        this.tableColumnWidthStorage = new TableColumnWidthStorageService(context);
+    }
 
     async openCustomDocument(
         uri: vscode.Uri,
@@ -114,7 +119,8 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                 fileName: vscode.workspace.asRelativePath(document.uri),
                 documentUri: document.uri.toString(),
                 documentDirUri: documentDirUri.toString(),
-                workspaceFolderUri
+                workspaceFolderUri,
+                tableColumnWidths: this.tableColumnWidthStorage.getWidths(document.uri)
             });
 
             // Set up webview
@@ -166,7 +172,9 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                                 showOutline: cfg.get('md.showOutline', true),
                                 showLineNumbers: cfg.get('md.showLineNumbers', true),
                                 livePreviewReveal: cfg.get('md.livePreviewReveal', true),
+                                livePreviewLineNumbers: cfg.get('md.livePreviewLineNumbers', false),
                                 livePreviewEngine: cfg.get('md.livePreviewEngine', 'cm6'),
+                                defaultViewMode: cfg.get('md.defaultViewMode', 'preview'),
                                 moveMdButtonsToEnd: cfg.get('md.moveMdButtonsToEnd', false),
                                 isMdEnabled: isMdEnabled
                             };
@@ -230,6 +238,9 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                             if (typeof s.livePreviewReveal === 'boolean') {
                                 await cfg.update('md.livePreviewReveal', !!s.livePreviewReveal, vscode.ConfigurationTarget.Global);
                             }
+                            if (typeof s.livePreviewLineNumbers === 'boolean') {
+                                await cfg.update('md.livePreviewLineNumbers', !!s.livePreviewLineNumbers, vscode.ConfigurationTarget.Global);
+                            }
                             if (s.livePreviewEngine === 'cm6' || s.livePreviewEngine === 'legacy') {
                                 await cfg.update('md.livePreviewEngine', s.livePreviewEngine, vscode.ConfigurationTarget.Global);
                             }
@@ -242,10 +253,12 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                         try {
                             const content = await fs.promises.readFile(filePath, 'utf-8');
                             currentContent = content;
-                            webviewPanel.webview.postMessage(buildInitMarkdownPayload(content));
-                            vscode.window.showInformationMessage('Markdown reloaded from disk.');
+                            webviewPanel.webview.postMessage({ ...buildInitMarkdownPayload(content), command: 'diskChangedExternally' });
                         } catch (err) {
                             vscode.window.showErrorMessage(`Error reading Markdown file: ${err}`);
+                            try {
+                                webviewPanel.webview.postMessage({ command: 'reloadFromDiskError', message: String(err) });
+                            } catch { /* panel disposed mid-flight */ }
                         }
                         break;
 
@@ -262,6 +275,15 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                             webviewPanel.webview.postMessage({ command: 'saveResult', ok: false, error: String(err) });
                         } finally {
                             isSaving = false;
+                        }
+                        break;
+
+                    case 'saveTableColumnWidths':
+                        try {
+                            const widths = message.widths && typeof message.widths === 'object' ? message.widths : {};
+                            await this.tableColumnWidthStorage.saveWidths(document.uri, widths);
+                        } catch (err) {
+                            vscode.window.showErrorMessage(`Error saving table column widths: ${err}`);
                         }
                         break;
 
@@ -497,7 +519,9 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                                  showOutline: cfg.get('md.showOutline', true),
                                  showLineNumbers: cfg.get('md.showLineNumbers', true),
                                  livePreviewReveal: cfg.get('md.livePreviewReveal', true),
+                                 livePreviewLineNumbers: cfg.get('md.livePreviewLineNumbers', false),
                                  livePreviewEngine: cfg.get('md.livePreviewEngine', 'cm6'),
+                                 defaultViewMode: cfg.get('md.defaultViewMode', 'preview'),
                                  moveMdButtonsToEnd: cfg.get('md.moveMdButtonsToEnd', false),
                                  isMdEnabled: true
                              };
@@ -538,7 +562,9 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                         showOutline: cfg.get('md.showOutline', true),
                         showLineNumbers: cfg.get('md.showLineNumbers', true),
                         livePreviewReveal: cfg.get('md.livePreviewReveal', true),
+                        livePreviewLineNumbers: cfg.get('md.livePreviewLineNumbers', false),
                         livePreviewEngine: cfg.get('md.livePreviewEngine', 'cm6'),
+                        defaultViewMode: cfg.get('md.defaultViewMode', 'preview'),
                         moveMdButtonsToEnd: cfg.get('md.moveMdButtonsToEnd', false),
                         isMdEnabled: isMdEnabled
                     };
@@ -568,7 +594,7 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                 try {
                     const content = await fs.promises.readFile(filePath, 'utf-8');
                     currentContent = content;
-                    webviewPanel.webview.postMessage(buildInitMarkdownPayload(content));
+                    webviewPanel.webview.postMessage({ ...buildInitMarkdownPayload(content), command: 'diskChangedExternally' });
                 } catch {
                     // ignore reload errors
                 }

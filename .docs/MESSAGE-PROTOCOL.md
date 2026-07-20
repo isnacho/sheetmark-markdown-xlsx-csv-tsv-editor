@@ -90,6 +90,7 @@ Provider: [mdEditorProvider.ts](../src/mdEditorProvider.ts)
 | `enableMdEditor` | — | :1782 | :486 |
 | `disableMdEditor` | — | :1801 | :465 |
 | `toggleMdAssociation` | `enable` | shared module | :509 |
+| `saveTableColumnWidths` | `widths` (table order-index -> px per column) | :860 | :274 |
 | `getSystemDetails` | — | [feedbackModal.ts](../src/webviews/shared/feedbackModal.ts) | :427 |
 | `submitFeedback` | feedback fields | [feedbackModal.ts](../src/webviews/shared/feedbackModal.ts) | :440 |
 
@@ -100,7 +101,7 @@ Provider: [mdEditorProvider.ts](../src/mdEditorProvider.ts)
 
 | command | Payload | Sender (provider) | Handler (webview) |
 |---|---|---|---|
-| `initMarkdown` | `text`, `documentUri`, `documentDirUri`, `workspaceFolderUri` | :112 | :1692 |
+| `initMarkdown` | `text`, `documentUri`, `documentDirUri`, `workspaceFolderUri`, `tableColumnWidths` (persisted table order-index -> px per column, read via `TableColumnWidthStorageService`) | :112 | :1692 |
 | `initSettings` | `settings` | :~ | :1706 |
 | `settingsUpdated` | `settings` | :~ | :1707 |
 | `saveResult` | `ok` | :~ | :1711 |
@@ -109,6 +110,8 @@ Provider: [mdEditorProvider.ts](../src/mdEditorProvider.ts)
 | `versionPreviewCancelledMd` | — | :~ | :1740 |
 | `versionRestoredMd` | — | :374 | :1745 |
 | `versionHistoryError` | `message` | :272, :317, :340, :358, :380 | :1731 |
+| `diskChangedExternally` | `content`, `fileName`, `documentUri`, `documentDirUri`, `workspaceFolderUri`, `tableColumnWidths` | requestFreshData handler `:256`, FileSystemWatcher.onDidChange `:597` | :2119 |
+| `reloadFromDiskError` | `message` | requestFreshData handler (catch) `:260` | :2150 |
 | `setTheme` | `kind` | :175, :550 | `ThemeManager`; keyed on `message.type` |
 | `systemDetails` | details | :430 | [feedbackModal.ts](../src/webviews/shared/feedbackModal.ts) |
 | `feedbackResult` | `ok` | :~ | [feedbackModal.ts](../src/webviews/shared/feedbackModal.ts) |

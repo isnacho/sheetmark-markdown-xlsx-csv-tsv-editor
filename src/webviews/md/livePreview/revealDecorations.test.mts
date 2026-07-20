@@ -6,10 +6,18 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { EditorState } from '@codemirror/state';
 import { markdown } from '@codemirror/lang-markdown';
-import { computeRevealDecorations } from './revealDecorations.ts';
+import { GFM } from '@lezer/markdown';
+import {
+    computeRevealDecorations, computeToggleTaskMarker, TaskCheckboxWidget,
+    numberToLowerAlpha, numberToLowerRoman, formatOrderedMarkerLabel,
+    OrderedMarkerWidget, BulletMarkerWidget, computeOrderedMarkerRanges,
+} from './revealDecorations.ts';
 
+// GFM is required for Strikethrough/TaskList nodes to exist in the tree at
+// all (bare `markdown()` is CommonMark-only) — matches production's own
+// `markdown({ extensions: GFM })` in livePreviewEditor.ts.
 function stateFor(doc: string): EditorState {
-    return EditorState.create({ doc, extensions: [markdown()] });
+    return EditorState.create({ doc, extensions: [markdown({ extensions: GFM })] });
 }
 
 interface FlatDeco { from: number; to: number; class: string | undefined; }
@@ -34,11 +42,14 @@ test('heading: cursor away hides "#" and its gap space, applies heading-size cla
     ]);
 });
 
-test('heading: cursor on the heading line shows "#" dimmed but KEEPS the size styling', () => {
+test('heading: cursor on the heading line shows "#" dimmed AT THE HEADING\'S OWN SIZE, and content KEEPS its size styling', () => {
     const doc = '# Title\n\nbody';
     const decos = decorate(doc, doc.indexOf('Title'));
     assert.deepEqual(decos, [
-        { from: 0, to: 1, class: 'cm-md-reveal-mark' },
+        // Marker + its gap space are one combined dimmed span, sized to match
+        // the heading level (cm-md-h1) — a bare cm-md-reveal-mark (no size
+        // class) would render smaller than the heading text right next to it.
+        { from: 0, to: 2, class: 'cm-md-reveal-mark cm-md-h1' },
         { from: 2, to: 7, class: 'cm-md-heading-content cm-md-h1' },
     ]);
 });
@@ -105,4 +116,293 @@ test('nested ***bold-italic***: cursor inside dims all four marks but keeps both
     const classes = decos.map(d => d.class);
     assert.ok(classes.includes('cm-md-em-content'), 'expected the outer emphasis content styling to persist');
     assert.ok(classes.includes('cm-md-strong-content'), 'expected the inner strong content styling to persist');
+});
+
+// ===== Phase 7: extended reveal set =====
+
+test('strikethrough: cursor away hides both ~~ and strikes the content', () => {
+    const doc = 'plain ~~strike~~ plain';
+    const decos = decorate(doc, 0);
+    assert.deepEqual(decos, [
+        { from: 6, to: 8, class: undefined },
+        { from: 8, to: 14, class: 'cm-md-strike-content' },
+        { from: 14, to: 16, class: undefined },
+    ]);
+});
+
+test('strikethrough: cursor inside shows both ~~ dimmed but KEEPS the strike styling', () => {
+    const doc = 'plain ~~strike~~ plain';
+    const decos = decorate(doc, doc.indexOf('strike'));
+    assert.deepEqual(decos, [
+        { from: 6, to: 8, class: 'cm-md-reveal-mark' },
+        { from: 8, to: 14, class: 'cm-md-strike-content' },
+        { from: 14, to: 16, class: 'cm-md-reveal-mark' },
+    ]);
+});
+
+test('inlineCode: cursor away hides both backticks (content look comes from codeStylingPlugin, not here)', () => {
+    const doc = 'plain `code` plain';
+    const decos = decorate(doc, 0);
+    assert.deepEqual(decos, [
+        { from: 6, to: 7, class: undefined },
+        { from: 11, to: 12, class: undefined },
+    ]);
+});
+
+test('inlineCode: cursor inside shows both backticks dimmed', () => {
+    const doc = 'plain `code` plain';
+    const decos = decorate(doc, doc.indexOf('code'));
+    assert.deepEqual(decos, [
+        { from: 6, to: 7, class: 'cm-md-reveal-mark' },
+        { from: 11, to: 12, class: 'cm-md-reveal-mark' },
+    ]);
+});
+
+test('link: cursor away hides "[" and "](url)", styles the label text', () => {
+    const doc = 'see [text](url) here';
+    const decos = decorate(doc, 0);
+    assert.deepEqual(decos, [
+        { from: 4, to: 5, class: undefined },
+        { from: 5, to: 9, class: 'cm-md-link-content' },
+        { from: 9, to: 15, class: undefined },
+    ]);
+});
+
+test('link: cursor inside shows "[" and "](url)" dimmed but KEEPS the label styling', () => {
+    const doc = 'see [text](url) here';
+    const decos = decorate(doc, doc.indexOf('text'));
+    assert.deepEqual(decos, [
+        { from: 4, to: 5, class: 'cm-md-reveal-mark' },
+        { from: 5, to: 9, class: 'cm-md-link-content' },
+        { from: 9, to: 15, class: 'cm-md-reveal-mark' },
+    ]);
+});
+
+test('blockquote: cursor away hides "> " on every line and adds one line decoration per line', () => {
+    const doc = '> quote one\n> quote two\n\nplain';
+    const decos = decorate(doc, doc.indexOf('plain'));
+    const hiddenMarks = decos.filter(d => d.class === undefined && d.to > d.from);
+    assert.equal(hiddenMarks.length, 4); // "> " (mark + gap space) x 2 lines
+    assert.equal(decos.filter(d => d.class === 'cm-md-blockquote-line').length, 2);
+});
+
+test('blockquote: cursor on one line dims "> " on EVERY line (node-wide active), not just that line', () => {
+    const doc = '> quote one\n> quote two\n\nplain';
+    const decos = decorate(doc, doc.indexOf('two'));
+    const dimmed = decos.filter(d => d.class === 'cm-md-reveal-mark');
+    assert.equal(dimmed.length, 2); // one ">" per line, both dimmed though the cursor is only on line 2
+    // Still one line decoration per line regardless of active state.
+    assert.equal(decos.filter(d => d.class === 'cm-md-blockquote-line').length, 2);
+});
+
+function widgetsOfType<T>(doc: string, ctor: new (...args: never[]) => T, selFrom = 0, selTo = selFrom): { from: number; to: number; widget: T }[] {
+    const state = stateFor(doc);
+    const set = computeRevealDecorations(state, selFrom, selTo, [{ from: 0, to: doc.length }]);
+    const widgets: { from: number; to: number; widget: T }[] = [];
+    set.between(0, doc.length, (from, to, value) => {
+        const widget = (value.spec as { widget?: unknown }).widget;
+        if (widget instanceof ctor) { widgets.push({ from, to, widget }); }
+    });
+    return widgets;
+}
+
+function orderedMarkerWidgets(doc: string): { from: number; to: number; widget: OrderedMarkerWidget }[] {
+    return widgetsOfType(doc, OrderedMarkerWidget);
+}
+
+test('list marker: bullets get the dot widget regardless of cursor position', () => {
+    const doc = '- one\n- two\n';
+    for (const pos of [0, doc.indexOf('two')]) {
+        const widgets = widgetsOfType(doc, BulletMarkerWidget, pos, pos);
+        assert.equal(widgets.length, 2, `expected 2 bullet widgets at cursor ${pos}`);
+        assert.equal(widgets.every(w => !w.widget.nested), true, 'top-level bullets should not be nested');
+    }
+});
+
+test('list marker: nested bullets get the outline (nested) dot widget, top-level stays filled', () => {
+    const doc = '- one\n  - nested\n    - deeper\n';
+    const widgets = widgetsOfType(doc, BulletMarkerWidget);
+    assert.deepEqual(widgets.map(w => w.widget.nested), [false, true, true]);
+});
+
+test('numberToLowerAlpha: 1->a, rolls over at 26/27, and at 52/53', () => {
+    assert.equal(numberToLowerAlpha(1), 'a');
+    assert.equal(numberToLowerAlpha(26), 'z');
+    assert.equal(numberToLowerAlpha(27), 'aa');
+    assert.equal(numberToLowerAlpha(28), 'ab');
+    assert.equal(numberToLowerAlpha(52), 'az');
+    assert.equal(numberToLowerAlpha(53), 'ba');
+});
+
+test('numberToLowerRoman: standard subtractive cases', () => {
+    assert.equal(numberToLowerRoman(1), 'i');
+    assert.equal(numberToLowerRoman(4), 'iv');
+    assert.equal(numberToLowerRoman(9), 'ix');
+    assert.equal(numberToLowerRoman(40), 'xl');
+    assert.equal(numberToLowerRoman(90), 'xc');
+    assert.equal(numberToLowerRoman(2026), 'mmxxvi');
+});
+
+test('formatOrderedMarkerLabel: cycles decimal -> alpha -> roman -> decimal, preserves delimiter', () => {
+    assert.equal(formatOrderedMarkerLabel(1, 3, '.'), '3.');
+    assert.equal(formatOrderedMarkerLabel(2, 3, '.'), 'c.');
+    assert.equal(formatOrderedMarkerLabel(3, 3, '.'), 'iii.');
+    assert.equal(formatOrderedMarkerLabel(4, 3, '.'), '3.');
+    assert.equal(formatOrderedMarkerLabel(1, 3, ')'), '3)');
+});
+
+test('ordered marker: plain top-level list gets sequential decimal labels via a widget, no bullet dot widget', () => {
+    const doc = '1. one\n2. two\n3. three\n';
+    const widgets = orderedMarkerWidgets(doc);
+    assert.deepEqual(widgets.map(w => w.widget.label), ['1.', '2.', '3.']);
+    assert.equal(widgetsOfType(doc, BulletMarkerWidget).length, 0);
+});
+
+test('ordered marker: numbering is positional, ignoring mismatched typed digits', () => {
+    const doc = '1. one\n1. two\n1. three\n';
+    assert.deepEqual(orderedMarkerWidgets(doc).map(w => w.widget.label), ['1.', '2.', '3.']);
+});
+
+test('ordered marker: seeds from the first item\'s own typed starting number', () => {
+    const doc = '5. one\n6. two\n7. three\n';
+    assert.deepEqual(orderedMarkerWidgets(doc).map(w => w.widget.label), ['5.', '6.', '7.']);
+});
+
+test('ordered marker: nested list renders alpha at depth 2, roman at depth 3, in document order', () => {
+    const doc = '1. one\n   1. nested-a\n   2. nested-b\n      1. deeper-a\n';
+    const widgets = orderedMarkerWidgets(doc);
+    assert.deepEqual(widgets.map(w => w.widget.label), ['1.', 'a.', 'b.', 'i.']);
+});
+
+test('ordered marker: ")" delimiter is preserved in the rendered label', () => {
+    const doc = '1) one\n2) two\n';
+    assert.deepEqual(orderedMarkerWidgets(doc).map(w => w.widget.label), ['1)', '2)']);
+});
+
+test('ordered marker: a numbered checklist item still gets the widget (no dash to hide)', () => {
+    const doc = '1. [ ] a\n2. [x] b\n';
+    assert.deepEqual(orderedMarkerWidgets(doc).map(w => w.widget.label), ['1.', '2.']);
+});
+
+test('checkbox dash: hidden for a bullet task item, single-space gap', () => {
+    const doc = '- [ ] todo\n';
+    const hidden = decorate(doc, 0).filter(d => d.class === 'cm-md-checkbox-bullet-hidden');
+    assert.deepEqual(hidden.map(d => [d.from, d.to]), [[0, 1], [1, 2]]);
+});
+
+test('checkbox dash: hidden for a bullet task item, multi-space gap', () => {
+    const doc = '-   [ ] todo\n';
+    const hidden = decorate(doc, 0).filter(d => d.class === 'cm-md-checkbox-bullet-hidden');
+    assert.deepEqual(hidden.map(d => [d.from, d.to]), [[0, 1], [1, 4]]);
+});
+
+test('checkbox dash: plain bullet item gets the dot widget, no hidden class', () => {
+    const doc = '- plain\n';
+    assert.equal(widgetsOfType(doc, BulletMarkerWidget).length, 1);
+    assert.equal(decorate(doc, 0).filter(d => d.class === 'cm-md-checkbox-bullet-hidden').length, 0);
+});
+
+test('computeOrderedMarkerRanges: collects only ordered marker spans', () => {
+    const state = stateFor('1. one\n- two\n');
+    const ranges = computeOrderedMarkerRanges(state);
+    assert.deepEqual(ranges, [{ from: 0, to: 2 }]);
+});
+
+test('computeOrderedMarkerRanges: spans multi-digit markers correctly', () => {
+    const doc = '12. a\n13. b\n';
+    const state = stateFor(doc);
+    const ranges = computeOrderedMarkerRanges(state);
+    assert.deepEqual(ranges, [{ from: 0, to: 3 }, { from: 6, to: 9 }]);
+});
+
+test('task marker: "[ ]" is replaced by an unchecked TaskCheckboxWidget over the marker range, and strikes nothing', () => {
+    const doc = '- [ ] todo\n- [x] done\n';
+    const state = stateFor(doc);
+    const set = computeRevealDecorations(state, 0, 0, [{ from: 0, to: doc.length }]);
+    const widgets: { from: number; to: number; widget: TaskCheckboxWidget }[] = [];
+    set.between(0, doc.length, (from, to, value) => {
+        const widget = (value.spec as { widget?: TaskCheckboxWidget }).widget;
+        if (widget instanceof TaskCheckboxWidget) { widgets.push({ from, to, widget }); }
+    });
+    assert.equal(widgets.length, 2);
+    const todoFrom = doc.indexOf('[ ]');
+    const doneFrom = doc.indexOf('[x]');
+    const todo = widgets.find(w => w.from === todoFrom);
+    const done = widgets.find(w => w.from === doneFrom);
+    assert.ok(todo && !todo.widget.checked);
+    assert.equal(todo!.to, todoFrom + 3);
+    assert.ok(done && done.widget.checked);
+    // Always-on — same result regardless of cursor position (re-checked at a different cursor).
+    const decosElsewhere = decorate(doc, 0);
+    assert.ok(decosElsewhere.some(d => d.class === 'cm-md-task-done-content'));
+});
+
+test('task marker: undone with nothing after it does not throw (empty content span)', () => {
+    assert.doesNotThrow(() => decorate('- [x]', 0));
+});
+
+test('computeToggleTaskMarker: flips "[ ]"->"[x]" and "[x]"/"[X]"->"[ ]"', () => {
+    const doc = '- [ ] a\n- [x] b\n- [X] c\n';
+    const state = stateFor(doc);
+    for (const [marker, expected] of [['[ ]', '[x]'], ['[x]', '[ ]'], ['[X]', '[ ]']] as const) {
+        const from = doc.indexOf(marker);
+        assert.deepEqual(computeToggleTaskMarker(state, from, from + 3), { changes: { from, to: from + 3, insert: expected } });
+    }
+});
+
+test('horizontal rule: cursor away renders the styled rule, hiding the raw dashes', () => {
+    const doc = 'before\n\n---\n\nafter';
+    const from = doc.indexOf('---');
+    const decos = decorate(doc, 0);
+    assert.deepEqual(decos.find(d => d.from === from), { from, to: from + 3, class: 'cm-md-hr-content' });
+});
+
+test('horizontal rule: cursor on the line shows raw text, no decoration', () => {
+    const doc = 'before\n\n---\n\nafter';
+    const pos = doc.indexOf('---');
+    const decos = decorate(doc, pos);
+    assert.equal(decos.find(d => d.from === pos), undefined);
+});
+
+test('horizontal rule: "***", "___", and longer dash runs are all detected', () => {
+    for (const rule of ['***', '___', '----------']) {
+        const doc = `x\n\n${rule}\n\ny`;
+        const decos = decorate(doc, 0);
+        const hr = decos.find(d => d.class === 'cm-md-hr-content');
+        assert.ok(hr, `expected a decorated HR for ${JSON.stringify(rule)}`);
+        assert.equal(hr!.to - hr!.from, rule.length);
+    }
+});
+
+// ===== Regression: real F5 bug — typing a new heading blanked EVERY heading =====
+//
+// Root cause: `Decoration.mark()` throws "Mark decorations may not be empty"
+// for a zero-length range. Typing "#" or "# " is a valid, title-less
+// ATXHeading per CommonMark — `handleHeading`'s content span collapses to
+// zero length for that split second. A ViewPlugin that throws mid-update
+// drops decorations for its WHOLE plugin, not just the offending node, so
+// every OTHER heading in the doc visibly lost its size/hidden-marker styling
+// too — not caught by the earlier per-mark-type tests above because none of
+// them had more than one heading, and none typed one into existence
+// incrementally.
+
+test('heading: an empty heading ("#" or "# ", mid-typing) does not throw', () => {
+    assert.doesNotThrow(() => decorate('#', 0));
+    assert.doesNotThrow(() => decorate('# ', 0));
+    assert.doesNotThrow(() => decorate('## ', 0));
+});
+
+test('heading: typing a brand-new heading character by character never disturbs an EXISTING heading elsewhere', () => {
+    const existing = '## GHe\n\nbody\n\n';
+    const toType = '# New heading';
+    for (let i = 0; i <= toType.length; i++) {
+        const doc = existing + toType.slice(0, i);
+        const decos = decorate(doc, doc.length);
+        const existingHeading = decos.find(d => d.from === 3 && d.class === 'cm-md-heading-content cm-md-h2');
+        assert.ok(existingHeading, `existing "## GHe" lost its styling while typing ${JSON.stringify(toType.slice(0, i))}`);
+    }
+});
+
+test('link: an empty label ("[]()") does not throw', () => {
+    assert.doesNotThrow(() => decorate('[]()', 0));
 });

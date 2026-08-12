@@ -129,15 +129,48 @@ a product brainstorm, not a technical design pass.
    the interaction, scope cuts (what's the smallest version that's still
    worth doing?), where it lives in the UI, sensible defaults, discoverability,
    and edge cases as the *user* would hit them (not implementation edge
-   cases). Number the options.
-4. Discuss with the user: which to keep, drop, or combine. Accept shorthand
-   feedback ("keep 1,3, drop 2").
-5. Write the finalized outcome into `## Brainstorm` as a product spec: the
+   cases). **Present options in grouped form** (see **Brainstorm option
+   layout**, below) — never as one long flat numbered list. Discuss with the
+   user: which to keep, drop, or combine. Accept shorthand feedback
+   ("A1, B1+B2, D1").
+4. Write the finalized outcome into `## Brainstorm` as a product spec: the
    decided UX direction, why, and enough detail (states, defaults, placement,
    copy) that Phase 3 can design against it without re-asking product
    questions. Not the full list of rejected options. Set `status:
    to-plan`, bump `updated`, and `git mv` the file into `2-to-plan/`.
-6. Ask if they want to move to Plan now.
+5. Ask if they want to move to Plan now.
+
+### Brainstorm option layout
+
+When presenting brainstorm options to the user, **group by decision type** so
+it's obvious what is mutually exclusive vs what stacks. Use lettered groups
+(`A`, `B`, `C`…) with numbered items inside each group (`A1`, `B2`, …).
+
+Start with a short legend:
+
+| Label | Meaning |
+|---|---|
+| **Pick one** | Mutually exclusive within the group — choose one option |
+| **Combine** | Stacks with picks from other groups — not either/or |
+| **Fixed** | Not optional — required outcome of the idea; no pick needed |
+
+Then present groups in this order:
+
+1. **Scope / where it applies** — pick one (e.g. Preview Edit only vs all modes).
+2. **Primary approach** — pick one main strategy; note when sub-options
+   combine (e.g. B1 + B2: base CSS rule + conditional application).
+3. **Independent toggles** — each group is its own pick-one if relevant
+   (e.g. whether a settings toggle affects this feature).
+4. **Combine with your picks** — add-ons that layer on regardless (fade edge,
+   polish).
+5. **Fixed outcomes** — edge-case behaviors that follow from the goal, not
+   choices.
+
+End with a **suggested default** shorthand (e.g. `A1 + B1 + B2 + D1`) so the
+user can accept quickly or reply with picks per group.
+
+Do **not** write the grouped option list into `## Brainstorm` — only the
+finalized product spec goes in the file.
 
 ## Phase 3 — Plan
 

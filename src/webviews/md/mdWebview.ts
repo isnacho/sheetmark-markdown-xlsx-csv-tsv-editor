@@ -230,7 +230,7 @@ function wrapCodeLines(html: string): string {
 }
 
 function setButtonsEnabled(enabled: boolean) {
-    const ids = ['enableMdEditorButton', 'disableMdEditorButton', 'toggleBackgroundButton', 'openSettingsButton', 'versionHistoryButton'];
+    const ids = ['enableMdEditorButton', 'disableMdEditorButton', 'openSettingsButton', 'versionHistoryButton'];
     ids.forEach((id) => {
         const el = $(id) as HTMLButtonElement;
         if (el) {el.disabled = !enabled;}
@@ -331,7 +331,14 @@ md.renderer.rules.hr = injectLineNumbers;
 
 md.renderer.rules.table_open = function (tokens: any, idx: number, options: any, env: any, self: any) {
     tokens[idx].attrJoin('class', 'md-table');
-    return injectLineNumbers(tokens, idx, options, env, self);
+    return `<div class="md-table-scroll">${injectLineNumbers(tokens, idx, options, env, self)}`;
+};
+
+const defaultTableClose = md.renderer.rules.table_close || function (tokens: any, idx: number, options: any, env: any, self: any) {
+    return self.renderToken(tokens, idx, options, env, self);
+};
+md.renderer.rules.table_close = function (tokens: any, idx: number, options: any, env: any, self: any) {
+    return defaultTableClose(tokens, idx, options, env, self) + '</div>';
 };
 
 // Heading close: inject anchor links for copyable heading URLs
@@ -359,7 +366,6 @@ md.renderer.rules.image = function (tokens: any, idx: number, options: any, env:
             tokens[idx].attrSet('src', resolved);
         } else {
             tokens[idx].attrSet('data-md-src', src);
-            tokens[idx].attrSet('src', 'data:,');
         }
     }
     return defaultImageRender(tokens, idx, options, env, self);
@@ -636,8 +642,8 @@ function mountPreviewFrontmatterCard(cardData: NonNullable<ReturnType<typeof res
     const preview = $('markdownPreview');
     if (!preview || !cardData) { return; }
     const card = createFrontmatterCardElement({
+        yamlText: cardData.yamlText,
         rows: cardData.rows,
-        parsed: cardData.parsed,
         collapsed: frontmatterPanelCollapsed,
         editing: false,
         onCollapsedChange: persistFrontmatterPanelCollapsed,
@@ -1663,14 +1669,14 @@ function initializeSettings() {
 
     const settingsGroup = document.querySelector('#settingsPanel .settings-group');
     if (settingsGroup) {
-        settingsGroup.insertAdjacentHTML('beforeend', renderThemeToggleSettingItem('toggleBackgroundButton'));
+        settingsGroup.insertAdjacentHTML('beforeend', renderThemeToggleSettingItem('themeSelect'));
     }
 
     // Initialize manager
     new SettingsManager('openSettingsButton', 'settingsPanel', 'settingsCancelButton', settingsDefs);
 
     // Theme manager
-    new ThemeManager('toggleBackgroundButton', {
+    new ThemeManager('themeSelect', {
         onBeforeCycle: () => true
     }, vscode);
 }

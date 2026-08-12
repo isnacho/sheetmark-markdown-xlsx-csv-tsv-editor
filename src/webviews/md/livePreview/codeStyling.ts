@@ -19,7 +19,18 @@ import type { SyntaxNode } from '@lezer/common';
 import type { VisibleRange } from './revealDecorations';
 
 const inlineCodeMark = Decoration.mark({ class: 'cm-md-inline-code' });
-const fencedCodeLine = Decoration.line({ class: 'cm-md-fenced-code-line' });
+
+function fencedCodeLineDecoration(position: 'only' | 'first' | 'middle' | 'last') {
+    const parts = ['cm-md-fenced-code-line'];
+    if (position === 'only') {
+        parts.push('cm-md-fenced-code-line-first', 'cm-md-fenced-code-line-last');
+    } else if (position === 'first') {
+        parts.push('cm-md-fenced-code-line-first');
+    } else if (position === 'last') {
+        parts.push('cm-md-fenced-code-line-last');
+    }
+    return Decoration.line({ class: parts.join(' ') });
+}
 
 export function computeCodeDecorations(
     state: EditorState,
@@ -42,7 +53,18 @@ export function computeCodeDecorations(
                     const firstLine = state.doc.lineAt(node.from).number;
                     const lastLine = state.doc.lineAt(node.to).number;
                     for (let n = firstLine; n <= lastLine; n++) {
-                        specs.push({ from: state.doc.line(n).from, to: state.doc.line(n).from, value: fencedCodeLine });
+                        const position = firstLine === lastLine
+                            ? 'only'
+                            : n === firstLine
+                                ? 'first'
+                                : n === lastLine
+                                    ? 'last'
+                                    : 'middle';
+                        specs.push({
+                            from: state.doc.line(n).from,
+                            to: state.doc.line(n).from,
+                            value: fencedCodeLineDecoration(position),
+                        });
                     }
                 }
             },

@@ -39,6 +39,11 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
             const documentDirUri = vscode.Uri.file(path.dirname(filePath));
             const workspaceFolders = vscode.workspace.workspaceFolders?.map(f => f.uri) ?? [];
             const workspaceFolderUri = vscode.workspace.getWorkspaceFolder(document.uri)?.uri.toString() || null;
+            const markdownLocalResourceRoots = this.buildMarkdownLocalResourceRoots(
+                filePath,
+                documentDirUri,
+                workspaceFolders,
+            );
 
             type VersionHistoryEntry = {
                 id: string;
@@ -139,12 +144,7 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
             // Set up webview
             webviewPanel.webview.options = {
                 enableScripts: true,
-                localResourceRoots: [
-                    vscode.Uri.joinPath(this.context.extensionUri, 'resources'),
-                    vscode.Uri.joinPath(this.context.extensionUri, 'dist'),
-                    documentDirUri,
-                    ...workspaceFolders
-                ]
+                localResourceRoots: markdownLocalResourceRoots,
             };
             webviewPanel.webview.html = this.getWebviewContent(webviewPanel);
 
@@ -789,6 +789,33 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
         </html>`;
     }
 
+    private buildMarkdownLocalResourceRoots(
+        filePath: string,
+        documentDirUri: vscode.Uri,
+        workspaceFolders: vscode.Uri[],
+    ): vscode.Uri[] {
+        const roots: vscode.Uri[] = [
+            vscode.Uri.joinPath(this.context.extensionUri, 'resources'),
+            vscode.Uri.joinPath(this.context.extensionUri, 'dist'),
+            this.context.extensionUri,
+            documentDirUri,
+            ...workspaceFolders,
+        ];
+
+        const workspaceFolder = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(filePath));
+        let currentDir = path.dirname(filePath);
+        const stop = workspaceFolder?.uri.fsPath;
+        while (stop && currentDir.length >= stop.length && currentDir.startsWith(stop)) {
+            roots.push(vscode.Uri.file(currentDir));
+            if (currentDir === stop) {
+                break;
+            }
+            currentDir = path.dirname(currentDir);
+        }
+
+        return roots;
+    }
+
     private resolveMarkdownImageUri(rawSource: string, documentUri: vscode.Uri, webview: vscode.Webview): string | null {
         if (!rawSource || /^https?:\/\//i.test(rawSource) || /^data:/i.test(rawSource) || /^#/.test(rawSource)) {
             return null;
@@ -822,6 +849,9 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
             }
 
             const absolute = path.resolve(path.dirname(documentUri.fsPath), normalized);
+            if (!fs.existsSync(absolute)) {
+                return null;
+            }
             return webview.asWebviewUri(vscode.Uri.file(absolute)).toString() + suffix;
         } catch {
             return null;

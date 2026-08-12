@@ -93,13 +93,13 @@ export function syncSettingsCheckboxes(settings: XlsxViewSettings): void {
     const autoSaveControlsItem = radioAutoSaveControlsOnly?.closest('.setting-item') as HTMLElement | null;
 
     if (manualSaveItem) {
-        manualSaveItem.style.display = autoSaveEnabled ? 'none' : 'inline-flex';
+        manualSaveItem.style.display = autoSaveEnabled ? 'none' : 'flex';
     }
     if (autoSaveAllItem) {
-        autoSaveAllItem.style.display = autoSaveEnabled ? 'inline-flex' : 'none';
+        autoSaveAllItem.style.display = autoSaveEnabled ? 'flex' : 'none';
     }
     if (autoSaveControlsItem) {
-        autoSaveControlsItem.style.display = autoSaveEnabled ? 'inline-flex' : 'none';
+        autoSaveControlsItem.style.display = autoSaveEnabled ? 'flex' : 'none';
     }
 }
 

@@ -70,6 +70,9 @@
     --pre-bg: #f5f5f7;
     --pre-border: #d2d2d7;
 
+    /* Surfaces — shared corner radius for cards, code blocks, tables, callouts */
+    --surface-radius: 8px;
+
     /* Misc */
     --focus-ring: rgba(0, 113, 227, 0.4);
     --contrast-text: #ffffff;
@@ -570,15 +573,16 @@ body.sticky-toolbar-enabled .toolbar {
 /* Settings Panel */
 .settings-panel {
     display: flex;
-    flex-wrap: wrap;
-    gap: 16px;
-    align-items: center;
-    justify-content: flex-start;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    position: relative;
     background: var(--glass-bg);
     backdrop-filter: blur(20px) saturate(180%);
     -webkit-backdrop-filter: blur(20px) saturate(180%);
     color: var(--text-color);
     padding: 12px 16px;
+    overflow: visible;
     border-radius: 12px;
     border: 1px solid var(--border-color);
     box-shadow: var(--glass-shadow);
@@ -597,21 +601,49 @@ body.sticky-toolbar-enabled .toolbar {
 
 .settings-group {
     display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
-    align-items: center;
-    justify-content: flex-start;
-    flex: 0 1 auto;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 2px;
+    width: 100%;
 }
 
 .setting-item {
-    display: inline-flex;
+    display: flex;
     align-items: center;
     gap: 8px;
+    width: 100%;
+    min-height: 28px;
+    padding: 2px 0;
     font-size: 13px;
     color: var(--text-color);
     user-select: none;
     cursor: pointer;
+}
+
+.setting-item.theme-setting-item {
+    gap: 8px;
+}
+
+.theme-select {
+    height: 28px;
+    min-width: 108px;
+    padding: 0 8px;
+    font-size: 13px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    cursor: pointer;
+}
+
+.theme-select:hover {
+    border-color: var(--accent-hover);
+}
+
+.theme-select:focus {
+    outline: none;
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 2px var(--focus-ring);
 }
 
 .setting-item.setting-dependent {
@@ -684,54 +716,53 @@ body.sticky-toolbar-enabled .toolbar {
     color: var(--text-color);
 }
 
-/* Cancel Button */
+/* Settings close button */
+.settings-close-btn,
 #settingsCancelButton {
-    background-color: var(--button-bg);
-    color: var(--button-text);
-    box-shadow: var(--shadow-sm);
-    border: none;
-    font-weight: 500;
-    padding: 0 10px;
-    height: 30px;
-    border-radius: 6px;
+    position: absolute;
+    top: -10px;
+    right: -10px;
+    z-index: 1;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 6px;
-    min-width: 64px;
-    max-width: 88px;
-    width: auto;
-    flex: 0 0 auto;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: 1px solid var(--border-color);
+    border-radius: 50%;
+    background: var(--glass-bg);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    color: var(--text-color);
     cursor: pointer;
-    transition: all 0.2s cubic-bezier(0.25, 0.1, 0.25, 1);
+    opacity: 0.9;
+    box-shadow: var(--shadow-sm);
+    transition: background-color 0.15s ease, opacity 0.15s ease;
 }
 
+.settings-close-btn svg,
+#settingsCancelButton svg {
+    width: 16px;
+    height: 16px;
+}
+
+.settings-close-btn:hover,
 #settingsCancelButton:hover {
-    background-color: var(--button-hover);
-    transform: translateY(-1px);
-    box-shadow: var(--shadow-md);
+    opacity: 1;
+    background-color: color-mix(in srgb, var(--text-color) 10%, transparent);
 }
 
+.settings-close-btn:active,
 #settingsCancelButton:active {
-    transform: translateY(0);
-    box-shadow: none;
+    opacity: 1;
+    background-color: color-mix(in srgb, var(--text-color) 16%, transparent);
 }
 
-@media (max-width: 500px) {
-    .settings-panel {
-        gap: 12px;
-    }
-
-    .settings-group {
-        width: auto;
-        margin-bottom: 0;
-        max-width: 100%;
-    }
-
-    #settingsCancelButton {
-        width: auto;
-        max-width: 88px;
-    }
+.settings-close-btn:focus-visible,
+#settingsCancelButton:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--focus-ring);
 }
 
 .toolbar.not-sticky {

@@ -126,7 +126,7 @@ body.edit-mode #content {
     padding: 8px 12px;
     margin: 8px 12px 0;
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--surface-radius);
     background: var(--accent-bg);
     color: var(--text-color);
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
@@ -166,7 +166,7 @@ body.edit-mode #content {
     background: var(--tooltip-bg);
     color: var(--tooltip-text);
     text-align: left;
-    border-radius: 8px;
+    border-radius: var(--surface-radius);
     padding: 8px 10px;
     z-index: 20000;
     white-space: normal;
@@ -321,7 +321,7 @@ body:not(.sticky-toolbar-enabled) .toc-panel {
     color: var(--text-muted);
     width: 22px;
     height: 22px;
-    border-radius: 6px;
+    border-radius: var(--surface-radius);
     cursor: pointer;
 }
 
@@ -346,7 +346,7 @@ body:not(.sticky-toolbar-enabled) .toc-panel {
     text-decoration: none;
     display: inline-block;
     padding: 2px 6px;
-    border-radius: 6px;
+    border-radius: var(--surface-radius);
 }
 
 .toc-item a:hover {
@@ -511,7 +511,7 @@ body.resizing * {
     font-size: 90%;
     background: var(--code-bg);
     padding: 0.2em 0.4em;
-    border-radius: 6px;
+    border-radius: var(--surface-radius);
     color: var(--code-text);
 }
 
@@ -527,7 +527,7 @@ body.resizing * {
     background-color: var(--header-bg);
     border: 1px solid var(--border-color);
     border-bottom-width: 2px;
-    border-radius: 6px;
+    border-radius: var(--surface-radius);
     box-shadow: inset 0 -1px 0 var(--border-color);
 }
 
@@ -536,7 +536,7 @@ body.resizing * {
     position: relative;
     margin: 16px 0;
     border: 1px solid var(--pre-border);
-    border-radius: 8px;
+    border-radius: var(--surface-radius);
     overflow: hidden;
     background: var(--pre-bg);
 }
@@ -569,7 +569,7 @@ body.resizing * {
     background: transparent;
     color: var(--text-muted);
     padding: 2px 8px;
-    border-radius: 6px;
+    border-radius: var(--surface-radius);
     cursor: pointer;
 }
 
@@ -657,7 +657,7 @@ body.show-line-numbers .markdown-preview pre {
     padding: 16px 16px 16px 48px;
     margin: 16px 0;
     border-left: 4px solid;
-    border-radius: 8px;
+    border-radius: var(--surface-radius);
     position: relative;
 }
 
@@ -700,10 +700,15 @@ body.show-line-numbers .markdown-preview pre {
 /* YAML frontmatter card */
 .markdown-preview .yaml-frontmatter-card {
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--surface-radius);
     background: var(--panel-bg);
     margin: 0 0 20px 0;
     overflow: hidden;
+}
+
+/* CM6 replace widgets: margins sit outside the height map and desync gutters. */
+body.cm6-preview-active .markdown-preview .yaml-frontmatter-card {
+    margin: 0;
 }
 
 .markdown-preview .yaml-frontmatter-header {
@@ -729,7 +734,7 @@ body.show-line-numbers .markdown-preview pre {
     border: 1px solid var(--border-color);
     background: var(--panel-bg);
     color: var(--text-muted);
-    border-radius: 6px;
+    border-radius: var(--surface-radius);
     cursor: pointer;
     font-size: 11px;
     line-height: 1;
@@ -781,6 +786,10 @@ body.show-line-numbers .markdown-preview pre {
     padding: 8px 12px 12px;
 }
 
+.markdown-preview .yaml-frontmatter-body-editing {
+    padding: 0;
+}
+
 .markdown-preview .yaml-frontmatter-field {
     display: flex;
     gap: 12px;
@@ -830,30 +839,30 @@ body.show-line-numbers .markdown-preview pre {
     color: var(--text-color);
 }
 
-.markdown-preview .yaml-frontmatter-field-editable {
-    align-items: center;
-}
-
-.markdown-preview .yaml-frontmatter-input {
-    flex: 1;
-    min-width: 0;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    background: var(--bg-color);
-    color: var(--text-color);
-    font: inherit;
-    font-size: 13px;
-    padding: 4px 8px;
-}
-
-.markdown-preview .yaml-frontmatter-input:focus {
-    outline: none;
-    border-color: var(--accent-color);
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-color) 35%, transparent);
-}
-
 .cm-md-frontmatter-widget .yaml-frontmatter-field {
     cursor: default;
+}
+
+.markdown-preview .yaml-frontmatter-textarea {
+    display: block;
+    width: 100%;
+    min-height: 0;
+    margin: 0;
+    padding: 10px 12px;
+    border: none;
+    resize: none;
+    overflow: hidden;
+    font-family: var(--font-mono);
+    font-size: 85%;
+    line-height: 1.45;
+    color: var(--text-color);
+    background: var(--bg-color);
+    box-sizing: border-box;
+}
+
+.markdown-preview .yaml-frontmatter-textarea:focus {
+    outline: none;
+    box-shadow: inset 0 0 0 1px var(--accent-color);
 }
 
 /* Horizontal Rule */
@@ -865,21 +874,61 @@ body.show-line-numbers .markdown-preview pre {
     opacity: 0.6;
 }
 
-/* Tables */
-.markdown-preview table.md-table {
-    width: max-content;
+/* Tables — rounded corners need a scroll wrapper to clip cell borders
+   (border-collapse: collapse ignores border-radius on cells). */
+.markdown-preview .md-table-scroll,
+.cm-md-table-scroll {
     max-width: 100%;
-    border-collapse: collapse;
     margin: 16px 0;
-    font-size: 13px;
-    overflow: auto;
-    display: block;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border: 1px solid var(--border-color);
+    border-radius: var(--surface-radius);
 }
 
-.markdown-preview table.md-table th,
-.markdown-preview table.md-table td {
+.markdown-preview .md-table-scroll table.md-table,
+.cm-md-table-scroll table.md-table {
+    width: max-content;
+    max-width: none;
+    margin: 0;
+    font-size: 13px;
+    border-collapse: collapse;
+    border: none;
+    border-radius: 0;
+    display: table;
+    overflow: visible;
+}
+
+.markdown-preview .md-table-scroll table.md-table th,
+.markdown-preview .md-table-scroll table.md-table td,
+.cm-md-table-scroll table.md-table th,
+.cm-md-table-scroll table.md-table td {
+    border: none;
+    border-right: 1px solid var(--border-color);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.markdown-preview .md-table-scroll table.md-table th:last-child,
+.markdown-preview .md-table-scroll table.md-table td:last-child,
+.cm-md-table-scroll table.md-table th:last-child,
+.cm-md-table-scroll table.md-table td:last-child {
+    border-right: none;
+}
+
+.markdown-preview .md-table-scroll table.md-table tr:last-child th,
+.markdown-preview .md-table-scroll table.md-table tr:last-child td,
+.cm-md-table-scroll table.md-table tr:last-child th,
+.cm-md-table-scroll table.md-table tr:last-child td {
+    border-bottom: none;
+}
+
+.markdown-preview .md-table-scroll table.md-table th,
+.markdown-preview .md-table-scroll table.md-table td,
+.cm-md-table-scroll table.md-table th,
+.cm-md-table-scroll table.md-table td,
+body.preview-edit-mode .markdown-preview table.md-table th,
+body.preview-edit-mode .markdown-preview table.md-table td {
     padding: 6px 6px;
-    border: 1px solid var(--border-color);
 }
 
 body.preview-edit-mode .markdown-preview table.md-table th,
@@ -899,13 +948,17 @@ body.preview-edit-mode .markdown-preview table.md-table td {
 }
 
 /* CM6 live-preview table widget: enforce table layout so min-height on cells
-   applies to every row (tableWidget.ts). Reading-mode tables keep display:block
-   for overflow scrolling; editable widget tables need display:table. */
+   applies to every row (tableWidget.ts). Horizontal scroll lives on
+   `.cm-md-table-scroll`, which also clips rounded corners. */
+body.preview-edit-mode .markdown-preview .cm-md-table-widget .cm-md-table-scroll {
+    margin: 8px 0;
+}
+
 body.preview-edit-mode .markdown-preview .cm-md-table-widget table.md-table {
     display: table;
     width: max-content;
-    max-width: 100%;
-    margin: 8px 0;
+    max-width: none;
+    margin: 0;
 }
 
 /* Empty cells have no text node — give them a line box so rows don't collapse
@@ -979,7 +1032,6 @@ body.preview-edit-mode .markdown-preview .cm-md-table-widget table.md-table td:e
 }
 
 .cm-md-row-drag-handle {
-    left: 2px;
     width: 14px;
     height: 16px;
 }
@@ -1021,15 +1073,18 @@ body.preview-edit-mode .markdown-preview .cm-md-table-widget table.md-table td:e
 
 .cm-md-table-widget {
     position: relative;
-    /* Gutter space for row grips (left) and column grips (top) outside the <table>. */
-    padding-left: 18px;
+    /* Pull into content padding, then pad back: left zone is a hover corridor
+       for row grips; the scroll child starts after it so the table stays aligned. */
+    --cm-md-row-grip-gutter: 20px;
+    margin-left: calc(-1 * var(--cm-md-row-grip-gutter));
+    padding-left: var(--cm-md-row-grip-gutter);
     padding-top: 8px;
 }
 
 .cm-md-table-widget.cm-md-table-armed {
     outline: 2px solid var(--accent-color);
     outline-offset: 2px;
-    border-radius: 6px;
+    border-radius: var(--surface-radius);
 }
 
 /* CM6 live-preview table widget: the single active/editable cell (tableWidget.ts) */
@@ -1067,7 +1122,7 @@ body.preview-edit-mode .markdown-preview .cm-md-table-widget table.md-table td:e
     border: none;
     background: transparent;
     color: var(--text-color);
-    border-radius: 6px;
+    border-radius: var(--surface-radius);
     padding: 7px 10px;
     font-size: 12px;
     cursor: pointer;
@@ -1108,7 +1163,7 @@ body.preview-edit-mode .markdown-preview .table-hover-tools {
     margin-top: 6px;
     padding: 6px;
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--surface-radius);
     background: var(--toolbar-bg, var(--panel-bg));
     box-shadow: var(--shadow-sm);
     opacity: 0;
@@ -1134,7 +1189,7 @@ body.preview-edit-mode .markdown-preview .table-tool-btn {
     border: 1px solid transparent;
     background: transparent;
     color: var(--text-secondary);
-    border-radius: 6px;
+    border-radius: var(--surface-radius);
     padding: 0 9px;
     font-size: 11px;
     font-weight: 500;
@@ -1168,7 +1223,7 @@ body.preview-edit-mode .markdown-preview .table-tool-btn[data-table-action="tabl
 .markdown-preview .md-image {
     max-width: 100%;
     height: auto;
-    border-radius: 6px;
+    border-radius: var(--surface-radius);
     margin: 16px 0;
 }
 
@@ -1187,7 +1242,7 @@ body.preview-edit-mode .markdown-preview .table-tool-btn[data-table-action="tabl
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--surface-radius);
     padding: 4px 10px;
     font-size: 11px;
     color: var(--text-muted);
@@ -1263,7 +1318,7 @@ body.preview-edit-mode .markdown-preview .table-tool-btn[data-table-action="tabl
     pointer-events: auto;
     background: none;
     border: none;
-    border-radius: 6px;
+    border-radius: var(--surface-radius);
     color: var(--toast-text);
     font-size: 15px;
     font-weight: 600;
@@ -1292,7 +1347,7 @@ body.preview-edit-mode .markdown-preview .table-tool-btn[data-table-action="tabl
     pointer-events: auto;
     background: none;
     border: none;
-    border-radius: 6px;
+    border-radius: var(--surface-radius);
     color: color-mix(in srgb, var(--toast-text) 80%, transparent);
     font-size: 18px;
     line-height: 1;
@@ -1325,7 +1380,7 @@ body.edit-mode .edit-mode-hide {
     border: 1px solid var(--border-color);
     box-shadow: var(--tooltip-shadow);
     padding: 8px 10px;
-    border-radius: 8px;
+    border-radius: var(--surface-radius);
     display: inline-flex;
     align-items: center;
     gap: 8px;
@@ -1668,7 +1723,7 @@ html::-webkit-scrollbar-corner,
 .lightbox-image {
     max-width: 90vw;
     max-height: 90vh;
-    border-radius: 8px;
+    border-radius: var(--surface-radius);
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
     transition: transform 0.3s ease;
     cursor: default;
@@ -1706,7 +1761,7 @@ body.lightbox-open {
 .markdown-preview .zoomable {
     cursor: zoom-in;
     transition: transform 0.3s ease, box-shadow 0.3s ease;
-    border-radius: 6px;
+    border-radius: var(--surface-radius);
 }
 
 .markdown-preview .zoomable:hover {

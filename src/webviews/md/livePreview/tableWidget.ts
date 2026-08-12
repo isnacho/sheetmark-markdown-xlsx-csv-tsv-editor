@@ -802,6 +802,15 @@ function caretOffsetIn(el: HTMLElement): number | null {
     return measureSerializedOffset(el, range.startContainer, range.startOffset);
 }
 
+/** True when ↑/↓ should move to an adjacent row instead of within the cell. */
+function shouldLeaveCellVertically(td: HTMLElement, direction: 'up' | 'down'): boolean {
+    const content = serializeCellContent(td);
+    if (!content.includes('<br>')) { return true; }
+    const offset = caretOffsetIn(td);
+    if (offset === null) { return false; }
+    return direction === 'down' ? offset === content.length : offset === 0;
+}
+
 function placeCaretAtOffset(el: HTMLElement, offset: number): void {
     placeCaretAtSerializedOffset(el, offset);
 }
@@ -977,6 +986,11 @@ function columnTargetAt(wrap: HTMLElement, clientX: number, clientY: number): { 
     return yInStrip && xInCol ? col : null;
 }
 
+/** Pixels between the row grip's right edge and the table's left border. */
+const ROW_GRIP_TABLE_GAP_PX = 4;
+const ROW_GRIP_WIDTH_PX = 14;
+const ROW_GRIP_GUTTER_PX = 20;
+
 /** One shared row/column grip pair per table — positioned on wrap mousemove. */
 function wireTableDragUI(
     wrap: HTMLElement,
@@ -1005,6 +1019,10 @@ function wireTableDragUI(
     const positionRowHandle = (tr: HTMLElement) => {
         const wrapRect = wrap.getBoundingClientRect();
         const trRect = tr.getBoundingClientRect();
+        const table = wrap.querySelector('table');
+        const tableLeft = table?.getBoundingClientRect().left ?? wrapRect.left + ROW_GRIP_GUTTER_PX;
+        const gripLeft = tableLeft - wrapRect.left - ROW_GRIP_WIDTH_PX - ROW_GRIP_TABLE_GAP_PX;
+        rowHandle.style.left = `${Math.min(gripLeft, ROW_GRIP_GUTTER_PX - ROW_GRIP_WIDTH_PX - 2)}px`;
         rowHandle.style.top = `${trRect.top - wrapRect.top + trRect.height / 2}px`;
         rowHandle.style.transform = 'translateY(-50%)';
     };
@@ -1061,12 +1079,19 @@ function wireTableDragUI(
         }
     });
 
+    rowHandle.addEventListener('mouseenter', () => {
+        if (rowTarget) {
+            rowHandle.classList.add('cm-md-drag-grip-visible');
+        }
+    });
+
     wrap.addEventListener('mouseleave', () => {
         hideRowHandle();
         hideColHandle();
     });
 
-    wrap.addEventListener('scroll', () => {
+    const scrollEl = wrap.querySelector('.cm-md-table-scroll');
+    scrollEl?.addEventListener('scroll', () => {
         if (rowTarget) {
             const row = bodyRowAtY(wrap, rowHandle.getBoundingClientRect().top + 1);
             if (row) { positionRowHandle(row.tr); }
@@ -1202,7 +1227,8 @@ function wireTableDragUI(
     wrap.addEventListener('mousedown', (event) => {
         if (rowDragging || colDragging) { return; }
         const wrapRect = wrap.getBoundingClientRect();
-        if (event.clientX - wrapRect.left <= 20 && rowTarget) {
+        const xFromLeft = event.clientX - wrapRect.left;
+        if (xFromLeft <= ROW_GRIP_GUTTER_PX && rowTarget) {
             startRowDrag(event);
             return;
         }
@@ -1345,12 +1371,18 @@ function wireActiveCell(td: HTMLElement, view: EditorView, active: ActiveCell, g
         } else if (event.key === 'ArrowLeft' && caretOffsetIn(td) === 0) {
             const target = prevCell(grid, active);
             if (target) { event.preventDefault(); placeCollapsed(view, target.to); }
-        } else if (event.key === 'ArrowDown' && caretOffsetIn(td) === serializeCellContent(td).length) {
+        } else if (event.key === 'ArrowDown') {
             const target = cellBelow(grid, active);
-            if (target) { event.preventDefault(); placeCollapsed(view, target.from); }
-        } else if (event.key === 'ArrowUp' && caretOffsetIn(td) === 0) {
+            if (target && shouldLeaveCellVertically(td, 'down')) {
+                event.preventDefault();
+                placeCollapsed(view, collapsedClickPosForCell(view.state, target));
+            }
+        } else if (event.key === 'ArrowUp') {
             const target = cellAbove(grid, active);
-            if (target) { event.preventDefault(); placeCollapsed(view, target.to); }
+            if (target && shouldLeaveCellVertically(td, 'up')) {
+                event.preventDefault();
+                placeCollapsed(view, collapsedClickPosForCell(view.state, target));
+            }
         }
     });
 
@@ -1487,10 +1519,13 @@ export class TableWidget extends WidgetType {
     toDOM(view: EditorView): HTMLElement {
         const wrap = document.createElement('div');
         wrap.className = 'cm-md-table-widget' + (this.deleteArmed ? ' cm-md-table-armed' : '');
+        const scroll = document.createElement('div');
+        scroll.className = 'cm-md-table-scroll';
         const colCount = this.grid[0]?.length ?? 0;
-        wrap.innerHTML = md.render(this.source, { colCount, widths: this.widths });
+        scroll.innerHTML = md.render(this.source, { colCount, widths: this.widths });
+        wrap.appendChild(scroll);
 
-        const table = wrap.querySelector('table.md-table') as HTMLTableElement | null;
+        const table = scroll.querySelector('table.md-table') as HTMLTableElement | null;
         if (table && this.widths?.some(w => w > 0)) { table.classList.add('cm-md-table-resized'); }
 
         wrap.querySelectorAll('th, td').forEach((cellEl) => {

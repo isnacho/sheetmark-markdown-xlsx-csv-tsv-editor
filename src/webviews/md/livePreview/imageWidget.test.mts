@@ -9,9 +9,16 @@ import {
     extractImageAlt,
     extractImageUrl,
     imageReplaceRange,
+    setImageUriResolver,
 } from './imageWidget.ts';
 
+const mockResolver = {
+    getResolved: () => undefined,
+    requestResolve: () => { /* noop */ },
+};
+
 function stateFor(doc: string, cursor = 0): EditorState {
+    setImageUriResolver(mockResolver);
     return EditorState.create({
         doc,
         selection: { anchor: cursor },

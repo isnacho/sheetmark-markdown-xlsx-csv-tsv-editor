@@ -46,6 +46,7 @@ class FrontmatterWidget extends WidgetType {
             && other.editing === this.editing
             && other.data.range.from === this.data.range.from
             && other.data.range.to === this.data.range.to
+            && other.data.yamlText === this.data.yamlText
             && other.data.rows.length === this.data.rows.length
             && other.data.rows.every((row, index) => {
                 const mine = this.data.rows[index];
@@ -62,8 +63,8 @@ class FrontmatterWidget extends WidgetType {
 
     toDOM(view: EditorView): HTMLElement {
         return createFrontmatterCardElement({
+            yamlText: this.data.yamlText,
             rows: this.data.rows,
-            parsed: this.data.parsed,
             collapsed: this.collapsed,
             editing: this.editing,
             onCollapsedChange: (collapsed) => {

@@ -56,9 +56,8 @@ export function splitTableRowCells(text: string): string[] {
     return parts;
 }
 
-function cellRangesFromRowLine(state: EditorState, rowNode: SyntaxNode): CellRange[] {
-    const lineFrom = rowNode.from;
-    const lineText = state.sliceDoc(rowNode.from, rowNode.to);
+function cellRangesFromLine(state: EditorState, lineFrom: number, lineTo: number): CellRange[] {
+    const lineText = state.sliceDoc(lineFrom, lineTo);
     const cellTexts = splitTableRowCells(lineText);
     const ranges: CellRange[] = [];
 
@@ -93,15 +92,30 @@ function cellRangesFromRowLine(state: EditorState, rowNode: SyntaxNode): CellRan
     return ranges;
 }
 
-export function buildCellGrid(state: EditorState, tableNode: SyntaxNode): CellRange[][] {
+function cellRangesFromRowLine(state: EditorState, rowNode: SyntaxNode): CellRange[] {
+    return cellRangesFromLine(state, rowNode.from, rowNode.to);
+}
+
+/** GFM delimiter row (`| --- |`, `| - |`, `:---:`). */
+function isDelimiterRowLine(text: string): boolean {
+    const cells = splitTableRowCells(text);
+    return cells.length > 0 && cells.every((c) => /^:?-+:?$/.test(c.trim()));
+}
+
+function buildCellGridFromRange(state: EditorState, range: TableRange): CellRange[][] {
     const grid: CellRange[][] = [];
-    for (let row = tableNode.firstChild; row; row = row.nextSibling) {
-        if (row.name !== 'TableHeader' && row.name !== 'TableRow') { continue; }
-        const lineText = state.sliceDoc(row.from, row.to);
-        if (!isTableRowLine(lineText)) { continue; }
-        grid.push(cellRangesFromRowLine(state, row));
+    const startLine = state.doc.lineAt(range.from).number;
+    const endLine = state.doc.lineAt(range.to).number;
+    for (let n = startLine; n <= endLine; n++) {
+        const line = state.doc.line(n);
+        if (!isTableRowLine(line.text) || isDelimiterRowLine(line.text)) { continue; }
+        grid.push(cellRangesFromLine(state, line.from, line.to));
     }
     return grid;
+}
+
+export function buildCellGrid(state: EditorState, tableNode: SyntaxNode): CellRange[][] {
+    return buildCellGridFromRange(state, effectiveTableRange(state, tableNode));
 }
 
 function isEmptyTableCellContent(state: EditorState, cell: CellRange): boolean {
@@ -323,7 +337,7 @@ export function runTableBoundaryBackspace(view: EditorView): boolean {
 // the line above.
 
 interface ResolvedTable {
-    tableNode: SyntaxNode;
+    tableNode: SyntaxNode | null;
     range: TableRange;
     grid: CellRange[][];
 }
@@ -339,7 +353,27 @@ function resolveTableAtLine(state: EditorState, lineNumber: number): ResolvedTab
             return { tableNode: node, range, grid: buildCellGrid(state, node) };
         }
     }
-    return null;
+    return { tableNode: null, range, grid: buildCellGridFromRange(state, range) };
+}
+
+/** True when `pos` sits inside any GFM table pipe-row block. */
+export function isPosInsideTable(state: EditorState, pos: number): boolean {
+    const line = state.doc.lineAt(pos);
+    if (isTableRowLine(line.text)) {
+        const block = tableBlockRangeForLine(state, line.number);
+        if (block && pos >= block.from && pos <= block.to) { return true; }
+    }
+    let inside = false;
+    syntaxTree(state).iterate({
+        enter(node) {
+            if (node.name !== 'Table') { return; }
+            const range = effectiveTableRange(state, node.node);
+            if (pos >= range.from && pos <= range.to) {
+                inside = true;
+            }
+        },
+    });
+    return inside;
 }
 
 function rowIndexForLine(state: EditorState, grid: readonly CellRange[][], lineNumber: number): number {
@@ -352,6 +386,7 @@ function rowIndexForLine(state: EditorState, grid: readonly CellRange[][], lineN
     return -1;
 }
 
+/** Column-aware cell in a visual grid row (header or body — delimiter excluded). */
 function pickCellInRow(state: EditorState, grid: readonly CellRange[][], rowIndex: number, hintPos: number): CellRange {
     const cols = grid[rowIndex];
     if (!cols || cols.length === 0) { throw new Error('empty table row'); }
@@ -366,20 +401,100 @@ function pickCellInRow(state: EditorState, grid: readonly CellRange[][], rowInde
     return cols[0];
 }
 
+function computeInsideTableArrow(
+    state: EditorState,
+    table: ResolvedTable,
+    direction: 'up' | 'down' | 'left' | 'right',
+    pos: number,
+): TransactionSpec | null {
+    const line = state.doc.lineAt(pos);
+
+    if (direction === 'left' || direction === 'right') {
+        const lineRanges = cellRangesFromLine(state, line.from, line.to);
+        if (lineRanges.length === 0) { return null; }
+        const active = findActiveCell(state, [lineRanges], pos, pos);
+        if (!active) { return null; }
+        const targetCol = direction === 'right' ? active.col + 1 : active.col - 1;
+        if (targetCol < 0 || targetCol >= lineRanges.length) { return null; }
+        return selectionSpecForCell(state, lineRanges[targetCol]);
+    }
+
+    let rowIndex = rowIndexForLine(state, table.grid, line.number);
+    if (rowIndex < 0) {
+        if (direction === 'down' && table.grid.length > 1) {
+            return selectionSpecForCell(state, pickCellInRow(state, table.grid, 1, pos));
+        }
+        if (direction === 'up') {
+            return selectionSpecForCell(state, pickCellInRow(state, table.grid, 0, pos));
+        }
+        return null;
+    }
+
+    if (direction === 'down') {
+        if (rowIndex < table.grid.length - 1) {
+            return selectionSpecForCell(state, pickCellInRow(state, table.grid, rowIndex + 1, pos));
+        }
+        const nextLineNum = line.number + 1;
+        if (nextLineNum > state.doc.lines) { return null; }
+        const below = state.doc.line(nextLineNum);
+        if (isTableRowLine(below.text)) { return null; }
+        return { selection: EditorSelection.cursor(below.from) };
+    }
+    if (rowIndex > 0) {
+        return selectionSpecForCell(state, pickCellInRow(state, table.grid, rowIndex - 1, pos));
+    }
+    const prevLineNum = line.number - 1;
+    if (prevLineNum < 1) { return null; }
+    const above = state.doc.line(prevLineNum);
+    if (isTableRowLine(above.text)) { return null; }
+    return { selection: EditorSelection.cursor(above.to, -1) };
+}
+
+/** Cell-grid arrow navigation inside a table, or enter/exit at boundaries. */
+export function computeTableArrow(
+    state: EditorState,
+    direction: 'up' | 'down' | 'left' | 'right',
+): TransactionSpec | null {
+    const sel = state.selection.main;
+    if (!sel.empty) { return null; }
+    const line = state.doc.lineAt(sel.head);
+
+    if (isTableRowLine(line.text)) {
+        const table = resolveTableAtLine(state, line.number);
+        if (table) {
+            return computeInsideTableArrow(state, table, direction, sel.head);
+        }
+    }
+
+    if (direction === 'left' || direction === 'right') { return null; }
+    return direction === 'down'
+        ? computeTableBoundaryArrowDown(state)
+        : computeTableBoundaryArrowUp(state);
+}
+
+function runTableArrow(view: EditorView, direction: 'up' | 'down' | 'left' | 'right'): boolean {
+    const spec = computeTableArrow(view.state, direction);
+    if (!spec) {
+        if (isPosInsideTable(view.state, view.state.selection.main.head)) {
+            return true;
+        }
+        return false;
+    }
+    const pos = view.state.update(spec).state.selection.main.head;
+    view.dispatch({ ...spec, effects: EditorView.scrollIntoView(pos) });
+    return true;
+}
+
+export const tableNavigationKeymap = Prec.highest(keymap.of([
+    { key: 'ArrowUp', run: (view) => runTableArrow(view, 'up') },
+    { key: 'ArrowDown', run: (view) => runTableArrow(view, 'down') },
+    { key: 'ArrowLeft', run: (view) => runTableArrow(view, 'left') },
+    { key: 'ArrowRight', run: (view) => runTableArrow(view, 'right') },
+]));
+
 function selectionSpecForCell(state: EditorState, cell: CellRange): TransactionSpec {
     const pos = collapsedClickPosForCell(state, cell);
     return { selection: EditorSelection.cursor(pos) };
-}
-
-function scanToNonBlankLine(state: EditorState, startLine: number, direction: -1 | 1): number | null {
-    let lineNumber = startLine;
-    while (lineNumber >= 1 && lineNumber <= state.doc.lines) {
-        if (state.doc.line(lineNumber).text.trim() !== '') {
-            return lineNumber;
-        }
-        lineNumber += direction;
-    }
-    return null;
 }
 
 export function computeTableBoundaryArrowDown(state: EditorState): TransactionSpec | null {
@@ -387,23 +502,13 @@ export function computeTableBoundaryArrowDown(state: EditorState): TransactionSp
     if (!sel.empty) { return null; }
     const line = state.doc.lineAt(sel.head);
 
-    if (isTableRowLine(line.text)) {
-        const table = resolveTableAtLine(state, line.number);
-        if (!table) { return null; }
-        const rowIndex = rowIndexForLine(state, table.grid, line.number);
-        if (rowIndex < 0) { return null; }
-        if (rowIndex < table.grid.length - 1) {
-            const cell = pickCellInRow(state, table.grid, rowIndex + 1, sel.head);
-            return selectionSpecForCell(state, cell);
-        }
-        const belowLine = scanToNonBlankLine(state, line.number + 1, 1);
-        if (!belowLine || isTableRowLine(state.doc.line(belowLine).text)) { return null; }
-        return { selection: EditorSelection.cursor(state.doc.line(belowLine).from) };
-    }
+    if (isTableRowLine(line.text)) { return null; }
 
-    const tableLine = scanToNonBlankLine(state, line.number + 1, 1);
-    if (!tableLine || !isTableRowLine(state.doc.line(tableLine).text)) { return null; }
-    const table = resolveTableAtLine(state, tableLine);
+    const nextLineNum = line.number + 1;
+    if (nextLineNum > state.doc.lines) { return null; }
+    const nextLine = state.doc.line(nextLineNum);
+    if (!isTableRowLine(nextLine.text)) { return null; }
+    const table = resolveTableAtLine(state, nextLineNum);
     if (!table) { return null; }
     const cell = pickCellInRow(state, table.grid, 0, sel.head);
     return selectionSpecForCell(state, cell);
@@ -414,44 +519,18 @@ export function computeTableBoundaryArrowUp(state: EditorState): TransactionSpec
     if (!sel.empty) { return null; }
     const line = state.doc.lineAt(sel.head);
 
-    if (isTableRowLine(line.text)) {
-        const table = resolveTableAtLine(state, line.number);
-        if (!table) { return null; }
-        const rowIndex = rowIndexForLine(state, table.grid, line.number);
-        if (rowIndex < 0) { return null; }
-        if (rowIndex > 0) {
-            const cell = pickCellInRow(state, table.grid, rowIndex - 1, sel.head);
-            return selectionSpecForCell(state, cell);
-        }
-        const aboveLine = scanToNonBlankLine(state, line.number - 1, -1);
-        if (!aboveLine || isTableRowLine(state.doc.line(aboveLine).text)) { return null; }
-        const above = state.doc.line(aboveLine);
-        return { selection: EditorSelection.cursor(above.to, -1) };
-    }
+    if (isTableRowLine(line.text)) { return null; }
 
-    const tableLine = scanToNonBlankLine(state, line.number - 1, -1);
-    if (!tableLine || !isTableRowLine(state.doc.line(tableLine).text)) { return null; }
-    const table = resolveTableAtLine(state, tableLine);
+    const prevLineNum = line.number - 1;
+    if (prevLineNum < 1) { return null; }
+    const prevLine = state.doc.line(prevLineNum);
+    if (!isTableRowLine(prevLine.text)) { return null; }
+    const table = resolveTableAtLine(state, prevLineNum);
     if (!table) { return null; }
     const lastRow = table.grid.length - 1;
     const cell = pickCellInRow(state, table.grid, lastRow, sel.head);
     return selectionSpecForCell(state, cell);
 }
-
-function runTableBoundaryArrow(view: EditorView, direction: 'up' | 'down'): boolean {
-    const spec = direction === 'down'
-        ? computeTableBoundaryArrowDown(view.state)
-        : computeTableBoundaryArrowUp(view.state);
-    if (!spec) { return false; }
-    const pos = view.state.update(spec).state.selection.main.head;
-    view.dispatch({ ...spec, effects: EditorView.scrollIntoView(pos) });
-    return true;
-}
-
-export const tableBoundaryArrowKeymap = Prec.highest(keymap.of([
-    { key: 'ArrowDown', run: (view) => runTableBoundaryArrow(view, 'down') },
-    { key: 'ArrowUp', run: (view) => runTableBoundaryArrow(view, 'up') },
-]));
 
 function buildTableAtomicRanges(state: EditorState): DecorationSet {
     const marker = Decoration.mark({});
@@ -476,6 +555,6 @@ export const tableBoundaryKeymap = Prec.highest(keymap.of([
 export const tableBoundaryExtensions = [
     tableDeleteArmedField,
     tableBoundaryKeymap,
-    tableBoundaryArrowKeymap,
+    tableNavigationKeymap,
     tableAtomicRanges,
 ];

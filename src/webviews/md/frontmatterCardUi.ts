@@ -1,9 +1,9 @@
 import type { FrontmatterFieldRow } from './frontmatter';
-import { applyRowEditsToParsed, formatFrontmatterBlock } from './frontmatter';
+import { wrapFrontmatterYaml } from './frontmatter';
 
 export interface FrontmatterCardOptions {
+    yamlText: string;
     rows: readonly FrontmatterFieldRow[];
-    parsed: Record<string, unknown>;
     collapsed: boolean;
     editing: boolean;
     onCollapsedChange: (collapsed: boolean) => void;
@@ -43,46 +43,20 @@ function buildReadOnlyField(row: FrontmatterFieldRow): HTMLElement {
     return field;
 }
 
-function buildEditableField(row: FrontmatterFieldRow): HTMLElement | null {
-    if (row.kind === 'object') {
-        return buildReadOnlyField(row);
-    }
-
-    const field = document.createElement('label');
-    field.className = 'yaml-frontmatter-field yaml-frontmatter-field-editable';
-    field.style.paddingLeft = `${row.depth * 16}px`;
-    field.dataset.keyPath = row.keyPath.join('.');
-
-    const key = document.createElement('span');
-    key.className = 'yaml-frontmatter-key';
-    key.textContent = row.key;
-    field.appendChild(key);
-
-    const input = document.createElement('input');
-    input.type = 'text';
-    input.spellcheck = false;
-    input.className = 'yaml-frontmatter-input';
-    input.value = row.kind === 'array' ? (row.chips?.join(', ') ?? '') : row.displayValue;
-    if (row.kind === 'array') {
-        input.placeholder = 'comma-separated values';
-    }
-    field.appendChild(input);
-
-    return field;
+function fitTextareaHeight(textarea: HTMLTextAreaElement): void {
+    textarea.style.height = '0';
+    textarea.style.height = `${textarea.scrollHeight}px`;
 }
 
-function collectEditedValues(body: HTMLElement, rows: readonly FrontmatterFieldRow[]): Map<string, string> {
-    const values = new Map<string, string>();
-    for (const row of rows) {
-        if (row.kind === 'object') { continue; }
-        const path = row.keyPath.join('.');
-        const label = body.querySelector(`label.yaml-frontmatter-field-editable[data-key-path="${path}"]`);
-        const input = label?.querySelector('input.yaml-frontmatter-input');
-        if (input instanceof HTMLInputElement) {
-            values.set(path, input.value);
-        }
-    }
-    return values;
+function buildEditableCode(yamlText: string): HTMLTextAreaElement {
+    const textarea = document.createElement('textarea');
+    textarea.className = 'yaml-frontmatter-textarea';
+    textarea.spellcheck = false;
+    textarea.value = yamlText;
+    textarea.rows = 1;
+    textarea.addEventListener('input', () => fitTextareaHeight(textarea));
+    requestAnimationFrame(() => fitTextareaHeight(textarea));
+    return textarea;
 }
 
 function wireCardButtons(card: HTMLElement, opts: FrontmatterCardOptions): void {
@@ -127,11 +101,10 @@ function wireCardButtons(card: HTMLElement, opts: FrontmatterCardOptions): void 
         stopEditor(event);
         if (card.classList.contains('yaml-frontmatter-editing')) {
             const body = card.querySelector('.yaml-frontmatter-body');
-            if (!(body instanceof HTMLElement)) { return; }
-            const values = collectEditedValues(body, opts.rows);
-            const nextParsed = structuredClone(opts.parsed);
-            applyRowEditsToParsed(nextParsed, opts.rows, values);
-            opts.onSave(formatFrontmatterBlock(nextParsed));
+            const textarea = body?.querySelector('textarea.yaml-frontmatter-textarea');
+            if (textarea instanceof HTMLTextAreaElement) {
+                opts.onSave(wrapFrontmatterYaml(textarea.value));
+            }
             setEditing(false);
         } else {
             setEditing(true);
@@ -147,9 +120,17 @@ function rebuildBody(card: HTMLElement, opts: FrontmatterCardOptions, editing: b
         card.appendChild(body);
     }
     body.innerHTML = '';
+    body.classList.toggle('yaml-frontmatter-body-editing', editing);
+
+    if (editing) {
+        const textarea = buildEditableCode(opts.yamlText);
+        body.appendChild(textarea);
+        textarea.focus();
+        return;
+    }
+
     for (const row of opts.rows) {
-        const field = editing ? buildEditableField(row) : buildReadOnlyField(row);
-        if (field) { body.appendChild(field); }
+        body.appendChild(buildReadOnlyField(row));
     }
 }
 

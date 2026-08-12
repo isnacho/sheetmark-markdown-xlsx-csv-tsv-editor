@@ -4,7 +4,8 @@
 //
 // The theme deliberately references the semantic CSS variables already defined
 // in resources/shared/theme.css (--text-color, --bg-color, --border-color,
-// --code-bg, --selection-bg, --link-color, --font-family, --font-mono). Those
+// --code-bg, --selection-bg, --link-color, --font-family, --font-mono,
+// --surface-radius). Those
 // vars are remapped to --vscode-* tokens by theme.css itself, so the editor
 // tracks the active VS Code / light / dark theme automatically. Referencing the
 // vars *directly* (rather than snapshotting them with getComputedStyle) means a
@@ -24,14 +25,14 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             fontFamily: 'var(--font-family)',
             lineHeight: '1.7',
             overflow: 'auto',
-            padding: '8px 0',
+            padding: '0',
             position: 'relative',
         },
         '.cm-content': {
             caretColor: 'var(--text-color)',
             maxWidth: '900px',
             margin: '0 auto',
-            padding: '0 16px',
+            padding: '8px 16px',
         },
         '.cm-editor': {
             position: 'relative',
@@ -53,12 +54,20 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             color: 'var(--text-faint)',
             border: 'none',
             fontSize: '12px',
+            lineHeight: '1.7',
         },
         '.cm-lineNumbers .cm-gutterElement': {
             minWidth: '2.5em',
             padding: '0 8px 0 4px',
             textAlign: 'right',
             fontVariantNumeric: 'tabular-nums',
+            fontSize: '12px',
+            // First-row alignment (not vertical center): centering drifts on
+            // wrapped/tall lines and fights CM6's gutter click midpoint routing.
+            display: 'flex',
+            alignItems: 'flex-start',
+            justifyContent: 'flex-end',
+            lineHeight: '1.7',
         },
         '.cm-activeLineGutter': {
             backgroundColor: 'transparent',
@@ -88,28 +97,52 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
         '.cm-md-heading-content': {
             fontWeight: '600',
         },
-        '.cm-md-h1': { fontSize: '2em' },
-        '.cm-md-h2': { fontSize: '1.5em' },
-        '.cm-md-h3': { fontSize: '1.25em' },
-        '.cm-md-h4': { fontSize: '1em' },
-        '.cm-md-h5': { fontSize: '0.875em' },
-        '.cm-md-h6': { fontSize: '0.85em', color: 'var(--text-muted)' },
+        '.cm-md-heading-line': {
+            fontWeight: '600',
+        },
+        // Preview Edit: smaller than reading-mode h1–h3 (mdWebview.css 2em/1.5em/1.25em)
+        // so headings stay hierarchical without dominating the editor canvas.
+        '.cm-content .cm-md-h1': { fontSize: '1.6em' },
+        '.cm-content .cm-md-h2': { fontSize: '1.4em' },
+        '.cm-content .cm-md-h3': { fontSize: '1.2em' },
+        '.cm-content .cm-md-h4': { fontSize: '1.1em' },
+        '.cm-content .cm-md-h5': { fontSize: '1em' },
+        '.cm-content .cm-md-h6': { fontSize: '1em', color: 'var(--text-muted)' },
         '.cm-md-inline-code': {
             fontFamily: 'var(--font-mono)',
             fontSize: '100%',
             backgroundColor: 'var(--code-bg)',
             color: 'var(--code-text)',
-            borderRadius: '4px',
+            borderRadius: 'var(--surface-radius)',
         },
         '.cm-md-fenced-code-line': {
             fontFamily: 'var(--font-mono)',
-            backgroundColor: 'var(--code-bg)',
+            backgroundColor: 'var(--pre-bg)',
+            borderLeft: '1px solid var(--pre-border)',
+            borderRight: '1px solid var(--pre-border)',
+        },
+        '.cm-md-fenced-code-line-first': {
+            borderTop: '1px solid var(--pre-border)',
+            borderRadius: 'var(--surface-radius) var(--surface-radius) 0 0',
+            paddingTop: '16px',
+            marginTop: '16px',
+        },
+        '.cm-md-fenced-code-line-last': {
+            borderBottom: '1px solid var(--pre-border)',
+            borderRadius: '0 0 var(--surface-radius) var(--surface-radius)',
+            paddingBottom: '16px',
+            marginBottom: '16px',
+        },
+        '.cm-md-fenced-code-line-first.cm-md-fenced-code-line-last': {
+            borderRadius: 'var(--surface-radius)',
         },
         '.cm-md-mermaid-block': {
             display: 'block',
-            margin: '16px 0',
+            margin: '0',
+            paddingTop: '16px',
+            paddingBottom: '16px',
             border: '1px solid var(--pre-border)',
-            borderRadius: '8px',
+            borderRadius: 'var(--surface-radius)',
             overflow: 'hidden',
             background: 'var(--pre-bg)',
         },
@@ -121,8 +154,8 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             padding: '6px 10px',
             border: '1px solid var(--pre-border)',
             borderBottom: '1px solid var(--pre-border)',
-            borderRadius: '8px 8px 0 0',
-            marginTop: '16px',
+            borderRadius: 'var(--surface-radius) var(--surface-radius) 0 0',
+            marginTop: '0',
             background: 'color-mix(in srgb, var(--pre-bg) 85%, var(--header-bg) 15%)',
         },
         '.cm-md-mermaid-block .cm-md-mermaid-toolbar': {
@@ -142,7 +175,7 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             color: 'var(--text-color)',
             background: 'var(--bg-color)',
             border: '1px solid var(--border-color)',
-            borderRadius: '6px',
+            borderRadius: 'var(--surface-radius)',
             padding: '2px 6px',
             cursor: 'pointer',
         },
@@ -163,8 +196,13 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
         '.cm-md-table-widget': {
             display: 'block',
             cursor: 'text',
+            overflow: 'visible',
+        },
+        '.cm-md-table-scroll': {
             overflowX: 'auto',
-            overflowY: 'visible',
+            overflowY: 'hidden',
+            border: '1px solid var(--border-color)',
+            borderRadius: 'var(--surface-radius)',
         },
         // Undoes the shared .markdown-preview table.md-table rule's
         // display:block/overflow:auto on the <table> itself (resources/md/
@@ -175,14 +213,16 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
         // body row-group. Reading mode doesn't hit this (same shared CSS,
         // but no visible symptom there), so scoped to the Live Preview
         // widget only rather than touching the shared CSS Reading mode
-        // relies on. Scrolling now lives on the wrapper div above instead.
+        // relies on. Horizontal scroll lives on `.cm-md-table-scroll` so row
+        // grips can sit left of the table without being clipped.
         '.cm-md-table-widget table.md-table': {
             display: 'table',
             overflow: 'visible',
         },
         '.cm-md-frontmatter-widget': {
             display: 'block',
-            margin: '0 0 20px 0',
+            margin: '0',
+            paddingBottom: '20px',
         },
         // Phase 7: extended reveal set (strikethrough/inline-code marker hide/
         // dim reuses .cm-md-reveal-mark above; these are the new content classes).
@@ -198,7 +238,9 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
         },
         '.cm-md-image-block': {
             display: 'block',
-            margin: '16px 0',
+            margin: '0',
+            paddingTop: '16px',
+            paddingBottom: '16px',
         },
         '.cm-md-image-inline': {
             display: 'inline-block',
@@ -207,8 +249,21 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
         '.cm-md-image-preview': {
             maxWidth: '100%',
             height: 'auto',
-            borderRadius: '6px',
+            borderRadius: 'var(--surface-radius)',
             display: 'block',
+        },
+        '.cm-md-image-placeholder': {
+            display: 'block',
+            padding: '12px 16px',
+            borderRadius: 'var(--surface-radius)',
+            background: 'color-mix(in srgb, var(--text-color) 6%, transparent)',
+            color: 'var(--text-muted)',
+            fontSize: '13px',
+            lineHeight: '1.4',
+        },
+        '.cm-md-image-placeholder.cm-md-image-error': {
+            color: 'var(--error-color)',
+            background: 'color-mix(in srgb, var(--error-color) 8%, transparent)',
         },
         '.cm-md-blockquote-line': {
             backgroundColor: 'transparent',
@@ -223,18 +278,17 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             borderLeft: 'none',
         },
         '.cm-md-callout-line-first': {
-            borderRadius: '8px 8px 0 0',
-            paddingTop: '10px',
+            borderRadius: 'var(--surface-radius) var(--surface-radius) 0 0',
+            paddingTop: '4px',
         },
         '.cm-md-callout-line-last': {
-            borderRadius: '0 0 8px 8px',
-            paddingBottom: '10px',
-            marginBottom: '10px',
+            borderRadius: '0 0 var(--surface-radius) var(--surface-radius)',
+            paddingBottom: '4px',
         },
         '.cm-md-callout-line-first.cm-md-callout-line-last': {
-            borderRadius: '8px',
-            paddingTop: '10px',
-            paddingBottom: '10px',
+            borderRadius: 'var(--surface-radius)',
+            paddingTop: '4px',
+            paddingBottom: '4px',
         },
         '.cm-md-callout-content-first': {
             position: 'relative',
@@ -314,7 +368,7 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             color: 'var(--text-color)',
             background: 'var(--bg-color)',
             border: '1px solid var(--border-color)',
-            borderRadius: '6px',
+            borderRadius: 'var(--surface-radius)',
             padding: '2px 6px',
             cursor: 'pointer',
             maxWidth: '140px',
@@ -396,7 +450,7 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             margin: '0',
             padding: '7px 10px',
             color: 'var(--text-color)',
-            borderRadius: '6px',
+            borderRadius: 'var(--surface-radius)',
             cursor: 'pointer',
         },
         '.cm-tooltip-autocomplete.cm-slash-menu-tooltip ul li.cm-slash-menu-option[aria-selected]': {

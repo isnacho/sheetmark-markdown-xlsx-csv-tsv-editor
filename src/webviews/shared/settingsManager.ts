@@ -1,4 +1,5 @@
  
+import { Icons } from './icons';
 
 export interface SettingDefinition {
     id: string;
@@ -48,7 +49,8 @@ export class SettingsManager {
         panel.setAttribute('role', 'dialog');
         panel.setAttribute('aria-hidden', 'true');
         
-        let html = '<div class="settings-group">';
+        let html = `<button id="${cancelId}" class="settings-close-btn" type="button" title="Close" aria-label="Close">${Icons.Cancel}</button>`;
+        html += '<div class="settings-group">';
         settings.forEach(s => {
             const safeId = this.escapeHtml(s.id);
             const safeLabel = this.escapeHtml(s.label);
@@ -64,8 +66,7 @@ export class SettingsManager {
             html += `<label class="setting-item tooltip${extraClass}"><input type="${inputType}" id="${safeId}"${groupAttr}${valueAttr}/> <span>${safeLabel}</span><span class="tooltiptext hidden">${safeTooltip}</span></label>`;
         });
         html += '</div>';
-        html += `<button id="${cancelId}" class="toggle-button" title="Close">Close</button>`;
-        
+
         panel.innerHTML = html;
         container.appendChild(panel);
     }

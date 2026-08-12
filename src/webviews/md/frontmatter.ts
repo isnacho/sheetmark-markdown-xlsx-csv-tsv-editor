@@ -21,6 +21,7 @@ export interface FrontmatterFieldRow {
 }
 
 export interface FrontmatterCardData {
+    yamlText: string;
     rows: FrontmatterFieldRow[];
     parsed: Record<string, unknown>;
 }
@@ -210,10 +211,15 @@ export function applyRowEditsToParsed(
 
 export function formatFrontmatterBlock(parsed: Record<string, unknown>): string {
     const yamlBody = dumpYaml(parsed, { lineWidth: -1, noRefs: true }).trimEnd();
-    if (!yamlBody) {
+    return wrapFrontmatterYaml(yamlBody);
+}
+
+export function wrapFrontmatterYaml(yamlBody: string): string {
+    const trimmed = yamlBody.trimEnd();
+    if (!trimmed) {
         return '---\n---\n';
     }
-    return `---\n${yamlBody}\n---\n`;
+    return `---\n${trimmed}\n---\n`;
 }
 
 export function resolveFrontmatterForRender(content: string, collapsed: boolean): FrontmatterRenderResult {
@@ -238,7 +244,7 @@ export function resolveFrontmatterForRender(content: string, collapsed: boolean)
     const rows = buildFieldRows(parsed, extracted.yamlText);
     return {
         body: extracted.body,
-        card: { rows, parsed },
+        card: { yamlText: extracted.yamlText, rows, parsed },
         stripped: true,
     };
 }
@@ -260,6 +266,7 @@ export function markdownBodyWithoutFrontmatter(content: string): string {
 
 export interface FrontmatterWidgetData {
     range: { from: number; to: number };
+    yamlText: string;
     rows: FrontmatterFieldRow[];
     parsed: Record<string, unknown>;
 }
@@ -275,6 +282,7 @@ export function resolveFrontmatterWidgetData(doc: string): FrontmatterWidgetData
     }
     return {
         range: extracted.range,
+        yamlText: extracted.yamlText,
         rows: buildFieldRows(parsed, extracted.yamlText),
         parsed,
     };

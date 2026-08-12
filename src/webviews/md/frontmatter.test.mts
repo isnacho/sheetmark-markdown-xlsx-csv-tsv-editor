@@ -79,7 +79,7 @@ test('resolveFrontmatterForRender: returns card data when valid', () => {
     const raw = '---\ntitle: Hello\n---\n# Heading\n';
     const result = resolveFrontmatterForRender(raw, false);
     assert.ok(result.card);
-    assert.equal(result.card.rows[0]?.displayValue, 'Hello');
+    assert.equal(result.card.yamlText, 'title: Hello');
     assert.equal(result.body, '# Heading\n');
 });
 
@@ -98,10 +98,10 @@ test('markdownBodyWithoutFrontmatter strips valid frontmatter only', () => {
     assert.equal(markdownBodyWithoutFrontmatter('# no frontmatter'), '# no frontmatter');
 });
 
-test('resolveFrontmatterWidgetData returns range and rows', () => {
+test('resolveFrontmatterWidgetData returns range and yaml text', () => {
     const raw = '---\ntitle: Widget\n---\nbody';
     const data = resolveFrontmatterWidgetData(raw);
     assert.ok(data);
     assert.ok(data.range.to > data.range.from);
-    assert.equal(data.rows[0]?.key, 'title');
+    assert.equal(data.yamlText, 'title: Widget');
 });

@@ -43,8 +43,9 @@ import type { Cm6Interaction } from './livePreviewInteractions';
 import { livePreviewRevealPlugin, orderedListAtomicRanges } from './revealDecorations';
 import { codeStylingPlugin } from './codeStylingPlugin';
 import { tableWidgetField, columnWidthsField, setColumnWidthsEffect } from './tableWidget';
-import { tableBoundaryExtensions, tableBoundaryArrowKeymap } from './tableBoundaryEditing';
+import { tableBoundaryExtensions } from './tableBoundaryEditing';
 import { frontmatterWidgetField, seedFrontmatterCollapsed, seedFrontmatterEditing, setFrontmatterCollapsedCallback } from './frontmatterWidget';
+import { headingLineDecorationField } from './headingGutterSync';
 import {
     mermaidWidgetField,
     mermaidAtomicRanges,
@@ -119,8 +120,18 @@ const gutterCompartment = new Compartment();
 function buildLineNumbersGutter() {
     return lineNumbers({
         domEventHandlers: {
-            click: (v, line) => {
-                v.dispatch({ selection: EditorSelection.range(line.from, line.to) });
+            // CM6's gutter plugin resolves the line from the gutter cell's
+            // vertical midpoint when the target is a gutter element — that
+            // feels one line off when cells are tall or visually misaligned.
+            // Map the actual click Y through the content column instead.
+            click: (v, line, event) => {
+                const mouse = event as MouseEvent;
+                const contentLeft = v.contentDOM.getBoundingClientRect().left;
+                const pos = v.posAtCoords({ x: contentLeft + 4, y: mouse.clientY });
+                const docLine = pos !== null
+                    ? v.state.doc.lineAt(pos)
+                    : v.state.doc.lineAt(line.from);
+                v.dispatch({ selection: EditorSelection.range(docLine.from, docLine.to) });
                 return true;
             },
         },
@@ -227,12 +238,14 @@ export function mountLivePreview(opts: LivePreviewMountOptions): EditorView {
             seedFrontmatterCollapsed(frontmatterCollapsed),
             seedFrontmatterEditing(false),
             frontmatterWidgetField,
+            headingLineDecorationField,
             seedMermaidPreviewMode(mermaidPreviewMode),
             mermaidPreviewModeField,
             seedCalloutDefaultType(calloutDefaultType),
             calloutDefaultTypeField,
             calloutWidgetField,
-            revealCompartment.of(reveal ? [livePreviewRevealPlugin, tableWidgetField, ...tableBoundaryExtensions, tableBoundaryArrowKeymap, mermaidWidgetField, mermaidAtomicRanges, imageWidgetField, orderedListAtomicRanges] : []),
+            imageWidgetField,
+            revealCompartment.of(reveal ? [livePreviewRevealPlugin, tableWidgetField, ...tableBoundaryExtensions, mermaidWidgetField, mermaidAtomicRanges, orderedListAtomicRanges] : []),
             codeStylingPlugin,
             ...spellcheckExtensions,
             slashMenuAutocompletion(),
@@ -322,7 +335,7 @@ export function setLivePreviewLineWrapping(on: boolean): void {
 /** Toggle reveal-on-cursor decorations without rebuilding the view. */
 export function setLivePreviewReveal(on: boolean): void {
     view?.dispatch({
-        effects: revealCompartment.reconfigure(on ? [livePreviewRevealPlugin, tableWidgetField, ...tableBoundaryExtensions, tableBoundaryArrowKeymap, mermaidWidgetField, mermaidAtomicRanges, imageWidgetField, orderedListAtomicRanges] : []),
+        effects: revealCompartment.reconfigure(on ? [livePreviewRevealPlugin, tableWidgetField, ...tableBoundaryExtensions, mermaidWidgetField, mermaidAtomicRanges, orderedListAtomicRanges] : []),
     });
 }
 

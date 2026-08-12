@@ -7375,7 +7375,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
 
         const settingsGroup = document.querySelector('#settingsPanel .settings-group');
         if (settingsGroup) {
-            settingsGroup.insertAdjacentHTML('beforeend', renderThemeToggleSettingItem('toggleBackgroundButton'));
+            settingsGroup.insertAdjacentHTML('beforeend', renderThemeToggleSettingItem('themeSelect'));
         }
 
         new SettingsManager('openSettingsButton', 'settingsPanel', 'settingsCancelButton', settings, () => {
@@ -7383,7 +7383,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
         });
 
         if (typeof ThemeManager !== 'undefined') {
-            new ThemeManager('toggleBackgroundButton', {
+            new ThemeManager('themeSelect', {
                 onBeforeCycle: () => !isEditMode
             }, vscode);
         }

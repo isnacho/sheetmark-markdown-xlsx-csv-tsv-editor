@@ -30,7 +30,14 @@ function isRemoteOrInlineUri(value: string): boolean {
 
 export function extractImageAlt(state: EditorState, node: SyntaxNode): string {
     const text = node.getChild('Text');
-    return text ? state.doc.sliceString(text.from, text.to) : '';
+    if (text) {
+        return state.doc.sliceString(text.from, text.to);
+    }
+    const marks = node.getChildren('LinkMark');
+    if (marks.length >= 2) {
+        return state.doc.sliceString(marks[0].to, marks[1].from);
+    }
+    return '';
 }
 
 export function extractImageUrl(state: EditorState, node: SyntaxNode): string {
@@ -59,6 +66,51 @@ function isImageActive(node: SyntaxNode, selFrom: number, selTo: number): boolea
         return node.from <= selFrom && selFrom <= node.to;
     }
     return rangesIntersect(selFrom, selTo, node.from, node.to);
+}
+
+function syncImageElement(
+    img: HTMLImageElement,
+    placeholder: HTMLElement,
+    src: string,
+    alt: string,
+    resolvedSrc: string | undefined,
+): void {
+    const trimmed = src.trim();
+    placeholder.classList.remove('cm-md-image-error');
+    placeholder.textContent = alt || trimmed || 'Image';
+
+    if (trimmed && isRemoteOrInlineUri(trimmed)) {
+        img.hidden = false;
+        if (img.getAttribute('src') !== trimmed) {
+            img.src = trimmed;
+        }
+        img.removeAttribute('data-md-src');
+        placeholder.hidden = true;
+        return;
+    }
+
+    const resolved = resolvedSrc || (trimmed ? imageUriResolver?.getResolved(trimmed) : undefined);
+    if (resolved) {
+        img.hidden = false;
+        if (img.getAttribute('src') !== resolved) {
+            img.src = resolved;
+        }
+        img.removeAttribute('data-md-src');
+        placeholder.hidden = true;
+        return;
+    }
+
+    if (trimmed) {
+        img.removeAttribute('src');
+        img.hidden = true;
+        img.setAttribute('data-md-src', trimmed);
+        placeholder.hidden = false;
+        imageUriResolver?.requestResolve([trimmed]);
+        return;
+    }
+
+    img.hidden = true;
+    placeholder.hidden = false;
 }
 
 class ImagePreviewWidget extends WidgetType {
@@ -108,17 +160,23 @@ class ImagePreviewWidget extends WidgetType {
         img.alt = this.alt;
         img.loading = 'lazy';
 
-        const trimmed = this.src.trim();
-        if (trimmed && isRemoteOrInlineUri(trimmed)) {
-            img.src = trimmed;
-        } else if (this.resolvedSrc) {
-            img.src = this.resolvedSrc;
-        } else if (trimmed) {
-            img.setAttribute('data-md-src', trimmed);
-            imageUriResolver?.requestResolve([trimmed]);
-        }
+        const placeholder = document.createElement('span');
+        placeholder.className = 'cm-md-image-placeholder';
+        placeholder.setAttribute('aria-hidden', 'true');
+
+        syncImageElement(img, placeholder, this.src, this.alt, this.resolvedSrc);
+
+        img.addEventListener('error', () => {
+            img.hidden = true;
+            placeholder.hidden = false;
+            placeholder.classList.add('cm-md-image-error');
+            placeholder.textContent = this.alt
+                ? `${this.alt} (not found)`
+                : `Image not found: ${this.src.trim()}`;
+        });
 
         img.addEventListener('mousedown', (event) => {
+            const trimmed = this.src.trim();
             if (event.ctrlKey || event.metaKey) {
                 event.preventDefault();
                 const lightboxSrc = this.resolvedSrc
@@ -139,7 +197,20 @@ class ImagePreviewWidget extends WidgetType {
         });
 
         wrap.appendChild(img);
+        wrap.appendChild(placeholder);
         return wrap;
+    }
+
+    updateDOM(dom: HTMLElement, _view: EditorView, other: ImagePreviewWidget): boolean {
+        if (other.src !== this.src || other.alt !== this.alt || other.resolvedSrc !== this.resolvedSrc) {
+            return false;
+        }
+        const img = dom.querySelector('img');
+        const placeholder = dom.querySelector('.cm-md-image-placeholder');
+        if (img instanceof HTMLImageElement && placeholder instanceof HTMLElement) {
+            syncImageElement(img, placeholder, this.src, this.alt, this.resolvedSrc);
+        }
+        return true;
     }
 }
 
@@ -148,6 +219,10 @@ export function computeImageDecorations(
     selFrom: number,
     selTo: number,
 ): DecorationSet {
+    if (!imageUriResolver) {
+        return Decoration.none;
+    }
+
     const specs: ReturnType<Decoration['range']>[] = [];
     const resolver = imageUriResolver;
 
@@ -164,7 +239,7 @@ export function computeImageDecorations(
             const src = extractImageUrl(state, node);
             const alt = extractImageAlt(state, node);
             const trimmed = src.trim();
-            const resolved = trimmed ? resolver?.getResolved(trimmed) : undefined;
+            const resolved = trimmed ? resolver.getResolved(trimmed) : undefined;
             const range = imageReplaceRange(state, node);
 
             specs.push(
@@ -193,8 +268,13 @@ function buildFromState(state: EditorState): DecorationSet {
 
 export const imageWidgetField = StateField.define<DecorationSet>({
     create: (state) => buildFromState(state),
-    update(_value, tr) {
-        return buildFromState(tr.state);
+    update(value, tr) {
+        const selChanged = tr.startState.selection.main.from !== tr.state.selection.main.from
+            || tr.startState.selection.main.to !== tr.state.selection.main.to;
+        if (tr.docChanged || selChanged || tr.effects.some(e => e.is(refreshImageWidgetsEffect))) {
+            return buildFromState(tr.state);
+        }
+        return value;
     },
     provide: (f) => EditorView.decorations.from(f),
 });

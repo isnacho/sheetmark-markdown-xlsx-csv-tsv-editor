@@ -905,6 +905,7 @@ body.preview-edit-mode .markdown-preview .cm-md-table-widget table.md-table {
     display: table;
     width: max-content;
     max-width: 100%;
+    margin: 8px 0;
 }
 
 /* Empty cells have no text node — give them a line box so rows don't collapse
@@ -1022,7 +1023,13 @@ body.preview-edit-mode .markdown-preview .cm-md-table-widget table.md-table td:e
     position: relative;
     /* Gutter space for row grips (left) and column grips (top) outside the <table>. */
     padding-left: 18px;
-    padding-top: 16px;
+    padding-top: 8px;
+}
+
+.cm-md-table-widget.cm-md-table-armed {
+    outline: 2px solid var(--accent-color);
+    outline-offset: 2px;
+    border-radius: 6px;
 }
 
 /* CM6 live-preview table widget: the single active/editable cell (tableWidget.ts) */
@@ -1086,7 +1093,7 @@ body.preview-edit-mode .markdown-preview .cm-md-table-widget table.md-table td:e
 body.preview-edit-mode .markdown-preview .table-edit-wrap {
     position: relative;
     display: inline-block;
-    margin: 16px 0;
+    margin: 8px 0;
     max-width: 100%;
 }
 
@@ -1187,16 +1194,28 @@ body.preview-edit-mode .markdown-preview .table-tool-btn[data-table-action="tabl
     z-index: 100;
 }
 
-/* ===== Toast Notification (matches CSV) ===== */
+/* Scoped override for the reload/save-conflict confirm modals (confirmModal()
+   in mdWebview.ts) only — keep the shared .feedback-overlay's dark tint but
+   drop its background blur here; FeedbackModal/ProjectsModal keep the blur. */
+.reload-confirm-overlay {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+}
+
+/* ===== Toast Notification =====
+   Uses the --toast-* tokens from theme.css (fixed dark surface + light text
+   regardless of the ambient theme, unlike --text-color/--overlay-bg or the
+   relative --inverted-*) so it stays legible and consistent everywhere — one
+   style for every toast variant. */
 .toast-notification {
     position: fixed;
-    top: 50%;
+    bottom: 28px;
     left: 50%;
-    transform: translate(-50%, -50%) scale(0.9);
-    background-color: var(--overlay-bg);
-    color: var(--text-color);
-    padding: 12px 24px;
-    border-radius: 100px;
+    transform: translateX(-50%) translateY(8px) scale(0.9);
+    background-color: var(--toast-bg);
+    color: var(--toast-text);
+    padding: 9px 16px;
+    border-radius: 12px;
     z-index: 2000;
     display: flex;
     flex-direction: row;
@@ -1208,21 +1227,19 @@ body.preview-edit-mode .markdown-preview .table-tool-btn[data-table-action="tabl
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
     pointer-events: none;
-    box-shadow: var(--shadow-lg);
-    border: 1px solid var(--border-color);
+    box-shadow: var(--toast-shadow);
+    border: 1px solid var(--toast-border);
 }
 
 .toast-notification.show {
     opacity: 1;
     visibility: visible;
-    transform: translate(-50%, -50%) scale(1);
+    transform: translateX(-50%) translateY(0) scale(1);
 }
 
 .toast-icon-wrapper {
-    width: 24px;
-    height: 24px;
-    background-color: var(--success-color);
-    border-radius: 50%;
+    width: 20px;
+    height: 20px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1230,32 +1247,68 @@ body.preview-edit-mode .markdown-preview .table-tool-btn[data-table-action="tabl
 }
 
 .toast-icon-wrapper svg {
-    width: 16px;
-    height: 16px;
-    stroke: var(--contrast-text);
+    width: 20px;
+    height: 20px;
+    stroke: var(--toast-icon);
 }
 
 .toast-text {
     font-size: 15px;
     font-weight: 500;
+    color: var(--toast-text);
     white-space: nowrap;
 }
 
 .toast-action {
     pointer-events: auto;
     background: none;
-    border: 1px solid var(--border-color);
-    border-radius: 100px;
-    color: var(--text-color);
-    font-size: 13px;
+    border: none;
+    border-radius: 6px;
+    color: var(--toast-text);
+    font-size: 15px;
     font-weight: 600;
-    padding: 4px 12px;
+    padding: 3px 10px;
     cursor: pointer;
     flex-shrink: 0;
 }
 
+.toast-action:hover {
+    background: color-mix(in srgb, var(--toast-text) 10%, transparent);
+}
+
 .toast-action.hidden {
     display: none;
+}
+
+/* Pull the close button closer to the action button specifically — the
+   parent's 12px gap is fine between icon/text/action, just too wide here.
+   :not(.hidden) so this doesn't also shrink the text-to-close gap on toasts
+   with no action button. */
+.toast-action:not(.hidden) + .toast-close {
+    margin-left: -6px;
+}
+
+.toast-close {
+    pointer-events: auto;
+    background: none;
+    border: none;
+    border-radius: 6px;
+    color: color-mix(in srgb, var(--toast-text) 80%, transparent);
+    font-size: 18px;
+    line-height: 1;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.toast-close:hover {
+    background: color-mix(in srgb, var(--toast-text) 16%, transparent);
+    color: var(--toast-text);
 }
 
 
@@ -1714,7 +1767,7 @@ body.show-line-numbers .markdown-preview .code-line::before {
     padding-left: 5px;
     padding-right: 0px;
     text-align: right;
-    color: var(--text-muted);
+    color: var(--text-faint);
     border-right: 1px solid var(--border-color);
     user-select: none;
     font-size: 0.85em;

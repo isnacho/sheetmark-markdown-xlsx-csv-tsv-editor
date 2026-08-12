@@ -64,6 +64,7 @@ import { EditorView, Decoration, ViewPlugin, WidgetType } from '@codemirror/view
 import type { DecorationSet, ViewUpdate } from '@codemirror/view';
 import { syntaxTree } from '@codemirror/language';
 import type { SyntaxNode } from '@lezer/common';
+import { appendCalloutDecorationSpecs } from './calloutDecorations';
 
 export interface VisibleRange {
     from: number;
@@ -175,7 +176,42 @@ interface Spec {
 const hiddenBulletMark = Decoration.mark({ class: 'cm-md-checkbox-bullet-hidden' });
 const taskDoneContentDeco = Decoration.mark({ class: 'cm-md-task-done-content' });
 const blockquoteLineDeco = Decoration.line({ class: 'cm-md-blockquote-line' });
-const hrContentDeco = Decoration.mark({ class: 'cm-md-hr-content' });
+/**
+ * Renders a full-width horizontal rule over a `HorizontalRule`'s exact range
+ * when the cursor is away. Owns mousedown to place the caret on the rule line
+ * (the styled border sits in a block widget, so a bare click would otherwise
+ * miss the tiny hidden source text and land on the next line).
+ */
+export class HorizontalRuleWidget extends WidgetType {
+    readonly nodeFrom: number;
+    readonly nodeTo: number;
+
+    constructor(nodeFrom: number, nodeTo: number) {
+        super();
+        this.nodeFrom = nodeFrom;
+        this.nodeTo = nodeTo;
+    }
+    eq(other: HorizontalRuleWidget): boolean {
+        return other.nodeFrom === this.nodeFrom && other.nodeTo === this.nodeTo;
+    }
+    toDOM(view: EditorView): HTMLElement {
+        const rule = document.createElement('span');
+        rule.className = 'cm-md-hr-widget';
+        rule.setAttribute('aria-hidden', 'true');
+        rule.addEventListener('mousedown', (event) => {
+            event.preventDefault();
+            view.dispatch({
+                selection: { anchor: this.nodeTo, head: this.nodeTo },
+                scrollIntoView: true,
+            });
+            view.focus();
+        });
+        return rule;
+    }
+    ignoreEvent(): boolean {
+        return true;
+    }
+}
 
 /**
  * Renders a real `<input type="checkbox">` over a `TaskMarker`'s exact range
@@ -391,10 +427,28 @@ export function computeRevealDecorations(
         specs.push({ from: close.from, to: close.to, value: active ? dimMark : hiddenMark });
     }
 
+    // Image: ImageMark("!") LinkMark("[") Text LinkMark("]") LinkMark("(") URL LinkMark(")").
+    // Preview rendering is owned by imageWidget.ts when the cursor is away; here
+    // we only dim/hide syntax while the caret is inside the construct.
+    function handleImage(node: SyntaxNode) {
+        const active = isActive(node.from, node.to);
+        if (!active) { return; }
+
+        const imageMark = node.getChild('ImageMark');
+        if (imageMark) {
+            specs.push({ from: imageMark.from, to: imageMark.to, value: dimMark });
+        }
+        const marks = node.getChildren('LinkMark');
+        if (marks.length >= 2) {
+            specs.push({ from: marks[1].from, to: node.to, value: dimMark });
+        }
+        const text = node.getChild('Text');
+        if (text && text.from < text.to) {
+            specs.push({ from: text.from, to: text.to, value: Decoration.mark({ class: 'cm-md-image-alt-content' }) });
+        }
+    }
+
     // Link tree shape (verified against the real parse tree, not assumed):
-    // LinkMark("[") Text LinkMark("]") LinkMark("(") URL LinkMark(")"). Hides
-    // the "[" alone and "](url)" as one combined span; styles the label text
-    // in between. Images (`![alt](url)`) are untouched — not in Phase 7 scope.
     function handleLink(node: SyntaxNode) {
         const marks = node.getChildren('LinkMark');
         if (marks.length < 2) { return; }
@@ -496,12 +550,29 @@ export function computeRevealDecorations(
         }
     }
 
+    function isHorizontalRuleLineActive(node: SyntaxNode): boolean {
+        if (selFrom !== selTo) {
+            return isActive(node.from, node.to);
+        }
+        // Collapsed caret: anywhere on the rule line reveals raw "---"/"***"/
+        // "___" (including end-of-line, where the global isActive half-open
+        // rule would keep the styled widget visible).
+        return state.doc.lineAt(selFrom).number === state.doc.lineAt(node.from).number;
+    }
+
     // Whole node IS the marker (no separate marker/content split, unlike
     // headings) — away from the cursor it's a styled rule; cursor on the line,
     // no decoration at all, raw "---"/"***"/"___" shows for editing/deleting.
+    // Inline replace only — block:true on this tiny span breaks CM6 layout and
+    // stops rendering everything below the rule (tables/mermaid use block
+    // replace only for full multi-line ranges).
     function handleHorizontalRule(node: SyntaxNode) {
-        if (isActive(node.from, node.to)) { return; }
-        specs.push({ from: node.from, to: node.to, value: hrContentDeco });
+        if (isHorizontalRuleLineActive(node)) { return; }
+        specs.push({
+            from: node.from,
+            to: node.to,
+            value: Decoration.replace({ widget: new HorizontalRuleWidget(node.from, node.to) }),
+        });
     }
 
     for (const { from, to } of visibleRanges) {
@@ -522,6 +593,8 @@ export function computeRevealDecorations(
                     handleInlineCode(node.node);
                 } else if (node.name === 'Link') {
                     handleLink(node.node);
+                } else if (node.name === 'Image') {
+                    handleImage(node.node);
                 } else if (node.name === 'Blockquote') {
                     handleBlockquote(node.node);
                 } else if (node.name === 'QuoteMark') {
@@ -537,6 +610,8 @@ export function computeRevealDecorations(
         });
     }
 
+    appendCalloutDecorationSpecs(state, selFrom, selTo, specs, dimMark, hiddenMark);
+
     return Decoration.set(specs.map(s => s.value.range(s.from, s.to)), true);
 }
 
@@ -551,7 +626,7 @@ export const livePreviewRevealPlugin = ViewPlugin.fromClass(class {
         this.decorations = buildFromView(view);
     }
     update(update: ViewUpdate) {
-        if (update.docChanged || update.selectionSet || update.viewportChanged) {
+        if (update.docChanged || update.selectionSet || update.viewportChanged || update.geometryChanged) {
             this.decorations = buildFromView(update.view);
         }
     }

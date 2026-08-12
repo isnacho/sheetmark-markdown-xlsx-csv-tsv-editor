@@ -117,6 +117,15 @@
     --inverted-bg: #000000;
     --inverted-text: #ffffff;
     --inverted-border: #000000;
+
+    /* Toast notifications - deliberately fixed dark regardless of theme (unlike
+       --inverted-*, which flips relative to the ambient theme), so the same
+       identical values are repeated in every theme block below. */
+    --toast-bg: rgba(30, 30, 32, 0.96);
+    --toast-text: #f5f5f7;
+    --toast-icon: #a1a1a6;
+    --toast-border: rgba(255, 255, 255, 0.08);
+    --toast-shadow: 0 12px 24px rgba(0, 0, 0, 0.35);
 }
 
 body.dark-mode {
@@ -226,6 +235,13 @@ body.dark-mode {
     --inverted-bg: #f5f5f7;
     --inverted-text: #1d1d1f;
     --inverted-border: #d2d2d7;
+
+    /* Toast notifications - fixed dark, same values as :root (see comment there) */
+    --toast-bg: rgba(30, 30, 32, 0.96);
+    --toast-text: #f5f5f7;
+    --toast-icon: #a1a1a6;
+    --toast-border: rgba(255, 255, 255, 0.08);
+    --toast-shadow: 0 12px 24px rgba(0, 0, 0, 0.35);
 
     --button-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
     --button-shadow-hover: 0 4px 8px rgba(0, 0, 0, 0.4);
@@ -338,6 +354,13 @@ body.vscode-theme {
     --inverted-bg: var(--vscode-editor-foreground, #000000);
     --inverted-text: var(--vscode-editor-background, #f5f5f7);
     --inverted-border: var(--vscode-editor-foreground, #ffffff);
+
+    /* Toast notifications - fixed dark, same values as :root (see comment there) */
+    --toast-bg: rgba(30, 30, 32, 0.96);
+    --toast-text: #f5f5f7;
+    --toast-icon: #a1a1a6;
+    --toast-border: rgba(255, 255, 255, 0.08);
+    --toast-shadow: 0 12px 24px rgba(0, 0, 0, 0.35);
 
     /* Button shadows */
     --button-shadow: 0 1px 3px color-mix(in srgb, var(--button-bg) 25%, transparent);
@@ -794,6 +817,58 @@ body:not(.sticky-toolbar-enabled) .toolbar {
     width: 16px;
     height: 16px;
     stroke-width: 2;
+}
+
+.toolbar.toolbar-split {
+    justify-content: space-between;
+    gap: 12px;
+    overflow: hidden;
+}
+
+.toolbar-group {
+    display: flex;
+    gap: var(--toolbar-gap);
+    align-items: center;
+    min-width: 0;
+}
+
+.toolbar-group-start {
+    flex: 1 1 auto;
+    overflow-x: auto;
+    overflow-y: visible;
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+
+.toolbar-group-end {
+    flex: 0 0 auto;
+    overflow: visible;
+}
+
+.toolbar-group-start::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+.toolbar-group-start::-webkit-scrollbar-track {
+    background: var(--scrollbar-track);
+}
+
+.toolbar-group-start::-webkit-scrollbar-thumb {
+    background-color: var(--scrollbar-thumb);
+    border: 3px solid transparent;
+    background-clip: content-box;
+    border-radius: 6px;
+}
+
+.toolbar-group-start::-webkit-scrollbar-thumb:hover {
+    background-color: var(--scrollbar-thumb-hover);
+}
+
+.toolbar-group-start::-webkit-scrollbar-button,
+.toolbar-group-start::-webkit-scrollbar-corner {
+    display: none;
+    background: transparent;
 }
 
 .toolbar::-webkit-scrollbar {

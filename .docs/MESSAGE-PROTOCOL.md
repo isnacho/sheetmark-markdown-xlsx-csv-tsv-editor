@@ -77,10 +77,9 @@ Provider: [mdEditorProvider.ts](../src/mdEditorProvider.ts)
 | command | Payload | Sender (webview) | Handler (provider) |
 |---|---|---|---|
 | `webviewReady` | — | :3661 | :137 |
-| `saveMarkdown` | `text` | :890 | :253 |
-| `updateSettings` | `settings` | :1564 | :214 |
+| `saveMarkdown` | `text`, `force` (bypass host's disk-conflict check after an explicit overwrite confirm), `isAutosave` | :890 | :253 |
+| `updateSettings` | `settings` (includes `autoSave`) | :1564 | :214 |
 | `requestFreshData` | — | :1791 | :241 |
-| `toggleView` | `isPreviewView` | :1811 | :234 |
 | `resolveImageUris` | `sources` | :455 | :184 |
 | `openExternal` | `url` | :3447 | :389 |
 | `openRelativeFile` | `href`, `documentUri` | :3461 | :400 |
@@ -92,6 +91,8 @@ Provider: [mdEditorProvider.ts](../src/mdEditorProvider.ts)
 | `toggleMdAssociation` | `enable` | shared module | :509 |
 | `saveTableColumnWidths` | `widths` (table order-index -> px per column) | :860 | :274 |
 | `saveFrontmatterPanelCollapsed` | `collapsed` (boolean) | :~ | :~ |
+| `saveMermaidPreviewMode` | `mode` (`diagram` \| `code`) | :~ | :~ |
+| `saveCalloutDefaultType` | `type` (slug: `[\w-]+`) | :~ | :~ |
 | `getSystemDetails` | — | [feedbackModal.ts](../src/webviews/shared/feedbackModal.ts) | :427 |
 | `submitFeedback` | feedback fields | [feedbackModal.ts](../src/webviews/shared/feedbackModal.ts) | :440 |
 
@@ -102,16 +103,18 @@ Provider: [mdEditorProvider.ts](../src/mdEditorProvider.ts)
 
 | command | Payload | Sender (provider) | Handler (webview) |
 |---|---|---|---|
-| `initMarkdown` | `text`, `documentUri`, `documentDirUri`, `workspaceFolderUri`, `tableColumnWidths` (persisted table order-index -> px per column, read via `TableColumnWidthStorageService`), `frontmatterPanelCollapsed` (persisted YAML card state, read via `FrontmatterPanelStorageService`) | :112 | :1692 |
-| `initSettings` | `settings` | :~ | :1706 |
-| `settingsUpdated` | `settings` | :~ | :1707 |
-| `saveResult` | `ok` | :~ | :1711 |
+| `initMarkdown` | `content` (payload field is `content`, not `text`), `documentUri`, `documentDirUri`, `workspaceFolderUri`, `tableColumnWidths` (persisted table order-index -> px per column, read via `TableColumnWidthStorageService`), `frontmatterPanelCollapsed` (persisted YAML card state, read via `FrontmatterPanelStorageService`), `mermaidPreviewMode` (`diagram` \| `code`, global preference via `MermaidPreviewModeStorageService`), `calloutDefaultType` (slug, global preference via `CalloutDefaultTypeStorageService`) | :112 | :1692 |
+| `initSettings` | `settings` (includes `autoSave`) | :~ | :1706 |
+| `settingsUpdated` | `settings` (includes `autoSave`) | :~ | :1707 |
+| `saveResult` | `ok`, `isAutosave`, `error` (on failure) | :~ | :1711 |
+| `saveConflict` | — | `saveMarkdown` handler, host-side fresh-read-vs-baseline mismatch | :1811 |
 | `resolvedImageUris` | `resolved` | :205 | :1750 |
 | `versionPreviewMd` | `timestamp` | :311 | :1735 |
 | `versionPreviewCancelledMd` | — | :~ | :1740 |
 | `versionRestoredMd` | — | :374 | :1745 |
 | `versionHistoryError` | `message` | :272, :317, :340, :358, :380 | :1731 |
-| `diskChangedExternally` | `content`, `fileName`, `documentUri`, `documentDirUri`, `workspaceFolderUri`, `tableColumnWidths`, `frontmatterPanelCollapsed` | requestFreshData handler `:256`, FileSystemWatcher.onDidChange `:597` | :2119 |
+| `diskChangedExternally` | `content`, `fileName`, `documentUri`, `documentDirUri`, `workspaceFolderUri`, `tableColumnWidths`, `frontmatterPanelCollapsed`, `mermaidPreviewMode`, `calloutDefaultType` | requestFreshData handler `:256`, FileSystemWatcher.onDidChange `:597` | :2119 |
+| `diskDeletedExternally` | — | FileSystemWatcher.onDidDelete | :1781 |
 | `reloadFromDiskError` | `message` | requestFreshData handler (catch) `:260` | :2150 |
 | `setTheme` | `kind` | :175, :550 | `ThemeManager`; keyed on `message.type` |
 | `systemDetails` | details | :430 | [feedbackModal.ts](../src/webviews/shared/feedbackModal.ts) |

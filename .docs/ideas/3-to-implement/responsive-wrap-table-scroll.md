@@ -1,7 +1,7 @@
 ---
 title: Responsive wrap and isolated table scroll
 slug: responsive-wrap-table-scroll
-status: planned
+status: to-implement
 created: 2026-08-05
 updated: 2026-08-05
 ---

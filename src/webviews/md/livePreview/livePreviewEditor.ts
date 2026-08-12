@@ -28,12 +28,11 @@
 
 import { EditorState, Compartment, Annotation, EditorSelection } from '@codemirror/state';
 import { EditorView, keymap, drawSelection, highlightActiveLine, lineNumbers } from '@codemirror/view';
-import { history, historyKeymap, defaultKeymap, undo, redo } from '@codemirror/commands';
+import { history, historyKeymap, defaultKeymap, undo, redo, undoDepth, redoDepth } from '@codemirror/commands';
 import { markdown } from '@codemirror/lang-markdown';
 import { GFM } from '@lezer/markdown';
-import { autocompletion } from '@codemirror/autocomplete';
 import { cm6Theme } from './cm6Theme';
-import { livePreviewSlashSource } from './slashMenu';
+import { slashMenuAutocompletion } from './slashMenu';
 import {
     livePreviewSearchField, findCm6Matches, setCm6SearchHighlights,
     clearCm6SearchHighlights, scrollCm6ToMatch,
@@ -42,10 +41,34 @@ import type { Cm6Match } from './livePreviewSearch';
 import { detectInteractionAtPos } from './livePreviewInteractions';
 import type { Cm6Interaction } from './livePreviewInteractions';
 import { livePreviewRevealPlugin, orderedListAtomicRanges } from './revealDecorations';
-import { codeStylingPlugin } from './codeStyling';
+import { codeStylingPlugin } from './codeStylingPlugin';
 import { tableWidgetField, columnWidthsField, setColumnWidthsEffect } from './tableWidget';
+import { tableBoundaryExtensions, tableBoundaryArrowKeymap } from './tableBoundaryEditing';
 import { frontmatterWidgetField, seedFrontmatterCollapsed, seedFrontmatterEditing, setFrontmatterCollapsedCallback } from './frontmatterWidget';
+import {
+    mermaidWidgetField,
+    mermaidAtomicRanges,
+    setMermaidPreviewModeCallback,
+} from './mermaidWidget';
+import {
+    mermaidPreviewModeField,
+    seedMermaidPreviewMode,
+    setMermaidPreviewModeEffect,
+    type MermaidPreviewMode,
+} from './mermaidPreviewMode';
+import { calloutWidgetField, setCalloutDefaultTypeCallback } from './calloutWidget';
+import {
+    imageWidgetField,
+    refreshImageWidgetsEffect,
+    setImageUriResolver,
+} from './imageWidget';
+import {
+    calloutDefaultTypeField,
+    seedCalloutDefaultType,
+    setCalloutDefaultTypeEffect,
+} from './calloutDefaultType';
 import { runFormatCommand, livePreviewFormatKeymap, computePasteLink } from './formatCommands';
+import { paragraphNavigationKeymap } from './paragraphNavigation';
 import { applyTableCellInlineFormatAction } from './tableWidget';
 import { spellcheckExtensions, loadSpellDictionary } from './spellcheck';
 
@@ -74,8 +97,18 @@ export interface LivePreviewMountOptions {
     frontmatterCollapsed?: boolean;
     /** Fired when the user toggles the YAML card — mdWebview.ts persists it to the host. */
     onFrontmatterCollapsedChanged?: (collapsed: boolean) => void;
+    /** Persisted global Mermaid preview mode, read from the host on load. */
+    mermaidPreviewMode?: MermaidPreviewMode;
+    /** Fired when the user changes Mermaid preview mode — mdWebview.ts persists it to the host. */
+    onMermaidPreviewModeChanged?: (mode: MermaidPreviewMode) => void;
+    /** Persisted default callout type for new /callout inserts, read from the host on load. */
+    calloutDefaultType?: string;
+    /** Fired when the user picks a callout type — mdWebview.ts persists it as the new default. */
+    onCalloutDefaultTypeChanged?: (type: string) => void;
     /** Fired on any selection/cursor change (including plain cursor moves with no doc change) — drives the status-bar Ln/Col display. */
     onSelectionChange?: () => void;
+    /** Fired when undo/redo availability changes (incl. after undo/redo). */
+    onHistoryChange?: () => void;
 }
 
 let view: EditorView | null = null;
@@ -109,16 +142,24 @@ export function mountLivePreview(opts: LivePreviewMountOptions): EditorView {
 
     const {
         parent, doc, onDocChanged, lineWrapping = true, onScroll, onModifierClick, reveal = true,
-        showLineNumbers = false, columnWidths, onColumnWidthsChanged, onSelectionChange,
+        showLineNumbers = false, columnWidths, onColumnWidthsChanged, onSelectionChange, onHistoryChange,
         frontmatterCollapsed = false, onFrontmatterCollapsedChanged,
+        mermaidPreviewMode = 'diagram', onMermaidPreviewModeChanged,
+        calloutDefaultType = 'info', onCalloutDefaultTypeChanged,
     } = opts;
     parent.innerHTML = '';
     setFrontmatterCollapsedCallback(onFrontmatterCollapsedChanged);
+    setMermaidPreviewModeCallback(onMermaidPreviewModeChanged);
+    setCalloutDefaultTypeCallback(onCalloutDefaultTypeChanged);
     void loadSpellDictionary();
 
     const updateListener = EditorView.updateListener.of((update) => {
         if (update.viewportChanged) { onScroll?.(); }
         if (update.selectionSet) { onSelectionChange?.(); }
+        if (undoDepth(update.startState) !== undoDepth(update.state)
+            || redoDepth(update.startState) !== redoDepth(update.state)) {
+            onHistoryChange?.();
+        }
         // Checked before the docChanged early-return below: a column-resize
         // commit is an effects-only transaction (see wireResizeHandle in
         // tableWidget.ts) with no doc change at all.
@@ -174,6 +215,7 @@ export function mountLivePreview(opts: LivePreviewMountOptions): EditorView {
             wrapCompartment.of(lineWrapping ? EditorView.lineWrapping : []),
             gutterCompartment.of(showLineNumbers ? [buildLineNumbersGutter()] : []),
             keymap.of(livePreviewFormatKeymap),
+            paragraphNavigationKeymap,
             keymap.of([...defaultKeymap, ...historyKeymap]),
             cm6Theme(),
             livePreviewSearchField(),
@@ -185,10 +227,15 @@ export function mountLivePreview(opts: LivePreviewMountOptions): EditorView {
             seedFrontmatterCollapsed(frontmatterCollapsed),
             seedFrontmatterEditing(false),
             frontmatterWidgetField,
-            revealCompartment.of(reveal ? [livePreviewRevealPlugin, tableWidgetField, orderedListAtomicRanges] : []),
+            seedMermaidPreviewMode(mermaidPreviewMode),
+            mermaidPreviewModeField,
+            seedCalloutDefaultType(calloutDefaultType),
+            calloutDefaultTypeField,
+            calloutWidgetField,
+            revealCompartment.of(reveal ? [livePreviewRevealPlugin, tableWidgetField, ...tableBoundaryExtensions, tableBoundaryArrowKeymap, mermaidWidgetField, mermaidAtomicRanges, imageWidgetField, orderedListAtomicRanges] : []),
             codeStylingPlugin,
             ...spellcheckExtensions,
-            autocompletion({ override: [livePreviewSlashSource], icons: false }),
+            slashMenuAutocompletion(),
             domHandlers,
             updateListener,
         ],
@@ -196,6 +243,10 @@ export function mountLivePreview(opts: LivePreviewMountOptions): EditorView {
 
     view = new EditorView({ state, parent });
     return view;
+}
+
+export function refreshLivePreviewImages(): void {
+    view?.dispatch({ effects: refreshImageWidgetsEffect.of(undefined) });
 }
 
 /** Destroy the view and clear its DOM. Idempotent — safe to call when unmounted. */
@@ -207,6 +258,9 @@ export function unmountLivePreview(): void {
         view = null;
     }
     setFrontmatterCollapsedCallback(undefined);
+    setMermaidPreviewModeCallback(undefined);
+    setCalloutDefaultTypeCallback(undefined);
+    setImageUriResolver(undefined);
 }
 
 export function isLivePreviewActive(): boolean {
@@ -239,6 +293,14 @@ export function livePreviewRedo(): boolean {
     return view ? redo(view) : false;
 }
 
+export function canLivePreviewUndo(): boolean {
+    return view ? undoDepth(view.state) > 0 : false;
+}
+
+export function canLivePreviewRedo(): boolean {
+    return view ? redoDepth(view.state) > 0 : false;
+}
+
 /** Toolbar/keyboard-shortcut entry point (Phase 5). `view` never leaks past this module. */
 export function applyLivePreviewFormat(action: string): boolean {
     if (!view) { return false; }
@@ -260,7 +322,7 @@ export function setLivePreviewLineWrapping(on: boolean): void {
 /** Toggle reveal-on-cursor decorations without rebuilding the view. */
 export function setLivePreviewReveal(on: boolean): void {
     view?.dispatch({
-        effects: revealCompartment.reconfigure(on ? [livePreviewRevealPlugin, tableWidgetField, orderedListAtomicRanges] : []),
+        effects: revealCompartment.reconfigure(on ? [livePreviewRevealPlugin, tableWidgetField, ...tableBoundaryExtensions, tableBoundaryArrowKeymap, mermaidWidgetField, mermaidAtomicRanges, imageWidgetField, orderedListAtomicRanges] : []),
     });
 }
 
@@ -269,6 +331,17 @@ export function setLivePreviewLineNumbers(on: boolean): void {
     view?.dispatch({
         effects: gutterCompartment.reconfigure(on ? [buildLineNumbersGutter()] : []),
     });
+}
+
+/** Update global Mermaid preview mode without rebuilding the view. */
+export function setLivePreviewMermaidMode(mode: MermaidPreviewMode): void {
+    if (!view) { return; }
+    view.dispatch({ effects: setMermaidPreviewModeEffect.of(mode === 'code' ? 'code' : 'diagram') });
+}
+
+export function setLivePreviewCalloutDefaultType(type: string): void {
+    if (!view) { return; }
+    view.dispatch({ effects: setCalloutDefaultTypeEffect.of(type) });
 }
 
 // ===== Re-integration (Phase 2): scroll metrics, TOC scroll, search, click =====

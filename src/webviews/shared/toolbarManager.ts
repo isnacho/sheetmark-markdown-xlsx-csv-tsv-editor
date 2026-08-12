@@ -9,11 +9,14 @@ export interface ToolbarButton {
     enabled?: boolean;
     hidden?: boolean;
     cls?: string; // Extra classes
+    section?: 'start' | 'end';
 }
 
 export class ToolbarManager {
     private container: HTMLElement;
     private buttons: Map<string, HTMLButtonElement> = new Map();
+    private startGroup: HTMLElement | null = null;
+    private endGroup: HTMLElement | null = null;
     private resizeObserver: ResizeObserver | null = null;
     private isSticky: boolean = false;
     private headerHeightHook: (() => void) | null = null;
@@ -119,7 +122,33 @@ export class ToolbarManager {
     setButtons(buttons: ToolbarButton[]) {
         this.container.innerHTML = '';
         this.buttons.clear();
+        this.startGroup = null;
+        this.endGroup = null;
+
+        const hasEndSection = buttons.some(btn => btn.section === 'end');
+        if (hasEndSection) {
+            this.container.classList.add('toolbar-split');
+            this.startGroup = document.createElement('div');
+            this.startGroup.className = 'toolbar-group toolbar-group-start';
+            this.endGroup = document.createElement('div');
+            this.endGroup.className = 'toolbar-group toolbar-group-end';
+            this.container.appendChild(this.startGroup);
+            this.container.appendChild(this.endGroup);
+        } else {
+            this.container.classList.remove('toolbar-split');
+        }
+
         buttons.forEach(btn => this.addButton(btn));
+    }
+
+    private getButtonParent(btn: ToolbarButton): HTMLElement {
+        if (btn.section === 'end' && this.endGroup) {
+            return this.endGroup;
+        }
+        if (this.startGroup) {
+            return this.startGroup;
+        }
+        return this.container;
     }
 
     addButton(btn: ToolbarButton) {
@@ -151,7 +180,7 @@ export class ToolbarManager {
         });
 
         wrapper.appendChild(buttonEl);
-        this.container.appendChild(wrapper);
+        this.getButtonParent(btn).appendChild(wrapper);
         this.buttons.set(btn.id, buttonEl);
 
         if (!btn.label && btn.tooltip) {
@@ -192,10 +221,11 @@ export class ToolbarManager {
     }
 
     prependElement(element: HTMLElement) {
-        if (this.container.firstChild) {
-            this.container.insertBefore(element, this.container.firstChild);
+        const target = this.startGroup || this.container;
+        if (target.firstChild) {
+            target.insertBefore(element, target.firstChild);
         } else {
-            this.container.appendChild(element);
+            target.appendChild(element);
         }
     }
 }

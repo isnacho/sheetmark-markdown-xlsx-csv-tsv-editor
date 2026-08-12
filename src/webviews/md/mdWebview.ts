@@ -25,7 +25,7 @@ import katex from 'markdown-it-katex';
 import hljs from 'highlight.js';
 import { ThemeManager, renderThemeToggleSettingItem } from '../shared/themeManager';
 import { SettingsManager } from '../shared/settingsManager';
-import { ToolbarManager } from '../shared/toolbarManager';
+import { ToolbarManager, type ToolbarButton } from '../shared/toolbarManager';
 import { applyToolbarLayout } from '../shared/toolbarLayout';
 import { wireDelayedToolbarTooltips } from '../shared/delayedTitleTooltip';
 import { Utils } from '../shared/utils';
@@ -50,12 +50,19 @@ import {
     scrollLivePreviewToMatch,
     setLivePreviewReveal,
     setLivePreviewLineNumbers,
+    setLivePreviewMermaidMode,
+    setLivePreviewCalloutDefaultType,
     getLivePreviewCursorPosition,
     applyLivePreviewFormat,
+    canLivePreviewUndo,
+    canLivePreviewRedo,
+    refreshLivePreviewImages,
 } from './livePreview/livePreviewEditor';
+import { setImageUriResolver } from './livePreview/imageWidget';
 import { resolveFrontmatterForRender, markdownBodyWithoutFrontmatter, extractFrontmatter } from './frontmatter';
 import { createFrontmatterCardElement } from './frontmatterCardUi';
 import type { Cm6Match } from './livePreview/livePreviewSearch';
+import { isMermaidFenceContent } from './livePreview/mermaidDetection';
 import mermaid from 'mermaid';
 
 // Inline custom plugin that mimics the markdown-it-mermaid API and behavior,
@@ -114,6 +121,9 @@ let isVersionPreviewMode = false;
 let isSaving = false;
 let isReloadingFromDisk = false;
 let pendingDiskContent: string | null = null;
+// Set when the watcher reports the file was deleted externally; cleared by a
+// subsequent real disk change, a manual reload, or a save that recreates the file.
+let pendingDiskDeleted = false;
 // Mount CM6 preview edit exactly once on the panel's first `initSettings`.
 let hasEnteredPreviewEdit = false;
 let originalContent = '';
@@ -132,6 +142,8 @@ let workspaceFolderUri: string | null = null;
 // live in the .md file's own table syntax.
 let currentTableColumnWidths: Record<number, readonly number[]> = {};
 let frontmatterPanelCollapsed = false;
+let mermaidPreviewMode: 'diagram' | 'code' = 'diagram';
+let calloutDefaultType = 'info';
 
 // Turndown removed — Preview Edit uses CM6 raw markdown only.
 
@@ -144,6 +156,7 @@ let currentSettings = {
     livePreviewReveal: true,
     livePreviewLineNumbers: false,
     moveMdButtonsToEnd: false,
+    autoSave: false,
     isMdEnabled: true
 };
 
@@ -217,12 +230,37 @@ function wrapCodeLines(html: string): string {
 }
 
 function setButtonsEnabled(enabled: boolean) {
-    const ids = ['enableMdEditorButton', 'disableMdEditorButton', 'saveEditsButton',
-        'cancelEditsButton', 'reloadFromDiskButton', 'toggleBackgroundButton', 'openSettingsButton', 'versionHistoryButton'];
+    const ids = ['enableMdEditorButton', 'disableMdEditorButton', 'toggleBackgroundButton', 'openSettingsButton', 'versionHistoryButton'];
     ids.forEach((id) => {
         const el = $(id) as HTMLButtonElement;
         if (el) {el.disabled = !enabled;}
     });
+    updateEditToolbarButtons();
+}
+
+function isEditorDirty(): boolean {
+    return getActiveEditorContent() !== originalContent;
+}
+
+function canReloadFromDisk(): boolean {
+    if (!isEditMode || isSaving || isReloadingFromDisk) {
+        return false;
+    }
+    return pendingDiskContent !== null || pendingDiskDeleted || isEditorDirty();
+}
+
+function updateEditToolbarButtons() {
+    if (!toolbarManager || !isEditMode) {
+        return;
+    }
+
+    const blocked = isSaving || isReloadingFromDisk;
+    const dirty = isEditorDirty();
+
+    toolbarManager.setButtonEnabled('saveEditsButton', !blocked && dirty);
+    toolbarManager.setButtonEnabled('reloadFromDiskButton', !blocked && canReloadFromDisk());
+    toolbarManager.setButtonEnabled('undoEditsButton', !blocked && isLivePreviewActive() && canLivePreviewUndo());
+    toolbarManager.setButtonEnabled('redoEditsButton', !blocked && isLivePreviewActive() && canLivePreviewRedo());
 }
 
 // ===== Markdown-it Setup =====
@@ -321,10 +359,30 @@ md.renderer.rules.image = function (tokens: any, idx: number, options: any, env:
             tokens[idx].attrSet('src', resolved);
         } else {
             tokens[idx].attrSet('data-md-src', src);
+            tokens[idx].attrSet('src', 'data:,');
         }
     }
     return defaultImageRender(tokens, idx, options, env, self);
 };
+
+function wireImageUriResolver() {
+    setImageUriResolver({
+        getResolved: (src) => resolvedImageUriCache.get(src.trim()),
+        requestResolve: (sources) => {
+            const pending = sources
+                .map(s => s.trim())
+                .filter(s => s && !resolvedImageUriCache.has(s));
+            if (pending.length === 0) { return; }
+            vscode.postMessage({ command: 'resolveImageUris', sources: pending });
+        },
+        openLightbox: (src, alt) => showLightbox(src, alt),
+        requestLightbox: (src, alt) => {
+            pendingCm6LightboxSrc = src;
+            vscode.postMessage({ command: 'resolveImageUris', sources: [src] });
+            void alt;
+        },
+    });
+}
 
 function requestLocalImageResolution() {
     const preview = $('markdownPreview');
@@ -383,6 +441,7 @@ function applyResolvedImageUris(resolved: Record<string, string>) {
     });
 
     refreshDataLineCache();
+    refreshLivePreviewImages();
 }
 
 // Fence (code blocks) needs special handling as it's a self-closing block token in terms of rendering
@@ -394,8 +453,7 @@ md.renderer.rules.fence = function (tokens: any, idx: number, options: any, env:
     const langName = info ? info.split(/\s+/g)[0] : '';
     const code = token.content || '';
 
-    const firstLine = code.trim().split(/\n/)[0].trim();
-    if (langName === 'mermaid' || langName === 'flowchart' || (langName === '' && (firstLine === 'gantt' || firstLine === 'sequenceDiagram' || /^graph (?:TB|BT|RL|LR|TD);?$/.test(firstLine)))) {
+    if (isMermaidFenceContent(langName, code)) {
         const dataLine = token.map && token.level === 0 ? ` data-line="${token.map[0]}"` : '';
         return `<div class="mermaid"${dataLine}>${code}</div>`;
     }
@@ -551,6 +609,16 @@ function persistFrontmatterPanelCollapsed(collapsed: boolean) {
     vscode.postMessage({ command: 'saveFrontmatterPanelCollapsed', collapsed });
 }
 
+function persistMermaidPreviewMode(mode: 'diagram' | 'code') {
+    mermaidPreviewMode = mode;
+    vscode.postMessage({ command: 'saveMermaidPreviewMode', mode });
+}
+
+function persistCalloutDefaultType(type: string) {
+    calloutDefaultType = type;
+    vscode.postMessage({ command: 'saveCalloutDefaultType', type });
+}
+
 function applyFrontmatterBlockToDocument(newBlock: string) {
     const extracted = extractFrontmatter(currentContent);
     if (!extracted) { return; }
@@ -627,17 +695,20 @@ function setPreviewEditMode(enabled: boolean) {
     document.body.classList.toggle('cm6-preview-active', enabled);
 
     const saveBtn = $('saveEditsButton');
-    const cancelBtn = $('cancelEditsButton');
+    const undoBtn = $('undoEditsButton');
+    const redoBtn = $('redoEditsButton');
     const reloadBtn = $('reloadFromDiskButton');
     const container = $('markdownContainer');
     const preview = $('markdownPreview');
 
     const saveTarget = (saveBtn?.closest('.tooltip') as HTMLElement | null) || saveBtn;
-    const cancelTarget = (cancelBtn?.closest('.tooltip') as HTMLElement | null) || cancelBtn;
+    const undoTarget = (undoBtn?.closest('.tooltip') as HTMLElement | null) || undoBtn;
+    const redoTarget = (redoBtn?.closest('.tooltip') as HTMLElement | null) || redoBtn;
     const reloadTarget = (reloadBtn?.closest('.tooltip') as HTMLElement | null) || reloadBtn;
 
     if (saveTarget) {saveTarget.classList.toggle('hidden', !enabled);}
-    if (cancelTarget) {cancelTarget.classList.toggle('hidden', !enabled);}
+    if (undoTarget) {undoTarget.classList.toggle('hidden', !enabled);}
+    if (redoTarget) {redoTarget.classList.toggle('hidden', !enabled);}
     if (reloadTarget) {reloadTarget.classList.toggle('hidden', !enabled);}
 
     // Show formatting toolbar in preview edit mode
@@ -652,6 +723,7 @@ function setPreviewEditMode(enabled: boolean) {
 
         if (preview) {
             preview.contentEditable = 'false';
+            wireImageUriResolver();
             mountLivePreview({
                 parent: preview,
                 doc: currentContent,
@@ -661,12 +733,15 @@ function setPreviewEditMode(enabled: boolean) {
                     updateStatusInfo();
                     debouncedCm6TocRefresh(doc);
                     reapplySearch();
+                    scheduleAutosave();
+                    updateEditToolbarButtons();
                 },
                 onScroll: throttledScrollSpy,
                 onModifierClick: handleLivePreviewModifierClick,
                 reveal: currentSettings.livePreviewReveal,
                 showLineNumbers: wantsLivePreviewLineNumbers(),
                 onSelectionChange: updateStatusInfo,
+                onHistoryChange: updateEditToolbarButtons,
                 columnWidths: currentTableColumnWidths,
                 onColumnWidthsChanged: (widths) => {
                     currentTableColumnWidths = widths;
@@ -675,6 +750,14 @@ function setPreviewEditMode(enabled: boolean) {
                 frontmatterCollapsed: frontmatterPanelCollapsed,
                 onFrontmatterCollapsedChanged: (collapsed) => {
                     persistFrontmatterPanelCollapsed(collapsed);
+                },
+                mermaidPreviewMode,
+                onMermaidPreviewModeChanged: (mode) => {
+                    persistMermaidPreviewMode(mode);
+                },
+                calloutDefaultType,
+                onCalloutDefaultTypeChanged: (type) => {
+                    persistCalloutDefaultType(type);
                 },
             });
             refreshCm6Toc(currentContent);
@@ -699,6 +782,7 @@ function setPreviewEditMode(enabled: boolean) {
     applyFormattingToolbarLayout();
     updateHeaderHeight();
     requestAnimationFrame(() => updateHeaderHeight());
+    updateEditToolbarButtons();
 
     updateStatusInfo();
 }
@@ -744,13 +828,13 @@ function handleLivePreviewModifierClick(pos: number) {
     if (interaction.kind === 'heading') {
         const id = tocLineToId.get(interaction.line);
         if (id && navigator.clipboard) {
-            navigator.clipboard.writeText(`#${id}`).then(() => showToast('Link copied')).catch(() => showToast('Copy failed'));
+            navigator.clipboard.writeText(`#${id}`).then(() => showToast('Link copied')).catch(() => showToast('Copy failed', undefined, { icon: 'warning' }));
         }
         return;
     }
 
     if (interaction.kind === 'code' && navigator.clipboard) {
-        navigator.clipboard.writeText(interaction.text).then(() => showToast('Copied')).catch(() => showToast('Copy failed'));
+        navigator.clipboard.writeText(interaction.text).then(() => showToast('Copied')).catch(() => showToast('Copy failed', undefined, { icon: 'warning' }));
     }
 }
 
@@ -823,14 +907,45 @@ function setVersionPreviewMode(enabled: boolean, label?: string) {
     }
 }
 
-function performSave() {
+function performSave(isAutosave = false) {
     if (isSaving || !isEditMode) {return;}
+    if (!isEditorDirty()) {return;}
+    if (pendingDiskContent !== null) {
+        // Autosave never interrupts with a dialog over an unresolved conflict — it
+        // just skips this tick; the next edit reschedules and tries again.
+        if (isAutosave) {return;}
+        confirmOverwriteConflict().then((confirmed) => {
+            if (!confirmed) {return;}
+            pendingDiskContent = null;
+            hideToast();
+            doSave(false, isAutosave);
+        });
+        return;
+    }
+    doSave(false, isAutosave);
+}
+
+let lastSaveWasAutosave = false;
+
+function doSave(force = false, isAutosave = false) {
     isSaving = true;
+    lastSaveWasAutosave = isAutosave;
     setButtonsEnabled(false);
-
     currentContent = getActiveEditorContent();
+    vscode.postMessage({ command: 'saveMarkdown', text: currentContent, force, isAutosave });
+}
 
-    vscode.postMessage({ command: 'saveMarkdown', text: currentContent });
+let autoSaveTimer: number | null = null;
+
+function scheduleAutosave() {
+    if (!currentSettings.autoSave || !isEditMode) {return;}
+    if (autoSaveTimer !== null) {window.clearTimeout(autoSaveTimer);}
+    autoSaveTimer = window.setTimeout(() => {
+        autoSaveTimer = null;
+        if (!currentSettings.autoSave || !isEditMode || isSaving) {return;}
+        if (getActiveEditorContent() === originalContent) {return;}
+        performSave(true);
+    }, 1200);
 }
 
 function cancelEdit() {
@@ -841,6 +956,7 @@ function cancelEdit() {
         reapplySearch();
         updateStatusInfo();
     }
+    updateEditToolbarButtons();
 }
 
 // Pushes freshly-read disk content into whichever surface is currently active.
@@ -860,28 +976,29 @@ function applyReloadedContent(text: string) {
     }
 
     updateStatusInfo();
+    updateEditToolbarButtons();
 }
 
 // VS Code webviews are sandboxed without `allow-modals` — window.confirm()/alert()/
 // prompt() are silently blocked, so a real dialog is built here reusing the shared
 // .feedback-overlay/.feedback-modal pattern (same one FeedbackModal/ProjectsModal use).
-function confirmDiscardAndReload(): Promise<boolean> {
+function confirmModal(title: string, message: string, confirmLabel: string): Promise<boolean> {
     return new Promise((resolve) => {
         const overlay = document.createElement('div');
-        overlay.className = 'feedback-overlay';
+        overlay.className = 'feedback-overlay reload-confirm-overlay';
         const modal = document.createElement('div');
         modal.className = 'feedback-modal';
         modal.innerHTML = `
             <div class="feedback-header">
-                <h2>Reload from Disk</h2>
+                <h2>${escapeHtmlAttr(title)}</h2>
             </div>
             <div class="feedback-body" style="padding: 20px 24px 24px 24px; gap: 20px;">
                 <p style="margin: 0; font-size: 13.5px; color: var(--text-color); line-height: 1.5;">
-                    Discard unsaved changes and reload from disk?
+                    ${escapeHtmlAttr(message)}
                 </p>
                 <div style="display: flex; justify-content: flex-end; gap: 8px;">
                     <button class="reload-confirm-cancel" type="button" style="background: none; border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-color); font-size: 13px; font-weight: 500; padding: 6px 14px; cursor: pointer;">Cancel</button>
-                    <button class="reload-confirm-ok" type="button" style="background: var(--warning-color); border: none; border-radius: 6px; color: var(--contrast-text); font-size: 13px; font-weight: 600; padding: 6px 14px; cursor: pointer;">Discard &amp; Reload</button>
+                    <button class="reload-confirm-ok" type="button" style="background: var(--warning-color); border: none; border-radius: 6px; color: var(--contrast-text); font-size: 13px; font-weight: 600; padding: 6px 14px; cursor: pointer;">${escapeHtmlAttr(confirmLabel)}</button>
                 </div>
             </div>
         `;
@@ -903,9 +1020,21 @@ function confirmDiscardAndReload(): Promise<boolean> {
     });
 }
 
+function confirmDiscardAndReload(): Promise<boolean> {
+    return confirmModal('Reload from Disk', 'Discard unsaved changes and reload from disk?', 'Discard & Reload');
+}
+
+function confirmOverwriteConflict(): Promise<boolean> {
+    return confirmModal(
+        'File Changed on Disk',
+        'This file changed on disk since you opened it. Overwrite it with your local changes anyway?',
+        'Overwrite'
+    );
+}
+
 // Manual "Reload from disk" toolbar button handler.
 async function requestReloadFromDisk() {
-    if (isSaving || isReloadingFromDisk || !isEditMode) {return;}
+    if (isSaving || isReloadingFromDisk || !isEditMode || !canReloadFromDisk()) {return;}
     currentContent = getActiveEditorContent();
     const dirty = currentContent !== originalContent;
     if (dirty && !(await confirmDiscardAndReload())) {
@@ -959,8 +1088,32 @@ function applyFormat(action: string) {
 
 // ===== UI Helpers =====
 let toastDismissTimer: number | null = null;
+let toastOnDismiss: (() => void) | null = null;
 
-function showToast(message: string, action?: { label: string; onClick: () => void }) {
+// Same outline/gray style for both — only the shape differs. Success: plain
+// checkmark for positive acknowledgements (Saved, Copied, Reloaded, ...).
+// Warning: caution triangle for anything the user should pay attention to
+// (disk conflicts/deletions, failures).
+const TOAST_ICON_SUCCESS = '<polyline points="20 6 9 17 4 12"></polyline>';
+const TOAST_ICON_WARNING = '<path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>'
+    + '<line x1="12" y1="9" x2="12" y2="13"></line>'
+    + '<line x1="12" y1="17" x2="12.01" y2="17"></line>';
+
+function hideToast() {
+    const toast = $('toastNotification');
+    if (toastDismissTimer !== null) {
+        window.clearTimeout(toastDismissTimer);
+        toastDismissTimer = null;
+    }
+    toast?.classList.remove('show');
+    toastOnDismiss = null;
+}
+
+function showToast(
+    message: string,
+    action?: { label: string; onClick: () => void },
+    opts?: { persistent?: boolean; onDismiss?: () => void; icon?: 'success' | 'warning' }
+) {
     let toast = $('toastNotification');
     if (!toast) {
         toast = document.createElement('div');
@@ -968,18 +1121,26 @@ function showToast(message: string, action?: { label: string; onClick: () => voi
         toast.className = 'toast-notification';
         toast.innerHTML = `
             <div class="toast-icon-wrapper">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="20 6 9 17 4 12"></polyline>
-                </svg>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></svg>
             </div>
             <span class="toast-text"></span>
             <button class="toast-action hidden" type="button"></button>
+            <button class="toast-close" type="button" aria-label="Dismiss">&times;</button>
         `;
         document.body.appendChild(toast);
+
+        toast.querySelector('.toast-close')?.addEventListener('click', () => {
+            const onDismiss = toastOnDismiss;
+            hideToast();
+            onDismiss?.();
+        });
     }
     if (toast) {
         const toastText = toast.querySelector('.toast-text') || $('toastText');
         if (toastText) {toastText.textContent = message;}
+
+        const iconSvg = toast.querySelector('.toast-icon-wrapper svg');
+        if (iconSvg) {iconSvg.innerHTML = opts?.icon === 'warning' ? TOAST_ICON_WARNING : TOAST_ICON_SUCCESS;}
 
         const actionBtn = toast.querySelector('.toast-action') as HTMLButtonElement | null;
         if (actionBtn) {
@@ -993,12 +1154,19 @@ function showToast(message: string, action?: { label: string; onClick: () => voi
             }
         }
 
+        toastOnDismiss = opts?.onDismiss || null;
+
         toast.classList.add('show');
         if (toastDismissTimer !== null) {window.clearTimeout(toastDismissTimer);}
-        toastDismissTimer = window.setTimeout(() => {
-            toast!.classList.remove('show');
+        if (opts?.persistent) {
             toastDismissTimer = null;
-        }, action ? 8000 : 2000);
+        } else {
+            toastDismissTimer = window.setTimeout(() => {
+                toast!.classList.remove('show');
+                toastDismissTimer = null;
+                toastOnDismiss = null;
+            }, action ? 8000 : 6000);
+        }
     }
 }
 
@@ -1373,6 +1541,7 @@ function applySettings(settings: any, persist = false) {
     const chkShowLineNumbers = $('chkShowLineNumbers') as HTMLInputElement;
     const chkLivePreviewReveal = $('chkLivePreviewReveal') as HTMLInputElement;
     const chkLivePreviewLineNumbers = $('chkLivePreviewLineNumbers') as HTMLInputElement;
+    const chkAutoSave = $('chkAutoSave') as HTMLInputElement;
 
     if (chkWordWrap) {chkWordWrap.checked = currentSettings.wordWrap;}
     if (chkStickyToolbar) {chkStickyToolbar.checked = currentSettings.stickyToolbar;}
@@ -1380,6 +1549,7 @@ function applySettings(settings: any, persist = false) {
     if (chkShowLineNumbers) {chkShowLineNumbers.checked = currentSettings.showLineNumbers;}
     if (chkLivePreviewReveal) {chkLivePreviewReveal.checked = currentSettings.livePreviewReveal;}
     if (chkLivePreviewLineNumbers) {chkLivePreviewLineNumbers.checked = currentSettings.livePreviewLineNumbers;}
+    if (chkAutoSave) {chkAutoSave.checked = currentSettings.autoSave;}
 
     // Line numbers
     document.body.classList.toggle('show-line-numbers', !!currentSettings.showLineNumbers);
@@ -1475,6 +1645,16 @@ function initializeSettings() {
                 currentSettings.moveMdButtonsToEnd = val;
                 applySettings(currentSettings, true);
             }
+        },
+        {
+            id: 'chkAutoSave',
+            label: 'Autosave',
+            tooltip: 'Automatically save Markdown edits after a short debounce.',
+            defaultValue: currentSettings.autoSave,
+            onChange: (val: boolean) => {
+                currentSettings.autoSave = val;
+                applySettings(currentSettings, true);
+            }
         }
     ];
 
@@ -1499,6 +1679,8 @@ function reorderMdToolbarButtons() {
     if (!toolbarManager) {return;}
 
     const toolbar = document.getElementById('toolbar');
+    const startGroup = toolbar?.querySelector('.toolbar-group-start') as HTMLElement | null;
+    const endGroup = toolbar?.querySelector('.toolbar-group-end') as HTMLElement | null;
     const enableBtn = toolbarManager.getButton('enableMdEditorButton');
     const disableBtn = toolbarManager.getButton('disableMdEditorButton');
     const saveBtn = toolbarManager.getButton('saveEditsButton');
@@ -1518,11 +1700,13 @@ function reorderMdToolbarButtons() {
     }
 
     if (currentSettings.moveMdButtonsToEnd) {
-        toolbar.insertBefore(enableWrap, helpWrap);
-        toolbar.insertBefore(disableWrap, helpWrap);
+        const targetParent = endGroup || toolbar;
+        targetParent.insertBefore(enableWrap, helpWrap);
+        targetParent.insertBefore(disableWrap, helpWrap);
     } else {
-        toolbar.insertBefore(enableWrap, anchorWrap);
-        toolbar.insertBefore(disableWrap, anchorWrap);
+        const targetParent = startGroup || toolbar;
+        targetParent.insertBefore(enableWrap, anchorWrap);
+        targetParent.insertBefore(disableWrap, anchorWrap);
     }
 }
 
@@ -1607,13 +1791,20 @@ window.addEventListener('message', (event) => {
             workspaceFolderUri = m.workspaceFolderUri || null;
             currentTableColumnWidths = m.tableColumnWidths || {};
             frontmatterPanelCollapsed = !!m.frontmatterPanelCollapsed;
+            mermaidPreviewMode = m.mermaidPreviewMode === 'code' ? 'code' : 'diagram';
+            calloutDefaultType = typeof m.calloutDefaultType === 'string' && /^[\w-]*$/.test(m.calloutDefaultType)
+                ? m.calloutDefaultType.toLowerCase()
+                : 'info';
             resolvedImageUriCache.clear();
             if (isPreviewEditMode && isLivePreviewActive()) {
+                setLivePreviewMermaidMode(mermaidPreviewMode);
+                setLivePreviewCalloutDefaultType(calloutDefaultType);
                 applyReloadedContent(currentContent);
             } else if (hasEnteredPreviewEdit || isVersionPreviewMode) {
                 renderMarkdown(currentContent);
             }
             updateStatusInfo();
+            updateEditToolbarButtons();
             break;
 
         case 'diskChangedExternally': {
@@ -1621,32 +1812,56 @@ window.addEventListener('message', (event) => {
             documentDirUri = m.documentDirUri || documentDirUri;
             workspaceFolderUri = m.workspaceFolderUri || workspaceFolderUri;
             currentTableColumnWidths = m.tableColumnWidths || currentTableColumnWidths;
+            mermaidPreviewMode = m.mermaidPreviewMode === 'code' ? 'code' : mermaidPreviewMode;
+            if (typeof m.calloutDefaultType === 'string' && /^[\w-]*$/.test(m.calloutDefaultType)) {
+                calloutDefaultType = m.calloutDefaultType.toLowerCase();
+            }
+            if (isPreviewEditMode && isLivePreviewActive()) {
+                setLivePreviewMermaidMode(mermaidPreviewMode);
+                setLivePreviewCalloutDefaultType(calloutDefaultType);
+            }
 
+            const wasManualReload = isReloadingFromDisk;
             if (isReloadingFromDisk) {
                 isReloadingFromDisk = false;
                 setButtonsEnabled(true);
             }
 
-            const dirty = isEditMode && getActiveEditorContent() !== originalContent;
-            if (dirty) {
-                pendingDiskContent = m.content || '';
-                showToast('File changed on disk', {
-                    label: 'Reload',
-                    onClick: () => {
-                        if (pendingDiskContent === null) {return;}
-                        confirmDiscardAndReload().then((confirmed) => {
-                            if (confirmed && pendingDiskContent !== null) {
-                                applyReloadedContent(pendingDiskContent);
-                                pendingDiskContent = null;
-                                showToast('Reloaded from disk');
-                            }
-                        });
-                    }
-                });
-            } else {
+            // A real change supersedes any prior "deleted" notification.
+            pendingDiskDeleted = false;
+
+            // An explicit reload request (button already handled its own dirty-check/
+            // confirm) or reading mode (nothing local can be lost) applies directly —
+            // the persistent toast below is only for unprompted watcher-detected changes.
+            if (wasManualReload || !isEditMode) {
+                pendingDiskContent = null;
                 applyReloadedContent(m.content || '');
                 showToast('Reloaded from disk');
+                break;
             }
+
+            pendingDiskContent = m.content || '';
+            showToast('File changed on disk', {
+                label: 'Reload',
+                onClick: () => {
+                    if (pendingDiskContent === null) {return;}
+                    const applyPending = () => {
+                        if (pendingDiskContent === null) {return;}
+                        applyReloadedContent(pendingDiskContent);
+                        pendingDiskContent = null;
+                        showToast('Reloaded from disk');
+                    };
+                    const dirty = isEditMode && getActiveEditorContent() !== originalContent;
+                    if (dirty) {
+                        confirmDiscardAndReload().then((confirmed) => {
+                            if (confirmed) {applyPending();}
+                        });
+                    } else {
+                        applyPending();
+                    }
+                }
+            }, { persistent: true, icon: 'warning' });
+            updateEditToolbarButtons();
             break;
         }
 
@@ -1655,7 +1870,13 @@ window.addEventListener('message', (event) => {
                 isReloadingFromDisk = false;
                 setButtonsEnabled(true);
             }
-            showToast('Error reloading from disk');
+            showToast('Error reloading from disk', undefined, { icon: 'warning' });
+            break;
+
+        case 'diskDeletedExternally':
+            pendingDiskDeleted = true;
+            showToast('File deleted from disk', undefined, { persistent: true, icon: 'warning' });
+            updateEditToolbarButtons();
             break;
 
         case 'initSettings':
@@ -1674,15 +1895,30 @@ window.addEventListener('message', (event) => {
             isSaving = false;
             setButtonsEnabled(true);
             if (m.ok) {
-                showToast('Saved');
+                showToast(m.isAutosave ? 'Autosaved' : 'Saved');
                 originalContent = currentContent;
+                // A successful save recreates the file if it had been deleted externally.
+                pendingDiskDeleted = false;
             } else {
-                showToast('Error saving');
+                showToast(m.isAutosave ? 'Autosave failed' : 'Error saving', undefined, { icon: 'warning' });
             }
             break;
 
+        case 'saveConflict':
+            isSaving = false;
+            setButtonsEnabled(true);
+            if (lastSaveWasAutosave) {
+                // Autosave never interrupts with a dialog; the file watcher will
+                // independently surface the usual "file changed on disk" toast.
+                break;
+            }
+            confirmOverwriteConflict().then((confirmed) => {
+                if (confirmed) {doSave(true);}
+            });
+            break;
+
         case 'versionHistoryError':
-            showToast(m.message || 'Version history failed');
+            showToast(m.message || 'Version history failed', undefined, { icon: 'warning' });
             break;
 
         case 'versionPreviewMd':
@@ -1715,8 +1951,8 @@ function wireButtons() {
     reorderMdToolbarButtons();
 }
 
-function buildToolbarButtons() {
-    const buttons = [
+function buildToolbarButtons(): ToolbarButton[] {
+    const buttons: ToolbarButton[] = [
         {
             id: 'enableMdEditorButton',
             icon: Icons.Zap,
@@ -1764,18 +2000,27 @@ function buildToolbarButtons() {
             onClick: () => performSave()
         },
         {
-            id: 'cancelEditsButton',
-            icon: Icons.Cancel,
-            label: 'Cancel',
-            tooltip: 'Cancel Changes (Esc)',
+            id: 'undoEditsButton',
+            icon: Icons.Undo,
+            tooltip: 'Undo (Ctrl+Z)',
+            cls: 'icon-only',
             hidden: true,
-            onClick: () => cancelEdit()
+            onClick: () => applyFormat('undo')
+        },
+        {
+            id: 'redoEditsButton',
+            icon: Icons.Redo,
+            tooltip: 'Redo (Ctrl+Shift+Z)',
+            cls: 'icon-only',
+            hidden: true,
+            onClick: () => applyFormat('redo')
         },
         {
             id: 'toggleTocButton',
             icon: Icons.Outline,
             tooltip: 'Toggle Outline',
             cls: 'icon-only',
+            section: 'end',
             onClick: () => {
                 currentSettings.showOutline = !currentSettings.showOutline;
                 applySettings(currentSettings, true);
@@ -1786,6 +2031,7 @@ function buildToolbarButtons() {
             icon: Icons.Search,
             tooltip: 'Search in Preview (Ctrl/Cmd+F)',
             cls: 'icon-only',
+            section: 'end',
             onClick: () => toggleSearchOverlay()
         },
         {
@@ -1793,6 +2039,7 @@ function buildToolbarButtons() {
             icon: Icons.Settings,
             tooltip: 'Settings',
             cls: 'icon-only',
+            section: 'end',
             onClick: () => { /* Handled by wireSettingsUI */ }
         },
         {
@@ -1800,12 +2047,13 @@ function buildToolbarButtons() {
             icon: Icons.CopyHtml,
             tooltip: 'Copy as HTML',
             cls: 'icon-only edit-mode-hide',
+            section: 'end',
             onClick: () => {
                 const preview = $('markdownPreview');
                 if (preview && navigator.clipboard) {
                     navigator.clipboard.writeText(preview.innerHTML)
                         .then(() => showToast('HTML copied'))
-                        .catch(() => showToast('Copy failed'));
+                        .catch(() => showToast('Copy failed', undefined, { icon: 'warning' }));
                 }
             }
         },
@@ -1814,6 +2062,7 @@ function buildToolbarButtons() {
             icon: Icons.VersionHistory,
             tooltip: 'Version History',
             cls: 'icon-only edit-mode-hide',
+            section: 'end',
             onClick: () => {
                 vscode.postMessage({ command: 'showVersionHistory' });
             }
@@ -1823,6 +2072,7 @@ function buildToolbarButtons() {
             icon: Icons.Link,
             tooltip: 'Other Projects',
             cls: 'icon-only edit-mode-hide',
+            section: 'end',
             onClick: () => {
                 ProjectsModal.show();
             }
@@ -1832,6 +2082,7 @@ function buildToolbarButtons() {
             icon: Icons.Help,
             tooltip: 'Help & Feedback',
             cls: 'icon-only edit-mode-hide',
+            section: 'end',
             onClick: () => {
                 FeedbackModal.show();
             }
@@ -1843,6 +2094,8 @@ function buildToolbarButtons() {
         const disableButton = buttons.shift();
         const helpIndex = buttons.findIndex((button) => button.id === 'helpButton');
         if (enableButton && disableButton) {
+            enableButton.section = 'end';
+            disableButton.section = 'end';
             if (helpIndex >= 0) {
                 buttons.splice(helpIndex, 0, enableButton, disableButton);
             } else {
@@ -1962,7 +2215,7 @@ function wirePreviewInteractions() {
             const encoded = copyBtn.getAttribute('data-code') || '';
             const code = decodeURIComponent(encoded);
             if (navigator.clipboard) {
-                navigator.clipboard.writeText(code).then(() => showToast('Copied')).catch(() => showToast('Copy failed'));
+                navigator.clipboard.writeText(code).then(() => showToast('Copied')).catch(() => showToast('Copy failed', undefined, { icon: 'warning' }));
             }
             return;
         }
@@ -1977,7 +2230,7 @@ function wirePreviewInteractions() {
                 const decoded = decodeURIComponent(headingId);
                 navigator.clipboard.writeText(`#${decoded}`)
                     .then(() => showToast('Link copied'))
-                    .catch(() => showToast('Copy failed'));
+                    .catch(() => showToast('Copy failed', undefined, { icon: 'warning' }));
             }
             return;
         }
@@ -2130,8 +2383,6 @@ const formatIconMap: Record<string, string> = {
     tableRemoveColumn: '<span class="fmt-text-icon">-C</span>',
     codeBlock: Icons.CodeBlock,
     hr: Icons.HorizontalRule,
-    undo: Icons.Undo,
-    redo: Icons.Redo,
     duplicateLine: Icons.DuplicateLine,
     deleteLine: Icons.DeleteLine,
     moveUp: Icons.MoveUp,

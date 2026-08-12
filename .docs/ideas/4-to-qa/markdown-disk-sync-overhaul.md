@@ -1,7 +1,7 @@
 ---
 title: Markdown disk sync overhaul (reload, save conflicts, autosave)
 slug: markdown-disk-sync-overhaul
-status: brainstormed
+status: to-qa
 created: 2026-07-22
 updated: 2026-08-12
 ---
@@ -142,11 +142,83 @@ flowchart TD
 
 ## Plan
 
-_Not started._
+Full plan drafted and approved in Plan mode; condensed here.
+
+**Message protocol additions:** `diskDeletedExternally` (host to webview, watcher
+`onDidDelete`), `saveConflict` (host to webview, host's own fresh-read-before-write
+caught a disk change the webview didn't know about yet), `saveMarkdown` gains
+`force`/`isAutosave` fields, `updateSettings`/`initSettings`/`settingsUpdated`
+gain `autoSave` in the generic `settings` payload.
+
+1. **Toast component** (`showToast()` in `mdWebview.ts` + `.toast-notification` in
+   `mdWebview.css`): add `persistent`/`onDismiss` options and an explicit close
+   (`x`) button; reposition every toast from center-screen to bottom-center.
+2. **Unify external disk-change handling**: `diskChangedExternally` always sets
+   `pendingDiskContent` and shows a persistent toast (Reload / x) for
+   unprompted watcher-detected changes; an explicit manual-reload request or
+   reading mode applies directly, bypassing the toast. Dirty/clean only
+   branches inside the Reload click (discard-confirm modal vs. immediate apply).
+3. **File deleted externally**: host watcher adds `onDidDelete` ->
+   `diskDeletedExternally`; webview tracks `pendingDiskDeleted`, shows an
+   informational persistent toast with no action (nothing to reload); a
+   later save just recreates the file (not treated as a conflict).
+4. **Manual reload button**: no behavior change (already matches the rule).
+5. **Save-vs-disk conflict guard**: client-side primary check on
+   `pendingDiskContent` in `performSave()` (shows `confirmOverwriteConflict()`
+   modal before overwriting); host-side fallback in `saveMarkdown` does a
+   fresh disk read compared to its tracked `currentContent` baseline and
+   responds with `saveConflict` instead of writing if they differ (covers the
+   narrow race where the client doesn't know yet). `force: true` bypasses the
+   host check after an explicit user confirmation.
+6. **Save/watcher race hardening**: host tracks `lastSaveTime`; watcher's
+   `onDidChange` guard becomes `isSaving || Date.now() - lastSaveTime < 1000`
+   (mirrors the spreadsheet provider's existing pattern).
+7. **Markdown autosave**: new `xlsxViewer.md.autoSave` setting (default
+   `false`); webview debounces (1200ms) off the CM6 `onDocChanged` callback,
+   skips silently (no dialog) if there's an unresolved `pendingDiskContent`
+   conflict, and shows "Autosaved"/"Autosave failed" instead of "Saved"/"Error
+   saving".
+8. **Docs**: update `.docs/MESSAGE-PROTOCOL.md` with the new/changed messages;
+   opportunistically fix two pre-existing drifts found during research
+   (`toggleView` dead code, `initMarkdown` field name).
+
+Files touched: `src/mdEditorProvider.ts`, `src/webviews/md/mdWebview.ts`,
+`resources/md/mdWebview.css`, `package.json`, `.docs/MESSAGE-PROTOCOL.md`.
 
 ## Implementation Log
 
-_Not started._
+Implemented as planned, in one continuous pass (Plan approved, then
+implemented immediately per user direction — no separate stop between Plan
+and Implement this round).
+
+- `src/webviews/md/mdWebview.ts`: extended `showToast()` with `persistent`/
+  `onDismiss` + a close button (`hideToast()` helper added); rewrote the
+  `diskChangedExternally` handler per the unified rule; added
+  `pendingDiskDeleted` state + `diskDeletedExternally` handler; refactored
+  `confirmDiscardAndReload()`'s modal markup into a shared `confirmModal()`
+  helper and added `confirmOverwriteConflict()` on top of it; split
+  `performSave()`/`doSave()` with the `pendingDiskContent` conflict guard and
+  `isAutosave` threading; added `scheduleAutosave()` wired off the CM6
+  `onDocChanged` callback; added `chkAutoSave` settings-panel checkbox; added
+  `case 'saveConflict'` (skips the confirm dialog silently when
+  `lastSaveWasAutosave` is true, so autosave never interrupts — a small
+  addition beyond the literal plan text needed to fully satisfy "autosave
+  never interrupts" against the host-side fallback path too).
+- `src/mdEditorProvider.ts`: added `lastSaveTime`; watcher gained a second
+  `onDidDelete` listener (disposed alongside the existing one); `saveMarkdown`
+  handler gained the fresh-read-vs-`currentContent` conflict check (skipped
+  when `force`), `saveConflict` response, and now echoes `isAutosave` back on
+  `saveResult`; `restoreVersion` also updates `lastSaveTime`; all three
+  settings-payload construction sites and `updateSettings` gained `autoSave`.
+- `resources/md/mdWebview.css`: `.toast-notification` repositioned from
+  center-screen to bottom-center; added `.toast-close` styling.
+- `package.json`: added `xlsxViewer.md.autoSave` (boolean, default `false`).
+- `.docs/MESSAGE-PROTOCOL.md`: added the new/changed messages; fixed the
+  `toggleView` (dead) and `initMarkdown` (`content` not `text`) drift noted
+  during brainstorming.
+- Verification: `npm run compile` (type-check + lint + bundle) passes with 0
+  errors. No automated test suite exists for this repo per `CLAUDE.md` — QA
+  phase will need a manual smoke test.
 
 ## QA
 

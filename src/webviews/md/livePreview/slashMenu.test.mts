@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { EditorState } from '@codemirror/state';
 import { CompletionContext } from '@codemirror/autocomplete';
-import { slashMenuSource, slashMenuCompletions, computeSlashApply, SLASH_OPTIONS } from './slashMenu.ts';
+import { slashMenuSource, slashMenuCompletions, computeSlashApply, SLASH_OPTIONS, SLASH_ICON_BY_LABEL } from './slashMenu.ts';
 
 function stateFor(doc: string): EditorState {
     return EditorState.create({ doc });
@@ -79,6 +79,22 @@ test('computeSlashApply: "Table" inserts the fixed snippet with the cursor at it
     const tr = state.update(computeSlashApply(opt, 1, 6));
     assert.ok(tr.state.doc.toString().includes('| Header 1 | Header 2 | Header 3 |'));
     assert.equal(tr.state.selection.main.from, opt.insert.length);
+});
+
+test('every slash option has a toolbar icon', () => {
+    for (const option of SLASH_OPTIONS) {
+        assert.ok(SLASH_ICON_BY_LABEL[option.label], `missing icon for "${option.label}"`);
+        assert.match(SLASH_ICON_BY_LABEL[option.label], /^<svg/);
+    }
+});
+
+test('slash completions expose Notion-style markdown hints except plain Text', () => {
+    const byLabel = Object.fromEntries(slashMenuCompletions.map((c) => [c.label, c.detail]));
+    assert.equal(byLabel['Text'], undefined);
+    assert.equal(byLabel['Heading 1'], '#');
+    assert.equal(byLabel['Heading 4'], '####');
+    assert.equal(byLabel['Bulleted List'], '-');
+    assert.equal(byLabel['Divider'], '---');
 });
 
 test('computeSlashApply: "Text" just removes the trigger, leaving an empty line', () => {

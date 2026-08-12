@@ -1,7 +1,7 @@
 ---
 title: {{Idea Title}}
 slug: {{kebab-case-slug}}
-status: captured
+status: to-brainstorm
 created: {{DATE}}
 updated: {{DATE}}
 ---

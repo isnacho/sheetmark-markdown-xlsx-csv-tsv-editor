@@ -8,7 +8,7 @@ import { EditorState } from '@codemirror/state';
 import { markdown } from '@codemirror/lang-markdown';
 import { GFM } from '@lezer/markdown';
 import {
-    computeRevealDecorations, computeToggleTaskMarker, TaskCheckboxWidget,
+    computeRevealDecorations, computeToggleTaskMarker, TaskCheckboxWidget, HorizontalRuleWidget,
     numberToLowerAlpha, numberToLowerRoman, formatOrderedMarkerLabel,
     OrderedMarkerWidget, BulletMarkerWidget, computeOrderedMarkerRanges,
 } from './revealDecorations.ts';
@@ -379,27 +379,39 @@ test('computeToggleTaskMarker: flips "[ ]"->"[x]" and "[x]"/"[X]"->"[ ]"', () =>
     }
 });
 
-test('horizontal rule: cursor away renders the styled rule, hiding the raw dashes', () => {
+test('horizontal rule: cursor away renders the styled rule widget, hiding the raw dashes', () => {
     const doc = 'before\n\n---\n\nafter';
     const from = doc.indexOf('---');
-    const decos = decorate(doc, 0);
-    assert.deepEqual(decos.find(d => d.from === from), { from, to: from + 3, class: 'cm-md-hr-content' });
+    const widgets = widgetsOfType(doc, HorizontalRuleWidget, 0);
+    assert.equal(widgets.length, 1);
+    assert.equal(widgets[0].from, from);
+    assert.equal(widgets[0].to, from + 3);
+    assert.equal(widgets[0].widget.nodeFrom, from);
+    assert.equal(widgets[0].widget.nodeTo, from + 3);
 });
 
 test('horizontal rule: cursor on the line shows raw text, no decoration', () => {
     const doc = 'before\n\n---\n\nafter';
     const pos = doc.indexOf('---');
-    const decos = decorate(doc, pos);
-    assert.equal(decos.find(d => d.from === pos), undefined);
+    assert.equal(widgetsOfType(doc, HorizontalRuleWidget, pos).length, 0);
+});
+
+test('horizontal rule: collapsed caret at end of the rule line still reveals raw text', () => {
+    const doc = 'before\n\n---\n\nafter';
+    const endOfRuleLine = doc.indexOf('---') + 3;
+    assert.equal(widgetsOfType(doc, HorizontalRuleWidget, endOfRuleLine).length, 0);
 });
 
 test('horizontal rule: "***", "___", and longer dash runs are all detected', () => {
     for (const rule of ['***', '___', '----------']) {
         const doc = `x\n\n${rule}\n\ny`;
-        const decos = decorate(doc, 0);
-        const hr = decos.find(d => d.class === 'cm-md-hr-content');
-        assert.ok(hr, `expected a decorated HR for ${JSON.stringify(rule)}`);
-        assert.equal(hr!.to - hr!.from, rule.length);
+        const from = doc.indexOf(rule);
+        const widgets = widgetsOfType(doc, HorizontalRuleWidget, 0);
+        assert.equal(widgets.length, 1);
+        assert.equal(widgets[0].from, from);
+        assert.equal(widgets[0].to, from + rule.length);
+        assert.equal(widgets[0].widget.nodeFrom, from);
+        assert.equal(widgets[0].widget.nodeTo, from + rule.length);
     }
 });
 

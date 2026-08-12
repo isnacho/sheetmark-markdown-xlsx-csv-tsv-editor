@@ -5,14 +5,20 @@ import type { IncomingMessage } from 'http';
 import { VERSION_HISTORY_RETENTION_MS, VERSION_HISTORY_SNAPSHOT_DEBOUNCE_MS, buildGroupedVersionHistoryItems, formatVersionHistoryTimestamp, getVersionHistoryFile } from './shared/versionHistory';
 import { TableColumnWidthStorageService } from './shared/tableColumnWidthStorageService';
 import { FrontmatterPanelStorageService } from './shared/frontmatterPanelStorageService';
+import { MermaidPreviewModeStorageService } from './shared/mermaidPreviewModeStorageService';
+import { CalloutDefaultTypeStorageService } from './shared/calloutDefaultTypeStorageService';
 
 export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
     private readonly tableColumnWidthStorage: TableColumnWidthStorageService;
     private readonly frontmatterPanelStorage: FrontmatterPanelStorageService;
+    private readonly mermaidPreviewModeStorage: MermaidPreviewModeStorageService;
+    private readonly calloutDefaultTypeStorage: CalloutDefaultTypeStorageService;
 
     constructor(private readonly context: vscode.ExtensionContext) {
         this.tableColumnWidthStorage = new TableColumnWidthStorageService(context);
         this.frontmatterPanelStorage = new FrontmatterPanelStorageService(context);
+        this.mermaidPreviewModeStorage = new MermaidPreviewModeStorageService(context);
+        this.calloutDefaultTypeStorage = new CalloutDefaultTypeStorageService(context);
     }
 
     async openCustomDocument(
@@ -48,6 +54,7 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
             let previewVersionContent: string | null = null;
             let restoredVersionId: string | null = null;
             let isSaving = false;
+            let lastSaveTime = 0;
 
             const getHistoryFilePath = () => {
                 return getVersionHistoryFile(this.context.globalStorageUri.fsPath, filePath, 'md');
@@ -124,7 +131,9 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                 documentDirUri: documentDirUri.toString(),
                 workspaceFolderUri,
                 tableColumnWidths: this.tableColumnWidthStorage.getWidths(document.uri),
-                frontmatterPanelCollapsed: this.frontmatterPanelStorage.getCollapsed(document.uri)
+                frontmatterPanelCollapsed: this.frontmatterPanelStorage.getCollapsed(document.uri),
+                mermaidPreviewMode: this.mermaidPreviewModeStorage.getMode(),
+                calloutDefaultType: this.calloutDefaultTypeStorage.getType(),
             });
 
             // Set up webview
@@ -176,6 +185,7 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                                 livePreviewReveal: cfg.get('md.livePreviewReveal', true),
                                 livePreviewLineNumbers: cfg.get('md.livePreviewLineNumbers', false),
                                 moveMdButtonsToEnd: cfg.get('md.moveMdButtonsToEnd', false),
+                                autoSave: cfg.get('md.autoSave', false),
                                 isMdEnabled: isMdEnabled
                             };
                             webviewPanel.webview.postMessage({ command: 'initSettings', settings });
@@ -239,6 +249,9 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                             if (typeof s.livePreviewLineNumbers === 'boolean') {
                                 await cfg.update('md.livePreviewLineNumbers', !!s.livePreviewLineNumbers, vscode.ConfigurationTarget.Global);
                             }
+                            if (typeof s.autoSave === 'boolean') {
+                                await cfg.update('md.autoSave', !!s.autoSave, vscode.ConfigurationTarget.Global);
+                            }
                         } catch (err) {
                             console.error('Failed to persist settings:', err);
                         }
@@ -260,14 +273,29 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
 
                     case 'saveMarkdown':
                         try {
-                            isSaving = true;
                             const text = typeof message.text === 'string' ? message.text : '';
+                            const isAutosave = !!message.isAutosave;
+
+                            // Belt-and-suspenders conflict check: catches a disk change the
+                            // webview doesn't know about yet (narrow race before the watcher
+                            // fires). The webview's own pendingDiskContent check is primary.
+                            if (!message.force) {
+                                const freshDisk = await fs.promises.readFile(filePath, 'utf-8').catch(() => null);
+                                if (freshDisk !== null && freshDisk !== currentContent) {
+                                    currentContent = freshDisk;
+                                    webviewPanel.webview.postMessage({ command: 'saveConflict' });
+                                    break;
+                                }
+                            }
+
+                            isSaving = true;
                             await vscode.workspace.fs.writeFile(document.uri, Buffer.from(text, 'utf8'));
                             currentContent = text;
+                            lastSaveTime = Date.now();
                             saveVersionSnapshot(text);
-                            webviewPanel.webview.postMessage({ command: 'saveResult', ok: true });
+                            webviewPanel.webview.postMessage({ command: 'saveResult', ok: true, isAutosave });
                         } catch (err) {
-                            webviewPanel.webview.postMessage({ command: 'saveResult', ok: false, error: String(err) });
+                            webviewPanel.webview.postMessage({ command: 'saveResult', ok: false, error: String(err), isAutosave: !!message.isAutosave });
                         } finally {
                             isSaving = false;
                         }
@@ -287,6 +315,24 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                             await this.frontmatterPanelStorage.saveCollapsed(document.uri, !!message.collapsed);
                         } catch (err) {
                             vscode.window.showErrorMessage(`Error saving frontmatter panel state: ${err}`);
+                        }
+                        break;
+
+                    case 'saveMermaidPreviewMode':
+                        try {
+                            const mode = message.mode === 'code' ? 'code' : 'diagram';
+                            await this.mermaidPreviewModeStorage.saveMode(mode);
+                        } catch (err) {
+                            vscode.window.showErrorMessage(`Error saving Mermaid preview mode: ${err}`);
+                        }
+                        break;
+
+                    case 'saveCalloutDefaultType':
+                        try {
+                            const type = typeof message.type === 'string' ? message.type : '';
+                            await this.calloutDefaultTypeStorage.saveType(type);
+                        } catch (err) {
+                            vscode.window.showErrorMessage(`Error saving callout default type: ${err}`);
                         }
                         break;
 
@@ -389,6 +435,7 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
 
                                     await vscode.workspace.fs.writeFile(document.uri, Buffer.from(entry.content, 'utf8'));
                                     currentContent = entry.content;
+                                    lastSaveTime = Date.now();
                                     previewVersionId = null;
                                     previewVersionTimestamp = null;
                                     previewVersionContent = null;
@@ -522,6 +569,7 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                                  livePreviewReveal: cfg.get('md.livePreviewReveal', true),
                                  livePreviewLineNumbers: cfg.get('md.livePreviewLineNumbers', false),
                                  moveMdButtonsToEnd: cfg.get('md.moveMdButtonsToEnd', false),
+                                 autoSave: cfg.get('md.autoSave', false),
                                  isMdEnabled: true
                              };
                              webviewPanel.webview.postMessage({ command: 'initSettings', settings });
@@ -561,6 +609,7 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                         livePreviewReveal: cfg.get('md.livePreviewReveal', true),
                         livePreviewLineNumbers: cfg.get('md.livePreviewLineNumbers', false),
                         moveMdButtonsToEnd: cfg.get('md.moveMdButtonsToEnd', false),
+                        autoSave: cfg.get('md.autoSave', false),
                         isMdEnabled: isMdEnabled
                     };
                     try {
@@ -583,7 +632,7 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                 new vscode.RelativePattern(vscode.Uri.file(path.dirname(filePath)), path.basename(filePath))
             );
             const watcherDisposable = watcher.onDidChange(async () => {
-                if (isSaving) {
+                if (isSaving || Date.now() - lastSaveTime < 1000) {
                     return;
                 }
                 try {
@@ -594,11 +643,18 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                     // ignore reload errors
                 }
             });
+            const deleteWatcherDisposable = watcher.onDidDelete(() => {
+                if (isSaving) {
+                    return;
+                }
+                webviewPanel.webview.postMessage({ command: 'diskDeletedExternally' });
+            });
 
             webviewPanel.onDidDispose(() => {
                 configChangeDisposable.dispose();
                 themeChangeDisposable.dispose();
                 watcherDisposable.dispose();
+                deleteWatcherDisposable.dispose();
                 watcher.dispose();
                 if (versionSnapshotDebounceTimer) {
                     clearTimeout(versionSnapshotDebounceTimer);
@@ -672,11 +728,6 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                     <button class="fmt-btn" data-format="tableRemoveColumn" title="Remove Current Column (WYSIWYG table)"></button>
                     <button class="fmt-btn" data-format="codeBlock" title="Code Block (Ctrl+Shift+E)"></button>
                     <button class="fmt-btn" data-format="hr" title="Horizontal Rule"></button>
-                </div>
-                <div class="fmt-sep"></div>
-                <div class="fmt-group">
-                    <button class="fmt-btn" data-format="undo" title="Undo (Ctrl+Z)"></button>
-                    <button class="fmt-btn" data-format="redo" title="Redo (Ctrl+Shift+Z)"></button>
                 </div>
                 <div class="fmt-sep"></div>
                 <div class="fmt-group">

@@ -61,6 +61,34 @@ import { EditorView, Decoration, WidgetType } from '@codemirror/view';
 import type { DecorationSet } from '@codemirror/view';
 import { syntaxTree } from '@codemirror/language';
 import type { SyntaxNode } from '@lezer/common';
+import {
+    tableDeleteArmedField,
+    effectiveTableRange,
+    buildCellGrid,
+    findActiveCell,
+    nextCell,
+    prevCell,
+    cellBelow,
+    cellAbove,
+    collapsedClickPosForCell,
+    splitTableRowCells,
+    type TableRange,
+    type CellRange,
+    type ActiveCell,
+} from './tableBoundaryEditing';
+
+export type { CellRange, ActiveCell } from './tableBoundaryEditing';
+export {
+    buildCellGrid,
+    findActiveCell,
+    nextCell,
+    prevCell,
+    cellBelow,
+    cellAbove,
+    collapsedClickPosForCell,
+    splitTableRowCells,
+} from './tableBoundaryEditing';
+
 import type { VisibleRange } from './revealDecorations';
 import { Icons } from '../../shared/icons';
 
@@ -103,173 +131,6 @@ md.renderer.rules.table_open = (tokens, idx, options, env, self) => {
     return openTag + colgroup;
 };
 
-export interface CellRange {
-    from: number;
-    to: number;
-}
-
-export interface ActiveCell extends CellRange {
-    row: number;
-    col: number;
-}
-
-function rangesIntersect(aFrom: number, aTo: number, bFrom: number, bTo: number): boolean {
-    return aFrom <= bTo && aTo >= bFrom;
-}
-
-/**
- * Row-major grid of a Table node's cells (row 0 = TableHeader, rows 1..n =
- * TableRow), in absolute doc positions. Verified against the real parse tree
- * (not assumed): `TableCell.from`/`.to` already exclude the surrounding pipe
- * delimiters and padding whitespace, so these ranges can be used directly
- * both for `rangesIntersect` selection checks and as CM6 transaction targets.
- */
-export function buildCellGrid(state: EditorState, tableNode: SyntaxNode): CellRange[][] {
-    const grid: CellRange[][] = [];
-    for (let row = tableNode.firstChild; row; row = row.nextSibling) {
-        if (row.name !== 'TableHeader' && row.name !== 'TableRow') { continue; }
-        grid.push(cellRangesFromRowLine(state, row));
-    }
-    return grid;
-}
-
-/**
- * Per-cell doc ranges from a header/body row's physical source line. Lezer's
- * GFM table parser omits `TableCell` nodes for empty cells, but markdown-it
- * still renders them — so the grid must follow pipe boundaries on the line,
- * not just syntax-tree children.
- */
-function cellRangesFromRowLine(state: EditorState, rowNode: SyntaxNode): CellRange[] {
-    const lineFrom = rowNode.from;
-    const lineText = state.sliceDoc(rowNode.from, rowNode.to);
-    const cellTexts = splitTableRowCells(lineText);
-    const ranges: CellRange[] = [];
-
-    const findPipe = (from: number): number => {
-        for (let i = from; i < lineText.length; i++) {
-            if (lineText[i] === '\\' && lineText[i + 1] === '|') { i++; continue; }
-            if (lineText[i] === '|') { return i; }
-        }
-        return lineText.length;
-    };
-
-    let scan = findPipe(0);
-    for (const cellText of cellTexts) {
-        void cellText;
-        scan++; // past opening pipe
-        const contentStart = scan;
-        const closingPipe = findPipe(scan);
-        const raw = lineText.slice(contentStart, closingPipe);
-        const trimmed = raw.trim();
-        if (trimmed.length === 0) {
-            ranges.push({ from: lineFrom + contentStart, to: lineFrom + contentStart });
-        } else {
-            const leadingPad = raw.length - raw.trimStart().length;
-            const trailingPad = raw.length - raw.trimEnd().length;
-            ranges.push({
-                from: lineFrom + contentStart + leadingPad,
-                to: lineFrom + closingPipe - trailingPad,
-            });
-        }
-        scan = closingPipe;
-    }
-    return ranges;
-}
-
-/**
- * The cell the selection is inside, or null if it truly matches none (e.g. a
- * range selection landing outside every cell).
- *
- * For a RANGE selection (Tab/Enter/Shift+Tab nav always dispatches one — see
- * `selectRange` below) this requires an exact intersection with a cell's
- * trimmed `TableCell` range, which is unambiguous since we're the ones who
- * picked that exact range.
- *
- * For a COLLAPSED selection (typing, clicking, Arrow nav) this instead finds
- * the NEAREST cell on the same line, splitting the gap between neighboring
- * cells at its midpoint, rather than requiring strict containment in the
- * trimmed range. This is necessary, not cosmetic: `TableCell.from`/`.to`
- * excludes trailing padding (verified against the real parser — a cell
- * "Cell 1   " has a node covering only "Cell 1"). Typing a trailing space
- * while editing a cell moves the cursor into that excluded padding zone on
- * the very next re-parse; a strict containment check would report "no active
- * cell" and the widget would lose focus on every space bar press. Widening
- * the match keeps the SAME cell active through its own padding, while a
- * position sitting deep enough in the gap to be genuinely closer to the next
- * cell still resolves there rather than to neither.
- */
-export function findActiveCell(state: EditorState, grid: readonly CellRange[][], selFrom: number, selTo: number): ActiveCell | null {
-    if (selFrom !== selTo) {
-        for (let row = 0; row < grid.length; row++) {
-            const cols = grid[row];
-            for (let col = 0; col < cols.length; col++) {
-                const cell = cols[col];
-                if (rangesIntersect(selFrom, selTo, cell.from, cell.to)) {
-                    return { row, col, from: cell.from, to: cell.to };
-                }
-            }
-        }
-        return null;
-    }
-
-    const pos = selFrom;
-    const line = state.doc.lineAt(pos).number;
-    for (let row = 0; row < grid.length; row++) {
-        const cols = grid[row];
-        if (cols.length === 0 || state.doc.lineAt(cols[0].from).number !== line) { continue; }
-        for (let col = 0; col < cols.length; col++) {
-            const cell = cols[col];
-            // Empty cells (common after insert row/column) can have pos ===
-            // cell.to sitting on the boundary with the next column; midpoint
-            // logic would assign that to the neighbor and show its text.
-            if (isEmptyTableCellContent(state, cell) && pos >= cell.from && pos <= cell.to) {
-                return { row, col, from: cell.from, to: cell.to };
-            }
-            const midLow = col === 0 ? -Infinity : (cols[col - 1].to + cell.from) / 2;
-            const midHigh = col === cols.length - 1 ? Infinity : (cell.to + cols[col + 1].from) / 2;
-            if (pos >= midLow && pos <= midHigh) {
-                return { row, col, from: cell.from, to: cell.to };
-            }
-        }
-    }
-    return null;
-}
-
-/** Neighbor lookups for Tab/Shift+Tab/Enter/Arrow cell navigation — row-major order, wraps at row ends. */
-export function nextCell(grid: readonly CellRange[][], active: ActiveCell): ActiveCell | null {
-    const row = grid[active.row];
-    if (row && active.col + 1 < row.length) {
-        return { ...row[active.col + 1], row: active.row, col: active.col + 1 };
-    }
-    const nextRow = grid[active.row + 1];
-    if (nextRow && nextRow.length > 0) {
-        return { ...nextRow[0], row: active.row + 1, col: 0 };
-    }
-    return null;
-}
-
-export function prevCell(grid: readonly CellRange[][], active: ActiveCell): ActiveCell | null {
-    if (active.col - 1 >= 0) {
-        const row = grid[active.row];
-        return { ...row[active.col - 1], row: active.row, col: active.col - 1 };
-    }
-    const prevRow = grid[active.row - 1];
-    if (prevRow && prevRow.length > 0) {
-        return { ...prevRow[prevRow.length - 1], row: active.row - 1, col: prevRow.length - 1 };
-    }
-    return null;
-}
-
-export function cellBelow(grid: readonly CellRange[][], active: ActiveCell): ActiveCell | null {
-    const below = grid[active.row + 1]?.[active.col];
-    return below ? { ...below, row: active.row + 1, col: active.col } : null;
-}
-
-export function cellAbove(grid: readonly CellRange[][], active: ActiveCell): ActiveCell | null {
-    const above = grid[active.row - 1]?.[active.col];
-    return above ? { ...above, row: active.row - 1, col: active.col } : null;
-}
-
 // ===== Row-context-menu structural ops (delete/move/insert row or column,
 // clear cell/row/column) — pure functions of EditorState, headlessly testable
 // like formatCommands.ts's computeXxx functions (see slashMenu.ts's file
@@ -304,29 +165,6 @@ function tableRowNodes(tableNode: SyntaxNode): TableRowNodes {
     }
     if (!header || !delimiter) { throw new Error('malformed table: missing header or delimiter row'); }
     return { header, delimiter, body };
-}
-
-/**
- * Splits the raw "| --- | :--: |" alignment line into per-column tokens,
- * respecting a `\|` escape the same way cell content can. There's no
- * per-cell parse node for this one row (unlike TableCell for header/body rows
- * — see the file header comment on `buildCellGrid`), so it's the only row
- * that has to be split by hand rather than read off the syntax tree.
- */
-function splitTableRowCells(text: string): string[] {
-    let trimmed = text.trim();
-    if (trimmed.startsWith('|')) { trimmed = trimmed.slice(1); }
-    if (trimmed.endsWith('|')) { trimmed = trimmed.slice(0, -1); }
-    const parts: string[] = [];
-    let current = '';
-    for (let i = 0; i < trimmed.length; i++) {
-        const ch = trimmed[i];
-        if (ch === '\\' && trimmed[i + 1] === '|') { current += '\\|'; i++; continue; }
-        if (ch === '|') { parts.push(current.trim()); current = ''; continue; }
-        current += ch;
-    }
-    parts.push(current.trim());
-    return parts;
 }
 
 /** Pads/truncates a row's cells to `colCount` — keeps column ops well-defined even against a ragged (malformed) row. */
@@ -594,15 +432,6 @@ export function computeTableContextMenu(grid: readonly CellRange[][], row: numbe
     ];
 
     return [cellGroup, rowGroup, columnGroup];
-}
-
-function isEmptyTableCellContent(state: EditorState, cell: CellRange): boolean {
-    return state.sliceDoc(cell.from, cell.to).trim().length === 0;
-}
-
-/** Doc position to activate when the user clicks an inactive cell. */
-export function collapsedClickPosForCell(state: EditorState, cell: CellRange): number {
-    return isEmptyTableCellContent(state, cell) ? cell.from : cell.to;
 }
 
 /** Cursor position inside a newly inserted row/column, after the menu transaction applies. */
@@ -1628,26 +1457,36 @@ export class TableWidget extends WidgetType {
     readonly activeCell: ActiveCell | null;
     readonly tableIndex: number;
     readonly widths: readonly number[] | null;
+    readonly deleteArmed: boolean;
 
-    constructor(source: string, grid: readonly CellRange[][], activeCell: ActiveCell | null, tableIndex: number, widths: readonly number[] | null) {
+    constructor(
+        source: string,
+        grid: readonly CellRange[][],
+        activeCell: ActiveCell | null,
+        tableIndex: number,
+        widths: readonly number[] | null,
+        deleteArmed = false,
+    ) {
         super();
         this.source = source;
         this.grid = grid;
         this.activeCell = activeCell;
         this.tableIndex = tableIndex;
         this.widths = widths;
+        this.deleteArmed = deleteArmed;
     }
 
     eq(other: TableWidget): boolean {
         return other.source === this.source &&
             other.activeCell?.row === this.activeCell?.row &&
             other.activeCell?.col === this.activeCell?.col &&
-            widthsEqual(other.widths, this.widths);
+            widthsEqual(other.widths, this.widths) &&
+            other.deleteArmed === this.deleteArmed;
     }
 
     toDOM(view: EditorView): HTMLElement {
         const wrap = document.createElement('div');
-        wrap.className = 'cm-md-table-widget';
+        wrap.className = 'cm-md-table-widget' + (this.deleteArmed ? ' cm-md-table-armed' : '');
         const colCount = this.grid[0]?.length ?? 0;
         wrap.innerHTML = md.render(this.source, { colCount, widths: this.widths });
 
@@ -1752,6 +1591,7 @@ export function computeTableDecorations(
     selTo: number,
     visibleRanges: readonly VisibleRange[],
     widthsByTable: Record<number, readonly number[]> = {},
+    deleteArmedRange: TableRange | null = null,
 ): DecorationSet {
     const specs: { from: number; to: number; value: ReturnType<typeof Decoration.replace> }[] = [];
     let tableIndex = 0;
@@ -1762,15 +1602,26 @@ export function computeTableDecorations(
             to,
             enter(node) {
                 if (node.name !== 'Table') { return; }
+                const range = effectiveTableRange(state, node.node);
                 const grid = buildCellGrid(state, node.node);
                 const activeCell = findActiveCell(state, grid, selFrom, selTo);
-                const source = state.sliceDoc(node.from, node.to);
+                const source = state.sliceDoc(range.from, range.to);
                 const index = tableIndex++;
+                const deleteArmed = deleteArmedRange !== null &&
+                    deleteArmedRange.from === range.from &&
+                    deleteArmedRange.to === range.to;
                 specs.push({
-                    from: node.from,
-                    to: node.to,
+                    from: range.from,
+                    to: range.to,
                     value: Decoration.replace({
-                        widget: new TableWidget(source, grid, activeCell, index, widthsByTable[index] ?? null),
+                        widget: new TableWidget(
+                            source,
+                            grid,
+                            activeCell,
+                            index,
+                            widthsByTable[index] ?? null,
+                            deleteArmed,
+                        ),
                         block: true,
                     }),
                 });
@@ -1806,11 +1657,19 @@ export const columnWidthsField = StateField.define<Record<number, readonly numbe
 function buildFromState(state: EditorState): DecorationSet {
     const sel = state.selection.main;
     const widthsByTable = state.field(columnWidthsField, false) ?? {};
+    const deleteArmedRange = state.field(tableDeleteArmedField, false) ?? null;
     // No `view.visibleRanges` here — see the StateField note below — so this
     // always scans the whole document. Acceptable: it's filtered to just
     // `Table` nodes, and tables are comparatively rare compared to the marks
     // revealDecorations.ts scans for on every keystroke.
-    return computeTableDecorations(state, sel.from, sel.to, [{ from: 0, to: state.doc.length }], widthsByTable);
+    return computeTableDecorations(
+        state,
+        sel.from,
+        sel.to,
+        [{ from: 0, to: state.doc.length }],
+        widthsByTable,
+        deleteArmedRange,
+    );
 }
 
 // A StateField, not a ViewPlugin — CM6 requires it: a block-level

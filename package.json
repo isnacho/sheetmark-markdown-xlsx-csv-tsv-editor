@@ -120,44 +120,44 @@
                 {
                     "command": "xlsx-viewer.openWithXlsx",
                     "when": "resourceExtname == '.xlsx'",
-                    "group": "navigation"
+                    "group": "navigation@100"
                 },
                 {
                     "command": "xlsx-viewer.openWithCsv",
                     "when": "resourceExtname == '.csv'",
-                    "group": "navigation"
+                    "group": "navigation@100"
                 },
                 {
                     "command": "xlsx-viewer.openWithTsv",
                     "when": "resourceExtname == '.tsv'",
-                    "group": "navigation"
+                    "group": "navigation@100"
                 },
                 {
                     "command": "xlsx-viewer.openWithMd",
                     "when": "resourceExtname == '.md'",
-                    "group": "navigation"
+                    "group": "navigation@100"
                 }
             ],
             "editor/title/context": [
                 {
                     "command": "xlsx-viewer.openWithXlsx",
                     "when": "resourceExtname == '.xlsx'",
-                    "group": "navigation"
+                    "group": "navigation@100"
                 },
                 {
                     "command": "xlsx-viewer.openWithCsv",
                     "when": "resourceExtname == '.csv'",
-                    "group": "navigation"
+                    "group": "navigation@100"
                 },
                 {
                     "command": "xlsx-viewer.openWithTsv",
                     "when": "resourceExtname == '.tsv'",
-                    "group": "navigation"
+                    "group": "navigation@100"
                 },
                 {
                     "command": "xlsx-viewer.openWithMd",
                     "when": "resourceExtname == '.md'",
-                    "group": "navigation"
+                    "group": "navigation@100"
                 }
             ],
             "editor/title": [
@@ -180,6 +180,26 @@
                     "when": "resourceExtname == '.md' && activeEditor != 'xlsxViewer.md'",
                     "command": "xlsx-viewer.goBackToMdPreview",
                     "group": "navigation"
+                },
+                {
+                    "command": "xlsx-viewer.openWithXlsx",
+                    "when": "resourceExtname == '.xlsx' && activeCustomEditorId != 'xlsxViewer.xlsx'",
+                    "group": "3_open@100"
+                },
+                {
+                    "command": "xlsx-viewer.openWithCsv",
+                    "when": "resourceExtname == '.csv' && activeCustomEditorId != 'xlsxViewer.csv'",
+                    "group": "3_open@100"
+                },
+                {
+                    "command": "xlsx-viewer.openWithTsv",
+                    "when": "resourceExtname == '.tsv' && activeCustomEditorId != 'xlsxViewer.tsv'",
+                    "group": "3_open@100"
+                },
+                {
+                    "command": "xlsx-viewer.openWithMd",
+                    "when": "(resourceExtname == '.md' || resourceLangId == markdown) && activeCustomEditorId != 'xlsxViewer.md'",
+                    "group": "3_open@100"
                 }
             ]
         },
@@ -339,6 +359,11 @@
                     "type": "boolean",
                     "default": false,
                     "description": "In Markdown Preview Edit mode, show line numbers in the editor gutter."
+                },
+                "xlsxViewer.md.autoSave": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Automatically save Markdown edits after a short debounce."
                 }
             }
         }

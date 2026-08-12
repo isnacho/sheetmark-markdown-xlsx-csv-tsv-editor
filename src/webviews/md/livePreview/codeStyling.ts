@@ -12,15 +12,20 @@
 // reusing this machinery") — this only adds the missing baseline look.
 
 import { EditorState } from '@codemirror/state';
-import { EditorView, Decoration, ViewPlugin } from '@codemirror/view';
-import type { DecorationSet, ViewUpdate } from '@codemirror/view';
+import { Decoration } from '@codemirror/view';
+import type { DecorationSet } from '@codemirror/view';
 import { syntaxTree } from '@codemirror/language';
+import type { SyntaxNode } from '@lezer/common';
 import type { VisibleRange } from './revealDecorations';
 
 const inlineCodeMark = Decoration.mark({ class: 'cm-md-inline-code' });
 const fencedCodeLine = Decoration.line({ class: 'cm-md-fenced-code-line' });
 
-export function computeCodeDecorations(state: EditorState, visibleRanges: readonly VisibleRange[]): DecorationSet {
+export function computeCodeDecorations(
+    state: EditorState,
+    visibleRanges: readonly VisibleRange[],
+    shouldSkipFencedCode?: (node: SyntaxNode) => boolean,
+): DecorationSet {
     const specs: { from: number; to: number; value: ReturnType<typeof Decoration.mark> | ReturnType<typeof Decoration.line> }[] = [];
 
     for (const { from, to } of visibleRanges) {
@@ -31,6 +36,9 @@ export function computeCodeDecorations(state: EditorState, visibleRanges: readon
                 if (node.name === 'InlineCode') {
                     specs.push({ from: node.from, to: node.to, value: inlineCodeMark });
                 } else if (node.name === 'FencedCode') {
+                    if (shouldSkipFencedCode?.(node.node)) {
+                        return;
+                    }
                     const firstLine = state.doc.lineAt(node.from).number;
                     const lastLine = state.doc.lineAt(node.to).number;
                     for (let n = firstLine; n <= lastLine; n++) {
@@ -43,21 +51,3 @@ export function computeCodeDecorations(state: EditorState, visibleRanges: readon
 
     return Decoration.set(specs.map(s => s.value.range(s.from, s.to)), true);
 }
-
-function buildFromView(view: EditorView): DecorationSet {
-    return computeCodeDecorations(view.state, view.visibleRanges);
-}
-
-export const codeStylingPlugin = ViewPlugin.fromClass(class {
-    decorations: DecorationSet;
-    constructor(view: EditorView) {
-        this.decorations = buildFromView(view);
-    }
-    update(update: ViewUpdate) {
-        if (update.docChanged || update.viewportChanged) {
-            this.decorations = buildFromView(update.view);
-        }
-    }
-}, {
-    decorations: v => v.decorations,
-});

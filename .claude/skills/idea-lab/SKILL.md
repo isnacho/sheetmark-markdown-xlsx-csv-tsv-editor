@@ -25,15 +25,34 @@ This means:
 
 ## Directory layout
 
+One folder per status — the folder an idea file sits in always matches its
+frontmatter `status`. Folders are prefixed `1-` through `7-` so they sort in
+pipeline order in a file browser instead of alphabetically:
+
 ```
-.docs/ideas/                  active ideas (any status from captured..in_qa)
-.docs/ideas/completed/        finished ideas — moved here automatically on QA pass
-.docs/ideas/archive/          abandoned ideas — moved here when the user decides
-                               not to implement something
+.docs/ideas/1-captured/        just jotted down
+.docs/ideas/2-brainstormed/    UX/product direction decided
+.docs/ideas/3-planned/         implementation plan approved
+.docs/ideas/4-implemented/     code written, awaiting QA
+.docs/ideas/5-in_qa/           smoke-testing in progress
+.docs/ideas/6-completed/       terminal — QA passed
+.docs/ideas/7-archived/        terminal — abandoned, not being built
 ```
 
-Files are named `.docs/ideas/<slug>.md`, `<slug>` = kebab-case of the title
-(e.g. `sticky-column-headers.md`). If a slug collides, append `-2`, `-3`, etc.
+The number prefix is a display-order convenience only — it plays no role in
+the `status` field, which stays a plain value (`captured`, `brainstormed`,
+etc.). Folder name = `<N>-<status>`; strip the `<N>-` to get the status.
+
+Files are named `.docs/ideas/<N>-<status>/<slug>.md`, `<slug>` = kebab-case
+of the title (e.g. `sticky-column-headers.md`). If a slug collides within the
+target status folder, append `-2`, `-3`, etc.
+
+**Folder = status, always.** Whenever a phase changes a file's `status`
+field, in that same step `git mv` the file into the matching `<N>-<status>`
+folder (plain `mv` if `.docs/ideas/` isn't tracked by git). The frontmatter
+`status` is still the source of truth per the core principle above — the
+folder is a derived index that must never drift out of sync with it, since a
+future agent may list by folder without opening every file first.
 
 ## Idea file format
 
@@ -54,17 +73,20 @@ truncate a completed section when writing a later one.
 
 ## Entry point — every invocation starts here
 
-1. If the user names a specific idea or points at a file under `.docs/ideas/`,
-   read it and jump straight to the phase matching its `status`.
+1. If the user names a specific idea or points at a file under
+   `.docs/ideas/**`, read it and jump straight to the phase matching its
+   `status`.
 2. If the user is clearly describing a brand-new idea inline, skip to **Phase
    1** with that text.
-3. Otherwise (bare invocation), list the files directly under `.docs/ideas/`
-   (not `completed/` or `archive/`) with their `title` and `status`, and ask
-   which one to continue, or whether to capture something new.
+3. Otherwise (bare invocation), list the files across every non-terminal
+   status folder (`1-captured/`, `2-brainstormed/`, `3-planned/`,
+   `4-implemented/`, `5-in_qa/` — skip `6-completed/` and `7-archived/`) with
+   their `title` and `status`, and ask which one to continue, or whether to
+   capture something new.
 
 Only one phase runs per invocation. **Stop after finishing a phase and ask
 before continuing to the next one** — e.g. "Idea captured at
-`.docs/ideas/foo.md`. Brainstorm it now, or later?" Don't barrel through
+`.docs/ideas/1-captured/foo.md`. Brainstorm it now, or later?" Don't barrel through
 multiple phases unprompted.
 
 At the start of any phase, ask the user if they want to abandon the idea
@@ -79,9 +101,9 @@ Goal: get the idea down in the user's own words, fast, with minimal friction.
    don't edit their wording or expand it yet, that's Brainstorm's job.
 2. Derive a short title and slug. Confirm the title with the user only if it's
    genuinely ambiguous; otherwise just state what you picked.
-3. Copy `templates/idea-template.md` to `.docs/ideas/<slug>.md`, fill in
-   `title`, `slug`, `created`, `updated` (today, via `date +%F`), `status:
-   captured`, and the `## Idea` section with the raw text.
+3. Copy `templates/idea-template.md` to `.docs/ideas/1-captured/<slug>.md`,
+   fill in `title`, `slug`, `created`, `updated` (today, via `date +%F`),
+   `status: captured`, and the `## Idea` section with the raw text.
 4. Report the file path. Ask if they want to move to Brainstorm now.
 
 ## Phase 2 — Brainstorm
@@ -110,7 +132,8 @@ a product brainstorm, not a technical design pass.
    decided UX direction, why, and enough detail (states, defaults, placement,
    copy) that Phase 3 can design against it without re-asking product
    questions. Not the full list of rejected options. Set `status:
-   brainstormed`, bump `updated`.
+   brainstormed`, bump `updated`, and `git mv` the file into
+   `2-brainstormed/`.
 6. Ask if they want to move to Plan now.
 
 ## Phase 3 — Plan
@@ -131,7 +154,8 @@ Goal: a concrete, codebase-grounded implementation plan.
    from the hard DO-NOTs in `CLAUDE.md` that's at risk. Present it via
    `ExitPlanMode` for real user approval before writing any code.
 4. Once approved, write the plan into `## Plan` (steps + files, not the whole
-   plan-mode transcript). Set `status: planned`, bump `updated`.
+   plan-mode transcript). Set `status: planned`, bump `updated`, and `git mv`
+   the file into `3-planned/`.
 5. Ask if they want to move to Implement now.
 
 ## Phase 4 — Implement
@@ -144,7 +168,8 @@ Goal: build exactly what's in `## Plan`, nothing more.
 2. Run `npm run compile` (type-check + lint + bundle) and fix anything it
    flags — this is the repo's baseline verification, per `CLAUDE.md`.
 3. Append to `## Implementation Log`: files changed, and any deviation from
-   the plan with why. Set `status: implemented`, bump `updated`.
+   the plan with why. Set `status: implemented`, bump `updated`, and `git mv`
+   the file into `4-implemented/`.
 4. Ask if they want to move to QA now.
 
 ## Phase 5 — QA
@@ -153,19 +178,21 @@ Goal: confirm it actually works. `CLAUDE.md` is explicit that there's no
 automated test suite here — `npm run compile` checks types/lint/bundle, not
 behavior. Don't claim "tests pass"; a manual smoke test is required.
 
-1. Set `status: in_qa`.
+1. Set `status: in_qa`, `git mv` the file into `5-in_qa/`.
 2. Give the user a concrete smoke-test checklist derived from `## Plan` /
    `## Implementation Log`: press F5, open the relevant sample from
    `samples/`, exercise the golden path and the edge cases this idea
    introduced, reload (`Cmd+R`) after any further edits.
 3. Record what was tested and the outcome in `## QA`.
-4. **If it fails:** fix and re-run QA if the bug is small; if it reveals a
-   plan problem, bump `status` back to `planned` (or `implemented` for a
-   smaller fix) and loop back to that phase. Note the bounce-back and why in
-   the relevant section — don't erase the failed attempt.
-5. **If it passes:** set `status: completed`, bump `updated`, and move the
-   file to `.docs/ideas/completed/<slug>.md` (`git mv` if the repo tracks
-   `.docs/ideas/`, otherwise a plain move). Confirm the new path to the user.
+4. **If it fails:** fix and re-run QA in place if the bug is small (file
+   stays in `5-in_qa/`); if it reveals a plan problem, bump `status` back to
+   `planned` (or `implemented` for a smaller fix), `git mv` the file into
+   that matching folder (`3-planned/` or `4-implemented/`), and loop back to
+   that phase. Note the bounce-back and why in the relevant section — don't
+   erase the failed attempt.
+5. **If it passes:** set `status: completed`, bump `updated`, and `git mv`
+   the file from `5-in_qa/<slug>.md` to `6-completed/<slug>.md` (plain `mv`
+   if `.docs/ideas/` isn't tracked by git). Confirm the new path to the user.
 
 ## Archiving
 
@@ -176,12 +203,13 @@ confirmed:
 1. Ask for a one-line reason (helps future-you understand why later).
 2. Append an `**Archived:**` line with the reason and date to the end of
    whichever section was in progress.
-3. Set `status: archived`, bump `updated`, move the file to
-   `.docs/ideas/archive/<slug>.md`.
+3. Set `status: archived`, bump `updated`, `git mv` the file from its
+   current status folder to `7-archived/<slug>.md`.
 
 Archiving is terminal — don't offer to resume from a Plan invocation. If the
-user later wants to revive it, that's a conscious action: move it back to
-`.docs/ideas/` and reset `status` to wherever it realistically stands.
+user later wants to revive it, that's a conscious action: `git mv` it from
+`7-archived/` into the status folder matching wherever it realistically
+stands, and reset the frontmatter `status` field to match.
 
 ## Behavioral guidelines
 

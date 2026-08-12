@@ -27,6 +27,7 @@ import { ThemeManager, renderThemeToggleSettingItem } from '../shared/themeManag
 import { SettingsManager } from '../shared/settingsManager';
 import { ToolbarManager } from '../shared/toolbarManager';
 import { applyToolbarLayout } from '../shared/toolbarLayout';
+import { wireDelayedToolbarTooltips } from '../shared/delayedTitleTooltip';
 import { Utils } from '../shared/utils';
 import { Icons } from '../shared/icons';
 import { vscode, debounce } from '../shared/common';
@@ -52,11 +53,9 @@ import {
     getLivePreviewCursorPosition,
     applyLivePreviewFormat,
 } from './livePreview/livePreviewEditor';
+import { resolveFrontmatterForRender, markdownBodyWithoutFrontmatter, extractFrontmatter } from './frontmatter';
+import { createFrontmatterCardElement } from './frontmatterCardUi';
 import type { Cm6Match } from './livePreview/livePreviewSearch';
-import TurndownService from 'turndown';
-// @ts-ignore
-import { gfm } from 'turndown-plugin-gfm';
-// @ts-ignore
 import mermaid from 'mermaid';
 
 // Inline custom plugin that mimics the markdown-it-mermaid API and behavior,
@@ -115,13 +114,8 @@ let isVersionPreviewMode = false;
 let isSaving = false;
 let isReloadingFromDisk = false;
 let pendingDiskContent: string | null = null;
-let shouldExitEditMode = false;
-// Applies `currentSettings.defaultViewMode` exactly once, on the panel's
-// first-ever `initSettings` (true fresh load — see the 'initSettings' case
-// below). Must never re-fire on `settingsUpdated` (live config edits) or on
-// `enableMdEditor`'s mid-session `initSettings` resend, which would yank the
-// user out of whatever mode they're already in.
-let hasAppliedInitialViewMode = false;
+// Mount CM6 preview edit exactly once on the panel's first `initSettings`.
+let hasEnteredPreviewEdit = false;
 let originalContent = '';
 let currentContent = '';
 let toolbarManager: ToolbarManager | null = null;
@@ -137,47 +131,30 @@ let workspaceFolderUri: string | null = null;
 // see tableColumnWidthStorageService.ts on the host side for why this can't
 // live in the .md file's own table syntax.
 let currentTableColumnWidths: Record<number, readonly number[]> = {};
+let frontmatterPanelCollapsed = false;
 
-// Turndown (HTML -> Markdown)
-const turndownService = new TurndownService({
-    headingStyle: 'atx',
-    hr: '---',
-    bulletListMarker: '-',
-    codeBlockStyle: 'fenced',
-    emDelimiter: '*',
-    strongDelimiter: '**',
-});
-turndownService.use(gfm);
+// Turndown removed — Preview Edit uses CM6 raw markdown only.
 
 // Settings
 let currentSettings = {
     stickyToolbar: true,
     wordWrap: true,
-    syncScroll: true,
-    previewPosition: 'right',
     showOutline: true,
     showLineNumbers: true,
     livePreviewReveal: true,
     livePreviewLineNumbers: false,
-    livePreviewEngine: 'cm6' as 'cm6' | 'legacy',
-    defaultViewMode: 'preview' as 'preview' | 'split' | 'reading',
     moveMdButtonsToEnd: false,
     isMdEnabled: true
 };
 
-let isFocusMode = false;
+/** CM6 has no rendered code blocks — honor either line-number setting in the gutter. */
+function wantsLivePreviewLineNumbers(): boolean {
+    return !!(currentSettings.showLineNumbers || currentSettings.livePreviewLineNumbers);
+}
+
 let searchMatches: Element[] = [];
 let cm6SearchMatches: Cm6Match[] = [];
 let searchCurrentIndex = -1;
-const previewOnlyTableActions = new Set(['tableAddRowBelow', 'tableRemoveRow', 'tableAddColumnRight', 'tableRemoveColumn']);
-const tableControlActions = ['tableAddRowBelow', 'tableRemoveRow', 'tableAddColumnRight', 'tableRemoveColumn'];
-let lastTableCellContext: HTMLTableCellElement | null = null;
-let lastHoveredTable: HTMLTableElement | null = null;
-let forcedTableActionTable: HTMLTableElement | null = null;
-const maxPreviewHistoryEntries = 200;
-let previewUndoStack: string[] = [];
-let previewRedoStack: string[] = [];
-let previewHistoryTimer: number | null = null;
 
 // ===== Utilities =====
 const $ = Utils.$;
@@ -246,133 +223,6 @@ function setButtonsEnabled(enabled: boolean) {
         const el = $(id) as HTMLButtonElement;
         if (el) {el.disabled = !enabled;}
     });
-    syncViewModeSelect();
-}
-
-function getPreviewSnapshot(): string {
-    const preview = $('markdownPreview');
-    return preview ? preview.innerHTML : '';
-}
-
-function trimPreviewHistory() {
-    if (previewUndoStack.length > maxPreviewHistoryEntries) {
-        previewUndoStack = previewUndoStack.slice(previewUndoStack.length - maxPreviewHistoryEntries);
-    }
-    if (previewRedoStack.length > maxPreviewHistoryEntries) {
-        previewRedoStack = previewRedoStack.slice(previewRedoStack.length - maxPreviewHistoryEntries);
-    }
-}
-
-function pushPreviewUndoSnapshot(snapshot: string, clearRedo = true) {
-    const last = previewUndoStack[previewUndoStack.length - 1];
-    if (last === snapshot) {
-        return;
-    }
-
-    previewUndoStack.push(snapshot);
-    if (clearRedo) {
-        previewRedoStack = [];
-    }
-    trimPreviewHistory();
-}
-
-function capturePreviewHistory() {
-    if (!isPreviewEditMode) {
-        return;
-    }
-    pushPreviewUndoSnapshot(getPreviewSnapshot(), true);
-}
-
-function schedulePreviewHistoryCapture() {
-    if (!isPreviewEditMode) {
-        return;
-    }
-
-    if (previewHistoryTimer !== null) {
-        window.clearTimeout(previewHistoryTimer);
-    }
-
-    previewHistoryTimer = window.setTimeout(() => {
-        previewHistoryTimer = null;
-        capturePreviewHistory();
-    }, 200);
-}
-
-function initializePreviewHistory() {
-    previewUndoStack = [];
-    previewRedoStack = [];
-    const initial = getPreviewSnapshot();
-    previewUndoStack.push(initial);
-    trimPreviewHistory();
-}
-
-function restorePreviewSnapshot(snapshot: string) {
-    const preview = $('markdownPreview');
-    if (!preview) {
-        return;
-    }
-
-    preview.innerHTML = snapshot;
-    preview.contentEditable = 'true';
-    enhancePreviewTablesForEditing();
-    refreshSyncMetrics();
-    requestAnimationFrame(() => {
-        updateScrollSpy();
-        updateProgressBar();
-        reapplySearch();
-        requestLocalImageResolution();
-    });
-}
-
-function performPreviewUndo() {
-    if (!isPreviewEditMode || previewUndoStack.length <= 1) {
-        return;
-    }
-
-    const current = previewUndoStack.pop();
-    if (!current) {
-        return;
-    }
-
-    previewRedoStack.push(current);
-    trimPreviewHistory();
-
-    const previous = previewUndoStack[previewUndoStack.length - 1];
-    if (previous !== undefined) {
-        restorePreviewSnapshot(previous);
-    }
-}
-
-function performPreviewRedo() {
-    if (!isPreviewEditMode || previewRedoStack.length === 0) {
-        return;
-    }
-
-    const next = previewRedoStack.pop();
-    if (!next) {
-        return;
-    }
-
-    pushPreviewUndoSnapshot(next, false);
-    restorePreviewSnapshot(next);
-}
-
-function capturePreviewMutation(beforeSnapshot: string) {
-    if (!isPreviewEditMode) {
-        return;
-    }
-
-    const afterSnapshot = getPreviewSnapshot();
-    if (afterSnapshot === beforeSnapshot) {
-        return;
-    }
-
-    const last = previewUndoStack[previewUndoStack.length - 1];
-    if (last !== beforeSnapshot) {
-        previewUndoStack.push(beforeSnapshot);
-    }
-
-    pushPreviewUndoSnapshot(afterSnapshot, true);
 }
 
 // ===== Markdown-it Setup =====
@@ -663,7 +513,8 @@ function buildToc(tokens: any[]) {
 
 /** Re-derive the TOC + its id<->line map from live CM6 content (renderMarkdown/updateToc aren't called in CM6 mode). */
 function refreshCm6Toc(content: string) {
-    const tokens = md.parse(sanitizeMarkdownCopyLinkArtifacts(content || ''), {});
+    const body = markdownBodyWithoutFrontmatter(content || '');
+    const tokens = md.parse(sanitizeMarkdownCopyLinkArtifacts(body), {});
     addHeadingIds(tokens);
     updateToc(tokens);
 }
@@ -695,14 +546,54 @@ function renderMermaidFlowcharts() {
     }
 }
 
+function persistFrontmatterPanelCollapsed(collapsed: boolean) {
+    frontmatterPanelCollapsed = collapsed;
+    vscode.postMessage({ command: 'saveFrontmatterPanelCollapsed', collapsed });
+}
+
+function applyFrontmatterBlockToDocument(newBlock: string) {
+    const extracted = extractFrontmatter(currentContent);
+    if (!extracted) { return; }
+    currentContent = newBlock + extracted.body;
+    if (isPreviewEditMode) {
+        setLivePreviewContent(currentContent);
+        refreshCm6Toc(currentContent);
+    } else {
+        renderMarkdown(currentContent);
+    }
+    updateStatusInfo();
+}
+
+function mountPreviewFrontmatterCard(cardData: NonNullable<ReturnType<typeof resolveFrontmatterForRender>['card']>) {
+    const preview = $('markdownPreview');
+    if (!preview || !cardData) { return; }
+    const card = createFrontmatterCardElement({
+        rows: cardData.rows,
+        parsed: cardData.parsed,
+        collapsed: frontmatterPanelCollapsed,
+        editing: false,
+        onCollapsedChange: persistFrontmatterPanelCollapsed,
+        onEditingChange: () => { /* preview pane only persists on Done */ },
+        onSave: (block) => {
+            applyFrontmatterBlockToDocument(block);
+        },
+    });
+    card.dataset.line = '0';
+    preview.insertBefore(card, preview.firstChild);
+}
+
 function renderMarkdown(content: string) {
     const preview = $('markdownPreview');
     if (preview) {
         const env: any = {};
-        const normalizedContent = sanitizeMarkdownCopyLinkArtifacts(content || '');
+        const resolved = resolveFrontmatterForRender(content || '', frontmatterPanelCollapsed);
+        const normalizedContent = sanitizeMarkdownCopyLinkArtifacts(resolved.body || '');
         const tokens = md.parse(normalizedContent, env);
         addHeadingIds(tokens);
         preview.innerHTML = md.renderer.render(tokens, md.options, env);
+        if (resolved.card) {
+            mountPreviewFrontmatterCard(resolved.card);
+        }
         preview.querySelectorAll('img').forEach((node) => {
             if (!(node instanceof HTMLImageElement)) {return;}
             if (!node.complete) {
@@ -710,7 +601,7 @@ function renderMarkdown(content: string) {
             }
         });
         updateToc(tokens);
-        refreshSyncMetrics();
+        refreshDataLineCache();
         requestAnimationFrame(() => {
             updateScrollSpy();
             updateProgressBar();
@@ -727,97 +618,13 @@ function updateToc(tokens: any[]) {
     tocBody.innerHTML = buildToc(tokens);
 }
 
-// ===== Edit Mode (Split View) =====
-function setEditMode(enabled: boolean) {
-    isEditMode = enabled;
-    isPreviewEditMode = false;
-    document.body.classList.toggle('edit-mode', enabled);
-    document.body.classList.remove('preview-edit-mode');
-
-    const saveBtn = $('saveEditsButton');
-    const cancelBtn = $('cancelEditsButton');
-    const reloadBtn = $('reloadFromDiskButton');
-    const container = $('markdownContainer');
-    const editor = $('markdownEditor') as HTMLTextAreaElement;
-    const preview = $('markdownPreview');
-
-    const saveTarget = (saveBtn?.closest('.tooltip') as HTMLElement | null) || saveBtn;
-    const cancelTarget = (cancelBtn?.closest('.tooltip') as HTMLElement | null) || cancelBtn;
-    const reloadTarget = (reloadBtn?.closest('.tooltip') as HTMLElement | null) || reloadBtn;
-
-    if (saveTarget) {saveTarget.classList.toggle('hidden', !enabled);}
-    if (cancelTarget) {cancelTarget.classList.toggle('hidden', !enabled);}
-    if (reloadTarget) {reloadTarget.classList.toggle('hidden', !enabled);}
-
-    // Toggle formatting toolbar
-    const fmtToolbar = $('formattingToolbar');
-    if (fmtToolbar) {fmtToolbar.classList.toggle('hidden', !enabled);}
-
-    // If we're arriving from CM6 Preview Edit, the CM6 view currently owns
-    // #markdownPreview — tear it down before this mode reuses that element.
-    const cameFromCm6 = isLivePreviewActive();
-    if (cameFromCm6) {unmountLivePreview();}
-
-    // Ensure preview is not contenteditable
-    if (preview) {preview.contentEditable = 'false';}
-
-    if (enabled) {
-        originalContent = currentContent;
-
-        container?.classList.add('split-view');
-        container?.classList.remove('preview-edit');
-        // Apply preview position (left or right)
-        if (currentSettings.previewPosition === 'left') {
-            container?.classList.add('preview-left');
-        } else {
-            container?.classList.remove('preview-left');
-        }
-
-        if (editor) {editor.value = currentContent;}
-
-        // The split preview pane held the CM6 editor; refill it with rendered HTML.
-        if (cameFromCm6) {renderMarkdown(currentContent);}
-
-        // Cache line height after entering edit mode
-        requestAnimationFrame(() => {
-            updateCachedLineHeight();
-            if (editor) {
-                editor.scrollTop = 0;
-                editor.scrollLeft = 0;
-                editor.focus();
-                editor.setSelectionRange(0, 0);
-            }
-            if (preview) {preview.scrollTop = 0;}
-            // Scroll the container so the editor (left side) is visible
-            if (container) {container.scrollLeft = 0;}
-
-            setTimeout(() => {
-                if (editor) {
-                    editor.scrollTop = 0;
-                    editor.scrollLeft = 0;
-                }
-                if (preview) {preview.scrollTop = 0;}
-                if (container) {container.scrollLeft = 0;}
-            }, 50);
-        });
-    } else {
-        // Exit edit mode
-        container?.classList.remove('split-view');
-        container?.classList.remove('preview-edit');
-        container?.classList.remove('preview-left');
-        renderMarkdown(currentContent);
-    }
-
-    updateStatusInfo();
-    syncViewModeSelect();
-}
-
-// ===== Preview Edit Mode (WYSIWYG) =====
+// ===== Preview Edit Mode (CM6 live preview) =====
 function setPreviewEditMode(enabled: boolean) {
     isPreviewEditMode = enabled;
     isEditMode = enabled;
     document.body.classList.toggle('edit-mode', enabled);
     document.body.classList.toggle('preview-edit-mode', enabled);
+    document.body.classList.toggle('cm6-preview-active', enabled);
 
     const saveBtn = $('saveEditsButton');
     const cancelBtn = $('cancelEditsButton');
@@ -837,85 +644,63 @@ function setPreviewEditMode(enabled: boolean) {
     const fmtToolbar = $('formattingToolbar');
     if (fmtToolbar) {fmtToolbar.classList.toggle('hidden', !enabled);}
 
-    const useCm6 = currentSettings.livePreviewEngine === 'cm6';
-
     if (enabled) {
         originalContent = currentContent;
 
-        container?.classList.remove('split-view');
         container?.classList.add('preview-edit');
         container?.classList.remove('preview-left');
 
-        if (useCm6) {
-            // CM6 engine: raw markdown stays the source of truth. Mount the
-            // editor into #markdownPreview — no markdown-it render, no
-            // contentEditable, no turndown. Lazily constructed on first entry
-            // (mountLivePreview builds the EditorView here, not at webview load).
-            if (preview) {
-                preview.contentEditable = 'false';
-                mountLivePreview({
-                    parent: preview,
-                    doc: currentContent,
-                    lineWrapping: currentSettings.wordWrap,
-                    // CM6 change events feed currentContent (contract rule 5),
-                    // replacing the old onEditorInput() side-effect.
-                    onDocChanged: (doc) => {
-                        currentContent = doc;
-                        updateStatusInfo();
-                        debouncedCm6TocRefresh(doc);
-                        reapplySearch();
-                    },
-                    // Re-integration (Phase 2): scroll-spy/TOC + progress bar track
-                    // CM6's own `.cm-scroller`, not #markdownPreview.
-                    onScroll: throttledScrollSpy,
-                    onModifierClick: handleLivePreviewModifierClick,
-                    reveal: currentSettings.livePreviewReveal,
-                    showLineNumbers: currentSettings.livePreviewLineNumbers,
-                    onSelectionChange: updateStatusInfo,
-                    columnWidths: currentTableColumnWidths,
-                    // Fired once per completed drag, never per-pixel (see
-                    // wireResizeHandle in tableWidget.ts) — cheap to persist
-                    // on every call.
-                    onColumnWidthsChanged: (widths) => {
-                        currentTableColumnWidths = widths;
-                        vscode.postMessage({ command: 'saveTableColumnWidths', widths });
-                    },
-                });
-                refreshCm6Toc(currentContent);
-                focusLivePreview();
-            }
-        } else {
-            // Legacy engine (kill-switch): render HTML + contentEditable + turndown.
-            renderMarkdown(currentContent);
-            if (preview) {
-                preview.contentEditable = 'true';
-                enhancePreviewTablesForEditing();
-                initializePreviewHistory();
-                preview.focus();
-            }
+        if (preview) {
+            preview.contentEditable = 'false';
+            mountLivePreview({
+                parent: preview,
+                doc: currentContent,
+                lineWrapping: currentSettings.wordWrap,
+                onDocChanged: (doc) => {
+                    currentContent = doc;
+                    updateStatusInfo();
+                    debouncedCm6TocRefresh(doc);
+                    reapplySearch();
+                },
+                onScroll: throttledScrollSpy,
+                onModifierClick: handleLivePreviewModifierClick,
+                reveal: currentSettings.livePreviewReveal,
+                showLineNumbers: wantsLivePreviewLineNumbers(),
+                onSelectionChange: updateStatusInfo,
+                columnWidths: currentTableColumnWidths,
+                onColumnWidthsChanged: (widths) => {
+                    currentTableColumnWidths = widths;
+                    vscode.postMessage({ command: 'saveTableColumnWidths', widths });
+                },
+                frontmatterCollapsed: frontmatterPanelCollapsed,
+                onFrontmatterCollapsedChanged: (collapsed) => {
+                    persistFrontmatterPanelCollapsed(collapsed);
+                },
+            });
+            refreshCm6Toc(currentContent);
+            focusLivePreview();
         }
     } else {
-        // Exit preview edit mode — tear down whichever engine was active.
         if (isLivePreviewActive()) {
             unmountLivePreview();
         }
         if (preview) {
             preview.contentEditable = 'false';
         }
-        previewUndoStack = [];
-        previewRedoStack = [];
-        if (previewHistoryTimer !== null) {
-            window.clearTimeout(previewHistoryTimer);
-            previewHistoryTimer = null;
-        }
-        container?.classList.remove('split-view');
         container?.classList.remove('preview-edit');
         container?.classList.remove('preview-left');
         renderMarkdown(currentContent);
     }
 
+    applyToolbarLayout(toolbarManager, {
+        stickyToolbar: currentSettings.stickyToolbar,
+        scrollTarget: '#content'
+    });
+    applyFormattingToolbarLayout();
+    updateHeaderHeight();
+    requestAnimationFrame(() => updateHeaderHeight());
+
     updateStatusInfo();
-    syncViewModeSelect();
 }
 
 // Ctrl/Cmd+Click actions inside CM6 Preview Edit — the click-handling port of
@@ -969,85 +754,23 @@ function handleLivePreviewModifierClick(pos: number) {
     }
 }
 
-// ===== Unified View Mode (dropdown) =====
-type ViewMode = 'reading' | 'split' | 'preview';
-
-function getCurrentViewMode(): ViewMode {
-    if (isPreviewEditMode) {return 'preview';}
-    if (isEditMode) {return 'split';}
-    return 'reading';
-}
-
-// The single reader over the two editing surfaces (dual-surface contract rule 3).
-// Branches on mode; the CM6 preview-edit branch reads raw markdown directly
-// (no turndown), the legacy branch converts HTML back to markdown.
+// ===== Active editor content =====
+// The single reader over the editing surfaces.
 function getActiveEditorContent(): string {
     if (isPreviewEditMode) {
-        // CM6 engine: the document already IS raw markdown.
-        if (isLivePreviewActive()) {
-            const cm6 = getLivePreviewContent();
-            if (cm6 !== null) {
-                return sanitizeMarkdownCopyLinkArtifacts(cm6);
-            }
+        const cm6 = getLivePreviewContent();
+        if (cm6 !== null) {
+            return sanitizeMarkdownCopyLinkArtifacts(cm6);
         }
-        // Legacy engine (kill-switch): HTML -> markdown via turndown.
-        const preview = $('markdownPreview');
-        if (!preview) {return currentContent;}
-        const clone = preview.cloneNode(true) as HTMLElement;
-        clone.querySelectorAll('.table-hover-tools').forEach(node => node.remove());
-        clone.querySelectorAll('.heading-anchor').forEach(node => node.remove());
-        clone.querySelectorAll('td, th').forEach((cellNode) => {
-            const cell = cellNode as HTMLTableCellElement;
-            if ((cell.textContent || '').replace(/ /g, '').trim() === '') {
-                cell.innerHTML = '';
-            }
-        });
-        return sanitizeMarkdownCopyLinkArtifacts(turndownService.turndown(clone.innerHTML));
-    }
-    if (isEditMode) {
-        const editor = $('markdownEditor') as HTMLTextAreaElement | null;
-        return editor ? sanitizeMarkdownCopyLinkArtifacts(editor.value) : currentContent;
+        return currentContent;
     }
     return currentContent;
 }
 
-function syncViewModeSelect() {
-    const select = $('viewModeSelect') as HTMLSelectElement | null;
-    if (!select) {return;}
-    select.value = getCurrentViewMode();
-    select.disabled = isVersionPreviewMode || isSaving;
-}
-
-function setViewMode(next: ViewMode) {
-    const current = getCurrentViewMode();
-    if (current === next) {return;}
-
-    if (current !== 'reading') {
-        currentContent = getActiveEditorContent();
+function ensurePreviewEditMode() {
+    if (!isPreviewEditMode && !isVersionPreviewMode) {
+        setPreviewEditMode(true);
     }
-
-    if (next === 'reading') {
-        if (currentContent === originalContent) {
-            if (current === 'preview') {setPreviewEditMode(false);}
-            else {setEditMode(false);}
-        } else {
-            performSave(true);
-        }
-        return;
-    }
-
-    if (current === 'reading') {
-        if (next === 'split') {setEditMode(true);}
-        else {setPreviewEditMode(true);}
-        return;
-    }
-
-    // Lateral switch between split <-> preview: carry the unsaved text across
-    // without letting setEditMode/setPreviewEditMode clobber originalContent.
-    const preservedOriginal = originalContent;
-    if (next === 'split') {setEditMode(true);}
-    else {setPreviewEditMode(true);}
-    originalContent = preservedOriginal;
 }
 
 function ensureVersionPreviewBanner(): HTMLElement {
@@ -1084,7 +807,6 @@ function setVersionPreviewMode(enabled: boolean, label?: string) {
     isVersionPreviewMode = enabled;
     document.body.classList.toggle('version-preview-mode', enabled);
     if (enabled) {
-        setEditMode(false);
         setPreviewEditMode(false);
         const banner = ensureVersionPreviewBanner();
         const text = $('versionPreviewText');
@@ -1097,74 +819,42 @@ function setVersionPreviewMode(enabled: boolean, label?: string) {
         if (banner) {
             banner.classList.add('hidden');
         }
-        syncViewModeSelect();
+        ensurePreviewEditMode();
     }
 }
 
-function performSave(exitAfterSave = false) {
+function performSave() {
     if (isSaving || !isEditMode) {return;}
     isSaving = true;
-    shouldExitEditMode = exitAfterSave;
     setButtonsEnabled(false);
 
     currentContent = getActiveEditorContent();
-    const editor = $('markdownEditor') as HTMLTextAreaElement | null;
-    if (editor && editor.value !== currentContent) {
-        editor.value = currentContent;
-    }
 
     vscode.postMessage({ command: 'saveMarkdown', text: currentContent });
 }
 
 function cancelEdit() {
     currentContent = originalContent;
-    const editor = $('markdownEditor') as HTMLTextAreaElement;
-    if (editor) {
-        editor.value = originalContent;
-    }
-    if (isPreviewEditMode) {
-        // setPreviewEditMode(false) tears down the active engine (CM6 unmount or
-        // legacy contentEditable) and re-renders reading view from currentContent.
-        // Do NOT renderMarkdown() first — that would clobber a mounted CM6 view's
-        // DOM without destroying it.
-        setPreviewEditMode(false);
-    } else {
-        const preview = $('markdownPreview');
-        if (preview) {preview.contentEditable = 'false';}
-        renderMarkdown(originalContent);
-        setEditMode(false);
+    if (isPreviewEditMode && isLivePreviewActive()) {
+        setLivePreviewContent(originalContent);
+        refreshCm6Toc(originalContent);
+        reapplySearch();
+        updateStatusInfo();
     }
 }
 
 // Pushes freshly-read disk content into whichever surface is currently active.
 // isPreviewEditMode implies isEditMode (see setPreviewEditMode), so it must be
-// checked first or the legacy (non-CM6) Preview Edit engine gets misrouted into
-// the split-textarea branch below.
+// checked first or Preview Edit gets misrouted into the split-textarea branch below.
 function applyReloadedContent(text: string) {
     currentContent = text;
     originalContent = text;
     resolvedImageUriCache.clear();
 
-    if (isPreviewEditMode && isLivePreviewActive()) {
-        // CM6 owns #markdownPreview's DOM here — patch its doc in place via a
-        // transaction. Never call renderMarkdown(), which would stomp that DOM
-        // without unmounting the view first (see cancelEdit's warning above).
+    if (isPreviewEditMode) {
         setLivePreviewContent(text);
         refreshCm6Toc(text);
         reapplySearch();
-    } else if (isPreviewEditMode) {
-        // Legacy engine: mirror setPreviewEditMode(true)'s mount sequence —
-        // renderMarkdown() alone doesn't re-wire table edit affordances or reset
-        // the undo/redo history.
-        renderMarkdown(text);
-        const preview = $('markdownPreview');
-        if (preview) {preview.contentEditable = 'true';}
-        enhancePreviewTablesForEditing();
-        initializePreviewHistory();
-    } else if (isEditMode) {
-        const editor = $('markdownEditor') as HTMLTextAreaElement | null;
-        if (editor) {editor.value = text;}
-        renderMarkdown(text);
     } else {
         renderMarkdown(text);
     }
@@ -1226,31 +916,9 @@ async function requestReloadFromDisk() {
     vscode.postMessage({ command: 'requestFreshData' });
 }
 
-// ===== Live Preview =====
-const debouncedRender = debounce((content: string) => {
-    renderMarkdown(content);
-}, 150);
-
-function onEditorInput() {
-    const editor = $('markdownEditor') as HTMLTextAreaElement;
-    if (!editor) {return;}
-
-    currentContent = editor.value;
-
-    // Debounced live preview
-    debouncedRender(currentContent);
-
-    updateStatusInfo();
-}
-
-// ===== Sync Scroll (proportional with line-based interpolation) =====
-let activeScrollSource: string | null = null; // 'editor' or 'preview' or null
-let scrollTimeout: any = null;
+// ===== Preview line cache (reading-mode render) =====
 let cachedDataLineElements: HTMLElement[] = [];
 let cachedPreviewLineMap: Array<{ line: number, top: number }> = [];
-let cachedEditorLineMap: Array<{ line: number, top: number }> = [];
-let cachedEditorLineHeight = 21;
-let editorLineMeasureHost: HTMLDivElement | null = null;
 
 function normalizeLineMap(entries: Array<{ line: number, top: number }>): Array<{ line: number, top: number }> {
     const sorted = entries
@@ -1266,141 +934,6 @@ function normalizeLineMap(entries: Array<{ line: number, top: number }>): Array<
     }
 
     return deduped;
-}
-
-function findAnchorsForTop(map: Array<{ line: number, top: number }>, top: number) {
-    let before = map[0];
-    let after = map[map.length - 1];
-
-    for (let i = 0; i < map.length; i++) {
-        if (map[i].top <= top) {
-            before = map[i];
-        }
-        if (map[i].top >= top) {
-            after = map[i];
-            break;
-        }
-    }
-
-    return { before, after };
-}
-
-function findAnchorsForLine(map: Array<{ line: number, top: number }>, line: number) {
-    let before = map[0];
-    let after = map[map.length - 1];
-
-    for (let i = 0; i < map.length; i++) {
-        if (map[i].line <= line) {
-            before = map[i];
-        }
-        if (map[i].line >= line) {
-            after = map[i];
-            break;
-        }
-    }
-
-    return { before, after };
-}
-
-function interpolateLineFromTop(map: Array<{ line: number, top: number }>, top: number): number {
-    if (map.length === 0) {
-        return 0;
-    }
-    if (map.length === 1) {
-        return map[0].line;
-    }
-
-    const { before, after } = findAnchorsForTop(map, top);
-    if (after.top > before.top) {
-        const frac = (top - before.top) / (after.top - before.top);
-        return before.line + frac * (after.line - before.line);
-    }
-
-    return before.line;
-}
-
-function interpolateTopFromLine(map: Array<{ line: number, top: number }>, line: number): number {
-    if (map.length === 0) {
-        return 0;
-    }
-    if (map.length === 1) {
-        return map[0].top;
-    }
-
-    const { before, after } = findAnchorsForLine(map, line);
-    if (after.line > before.line) {
-        const frac = (line - before.line) / (after.line - before.line);
-        return before.top + frac * (after.top - before.top);
-    }
-
-    return before.top;
-}
-
-function ensureEditorLineMeasureHost(editor: HTMLTextAreaElement): HTMLDivElement {
-    if (!editorLineMeasureHost) {
-        editorLineMeasureHost = document.createElement('div');
-        editorLineMeasureHost.id = 'editorLineMeasureHost';
-        document.body.appendChild(editorLineMeasureHost);
-    }
-
-    const style = getComputedStyle(editor);
-    editorLineMeasureHost.style.position = 'absolute';
-    editorLineMeasureHost.style.visibility = 'hidden';
-    editorLineMeasureHost.style.pointerEvents = 'none';
-    editorLineMeasureHost.style.left = '-100000px';
-    editorLineMeasureHost.style.top = '0';
-    editorLineMeasureHost.style.zIndex = '-1';
-    editorLineMeasureHost.style.boxSizing = 'border-box';
-    editorLineMeasureHost.style.overflow = 'hidden';
-    editorLineMeasureHost.style.width = `${editor.clientWidth}px`;
-    editorLineMeasureHost.style.padding = style.padding;
-    editorLineMeasureHost.style.border = '0';
-    editorLineMeasureHost.style.fontFamily = style.fontFamily;
-    editorLineMeasureHost.style.fontSize = style.fontSize;
-    editorLineMeasureHost.style.fontWeight = style.fontWeight;
-    editorLineMeasureHost.style.fontStyle = style.fontStyle;
-    editorLineMeasureHost.style.letterSpacing = style.letterSpacing;
-    editorLineMeasureHost.style.lineHeight = style.lineHeight;
-    editorLineMeasureHost.style.tabSize = style.tabSize;
-    editorLineMeasureHost.style.whiteSpace = currentSettings.wordWrap ? 'pre-wrap' : 'pre';
-    editorLineMeasureHost.style.wordWrap = currentSettings.wordWrap ? 'break-word' : 'normal';
-    editorLineMeasureHost.style.overflowWrap = currentSettings.wordWrap ? 'break-word' : 'normal';
-
-    return editorLineMeasureHost;
-}
-
-function refreshEditorLineCache() {
-    const editor = $('markdownEditor') as HTMLTextAreaElement | null;
-    if (!editor || editor.clientWidth <= 0) {
-        cachedEditorLineMap = [];
-        return;
-    }
-
-    const measureHost = ensureEditorLineMeasureHost(editor);
-    measureHost.replaceChildren();
-
-    const fragment = document.createDocumentFragment();
-    const lines = editor.value.split('\n');
-
-    lines.forEach((line, index) => {
-        const row = document.createElement('div');
-        row.textContent = line.length > 0 ? line : '\u200b';
-        row.setAttribute('data-editor-line', String(index));
-        fragment.appendChild(row);
-    });
-
-    measureHost.appendChild(fragment);
-    const rows = Array.from(measureHost.querySelectorAll('[data-editor-line]')) as HTMLElement[];
-    cachedEditorLineMap = rows.map((row, index) => ({
-        line: index,
-        top: row.offsetTop
-    }));
-}
-
-function refreshSyncMetrics() {
-    refreshDataLineCache();
-    refreshEditorLineCache();
-    updateCachedLineHeight();
 }
 
 function refreshDataLineCache() {
@@ -1419,71 +952,10 @@ function refreshDataLineCache() {
     })));
 }
 
-function getEditorLineHeight(): number {
-    return cachedEditorLineHeight;
+function applyFormat(action: string) {
+    if (!isPreviewEditMode) {return;}
+    applyLivePreviewFormat(action);
 }
-
-function updateCachedLineHeight() {
-    const editor = $('markdownEditor') as HTMLTextAreaElement | null;
-    if (!editor) {return;}
-    const computed = parseFloat(getComputedStyle(editor).lineHeight);
-    cachedEditorLineHeight = isNaN(computed) ? 21 : computed;
-}
-
-function syncEditorToPreview() {
-    if (!currentSettings.syncScroll || isPreviewEditMode) {return;}
-    if (activeScrollSource === 'preview') {return;}
-
-    activeScrollSource = 'editor';
-    if (scrollTimeout) {clearTimeout(scrollTimeout);}
-
-    const editor = $('markdownEditor') as HTMLTextAreaElement;
-    const preview = $('markdownPreview');
-    if (!editor || !preview) {return;}
-
-    const editorMax = editor.scrollHeight - editor.clientHeight;
-    const previewMax = preview.scrollHeight - preview.clientHeight;
-
-    if (editorMax > 0 && previewMax > 0) {
-        if (cachedEditorLineMap.length >= 2 && cachedPreviewLineMap.length >= 2) {
-            const sourceLine = interpolateLineFromTop(cachedEditorLineMap, editor.scrollTop);
-            preview.scrollTop = Math.max(0, Math.min(previewMax, interpolateTopFromLine(cachedPreviewLineMap, sourceLine)));
-        } else {
-            preview.scrollTop = (editor.scrollTop / editorMax) * previewMax;
-        }
-    }
-
-    scrollTimeout = setTimeout(() => { activeScrollSource = null; }, 200);
-}
-
-function syncPreviewToEditor() {
-    if (!currentSettings.syncScroll || isPreviewEditMode) {return;}
-    if (activeScrollSource === 'editor') {return;}
-
-    activeScrollSource = 'preview';
-    if (scrollTimeout) {clearTimeout(scrollTimeout);}
-
-    const editor = $('markdownEditor') as HTMLTextAreaElement;
-    const preview = $('markdownPreview');
-    if (!editor || !preview) {return;}
-
-    const editorMax = editor.scrollHeight - editor.clientHeight;
-    const previewMax = preview.scrollHeight - preview.clientHeight;
-
-    if (editorMax > 0 && previewMax > 0) {
-        if (cachedEditorLineMap.length >= 2 && cachedPreviewLineMap.length >= 2) {
-            const sourceLine = interpolateLineFromTop(cachedPreviewLineMap, preview.scrollTop);
-            editor.scrollTop = Math.max(0, Math.min(editorMax, interpolateTopFromLine(cachedEditorLineMap, sourceLine)));
-        } else {
-            editor.scrollTop = (preview.scrollTop / previewMax) * editorMax;
-        }
-    }
-
-    scrollTimeout = setTimeout(() => { activeScrollSource = null; }, 200);
-}
-
-const throttledSyncEditorToPreview = throttleRAF(syncEditorToPreview);
-const throttledSyncPreviewToEditor = throttleRAF(syncPreviewToEditor);
 
 // ===== UI Helpers =====
 let toastDismissTimer: number | null = null;
@@ -1530,22 +1002,9 @@ function showToast(message: string, action?: { label: string; onClick: () => voi
     }
 }
 
-/** 1-indexed {line, col} for a character offset into `text` (col is character-based, like VS Code's own). */
-function lineColFromOffset(text: string, offset: number): { line: number; col: number } {
-    const upTo = text.slice(0, offset);
-    const line = upTo.split('\n').length;
-    const col = offset - upTo.lastIndexOf('\n');
-    return { line, col };
-}
-
-/** Current cursor position for the active editing surface. null in Reading mode or the legacy (non-CM6) Preview Edit engine. */
+/** Current cursor position for the active editing surface. null in Reading mode. */
 function getCurrentCursorPosition(): { line: number; col: number } | null {
-    const viewMode = getCurrentViewMode();
-    if (viewMode === 'split') {
-        const editor = $('markdownEditor') as HTMLTextAreaElement;
-        return editor ? lineColFromOffset(editor.value, editor.selectionStart) : null;
-    }
-    if (viewMode === 'preview' && isLivePreviewActive()) {
+    if (isPreviewEditMode) {
         return getLivePreviewCursorPosition();
     }
     return null;
@@ -1875,16 +1334,8 @@ function initSearchOverlay() {
     if (prevBtn) {prevBtn.addEventListener('click', () => navigateSearch('prev'));}
     if (nextBtn) {nextBtn.addEventListener('click', () => navigateSearch('next'));}
     if (closeBtn) {closeBtn.addEventListener('click', () => closeSearch());}
-}
 
-// ===== Focus Mode =====
-function toggleFocusMode() {
-    isFocusMode = !isFocusMode;
-    document.body.classList.toggle('focus-mode', isFocusMode);
-    if (toolbarManager) {
-        const btn = toolbarManager.getButton('focusModeButton');
-        if (btn) {btn.classList.toggle('active', isFocusMode);}
-    }
+    wireDelayedToolbarTooltips($('searchOverlay') || document);
 }
 
 // ===== Settings =====
@@ -1893,22 +1344,18 @@ function applySettings(settings: any, persist = false) {
     currentSettings = { ...currentSettings, ...settings };
 
     const container = $('markdownContainer');
-    const editor = $('markdownEditor');
 
     // Word wrap
     if (container) {
         container.classList.toggle('word-wrap', currentSettings.wordWrap);
     }
-    if (editor) {
-        editor.style.whiteSpace = currentSettings.wordWrap ? 'pre-wrap' : 'pre';
-    }
 
     if (isLivePreviewActive()) {
         setLivePreviewReveal(currentSettings.livePreviewReveal);
-        setLivePreviewLineNumbers(currentSettings.livePreviewLineNumbers);
+        setLivePreviewLineNumbers(wantsLivePreviewLineNumbers());
     }
 
-    refreshSyncMetrics();
+    refreshDataLineCache();
 
     // Sticky toolbar
     applyToolbarLayout(toolbarManager, {
@@ -1916,42 +1363,12 @@ function applySettings(settings: any, persist = false) {
         scrollTarget: '#content'
     });
 
-    if (toolbarManager) {
-        // Handle formatting toolbar specifically for MD so it scrolls with the content
-        const fmtToolbar = $('formattingToolbar');
-        const contentArea = $('content');
-        const mainToolbar = $('toolbar');
-        if (fmtToolbar && contentArea) {
-            if (currentSettings.stickyToolbar) {
-                if (mainToolbar && mainToolbar.parentNode) {
-                    mainToolbar.parentNode.insertBefore(fmtToolbar, mainToolbar.nextSibling);
-                } else {
-                    document.body.insertBefore(fmtToolbar, contentArea);
-                }
-            } else {
-                if (mainToolbar && mainToolbar.parentNode === contentArea) {
-                    contentArea.insertBefore(fmtToolbar, mainToolbar.nextSibling);
-                } else {
-                    contentArea.insertBefore(fmtToolbar, contentArea.firstChild);
-                }
-            }
-        }
-    }
-
-    // Preview position (left or right) - only affects split-view, not outline
-    if (container && isEditMode && !isPreviewEditMode) {
-        if (currentSettings.previewPosition === 'left') {
-            container.classList.add('preview-left');
-        } else {
-            container.classList.remove('preview-left');
-        }
-    }
+    applyFormattingToolbarLayout();
+    updateHeaderHeight();
 
     // Update checkbox UI
     const chkWordWrap = $('chkWordWrap') as HTMLInputElement;
     const chkStickyToolbar = $('chkStickyToolbar') as HTMLInputElement;
-    const chkSyncScroll = $('chkSyncScroll') as HTMLInputElement;
-    const chkPreviewLeft = $('chkPreviewLeft') as HTMLInputElement;
     const chkShowOutline = $('chkShowOutline') as HTMLInputElement;
     const chkShowLineNumbers = $('chkShowLineNumbers') as HTMLInputElement;
     const chkLivePreviewReveal = $('chkLivePreviewReveal') as HTMLInputElement;
@@ -1959,8 +1376,6 @@ function applySettings(settings: any, persist = false) {
 
     if (chkWordWrap) {chkWordWrap.checked = currentSettings.wordWrap;}
     if (chkStickyToolbar) {chkStickyToolbar.checked = currentSettings.stickyToolbar;}
-    if (chkSyncScroll) {chkSyncScroll.checked = currentSettings.syncScroll;}
-    if (chkPreviewLeft) {chkPreviewLeft.checked = currentSettings.previewPosition === 'left';}
     if (chkShowOutline) {chkShowOutline.checked = currentSettings.showOutline;}
     if (chkShowLineNumbers) {chkShowLineNumbers.checked = currentSettings.showLineNumbers;}
     if (chkLivePreviewReveal) {chkLivePreviewReveal.checked = currentSettings.livePreviewReveal;}
@@ -2008,26 +1423,6 @@ function initializeSettings() {
             defaultValue: currentSettings.stickyToolbar,
             onChange: (val: boolean) => {
                 currentSettings.stickyToolbar = val;
-                applySettings(currentSettings, true);
-            }
-        },
-        {
-            id: 'chkSyncScroll',
-            label: 'Sync Scrolling',
-            tooltip: 'Synchronize editor and preview scroll positions in split mode.',
-            defaultValue: currentSettings.syncScroll,
-            onChange: (val: boolean) => {
-                currentSettings.syncScroll = val;
-                applySettings(currentSettings, true);
-            }
-        },
-        {
-            id: 'chkPreviewLeft',
-            label: 'Preview on Left',
-            tooltip: 'Show preview on the left side instead of the right in split mode.',
-            defaultValue: currentSettings.previewPosition === 'left',
-            onChange: (val: boolean) => {
-                currentSettings.previewPosition = val ? 'left' : 'right';
                 applySettings(currentSettings, true);
             }
         },
@@ -2106,7 +1501,8 @@ function reorderMdToolbarButtons() {
     const toolbar = document.getElementById('toolbar');
     const enableBtn = toolbarManager.getButton('enableMdEditorButton');
     const disableBtn = toolbarManager.getButton('disableMdEditorButton');
-    const anchorWrap = $('viewModeSelectWrapper');
+    const saveBtn = toolbarManager.getButton('saveEditsButton');
+    const anchorWrap = (saveBtn?.closest('.tooltip') as HTMLElement | null) || saveBtn;
     const helpBtn = toolbarManager.getButton('helpButton');
 
     if (!toolbar || !enableBtn || !disableBtn || !anchorWrap || !helpBtn) {
@@ -2131,9 +1527,67 @@ function reorderMdToolbarButtons() {
 }
 
 // ===== Header Height =====
+function applyFormattingToolbarLayout() {
+    const fmtToolbar = $('formattingToolbar');
+    const contentArea = $('content');
+    const mainToolbar = $('toolbar');
+    if (!fmtToolbar || !contentArea) {return;}
+
+    if (currentSettings.stickyToolbar) {
+        const toolbarWrapper = mainToolbar?.closest('.toolbar-wrapper') as HTMLElement | null;
+        const anchor = toolbarWrapper && toolbarWrapper.parentNode === document.body
+            ? toolbarWrapper
+            : mainToolbar;
+        if (anchor?.parentNode === document.body) {
+            document.body.insertBefore(fmtToolbar, anchor.nextSibling);
+        } else {
+            document.body.insertBefore(fmtToolbar, contentArea);
+        }
+        return;
+    }
+
+    if (mainToolbar && mainToolbar.parentNode === contentArea) {
+        contentArea.insertBefore(fmtToolbar, mainToolbar.nextSibling);
+    } else {
+        contentArea.insertBefore(fmtToolbar, contentArea.firstChild);
+    }
+}
+
+function syncMdHeaderHeight() {
+    if (!document.body.classList.contains('sticky-toolbar-enabled')) {
+        return;
+    }
+
+    const mainToolbar = $('toolbar');
+    const fmtToolbar = $('formattingToolbar');
+    const headerBg = document.querySelector('.header-background') as HTMLElement | null;
+    const maxHeight = parseInt(
+        getComputedStyle(document.documentElement).getPropertyValue('--header-height-max'),
+        10
+    ) || 96;
+
+    const mainHeight = Math.min(
+        maxHeight,
+        Math.max(6, Math.ceil(mainToolbar?.getBoundingClientRect().height || 0))
+    );
+    document.documentElement.style.setProperty('--main-toolbar-height', mainHeight + 'px');
+
+    let totalHeight = mainHeight;
+    if (fmtToolbar && !fmtToolbar.classList.contains('hidden')) {
+        totalHeight += Math.ceil(fmtToolbar.getBoundingClientRect().height);
+    }
+
+    document.documentElement.style.setProperty('--header-height', totalHeight + 'px');
+    if (headerBg) {
+        headerBg.style.height = totalHeight + 'px';
+    }
+}
+
 function updateHeaderHeight() {
     if (toolbarManager) {
         toolbarManager.updateHeaderHeight();
+    } else {
+        syncMdHeaderHeight();
     }
 }
 
@@ -2152,8 +1606,13 @@ window.addEventListener('message', (event) => {
             documentDirUri = m.documentDirUri || '';
             workspaceFolderUri = m.workspaceFolderUri || null;
             currentTableColumnWidths = m.tableColumnWidths || {};
+            frontmatterPanelCollapsed = !!m.frontmatterPanelCollapsed;
             resolvedImageUriCache.clear();
-            renderMarkdown(currentContent);
+            if (isPreviewEditMode && isLivePreviewActive()) {
+                applyReloadedContent(currentContent);
+            } else if (hasEnteredPreviewEdit || isVersionPreviewMode) {
+                renderMarkdown(currentContent);
+            }
             updateStatusInfo();
             break;
 
@@ -2201,12 +1660,9 @@ window.addEventListener('message', (event) => {
 
         case 'initSettings':
             applySettings(m.settings, false);
-            if (!hasAppliedInitialViewMode) {
-                hasAppliedInitialViewMode = true;
-                const mode = currentSettings.defaultViewMode;
-                if (mode === 'preview' || mode === 'split' || mode === 'reading') {
-                    setViewMode(mode);
-                }
+            if (!hasEnteredPreviewEdit) {
+                hasEnteredPreviewEdit = true;
+                setPreviewEditMode(true);
             }
             break;
 
@@ -2220,17 +1676,8 @@ window.addEventListener('message', (event) => {
             if (m.ok) {
                 showToast('Saved');
                 originalContent = currentContent;
-                if (shouldExitEditMode) {
-                    if (isPreviewEditMode) {
-                        setPreviewEditMode(false);
-                    } else {
-                        setEditMode(false);
-                    }
-                }
-                shouldExitEditMode = false;
             } else {
                 showToast('Error saving');
-                shouldExitEditMode = false;
             }
             break;
 
@@ -2262,43 +1709,10 @@ window.addEventListener('message', (event) => {
 // ===== Button Handlers =====
 function wireButtons() {
     toolbarManager = new ToolbarManager('toolbar');
+    toolbarManager.setHeaderHeightHook(() => syncMdHeaderHeight());
 
     toolbarManager.setButtons(buildToolbarButtons());
-    insertViewModeSelect();
     reorderMdToolbarButtons();
-}
-
-function insertViewModeSelect() {
-    if (!toolbarManager || $('viewModeSelectWrapper')) {return;}
-
-    const wrapper = document.createElement('div');
-    wrapper.id = 'viewModeSelectWrapper';
-    wrapper.className = 'view-mode-select-wrapper';
-
-    const select = document.createElement('select');
-    select.id = 'viewModeSelect';
-    select.className = 'view-mode-select';
-    select.title = 'Choose how to view/edit this Markdown file';
-    select.innerHTML = `
-        <option value="reading">Reading</option>
-        <option value="split">Split Edit</option>
-        <option value="preview">Preview Edit</option>
-    `;
-    select.addEventListener('change', () => {
-        setViewMode(select.value as ViewMode);
-    });
-
-    wrapper.appendChild(select);
-
-    const saveWrapper = toolbarManager.getButton('saveEditsButton')?.closest('.tooltip') as HTMLElement | null;
-    const toolbar = document.getElementById('toolbar');
-    if (saveWrapper && saveWrapper.parentElement) {
-        saveWrapper.parentElement.insertBefore(wrapper, saveWrapper);
-    } else if (toolbar) {
-        toolbar.appendChild(wrapper);
-    }
-
-    syncViewModeSelect();
 }
 
 function buildToolbarButtons() {
@@ -2347,7 +1761,7 @@ function buildToolbarButtons() {
             tooltip: 'Save Changes (Ctrl+S)',
             cls: 'icon-only',
             hidden: true,
-            onClick: () => performSave(false)
+            onClick: () => performSave()
         },
         {
             id: 'cancelEditsButton',
@@ -2380,13 +1794,6 @@ function buildToolbarButtons() {
             tooltip: 'Settings',
             cls: 'icon-only',
             onClick: () => { /* Handled by wireSettingsUI */ }
-        },
-        {
-            id: 'focusModeButton',
-            icon: Icons.Focus,
-            tooltip: 'Focus Mode',
-            cls: 'icon-only',
-            onClick: () => toggleFocusMode()
         },
         {
             id: 'copyHtmlButton',
@@ -2451,24 +1858,10 @@ function buildToolbarButtons() {
 document.addEventListener('keydown', (e) => {
     const isCmdOrCtrl = e.ctrlKey || e.metaKey;
 
-    // CM6 preview edit: its own history() + historyKeymap handle undo/redo on the
-    // editor DOM. Skip the legacy contentEditable undo path so we don't double-apply.
-    if (isPreviewEditMode && !isLivePreviewActive() && isCmdOrCtrl && e.key.toLowerCase() === 'z' && !e.shiftKey) {
-        e.preventDefault();
-        performPreviewUndo();
-        return;
-    }
-
-    if (isPreviewEditMode && !isLivePreviewActive() && isCmdOrCtrl && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) {
-        e.preventDefault();
-        performPreviewRedo();
-        return;
-    }
-
     if (isCmdOrCtrl && e.key.toLowerCase() === 's') {
         e.preventDefault();
         if (isEditMode) {
-            performSave(false);
+            performSave();
         }
         return;
     }
@@ -2501,1124 +1894,31 @@ document.addEventListener('keydown', (e) => {
     }
 });
 
-// ===== Formatting Utilities =====
-function wrapSelection(editor: HTMLTextAreaElement, before: string, after: string) {
-    const start = editor.selectionStart;
-    const end = editor.selectionEnd;
-    const value = editor.value;
-    const selected = value.substring(start, end);
-
-    // If already wrapped, unwrap
-    const bLen = before.length;
-    const aLen = after.length;
-    if (start >= bLen && value.substring(start - bLen, start) === before && value.substring(end, end + aLen) === after) {
-        editor.value = value.substring(0, start - bLen) + selected + value.substring(end + aLen);
-        editor.selectionStart = start - bLen;
-        editor.selectionEnd = end - bLen;
-    } else {
-        editor.value = value.substring(0, start) + before + selected + after + value.substring(end);
-        editor.selectionStart = start + bLen;
-        editor.selectionEnd = end + bLen;
-    }
-    editor.focus();
-    onEditorInput();
-}
-
-function toggleLinePrefix(editor: HTMLTextAreaElement, prefix: string) {
-    const start = editor.selectionStart;
-    const end = editor.selectionEnd;
-    const value = editor.value;
-    const lineStart = value.lastIndexOf('\n', start - 1) + 1;
-    const lineEnd = value.indexOf('\n', end);
-    const lineEndFix = lineEnd === -1 ? value.length : lineEnd;
-    const lineContent = value.substring(lineStart, lineEndFix);
-
-    if (lineContent.startsWith(prefix)) {
-        editor.value = value.substring(0, lineStart) + lineContent.substring(prefix.length) + value.substring(lineEndFix);
-        editor.selectionStart = Math.max(lineStart, start - prefix.length);
-        editor.selectionEnd = Math.max(lineStart, end - prefix.length);
-    } else {
-        // Remove other heading prefixes if applying a heading
-        let cleaned = lineContent;
-        if (prefix.startsWith('#')) {
-            cleaned = lineContent.replace(/^#{1,6}\s/, '');
-        }
-        editor.value = value.substring(0, lineStart) + prefix + cleaned + value.substring(lineEndFix);
-        const diff = prefix.length + cleaned.length - lineContent.length;
-        editor.selectionStart = start + diff;
-        editor.selectionEnd = end + diff;
-    }
-    editor.focus();
-    onEditorInput();
-}
-
-function insertAtCursor(editor: HTMLTextAreaElement, text: string, cursorOffset?: number) {
-    const start = editor.selectionStart;
-    const end = editor.selectionEnd;
-    const value = editor.value;
-    editor.value = value.substring(0, start) + text + value.substring(end);
-    const pos = cursorOffset !== undefined ? start + cursorOffset : start + text.length;
-    editor.selectionStart = editor.selectionEnd = pos;
-    editor.focus();
-    onEditorInput();
-}
-
-function insertLink(editor: HTMLTextAreaElement) {
-    const start = editor.selectionStart;
-    const end = editor.selectionEnd;
-    const selected = editor.value.substring(start, end);
-    if (selected) {
-        wrapSelection(editor, '[', '](url)');
-        // Place cursor at "url"
-        editor.selectionStart = end + 3;
-        editor.selectionEnd = end + 6;
-    } else {
-        insertAtCursor(editor, '[text](url)', 1);
-        editor.selectionStart = start + 1;
-        editor.selectionEnd = start + 5;
-    }
-    editor.focus();
-}
-
-function insertImage(editor: HTMLTextAreaElement) {
-    const start = editor.selectionStart;
-    const selected = editor.value.substring(start, editor.selectionEnd);
-    const alt = selected || 'alt text';
-    const snippet = `![${alt}](image-url)`;
-    const value = editor.value;
-    editor.value = value.substring(0, start) + snippet + value.substring(editor.selectionEnd);
-    // Select "image-url"
-    editor.selectionStart = start + alt.length + 4;
-    editor.selectionEnd = start + alt.length + 13;
-    editor.focus();
-    onEditorInput();
-}
-
-function insertTable(editor: HTMLTextAreaElement) {
-    const table = '\n| Header 1 | Header 2 | Header 3 |\n| -------- | -------- | -------- |\n| Cell 1   | Cell 2   | Cell 3   |\n';
-    insertAtCursor(editor, table);
-}
-
-function toggleCheckboxList(editor: HTMLTextAreaElement) {
-    toggleLinePrefix(editor, '- [ ] ');
-}
-
-function toggleBlockquote(editor: HTMLTextAreaElement) {
-    toggleLinePrefix(editor, '> ');
-}
-
-function insertHorizontalRule(editor: HTMLTextAreaElement) {
-    const start = editor.selectionStart;
-    const value = editor.value;
-    const lineStart = value.lastIndexOf('\n', start - 1) + 1;
-    const before = lineStart === 0 && start === 0 ? '' : '\n';
-    insertAtCursor(editor, before + '---\n');
-}
-
-function toggleCodeBlock(editor: HTMLTextAreaElement) {
-    const start = editor.selectionStart;
-    const end = editor.selectionEnd;
-    const selected = editor.value.substring(start, end);
-    const value = editor.value;
-
-    if (selected.startsWith('```') && selected.endsWith('```')) {
-        // Unwrap
-        const inner = selected.slice(3, -3).replace(/^\n/, '').replace(/\n$/, '');
-        editor.value = value.substring(0, start) + inner + value.substring(end);
-        editor.selectionStart = start;
-        editor.selectionEnd = start + inner.length;
-    } else {
-        const wrapped = '```\n' + (selected || 'code') + '\n```';
-        editor.value = value.substring(0, start) + wrapped + value.substring(end);
-        editor.selectionStart = start + 4;
-        editor.selectionEnd = start + 4 + (selected || 'code').length;
-    }
-    editor.focus();
-    onEditorInput();
-}
-
-// Multi-line indent/outdent
-function multiLineIndent(editor: HTMLTextAreaElement, outdent: boolean) {
-    const start = editor.selectionStart;
-    const end = editor.selectionEnd;
-    const value = editor.value;
-
-    const firstLineStart = value.lastIndexOf('\n', start - 1) + 1;
-    const lastLineEnd = value.indexOf('\n', end - 1);
-    const blockEnd = lastLineEnd === -1 ? value.length : lastLineEnd;
-    const block = value.substring(firstLineStart, blockEnd);
-    const lines = block.split('\n');
-
-    let totalShift = 0;
-    let firstLineShift = 0;
-    const newLines = lines.map((line, i) => {
-        if (outdent) {
-            if (line.startsWith('    ')) {
-                if (i === 0) {firstLineShift = -4;}
-                totalShift -= 4;
-                return line.substring(4);
-            } else if (line.startsWith('\t')) {
-                if (i === 0) {firstLineShift = -1;}
-                totalShift -= 1;
-                return line.substring(1);
-            }
-            return line;
-        } else {
-            if (i === 0) {firstLineShift = 4;}
-            totalShift += 4;
-            return '    ' + line;
-        }
-    });
-
-    const newBlock = newLines.join('\n');
-    editor.value = value.substring(0, firstLineStart) + newBlock + value.substring(blockEnd);
-    editor.selectionStart = Math.max(firstLineStart, start + firstLineShift);
-    editor.selectionEnd = end + totalShift;
-    editor.focus();
-    onEditorInput();
-}
-
-// Undo/Redo history
-interface HistoryEntry { text: string; selStart: number; selEnd: number; }
-const undoStack: HistoryEntry[] = [];
-const redoStack: HistoryEntry[] = [];
-let lastSavedHistoryText = '';
-
-function pushUndoState(editor: HTMLTextAreaElement) {
-    const text = editor.value;
-    if (text === lastSavedHistoryText) {return;}
-    undoStack.push({ text, selStart: editor.selectionStart, selEnd: editor.selectionEnd });
-    if (undoStack.length > 200) {undoStack.shift();}
-    redoStack.length = 0;
-    lastSavedHistoryText = text;
-}
-
-function performUndo(editor: HTMLTextAreaElement) {
-    if (undoStack.length === 0) {return;}
-    redoStack.push({ text: editor.value, selStart: editor.selectionStart, selEnd: editor.selectionEnd });
-    const state = undoStack.pop()!;
-    editor.value = state.text;
-    editor.selectionStart = state.selStart;
-    editor.selectionEnd = state.selEnd;
-    lastSavedHistoryText = state.text;
-    editor.focus();
-    onEditorInput();
-}
-
-function performRedo(editor: HTMLTextAreaElement) {
-    if (redoStack.length === 0) {return;}
-    undoStack.push({ text: editor.value, selStart: editor.selectionStart, selEnd: editor.selectionEnd });
-    const state = redoStack.pop()!;
-    editor.value = state.text;
-    editor.selectionStart = state.selStart;
-    editor.selectionEnd = state.selEnd;
-    lastSavedHistoryText = state.text;
-    editor.focus();
-    onEditorInput();
-}
-
-// ===== Line Operations =====
-function duplicateLine(editor: HTMLTextAreaElement) {
-    const value = editor.value;
-    const start = editor.selectionStart;
-    const lineStart = value.lastIndexOf('\n', start - 1) + 1;
-    const lineEnd = value.indexOf('\n', start);
-    const lineEndFix = lineEnd === -1 ? value.length : lineEnd;
-    const line = value.substring(lineStart, lineEndFix);
-    editor.value = value.substring(0, lineEndFix) + '\n' + line + value.substring(lineEndFix);
-    // Place cursor on duplicated line at same offset
-    const offset = start - lineStart;
-    editor.selectionStart = editor.selectionEnd = lineEndFix + 1 + offset;
-    editor.focus();
-    onEditorInput();
-}
-
-function deleteLine(editor: HTMLTextAreaElement) {
-    const value = editor.value;
-    const start = editor.selectionStart;
-    const lineStart = value.lastIndexOf('\n', start - 1) + 1;
-    const lineEnd = value.indexOf('\n', start);
-    if (lineEnd === -1) {
-        // Last line — remove from prev newline
-        editor.value = value.substring(0, Math.max(0, lineStart - 1));
-        editor.selectionStart = editor.selectionEnd = editor.value.length;
-    } else {
-        editor.value = value.substring(0, lineStart) + value.substring(lineEnd + 1);
-        editor.selectionStart = editor.selectionEnd = lineStart;
-    }
-    editor.focus();
-    onEditorInput();
-}
-
-function moveLineUp(editor: HTMLTextAreaElement) {
-    const value = editor.value;
-    const start = editor.selectionStart;
-    const end = editor.selectionEnd;
-    const lineStart = value.lastIndexOf('\n', start - 1) + 1;
-    const lineEnd = value.indexOf('\n', end - (end > start && value[end - 1] === '\n' ? 1 : 0));
-    const lineEndFix = lineEnd === -1 ? value.length : lineEnd;
-
-    if (lineStart === 0) {return;} // Already at top
-
-    const prevLineStart = value.lastIndexOf('\n', lineStart - 2) + 1;
-    const currentBlock = value.substring(lineStart, lineEndFix);
-    const prevLine = value.substring(prevLineStart, lineStart - 1);
-
-    editor.value = value.substring(0, prevLineStart) + currentBlock + '\n' + prevLine + value.substring(lineEndFix);
-    const shift = lineStart - prevLineStart;
-    editor.selectionStart = start - shift;
-    editor.selectionEnd = end - shift;
-    editor.focus();
-    onEditorInput();
-}
-
-function moveLineDown(editor: HTMLTextAreaElement) {
-    const value = editor.value;
-    const start = editor.selectionStart;
-    const end = editor.selectionEnd;
-    const lineStart = value.lastIndexOf('\n', start - 1) + 1;
-    const lineEnd = value.indexOf('\n', end - (end > start && value[end - 1] === '\n' ? 1 : 0));
-    const lineEndFix = lineEnd === -1 ? value.length : lineEnd;
-
-    if (lineEndFix >= value.length) {return;} // Already at bottom
-
-    const nextLineEnd = value.indexOf('\n', lineEndFix + 1);
-    const nextLineEndFix = nextLineEnd === -1 ? value.length : nextLineEnd;
-    const currentBlock = value.substring(lineStart, lineEndFix);
-    const nextLine = value.substring(lineEndFix + 1, nextLineEndFix);
-
-    editor.value = value.substring(0, lineStart) + nextLine + '\n' + currentBlock + value.substring(nextLineEndFix);
-    const shift = nextLine.length + 1;
-    editor.selectionStart = start + shift;
-    editor.selectionEnd = end + shift;
-    editor.focus();
-    onEditorInput();
-}
-
-function selectWord(editor: HTMLTextAreaElement) {
-    const value = editor.value;
-    const pos = editor.selectionStart;
-    const wordChars = /[\w\-]/;
-    let wStart = pos;
-    let wEnd = pos;
-    while (wStart > 0 && wordChars.test(value[wStart - 1])) {wStart--;}
-    while (wEnd < value.length && wordChars.test(value[wEnd])) {wEnd++;}
-    editor.selectionStart = wStart;
-    editor.selectionEnd = wEnd;
-    editor.focus();
-}
-
-function jumpToLine(editor: HTMLTextAreaElement) {
-    const lineCount = editor.value.split('\n').length;
-    const input = prompt(`Go to line (1-${lineCount}):`);
-    if (!input) {return;}
-    const lineNum = parseInt(input, 10);
-    if (isNaN(lineNum) || lineNum < 1 || lineNum > lineCount) {return;}
-
-    const lines = editor.value.split('\n');
-    let offset = 0;
-    for (let i = 0; i < lineNum - 1; i++) {
-        offset += lines[i].length + 1;
-    }
-    editor.selectionStart = editor.selectionEnd = offset;
-    editor.focus();
-
-    // Scroll to line
-    const lineHeight = getEditorLineHeight();
-    editor.scrollTop = (lineNum - 1) * lineHeight - editor.clientHeight / 3;
-}
-
-function transformCase(editor: HTMLTextAreaElement, mode: 'upper' | 'lower' | 'title') {
-    const start = editor.selectionStart;
-    const end = editor.selectionEnd;
-    if (start === end) {return;}
-    const selected = editor.value.substring(start, end);
-    let transformed: string;
-    switch (mode) {
-        case 'upper': transformed = selected.toUpperCase(); break;
-        case 'lower': transformed = selected.toLowerCase(); break;
-        case 'title': transformed = selected.replace(/\b\w/g, c => c.toUpperCase()); break;
-    }
-    editor.value = editor.value.substring(0, start) + transformed + editor.value.substring(end);
-    editor.selectionStart = start;
-    editor.selectionEnd = start + transformed.length;
-    editor.focus();
-    onEditorInput();
-}
-
-function sortSelectedLines(editor: HTMLTextAreaElement, descending = false) {
-    const start = editor.selectionStart;
-    const end = editor.selectionEnd;
-    if (start === end) {return;}
-    const value = editor.value;
-    const firstLineStart = value.lastIndexOf('\n', start - 1) + 1;
-    const lastLineEnd = value.indexOf('\n', end - 1);
-    const blockEnd = lastLineEnd === -1 ? value.length : lastLineEnd;
-    const block = value.substring(firstLineStart, blockEnd);
-    const lines = block.split('\n');
-    lines.sort((a, b) => descending ? b.localeCompare(a) : a.localeCompare(b));
-    const sorted = lines.join('\n');
-    editor.value = value.substring(0, firstLineStart) + sorted + value.substring(blockEnd);
-    editor.selectionStart = firstLineStart;
-    editor.selectionEnd = firstLineStart + sorted.length;
-    editor.focus();
-    onEditorInput();
-}
-
-function trimTrailingWhitespace(editor: HTMLTextAreaElement) {
-    const pos = editor.selectionStart;
-    editor.value = editor.value.replace(/[ \t]+$/gm, '');
-    editor.selectionStart = editor.selectionEnd = Math.min(pos, editor.value.length);
-    editor.focus();
-    onEditorInput();
-}
-
-// Apply formatting from external call (toolbar buttons)
-function applyFormat(action: string) {
-    // CM6 Preview Edit mode: dispatch a transaction against the live doc.
-    if (isPreviewEditMode && isLivePreviewActive()) {
-        if (previewOnlyTableActions.has(action)) {
-            showToast('Table structure actions are available in WYSIWYG mode');
-            return;
-        }
-        applyLivePreviewFormat(action);
-        return;
-    }
-
-    // Legacy WYSIWYG preview-edit mode: use execCommand
-    if (isPreviewEditMode) {
-        applyWysiwygFormat(action);
-        return;
-    }
-
-    if (previewOnlyTableActions.has(action)) {
-        showToast('Table structure actions are available in WYSIWYG mode');
-        return;
-    }
-
-    const editor = $('markdownEditor') as HTMLTextAreaElement;
-    if (!editor) {return;}
-    pushUndoState(editor);
-    switch (action) {
-        case 'bold': wrapSelection(editor, '**', '**'); break;
-        case 'italic': wrapSelection(editor, '*', '*'); break;
-        case 'strikethrough': wrapSelection(editor, '~~', '~~'); break;
-        case 'inlineCode': wrapSelection(editor, '`', '`'); break;
-        case 'codeBlock': toggleCodeBlock(editor); break;
-        case 'link': insertLink(editor); break;
-        case 'image': insertImage(editor); break;
-        case 'table': insertTable(editor); break;
-        case 'heading1': toggleLinePrefix(editor, '# '); break;
-        case 'heading2': toggleLinePrefix(editor, '## '); break;
-        case 'heading3': toggleLinePrefix(editor, '### '); break;
-        case 'bulletList': toggleLinePrefix(editor, '- '); break;
-        case 'orderedList': toggleLinePrefix(editor, '1. '); break;
-        case 'checkbox': toggleCheckboxList(editor); break;
-        case 'blockquote': toggleBlockquote(editor); break;
-        case 'hr': insertHorizontalRule(editor); break;
-        case 'undo': performUndo(editor); break;
-        case 'redo': performRedo(editor); break;
-        case 'duplicateLine': duplicateLine(editor); break;
-        case 'deleteLine': deleteLine(editor); break;
-        case 'moveUp': moveLineUp(editor); break;
-        case 'moveDown': moveLineDown(editor); break;
-        case 'selectWord': selectWord(editor); break;
-        case 'jumpToLine': jumpToLine(editor); break;
-        case 'uppercase': transformCase(editor, 'upper'); break;
-        case 'lowercase': transformCase(editor, 'lower'); break;
-        case 'titlecase': transformCase(editor, 'title'); break;
-        case 'sortLines': sortSelectedLines(editor); break;
-        case 'sortLinesDesc': sortSelectedLines(editor, true); break;
-        case 'trimWhitespace': trimTrailingWhitespace(editor); break;
-    }
-}
-
-// ===== WYSIWYG Formatting (for Preview Edit mode) =====
-type TableSelectionContext = {
-    table: HTMLTableElement;
-    row: HTMLTableRowElement;
-    cell: HTMLTableCellElement;
-    rowIndex: number;
-    colIndex: number;
-};
-
-function parsePatternToken(value: string): { prefix: string; number: number; width: number; suffix: string } | null {
-    const trimmed = (value || '').trim();
-    const match = trimmed.match(/^(.*?)(-?\d+)([^\d]*)$/);
-    if (!match) {
-        return null;
-    }
-
-    const parsed = Number(match[2]);
-    if (!Number.isFinite(parsed)) {
-        return null;
-    }
-
-    return {
-        prefix: match[1],
-        number: parsed,
-        width: match[2].replace('-', '').length,
-        suffix: match[3]
-    };
-}
-
-function nextSequenceValue(a: string, b: string): string | null {
-    const trimmedA = (a || '').trim();
-    const trimmedB = (b || '').trim();
-    if (!trimmedB) {
-        return null;
-    }
-
-    const numericA = Number(trimmedA);
-    const numericB = Number(trimmedB);
-    if (Number.isFinite(numericA) && Number.isFinite(numericB)) {
-        const step = numericB - numericA;
-        const next = numericB + (Number.isFinite(step) ? step : 1);
-        const decimals = Math.max((trimmedA.split('.')[1] || '').length, (trimmedB.split('.')[1] || '').length);
-        return decimals > 0 ? next.toFixed(decimals) : String(next);
-    }
-
-    if (trimmedA.length === 1 && trimmedB.length === 1 && /[a-zA-Z]/.test(trimmedA) && /[a-zA-Z]/.test(trimmedB)) {
-        const codeA = trimmedA.charCodeAt(0);
-        const codeB = trimmedB.charCodeAt(0);
-        const nextCode = codeB + (codeB - codeA || 1);
-        if ((nextCode >= 65 && nextCode <= 90) || (nextCode >= 97 && nextCode <= 122)) {
-            return String.fromCharCode(nextCode);
-        }
-    }
-
-    const patternA = parsePatternToken(trimmedA);
-    const patternB = parsePatternToken(trimmedB);
-    if (patternA && patternB && patternA.prefix === patternB.prefix && patternA.suffix === patternB.suffix) {
-        const step = patternB.number - patternA.number || 1;
-        const nextNum = patternB.number + step;
-        const isNegative = nextNum < 0;
-        const abs = Math.abs(nextNum).toString().padStart(patternB.width, '0');
-        return `${patternB.prefix}${isNegative ? '-' : ''}${abs}${patternB.suffix}`;
-    }
-
-    return null;
-}
-
-function inferNextFromSeries(first?: string, second?: string): string {
-    const a = (first || '').trim();
-    const b = (second || '').trim();
-
-    if (!a && !b) {
-        return '';
-    }
-
-    if (!a && b) {
-        const token = parsePatternToken(b);
-        if (token) {
-            const nextNum = token.number + 1;
-            const isNegative = nextNum < 0;
-            const abs = Math.abs(nextNum).toString().padStart(token.width, '0');
-            return `${token.prefix}${isNegative ? '-' : ''}${abs}${token.suffix}`;
-        }
-        return b;
-    }
-
-    if (a && b) {
-        const inferred = nextSequenceValue(a, b);
-        if (inferred !== null) {
-            return inferred;
-        }
-    }
-
-    const token = parsePatternToken(b || a);
-    if (token) {
-        const nextNum = token.number + 1;
-        const isNegative = nextNum < 0;
-        const abs = Math.abs(nextNum).toString().padStart(token.width, '0');
-        return `${token.prefix}${isNegative ? '-' : ''}${abs}${token.suffix}`;
-    }
-
-    return b || a;
-}
-
-function inferNextRowCellValue(section: HTMLTableSectionElement, sourceRowIndex: number, colIndex: number): string {
-    const current = section.rows[sourceRowIndex]?.cells[colIndex]?.textContent || '';
-    const prev = section.rows[sourceRowIndex - 1]?.cells[colIndex]?.textContent || '';
-    return inferNextFromSeries(prev, current);
-}
-
-function inferNextColumnCellValue(row: HTMLTableRowElement, sourceColIndex: number): string {
-    const current = row.cells[sourceColIndex]?.textContent || '';
-    const prev = row.cells[sourceColIndex - 1]?.textContent || '';
-    return inferNextFromSeries(prev, current);
-}
-
-function createTableHoverControls(): HTMLElement {
-    const controls = document.createElement('div');
-    controls.className = 'table-hover-tools';
-    controls.setAttribute('contenteditable', 'false');
-
-    controls.innerHTML = [
-        '<button class="table-tool-btn" data-table-action="tableAddRowBelow" title="Add row below">+ Row</button>',
-        '<button class="table-tool-btn" data-table-action="tableRemoveRow" title="Remove row">- Row</button>',
-        '<button class="table-tool-btn" data-table-action="tableAddColumnRight" title="Add column right">+ Column</button>',
-        '<button class="table-tool-btn" data-table-action="tableRemoveColumn" title="Remove column">- Column</button>'
-    ].join('');
-
-    return controls;
-}
-
-function enhancePreviewTablesForEditing() {
-    const preview = $('markdownPreview');
-    if (!preview || !isPreviewEditMode) {
-        return;
-    }
-
-    preview.querySelectorAll('table.md-table').forEach((tableNode) => {
-        const table = tableNode as HTMLTableElement;
-        if (table.closest('.table-edit-wrap')) {
-            return;
-        }
-
-        const wrapper = document.createElement('div');
-        wrapper.className = 'table-edit-wrap';
-
-        const parent = table.parentElement;
-        if (!parent) {
-            return;
-        }
-
-        parent.insertBefore(wrapper, table);
-        wrapper.appendChild(table);
-        wrapper.appendChild(createTableHoverControls());
-    });
-}
-
-function createEmptyTableCell(tagName: 'th' | 'td'): HTMLTableCellElement {
-    const cell = document.createElement(tagName);
-    cell.innerHTML = '<br data-empty-cell-placeholder="true">';
-    return cell;
-}
-
-function cloneFormattingSkeleton(node: Node): Node | null {
-    if (node.nodeType === Node.TEXT_NODE) {
-        return null;
-    }
-
-    if (node.nodeType !== Node.ELEMENT_NODE) {
-        return null;
-    }
-
-    const sourceEl = node as HTMLElement;
-    const clone = sourceEl.cloneNode(false) as HTMLElement;
-    Array.from(sourceEl.childNodes).forEach((child) => {
-        const childClone = cloneFormattingSkeleton(child);
-        if (childClone) {
-            clone.appendChild(childClone);
-        }
-    });
-    return clone;
-}
-
-function findDeepestEditableContainer(root: HTMLElement): HTMLElement {
-    let current = root;
-    while (current.lastElementChild instanceof HTMLElement) {
-        current = current.lastElementChild;
-    }
-    return current;
-}
-
-function applyEmptyFormattedContent(target: HTMLTableCellElement, source: HTMLTableCellElement | null) {
-    target.innerHTML = '';
-
-    if (source) {
-        Array.from(source.childNodes).forEach((child) => {
-            const cloned = cloneFormattingSkeleton(child);
-            if (cloned) {
-                target.appendChild(cloned);
-            }
-        });
-    }
-
-    const container = findDeepestEditableContainer(target);
-    const placeholder = document.createElement('br');
-    placeholder.setAttribute('data-empty-cell-placeholder', 'true');
-    container.appendChild(placeholder);
-}
-
-function placeCaretInCell(cell: HTMLTableCellElement | null) {
-    if (!cell) {
-        return;
-    }
-
-    const selection = window.getSelection();
-    if (!selection) {
-        return;
-    }
-
-    const range = document.createRange();
-    const placeholder = cell.querySelector('[data-empty-cell-placeholder]');
-    if (placeholder && placeholder.parentNode) {
-        range.setStartBefore(placeholder);
-        range.collapse(true);
-    } else {
-        range.selectNodeContents(cell);
-        range.collapse(true);
-    }
-    selection.removeAllRanges();
-    selection.addRange(range);
-    cell.focus();
-}
-
-function getActiveTableSelectionContext(): TableSelectionContext | null {
-    const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0) {
-        return null;
-    }
-
-    let anchor = selection.anchorNode as Node | null;
-    if (!anchor) {
-        return null;
-    }
-
-    if (anchor.nodeType === Node.TEXT_NODE) {
-        anchor = anchor.parentElement;
-    }
-
-    const anchorElement = anchor as HTMLElement;
-    const activeCell = anchorElement.closest('td,th') as HTMLTableCellElement | null;
-    const cell = activeCell || lastTableCellContext;
-    if (!cell) {
-        return null;
-    }
-
-    const row = cell.closest('tr') as HTMLTableRowElement | null;
-    const table = cell.closest('table') as HTMLTableElement | null;
-    if (!row || !table) {
-        return null;
-    }
-
-    return {
-        table,
-        row,
-        cell,
-        rowIndex: row.rowIndex,
-        colIndex: cell.cellIndex
-    };
-}
-
-function buildContextFromCell(cell: HTMLTableCellElement): TableSelectionContext | null {
-    const row = cell.closest('tr') as HTMLTableRowElement | null;
-    const table = cell.closest('table') as HTMLTableElement | null;
-    if (!row || !table) {
-        return null;
-    }
-
-    return {
-        table,
-        row,
-        cell,
-        rowIndex: row.rowIndex,
-        colIndex: cell.cellIndex
-    };
-}
-
-function updateLastTableCellContextFromSelection() {
-    const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0) {
-        return;
-    }
-
-    let anchor = selection.anchorNode as Node | null;
-    if (!anchor) {
-        return;
-    }
-    if (anchor.nodeType === Node.TEXT_NODE) {
-        anchor = anchor.parentElement;
-    }
-
-    const cell = (anchor as HTMLElement).closest('td,th') as HTMLTableCellElement | null;
-    if (cell) {
-        lastTableCellContext = cell;
-        lastHoveredTable = (cell.closest('table') as HTMLTableElement | null) || lastHoveredTable;
-    }
-}
-
-function copyCellPresentation(source: HTMLTableCellElement | null, target: HTMLTableCellElement) {
-    if (!source) {
-        return;
-    }
-    target.className = source.className;
-    const style = source.getAttribute('style');
-    if (style) {
-        target.setAttribute('style', style);
-    }
-    const align = source.getAttribute('align');
-    if (align) {
-        target.setAttribute('align', align);
-    }
-
-    applyEmptyFormattedContent(target, source);
-}
-
-function getFallbackTable(): HTMLTableElement | null {
-    if (lastHoveredTable && document.contains(lastHoveredTable)) {
-        return lastHoveredTable;
-    }
-
-    const selectedTable = (lastTableCellContext?.closest('table') as HTMLTableElement | null) || null;
-    if (selectedTable && document.contains(selectedTable)) {
-        return selectedTable;
-    }
-
-    const preview = $('markdownPreview');
-    if (!preview) {
-        return null;
-    }
-
-    const tables = preview.querySelectorAll('table.md-table');
-    return tables.length ? (tables[tables.length - 1] as HTMLTableElement) : null;
-}
-
-function buildContextFromTableEnd(table: HTMLTableElement): TableSelectionContext | null {
-    const bodyRows = table.tBodies[0]?.rows;
-    const row = (bodyRows && bodyRows.length ? bodyRows[bodyRows.length - 1] : table.rows[table.rows.length - 1]) as HTMLTableRowElement | undefined;
-    if (!row || !row.cells.length) {
-        return null;
-    }
-    const colIndex = row.cells.length - 1;
-    const cell = row.cells[colIndex] as HTMLTableCellElement;
-    return {
-        table,
-        row,
-        cell,
-        rowIndex: row.rowIndex,
-        colIndex
-    };
-}
-
-function getForcedTableSelectionContext(): TableSelectionContext | null {
-    if (!forcedTableActionTable || !document.contains(forcedTableActionTable)) {
-        return null;
-    }
-
-    const table = forcedTableActionTable;
-    const active = getActiveTableSelectionContext();
-    if (active && active.table === table) {
-        return active;
-    }
-
-    if (lastTableCellContext) {
-        const lastContextTable = lastTableCellContext.closest('table') as HTMLTableElement | null;
-        if (lastContextTable === table) {
-            const fromLastCell = buildContextFromCell(lastTableCellContext);
-            if (fromLastCell) {
-                return fromLastCell;
-            }
-        }
-    }
-
-    return buildContextFromTableEnd(table);
-}
-
-function resolveInsertContext(): TableSelectionContext | null {
-    const forced = getForcedTableSelectionContext();
-    if (forced) {
-        return forced;
-    }
-
-    const active = getActiveTableSelectionContext();
-    if (active) {
-        return active;
-    }
-
-    const fallbackTable = getFallbackTable();
-    if (!fallbackTable) {
-        return null;
-    }
-    return buildContextFromTableEnd(fallbackTable);
-}
-
-function getTableColumnCount(table: HTMLTableElement): number {
-    let maxColumns = 0;
-    Array.from(table.rows).forEach((row) => {
-        maxColumns = Math.max(maxColumns, row.cells.length);
-    });
-    return maxColumns;
-}
-
-function addTableRowBelow() {
-    const context = resolveInsertContext();
-    if (!context) {
-        showToast('No table found to add a row');
-        return;
-    }
-
-    const section = context.row.parentElement as HTMLTableSectionElement | null;
-    if (!section) {
-        return;
-    }
-
-    const isHeaderSection = section.tagName === 'THEAD';
-    let targetSection: HTMLTableSectionElement = section;
-    if (isHeaderSection) {
-        targetSection = context.table.tBodies[0] || context.table.createTBody();
-    }
-
-    const templateColumns = context.row.cells.length || getTableColumnCount(context.table) || 1;
-    const newRow = document.createElement('tr');
-    for (let i = 0; i < templateColumns; i++) {
-        const tagName: 'th' | 'td' = isHeaderSection ? 'td' : (context.row.cells[i]?.tagName.toLowerCase() === 'th' ? 'th' : 'td');
-        const newCell = createEmptyTableCell(tagName);
-        newCell.textContent = '';
-        copyCellPresentation(context.row.cells[i] as HTMLTableCellElement | null, newCell);
-        newRow.appendChild(newCell);
-    }
-
-    if (isHeaderSection) {
-        targetSection.insertBefore(newRow, targetSection.rows[0] || null);
-    } else {
-        context.row.insertAdjacentElement('afterend', newRow);
-    }
-
-    const targetCol = Math.min(context.colIndex, Math.max(newRow.cells.length - 1, 0));
-    placeCaretInCell(newRow.cells[targetCol] as HTMLTableCellElement);
-}
-
-function removeCurrentTableRow() {
-    const context = getForcedTableSelectionContext() || getActiveTableSelectionContext();
-    if (!context) {
-        showToast('Place the caret inside a table cell first');
-        return;
-    }
-
-    const section = context.row.parentElement as HTMLTableSectionElement | null;
-    if (!section) {
-        return;
-    }
-
-    if (section.rows.length <= 1) {
-        Array.from(context.row.cells).forEach(cell => {
-            cell.textContent = '';
-        });
-        placeCaretInCell(context.row.cells[Math.min(context.colIndex, context.row.cells.length - 1)] as HTMLTableCellElement);
-        showToast('Cannot remove the last row in this section');
-        return;
-    }
-
-    const fallbackRow = (context.row.nextElementSibling || context.row.previousElementSibling) as HTMLTableRowElement | null;
-    context.row.remove();
-    if (fallbackRow) {
-        const targetCol = Math.min(context.colIndex, Math.max(fallbackRow.cells.length - 1, 0));
-        placeCaretInCell(fallbackRow.cells[targetCol] as HTMLTableCellElement);
-    }
-}
-
-function addTableColumnRight() {
-    const context = resolveInsertContext();
-    if (!context) {
-        showToast('No table found to add a column');
-        return;
-    }
-
-    const insertAt = context.colIndex + 1;
-    Array.from(context.table.rows).forEach((row) => {
-        const isHeaderRow = row.parentElement?.tagName === 'THEAD';
-        const newCell = createEmptyTableCell(isHeaderRow ? 'th' : 'td');
-        const styleSource = row.cells[Math.min(context.colIndex, Math.max(row.cells.length - 1, 0))] as HTMLTableCellElement | null;
-        copyCellPresentation(styleSource, newCell);
-        newCell.textContent = '';
-        row.insertBefore(newCell, row.cells[insertAt] || null);
-    });
-
-    const focusRow = context.table.rows[context.rowIndex];
-    placeCaretInCell((focusRow?.cells[insertAt] || null) as HTMLTableCellElement | null);
-}
-
-function removeCurrentTableColumn() {
-    const context = getForcedTableSelectionContext() || getActiveTableSelectionContext();
-    if (!context) {
-        showToast('Place the caret inside a table cell first');
-        return;
-    }
-
-    const maxColumns = getTableColumnCount(context.table);
-    if (maxColumns <= 1) {
-        showToast('Cannot remove the last column');
-        return;
-    }
-
-    Array.from(context.table.rows).forEach((row) => {
-        if (!row.cells.length) {
-            return;
-        }
-        const removeAt = Math.min(context.colIndex, row.cells.length - 1);
-        row.deleteCell(removeAt);
-    });
-
-    const focusRow = context.table.rows[Math.min(context.rowIndex, Math.max(context.table.rows.length - 1, 0))];
-    if (focusRow && focusRow.cells.length) {
-        const targetCol = Math.max(0, Math.min(context.colIndex, focusRow.cells.length - 1));
-        placeCaretInCell(focusRow.cells[targetCol] as HTMLTableCellElement);
-    }
-}
-
-function applyWysiwygFormat(action: string) {
-    const preview = $('markdownPreview');
-    if (!preview) {return;}
-    preview.focus();
-
-    if (action === 'undo') {
-        performPreviewUndo();
-        return;
-    }
-    if (action === 'redo') {
-        performPreviewRedo();
-        return;
-    }
-
-    const needsManualHistoryCapture = action === 'table' || tableControlActions.includes(action);
-    const beforeSnapshot = needsManualHistoryCapture ? getPreviewSnapshot() : '';
-
-    switch (action) {
-        case 'bold': document.execCommand('bold'); break;
-        case 'italic': document.execCommand('italic'); break;
-        case 'strikethrough': document.execCommand('strikethrough'); break;
-        case 'inlineCode': {
-            const sel = window.getSelection();
-            if (sel && sel.rangeCount > 0) {
-                const range = sel.getRangeAt(0);
-                const code = document.createElement('code');
-                code.className = 'inline-code';
-                range.surroundContents(code);
-            }
-            break;
-        }
-        case 'heading1': document.execCommand('formatBlock', false, 'H1'); break;
-        case 'heading2': document.execCommand('formatBlock', false, 'H2'); break;
-        case 'heading3': document.execCommand('formatBlock', false, 'H3'); break;
-        case 'bulletList': document.execCommand('insertUnorderedList'); break;
-        case 'orderedList': document.execCommand('insertOrderedList'); break;
-        case 'blockquote': document.execCommand('formatBlock', false, 'BLOCKQUOTE'); break;
-        case 'link': {
-            const url = prompt('Enter URL:', 'https://');
-            if (url) {document.execCommand('createLink', false, url);}
-            break;
-        }
-        case 'image': {
-            const imgUrl = prompt('Enter image URL:', 'https://');
-            if (imgUrl) {document.execCommand('insertImage', false, imgUrl);}
-            break;
-        }
-        case 'hr': document.execCommand('insertHorizontalRule'); break;
-        case 'table': {
-            const html = '<table class="md-table"><thead><tr><th>Header 1</th><th>Header 2</th><th>Header 3</th></tr></thead><tbody><tr><td>Cell 1</td><td>Cell 2</td><td>Cell 3</td></tr></tbody></table>';
-            document.execCommand('insertHTML', false, html);
-            requestAnimationFrame(() => enhancePreviewTablesForEditing());
-            break;
-        }
-        case 'tableAddRowBelow': addTableRowBelow(); break;
-        case 'tableRemoveRow': removeCurrentTableRow(); break;
-        case 'tableAddColumnRight': addTableColumnRight(); break;
-        case 'tableRemoveColumn': removeCurrentTableColumn(); break;
-        case 'codeBlock': {
-            const html = '<pre><code>code</code></pre>';
-            document.execCommand('insertHTML', false, html);
-            break;
-        }
-        case 'checkbox': {
-            const html = '<ul><li class="task-item"><input type="checkbox" /> Task item</li></ul>';
-            document.execCommand('insertHTML', false, html);
-            break;
-        }
-        case 'uppercase': {
-            const sel = window.getSelection();
-            if (sel && sel.toString()) {
-                document.execCommand('insertText', false, sel.toString().toUpperCase());
-            }
-            break;
-        }
-        case 'lowercase': {
-            const sel = window.getSelection();
-            if (sel && sel.toString()) {
-                document.execCommand('insertText', false, sel.toString().toLowerCase());
-            }
-            break;
-        }
-        case 'titlecase': {
-            const sel = window.getSelection();
-            if (sel && sel.toString()) {
-                const titled = sel.toString().replace(/\b\w/g, c => c.toUpperCase());
-                document.execCommand('insertText', false, titled);
-            }
-            break;
-        }
-    }
-
-    if (needsManualHistoryCapture) {
-        capturePreviewMutation(beforeSnapshot);
-    }
-}
-
 // ===== Resizable Panels =====
 function initResizeHandles() {
     const container = $('markdownContainer');
     if (!container) {return;}
 
-    // Create resize handle for TOC panel
     const tocHandle = document.createElement('div');
     tocHandle.className = 'resize-handle resize-handle-toc';
     tocHandle.id = 'resizeHandleToc';
 
-    // Create resize handle for editor/preview split
-    const splitHandle = document.createElement('div');
-    splitHandle.className = 'resize-handle resize-handle-split';
-    splitHandle.id = 'resizeHandleSplit';
-
-    // Insert handles into container
     const tocPanel = $('tocPanel');
-    const editorWrapper = container.querySelector('.editor-wrapper');
     if (tocPanel) {tocPanel.after(tocHandle);}
-    if (editorWrapper) {editorWrapper.after(splitHandle);}
 
-    // Wire drag for TOC resize
-    wireResizeHandle(tocHandle, 'toc');
-    // Wire drag for split resize
-    wireResizeHandle(splitHandle, 'split');
+    wireResizeHandle(tocHandle);
 }
 
-function wireResizeHandle(handle: HTMLElement, type: 'toc' | 'split') {
+function wireResizeHandle(handle: HTMLElement) {
     let startX = 0;
     let startLeftWidth = 0;
-    let startRightWidth = 0;
 
     function onMouseDown(e: MouseEvent) {
         e.preventDefault();
         startX = e.clientX;
 
-        if (type === 'toc') {
-            const tocPanel = $('tocPanel');
-            if (tocPanel) {startLeftWidth = tocPanel.getBoundingClientRect().width;}
-        } else {
-            // For split handle: measure the visual left and right panels
-            // The handle is between whatever is visually on its left and right
-            const handleRect = handle.getBoundingClientRect();
-            const container = $('markdownContainer');
-            if (!container) {return;}
-
-            // Find the sibling panels by their visual position
-            const editorWrapper = container.querySelector('.editor-wrapper') as HTMLElement;
-            const preview = $('markdownPreview');
-            if (!editorWrapper || !preview) {return;}
-
-            const editorRect = editorWrapper.getBoundingClientRect();
-            const previewRect = preview.getBoundingClientRect();
-
-            // Determine which is visually left vs right of the handle
-            if (editorRect.left < handleRect.left) {
-                startLeftWidth = editorRect.width;
-                startRightWidth = previewRect.width;
-            } else {
-                startLeftWidth = previewRect.width;
-                startRightWidth = editorRect.width;
-            }
-        }
+        const tocPanel = $('tocPanel');
+        if (tocPanel) {startLeftWidth = tocPanel.getBoundingClientRect().width;}
 
         document.body.classList.add('resizing');
         document.addEventListener('mousemove', onMouseMove);
@@ -3630,226 +1930,21 @@ function wireResizeHandle(handle: HTMLElement, type: 'toc' | 'split') {
         const container = $('markdownContainer');
         if (!container) {return;}
 
-        if (type === 'toc') {
-            const newWidth = Math.max(120, Math.min(500, startLeftWidth + dx));
-            container.style.setProperty('--toc-width', newWidth + 'px');
-        } else {
-            const totalWidth = startLeftWidth + startRightWidth;
-            const newLeft = Math.max(200, Math.min(totalWidth - 200, startLeftWidth + dx));
-            const newRight = totalWidth - newLeft;
-            container.style.setProperty('--split-left', newLeft + 'px');
-            container.style.setProperty('--split-right', newRight + 'px');
-        }
+        const newWidth = Math.max(120, Math.min(500, startLeftWidth + dx));
+        container.style.setProperty('--toc-width', newWidth + 'px');
     }
 
     function onMouseUp() {
         document.body.classList.remove('resizing');
         document.removeEventListener('mousemove', onMouseMove);
         document.removeEventListener('mouseup', onMouseUp);
-        refreshSyncMetrics();
+        refreshDataLineCache();
     }
 
     handle.addEventListener('mousedown', onMouseDown);
 }
 
 // ===== Editor Events =====
-function wireEditor() {
-    const editor = $('markdownEditor') as HTMLTextAreaElement;
-    const preview = $('markdownPreview');
-    if (!editor) {return;}
-
-    editor.addEventListener('input', onEditorInput);
-
-    // Cursor-move-only events (no content change, so `input` doesn't fire) — keeps the status bar's Ln/Col live.
-    editor.addEventListener('click', updateStatusInfo);
-    editor.addEventListener('keyup', updateStatusInfo);
-
-    editor.addEventListener('scroll', throttledSyncEditorToPreview, { passive: true });
-
-    if (preview) {
-        preview.addEventListener('scroll', throttledSyncPreviewToEditor, { passive: true });
-    }
-
-    window.addEventListener('resize', refreshSyncMetrics);
-
-    // Save initial undo state
-    pushUndoState(editor);
-
-    editor.addEventListener('keydown', (e) => {
-        const isMod = e.ctrlKey || e.metaKey;
-
-        // Tab indent / multi-line indent
-        if (e.key === 'Tab') {
-            e.preventDefault();
-            pushUndoState(editor);
-            const start = editor.selectionStart;
-            const end = editor.selectionEnd;
-            const value = editor.value;
-
-            // Multi-line selection: indent/outdent all lines
-            if (start !== end && value.substring(start, end).includes('\n')) {
-                multiLineIndent(editor, e.shiftKey);
-            } else if (e.shiftKey) {
-                const lineStart = value.lastIndexOf('\n', start - 1) + 1;
-                const lineContent = value.substring(lineStart, start);
-                if (lineContent.startsWith('    ')) {
-                    editor.value = value.substring(0, lineStart) + value.substring(lineStart + 4);
-                    editor.selectionStart = editor.selectionEnd = start - 4;
-                } else if (lineContent.startsWith('\t')) {
-                    editor.value = value.substring(0, lineStart) + value.substring(lineStart + 1);
-                    editor.selectionStart = editor.selectionEnd = start - 1;
-                }
-                onEditorInput();
-            } else {
-                editor.value = value.substring(0, start) + '    ' + value.substring(end);
-                editor.selectionStart = editor.selectionEnd = start + 4;
-                onEditorInput();
-            }
-            return;
-        }
-
-        // Enter: auto-indent + list continuation
-        if (e.key === 'Enter' && !e.shiftKey && !isMod) {
-            const start = editor.selectionStart;
-            const value = editor.value;
-            const lineStart = value.lastIndexOf('\n', start - 1) + 1;
-            const currentLine = value.substring(lineStart, start);
-
-            // Detect leading whitespace
-            const indentMatch = currentLine.match(/^(\s*)/);
-            const indent = indentMatch ? indentMatch[1] : '';
-
-            // Detect list patterns
-            const bulletMatch = currentLine.match(/^(\s*)([-*+])\s(.*)$/);
-            const orderedMatch = currentLine.match(/^(\s*)(\d+)\.\s(.*)$/);
-            const checkboxMatch = currentLine.match(/^(\s*)- \[([ xX])\]\s(.*)$/);
-
-            let insertion = '\n' + indent;
-            let shouldHandle = false;
-
-            if (checkboxMatch) {
-                if (checkboxMatch[3].trim() === '') {
-                    // Empty checkbox line: remove it and just add newline
-                    e.preventDefault();
-                    pushUndoState(editor);
-                    const lineEnd = start;
-                    editor.value = value.substring(0, lineStart) + '\n' + value.substring(lineEnd);
-                    editor.selectionStart = editor.selectionEnd = lineStart + 1;
-                    onEditorInput();
-                    return;
-                }
-                insertion = '\n' + checkboxMatch[1] + '- [ ] ';
-                shouldHandle = true;
-            } else if (bulletMatch) {
-                if (bulletMatch[3].trim() === '') {
-                    e.preventDefault();
-                    pushUndoState(editor);
-                    const lineEnd = start;
-                    editor.value = value.substring(0, lineStart) + '\n' + value.substring(lineEnd);
-                    editor.selectionStart = editor.selectionEnd = lineStart + 1;
-                    onEditorInput();
-                    return;
-                }
-                insertion = '\n' + bulletMatch[1] + bulletMatch[2] + ' ';
-                shouldHandle = true;
-            } else if (orderedMatch) {
-                if (orderedMatch[3].trim() === '') {
-                    e.preventDefault();
-                    pushUndoState(editor);
-                    const lineEnd = start;
-                    editor.value = value.substring(0, lineStart) + '\n' + value.substring(lineEnd);
-                    editor.selectionStart = editor.selectionEnd = lineStart + 1;
-                    onEditorInput();
-                    return;
-                }
-                const nextNum = parseInt(orderedMatch[2]) + 1;
-                insertion = '\n' + orderedMatch[1] + nextNum + '. ';
-                shouldHandle = true;
-            } else if (indent) {
-                shouldHandle = true;
-            }
-
-            if (shouldHandle) {
-                e.preventDefault();
-                pushUndoState(editor);
-                editor.value = value.substring(0, start) + insertion + value.substring(editor.selectionEnd);
-                editor.selectionStart = editor.selectionEnd = start + insertion.length;
-                onEditorInput();
-            }
-            return;
-        }
-
-        // Formatting shortcuts
-        if (isMod) {
-            let handled = true;
-            pushUndoState(editor);
-
-            if (e.key === 'b') { applyFormat('bold'); }
-            else if (e.key === 'i') { applyFormat('italic'); }
-            else if (e.key === 'k') { applyFormat('link'); }
-            else if (e.key === 'e' && !e.shiftKey) { applyFormat('inlineCode'); }
-            else if (e.key === 'e' && e.shiftKey) { applyFormat('codeBlock'); }
-            else if (e.key === 'x' && e.shiftKey) { applyFormat('strikethrough'); }
-            else if (e.key === 'l' && !e.shiftKey) { applyFormat('bulletList'); }
-            else if (e.key === 'l' && e.shiftKey) { applyFormat('orderedList'); }
-            else if (e.key === 'z' && !e.shiftKey) { e.preventDefault(); performUndo(editor); }
-            else if (e.key === 'z' && e.shiftKey) { e.preventDefault(); performRedo(editor); }
-            else if (e.key === 'y') { e.preventDefault(); performRedo(editor); }
-            else if (e.key === '1') { applyFormat('heading1'); }
-            else if (e.key === '2') { applyFormat('heading2'); }
-            else if (e.key === '3') { applyFormat('heading3'); }
-            else if (e.key === 'd' && e.shiftKey) { applyFormat('duplicateLine'); }
-            else if (e.key === 'k' && e.shiftKey) { applyFormat('deleteLine'); }
-            else if (e.key === 'd' && !e.shiftKey) { applyFormat('selectWord'); }
-            else if (e.key === 'g') { applyFormat('jumpToLine'); }
-            else if (e.key === 'u' && e.shiftKey) { applyFormat('uppercase'); }
-            else if (e.key === 'u' && !e.shiftKey) { applyFormat('lowercase'); }
-            else { handled = false; }
-
-            if (handled) {
-                e.preventDefault();
-                return;
-            }
-        }
-
-        // Alt+Arrow: move line up/down
-        if (e.altKey && !isMod) {
-            if (e.key === 'ArrowUp') {
-                e.preventDefault();
-                pushUndoState(editor);
-                moveLineUp(editor);
-                return;
-            } else if (e.key === 'ArrowDown') {
-                e.preventDefault();
-                pushUndoState(editor);
-                moveLineDown(editor);
-                return;
-            }
-        }
-
-        // Auto-close pairs when wrapping selected text
-        const pairs: { [key: string]: string } = { '(': ')', '[': ']', '{': '}', '"': '"', "'": "'", '`': '`' };
-        if (pairs[e.key]) {
-            const start = editor.selectionStart;
-            const end = editor.selectionEnd;
-            const selected = editor.value.substring(start, end);
-
-            if (selected) {
-                e.preventDefault();
-                pushUndoState(editor);
-                editor.value = editor.value.substring(0, start) + e.key + selected + pairs[e.key] + editor.value.substring(end);
-                editor.selectionStart = start + 1;
-                editor.selectionEnd = end + 1;
-                onEditorInput();
-            }
-        }
-    });
-
-    // Track undo states on input
-    const debouncedUndoSave = debounce(() => pushUndoState(editor), 500);
-    editor.addEventListener('input', debouncedUndoSave);
-}
-
 // ===== Preview Interactions =====
 function wirePreviewInteractions() {
     const preview = $('markdownPreview');
@@ -3858,79 +1953,8 @@ function wirePreviewInteractions() {
     if (wired) {return;}
     (preview as any)._wired = true;
 
-    // WYSIWYG keyboard shortcuts when preview is contenteditable
-    preview.addEventListener('keydown', (e) => {
-        if (!isPreviewEditMode) {return;}
-        // CM6 mode handles its own shortcuts via livePreviewFormatKeymap +
-        // historyKeymap (bound directly on the EditorView); this legacy branch
-        // is contentEditable/execCommand-only and would no-op (or double-fire)
-        // against the CM6 DOM.
-        if (isLivePreviewActive()) {return;}
-        const isMod = e.ctrlKey || e.metaKey;
-
-        if (isMod && e.key.toLowerCase() === 's') {
-            e.preventDefault();
-            performSave(false);
-            return;
-        }
-
-        // Undo/Redo - must explicitly handle since VS Code webview intercepts these
-        if (isMod && e.key.toLowerCase() === 'z' && !e.shiftKey) {
-            e.preventDefault();
-            performPreviewUndo();
-            return;
-        }
-        if (isMod && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) {
-            e.preventDefault();
-            performPreviewRedo();
-            return;
-        }
-
-        if (isMod) {
-            let handled = true;
-            if (e.key === 'b') { applyWysiwygFormat('bold'); }
-            else if (e.key === 'i') { applyWysiwygFormat('italic'); }
-            else if (e.key === 'k') { applyWysiwygFormat('link'); }
-            else if (e.key === 'e' && !e.shiftKey) { applyWysiwygFormat('inlineCode'); }
-            else if (e.key === 'e' && e.shiftKey) { applyWysiwygFormat('codeBlock'); }
-            else if (e.key === 'x' && e.shiftKey) { applyWysiwygFormat('strikethrough'); }
-            else if (e.key === 'l' && !e.shiftKey) { applyWysiwygFormat('bulletList'); }
-            else if (e.key === 'l' && e.shiftKey) { applyWysiwygFormat('orderedList'); }
-            else if (e.key === '1') { applyWysiwygFormat('heading1'); }
-            else if (e.key === '2') { applyWysiwygFormat('heading2'); }
-            else if (e.key === '3') { applyWysiwygFormat('heading3'); }
-            else if (e.key === 'u' && e.shiftKey) { applyWysiwygFormat('uppercase'); }
-            else if (e.key === 'u' && !e.shiftKey) { applyWysiwygFormat('lowercase'); }
-            else { handled = false; }
-
-            if (handled) {
-                e.preventDefault();
-                return;
-            }
-        }
-    });
-
     preview.addEventListener('click', (e) => {
         const target = e.target as HTMLElement;
-        const tableTool = target.closest('[data-table-action]') as HTMLElement | null;
-        if (tableTool) {
-            e.preventDefault();
-            e.stopPropagation();
-            const hostTable = tableTool.closest('.table-edit-wrap')?.querySelector('table.md-table') as HTMLTableElement | null;
-            if (hostTable) {
-                lastHoveredTable = hostTable;
-            }
-            const action = tableTool.getAttribute('data-table-action') || '';
-            if (tableControlActions.includes(action)) {
-                forcedTableActionTable = hostTable;
-                try {
-                    applyWysiwygFormat(action);
-                } finally {
-                    forcedTableActionTable = null;
-                }
-            }
-            return;
-        }
 
         const copyBtn = target.closest('.code-copy') as HTMLElement | null;
         if (copyBtn) {
@@ -3994,34 +2018,6 @@ function wirePreviewInteractions() {
                     documentUri: documentUri
                 });
             }
-        }
-    });
-
-    preview.addEventListener('mousedown', (e) => {
-        const target = e.target as HTMLElement;
-        if (target.closest('[data-table-action]')) {
-            // Keep current caret in table cell so actions know where to apply.
-            e.preventDefault();
-        }
-    });
-
-    preview.addEventListener('mouseup', () => {
-        updateLastTableCellContextFromSelection();
-    });
-
-    preview.addEventListener('keyup', () => {
-        updateLastTableCellContextFromSelection();
-    });
-
-    preview.addEventListener('input', () => {
-        schedulePreviewHistoryCapture();
-    });
-
-    preview.addEventListener('mouseover', (e) => {
-        const target = e.target as HTMLElement;
-        const table = target.closest('table.md-table') as HTMLTableElement | null;
-        if (table) {
-            lastHoveredTable = table;
         }
     });
 }
@@ -4171,8 +2167,8 @@ function wireFormattingToolbar() {
 // ===== Initialize =====
 wireButtons();
 initializeSettings();
-wireEditor();
 wireFormattingToolbar();
+wireDelayedToolbarTooltips();
 wireHoverTooltip();
 wirePreviewInteractions();
 wireTocPanel();

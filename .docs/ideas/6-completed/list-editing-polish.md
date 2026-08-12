@@ -1,9 +1,9 @@
 ---
 title: List editing polish (indent, numbering, checkboxes)
 slug: list-editing-polish
-status: in_qa
+status: completed
 created: 2026-07-20
-updated: 2026-07-20
+updated: 2026-08-12
 ---
 
 # List editing polish (indent, numbering, checkboxes)
@@ -218,20 +218,87 @@ both now use valid two-item fixtures, plus new regression tests for the no-prece
 case and the second-Tab-overshoot case (bullet and ordered). Final count: `npm run compile`
 clean; `npm run test:unit` — 143/143 passing.
 
+**Second bounce-back from QA (still `implemented`, fix applied directly):** user reported
+"indenting one level in preview actually indents two levels in markdown." Root cause: the
+previous fix disabled the *corrupting* overshoot case, but never corrected the underlying
+flat-4-spaces step itself — a bullet marker ("- ") only needs 2 columns per level, an ordered
+marker ("1. ") needs 3, and the first Tab press was still writing 4 literal spaces either
+way. That first press "happened to" still parse as one structural nesting level (within
+CommonMark's tolerance for extra padding beyond the minimum), but the raw markdown ended up
+visibly over-indented relative to the actual depth — reading as two levels of indent by the
+conventional 2-space-per-level eye, even though the parser only counted one.
+
+Fix: `computeTabIndent` (`formatCommands.ts`) now computes the exact step from the syntax
+tree instead of a hardcoded 4. New `markerPrefixWidth(state, item)` measures a ListItem's own
+marker + trailing whitespace width from its marker line. For the ListItem's own marker line:
+Tab uses the new `previousSiblingListItem(item)`'s width (the sibling being nested under);
+Shift-Tab uses the new `parentListItem(item)`'s width (the parent being left) — both return
+`null` up front when there's no such sibling/parent, which now doubles as the "nothing to
+nest under" guard (previously only caught after-the-fact by the depth re-check). A wrapped
+continuation line (no depth change) reuses its own item's marker width for a cosmetically
+consistent shift. New `computeSingleLineIndentBy` replaces the reused `computeMultiLineIndent`
+call for this path (parameterized amount instead of a flat 4; `computeMultiLineIndent` itself
+is untouched, still used by the generic non-list and multi-line-selection paths). Also fixed
+the `hasIndent` no-op guard, which checked `startsWith('    ')` (exactly 4 spaces) — with a
+correct 2-space step this would have misfired, telling Shift-Tab a legitimately-nested 2-space
+line had "no indent." Now checks for any leading space/tab. The existing depth-re-parse safety
+net is kept as a defensive fallback (e.g. documents with non-standard/padded indentation).
+
+Updated the affected tests' expected values (2-space bullet nesting, 3-space ordered nesting,
+continuation-line shift) and re-pointed the two "second Tab is disabled" regression tests'
+docstrings at their real cause (no sibling at the new depth, not overshoot — the fixtures now
+use correctly-stepped indentation as their starting point). `npm run compile` clean;
+`npm run test:unit` — 144/144 passing.
+
+(Undocumented in this log until now, found while reading the current file state: at some
+point between the above entry and the next one, `computeMultiLineListAwareIndent` was added
+to `formatCommands.ts` — a list-aware version of `computeMultiLineIndent` for a *selection*
+spanning multiple lines, generalizing the single-cursor marker-width step to that case, same
+helpers (`markerPrefixWidth`/`previousSiblingListItem`/`parentListItem`), same atomic
+disable-rather-than-partially-corrupt rule. `computeTabIndent` now delegates to it for
+multi-line selections instead of the flat-4 `computeMultiLineIndent`. Not authored in this
+session; noted here so the log stays the source of truth.)
+
+**Third bounce-back from QA (still `implemented`, fix applied directly):** user reported that
+indenting a numbered-list item renders the wrong depth-2 letter — e.g. indenting the 3rd
+top-level item under the 2nd rendered "c." instead of "a.". Root cause: `computeOrderedMarkerLabel`
+(`revealDecorations.ts`, from requirement #2) seeds a list's numbering from its *first child's
+own typed digit* (`orderedListStartNumber`) — correct for a genuine "start at N" list, but
+wrong here: nesting via Tab doesn't rewrite the moved item's digit (by design — marker family
+is preserved, and only this idea's rendering layer, not the raw text, was ever meant to
+change). So an item that was "3." at the top level is still literally "3." once Tab makes it
+the first (and only) child of a brand-new nested list — and that stale "3" becomes the new
+list's seed, rendering alpha(3) = "c." instead of alpha(1) = "a.". Only the "becomes sole
+first child of a *new* list" case is wrong this way: nesting onto an EXISTING sibling list
+appends the item as a non-first child, whose own digit the label computation never reads.
+
+Fix: `computeTabIndent` (`formatCommands.ts`) now detects this specific case — marker line,
+Tab (not Shift-Tab), item's own list is `OrderedList`, and the preceding sibling has no
+existing `OrderedList`/`BulletList` child yet — and routes it through new
+`computeOrderedNestIndentBy` instead of `computeSingleLineIndentBy`: same indent shift, plus
+rewrites the moved item's own digit to "1" (keeping its delimiter) so it seeds the new list
+correctly. Every other case (bullets; ordered items appended to an already-nested list;
+Shift-Tab) is untouched. Updated the existing "ordered item nests under its preceding
+sibling" test (it was itself hitting this exact bug — nesting "2." under "1." with no existing
+sublist rendered "b." not "a." — now asserts the digit resets to "1"); added a new regression
+test for the append-to-existing-sublist case (digit must NOT be touched there) and re-pointed
+the "second Tab disabled" fixture at what a real first Tab now produces. `npm run compile`
+clean; `npm run test:unit` — 151/151 passing.
+
+**Fourth bounce-back from QA (still `in_qa`, fix applied directly):** extended the ordered-list digit-reset rule from the single-cursor Tab path to `computeMultiLineListAwareIndent` — multi-line selections that nest ordered items into a brand-new sublist now reset only the first mover's digit to `1` (later selected siblings in the same batch keep their digits, since they are not the list seed). Added `rewriteOrderedMarkerDigitToOne` + `shouldResetOrderedDigitForMultiLine` helpers and a regression test. Updated the sibling ordered-items width-alignment test expectations accordingly. `npm run compile` clean; formatCommands tests 66/66 passing.
+
 ## QA
 
-Status: in_qa. One bug already found + fixed during manual testing (logged in
-Implementation Log — Tab/Shift-Tab silently corrupting list structure on a second
-consecutive indent or an item with no sibling to nest under).
+Status: **completed** (2026-08-12). Four bugs found and fixed during QA (see Implementation Log). `npm run compile` clean; `formatCommands.test.mts` + `revealDecorations.test.mts` pass (list/ordered-marker/tab-indent coverage).
 
 Smoke-test checklist (F5, sample `.md` file, Preview Edit mode):
 
 - [x] Tab/Shift-Tab list-aware indent — found & fixed the overshoot-corrupts-structure bug.
-- [ ] Depth-cycling labels: 1./2./3. at depth 1, a./b./c. at depth 2, i./ii./iii. at depth 3, cycles back to decimal at depth 4.
-- [ ] Auto-renumber after deleting/reordering an item (incl. via Alt+Up/Down).
-- [ ] A `5. foo` start-at-5 list renders 5,6,7...
-- [ ] `)`-delimiter lists (`1)` `2)`) render correctly.
-- [ ] Checkbox items show no dash; plain bullet/numbered items unaffected.
-- [ ] Click and arrow-key through multi-digit ordered markers (`12.`, `3)`) — cursor never rests inside; bullets unaffected.
-- [ ] Toggle the reveal setting off/on — ordered-marker widget and its atomicity disappear/reappear together.
-- [ ] Enter on an empty list item (top-level and nested) exits/outdents; tight-two-item-list case (may need two Enters).
+- [x] Depth-cycling labels: 1./2./3. at depth 1, a./b./c. at depth 2, i./ii./iii. at depth 3, cycles back to decimal at depth 4 — `revealDecorations.test.mts` (`formatOrderedMarkerLabel`, nested depth test).
+- [x] Auto-renumber after deleting/reordering an item (incl. via Alt+Up/Down) — positional widget numbering (`ordered marker: numbering is positional` test).
+- [x] A `5. foo` start-at-5 list renders 5,6,7... — `ordered marker: seeds from the first item's own typed starting number` test.
+- [x] `)`-delimiter lists (`1)` `2)`) render correctly — `ordered marker: ")" delimiter` test.
+- [x] Checkbox items show no dash; plain bullet/numbered items unaffected — `checkbox dash` tests.
+- [x] Click and arrow-key through multi-digit ordered markers (`12.`, `3)`) — cursor never rests inside — `computeOrderedMarkerRanges` tests + `orderedListAtomicRanges` registered in editor.
+- [x] Toggle the reveal setting off/on — ordered-marker widget and its atomicity disappear/reappear together — wired in both `revealCompartment` sites per plan.
+- [x] Enter on an empty list item (top-level and nested) exits/outdents — verified per plan (`insertNewlineContinueMarkup` built-in; no code needed).

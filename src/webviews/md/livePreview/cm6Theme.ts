@@ -25,12 +25,16 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             lineHeight: '1.7',
             overflow: 'auto',
             padding: '8px 0',
+            position: 'relative',
         },
         '.cm-content': {
             caretColor: 'var(--text-color)',
             maxWidth: '900px',
             margin: '0 auto',
             padding: '0 16px',
+        },
+        '.cm-editor': {
+            position: 'relative',
         },
         '&.cm-focused': {
             outline: 'none',
@@ -46,9 +50,15 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
         },
         '.cm-gutters': {
             backgroundColor: 'var(--bg-color)',
-            color: 'var(--text-faint)',
+            color: 'var(--text-muted)',
             border: 'none',
             fontSize: '12px',
+        },
+        '.cm-lineNumbers .cm-gutterElement': {
+            minWidth: '2.5em',
+            padding: '0 8px 0 4px',
+            textAlign: 'right',
+            fontVariantNumeric: 'tabular-nums',
         },
         '.cm-activeLineGutter': {
             backgroundColor: 'transparent',
@@ -63,7 +73,8 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             boxShadow: '0 0 0 2px var(--accent-color)',
         },
         // Reveal engine (Phase 4): dimmed marker shown while the cursor is in the
-        // element; heading-size/bold/italic content styling shown while it isn't.
+        // element (ATX headings: anywhere on the heading line); heading-size/bold/
+        // italic content styling always on.
         '.cm-md-reveal-mark': {
             color: 'var(--text-muted)',
             opacity: '0.7',
@@ -85,21 +96,20 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
         '.cm-md-h6': { fontSize: '0.85em', color: 'var(--text-muted)' },
         '.cm-md-inline-code': {
             fontFamily: 'var(--font-mono)',
-            fontSize: '85%',
-            fontWeight: '600',
+            fontSize: '100%',
             backgroundColor: 'var(--code-bg)',
             color: 'var(--code-text)',
             borderRadius: '4px',
         },
         '.cm-md-fenced-code-line': {
             fontFamily: 'var(--font-mono)',
-            fontWeight: '600',
             backgroundColor: 'var(--code-bg)',
         },
         '.cm-md-table-widget': {
             display: 'block',
             cursor: 'text',
             overflowX: 'auto',
+            overflowY: 'visible',
         },
         // Undoes the shared .markdown-preview table.md-table rule's
         // display:block/overflow:auto on the <table> itself (resources/md/
@@ -114,6 +124,10 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
         '.cm-md-table-widget table.md-table': {
             display: 'table',
             overflow: 'visible',
+        },
+        '.cm-md-frontmatter-widget': {
+            display: 'block',
+            margin: '0 0 20px 0',
         },
         // Phase 7: extended reveal set (strikethrough/inline-code marker hide/
         // dim reuses .cm-md-reveal-mark above; these are the new content classes).
@@ -196,6 +210,36 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
         '.cm-tooltip-autocomplete ul li[aria-selected]': {
             backgroundColor: 'var(--selection-bg)',
             color: 'var(--text-color)',
+        },
+        '.cm-lintRange-error': {
+            backgroundImage: 'url("data:image/svg+xml,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'6\' height=\'3\'><path d=\'m0 3 l2 -2 l1 0 l2 2\' fill=\'none\' stroke=\'%23e51400\' stroke-width=\'1\'/></svg>")',
+            backgroundRepeat: 'repeat-x',
+            backgroundPosition: 'left bottom',
+            paddingBottom: '2px',
+        },
+        '.cm-spell-context-menu': {
+            position: 'fixed',
+            zIndex: '1000',
+            minWidth: '120px',
+            padding: '4px 0',
+            backgroundColor: 'var(--bg-color)',
+            border: '1px solid var(--border-color)',
+            borderRadius: '4px',
+            boxShadow: '0 4px 16px rgba(0, 0, 0, 0.2)',
+        },
+        '.cm-spell-context-item': {
+            display: 'block',
+            width: '100%',
+            padding: '6px 12px',
+            border: 'none',
+            background: 'transparent',
+            color: 'var(--text-color)',
+            textAlign: 'left',
+            cursor: 'pointer',
+            font: 'inherit',
+        },
+        '.cm-spell-context-item:hover': {
+            backgroundColor: 'var(--selection-bg)',
         },
     });
 }

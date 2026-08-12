@@ -30,6 +30,34 @@ function resolveDocumentUri(uri?: vscode.Uri): vscode.Uri | undefined {
     return undefined;
 }
 
+function getTabUri(tab: vscode.Tab): vscode.Uri | undefined {
+    const input = tab.input;
+    if (input instanceof (vscode as any).TabInputText || input instanceof (vscode as any).TabInputCustom) {
+        return (input as { uri: vscode.Uri }).uri;
+    }
+    return undefined;
+}
+
+async function closeEditorsForUri(uri: vscode.Uri): Promise<void> {
+    const tabsToClose: vscode.Tab[] = [];
+    for (const group of vscode.window.tabGroups.all) {
+        for (const tab of group.tabs) {
+            const tabUri = getTabUri(tab);
+            if (tabUri && tabUri.toString() === uri.toString()) {
+                tabsToClose.push(tab);
+            }
+        }
+    }
+    if (tabsToClose.length > 0) {
+        await vscode.window.tabGroups.close(tabsToClose);
+    }
+}
+
+async function reopenWithCustomEditor(uri: vscode.Uri, viewType: string): Promise<void> {
+    await closeEditorsForUri(uri);
+    await vscode.commands.executeCommand('vscode.openWith', uri, viewType);
+}
+
 function getViewTypeForFileType(fileType: TabularFileType): string | undefined {
     if (fileType === 'csv') {
         return 'xlsxViewer.csv';
@@ -307,8 +335,7 @@ export function activate(context: vscode.ExtensionContext) {
             if (uri instanceof vscode.Uri) {
                 const path = uri.fsPath.toLowerCase();
                 const viewType = path.endsWith('.tsv') ? 'xlsxViewer.tsv' : 'xlsxViewer.csv';
-                await vscode.commands.executeCommand('workbench.action.closeActiveEditor');
-                await vscode.commands.executeCommand('vscode.openWith', uri, viewType);
+                await reopenWithCustomEditor(uri, viewType);
                 return;
             }
 
@@ -344,8 +371,7 @@ export function activate(context: vscode.ExtensionContext) {
 
         vscode.commands.registerCommand('xlsx-viewer.goBackToXlsxView', async (uri?: vscode.Uri) => {
             if (uri instanceof vscode.Uri) {
-                await vscode.commands.executeCommand('workbench.action.closeActiveEditor');
-                await vscode.commands.executeCommand('vscode.openWith', uri, 'xlsxViewer.xlsx');
+                await reopenWithCustomEditor(uri, 'xlsxViewer.xlsx');
                 return;
             }
 
@@ -371,10 +397,36 @@ export function activate(context: vscode.ExtensionContext) {
     );
 
     context.subscriptions.push(
+        vscode.commands.registerCommand('xlsx-viewer.openWithXlsx', async (uri?: vscode.Uri) => {
+            const target = resolveDocumentUri(uri);
+            if (target) {
+                await reopenWithCustomEditor(target, 'xlsxViewer.xlsx');
+            }
+        }),
+        vscode.commands.registerCommand('xlsx-viewer.openWithCsv', async (uri?: vscode.Uri) => {
+            const target = resolveDocumentUri(uri);
+            if (target) {
+                await reopenWithCustomEditor(target, 'xlsxViewer.csv');
+            }
+        }),
+        vscode.commands.registerCommand('xlsx-viewer.openWithTsv', async (uri?: vscode.Uri) => {
+            const target = resolveDocumentUri(uri);
+            if (target) {
+                await reopenWithCustomEditor(target, 'xlsxViewer.tsv');
+            }
+        }),
+        vscode.commands.registerCommand('xlsx-viewer.openWithMd', async (uri?: vscode.Uri) => {
+            const target = resolveDocumentUri(uri);
+            if (target) {
+                await reopenWithCustomEditor(target, 'xlsxViewer.md');
+            }
+        })
+    );
+
+    context.subscriptions.push(
         vscode.commands.registerCommand('xlsx-viewer.goBackToMdPreview', async (uri?: vscode.Uri) => {
             if (uri instanceof vscode.Uri) {
-                await vscode.commands.executeCommand('workbench.action.closeActiveEditor');
-                await vscode.commands.executeCommand('vscode.openWith', uri, 'xlsxViewer.md');
+                await reopenWithCustomEditor(uri, 'xlsxViewer.md');
                 return;
             }
 

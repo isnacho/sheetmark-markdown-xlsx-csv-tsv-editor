@@ -4,8 +4,8 @@
 		{
 			"label": "watch",
 			"dependsOn": [
-				"npm: watch:tsc",
-				"npm: watch:esbuild"
+				"watch:tsc",
+				"watch:esbuild"
 			],
 			"presentation": {
 				"reveal": "never"
@@ -16,11 +16,14 @@
 			}
 		},
 		{
-			"type": "npm",
-			"script": "watch:esbuild",
+			"label": "watch:esbuild",
+			"type": "shell",
+			"command": "node esbuild.js --watch",
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
 			"group": "build",
 			"isBackground": true,
-			"label": "npm: watch:esbuild",
 			"presentation": {
 				"group": "watch",
 				"reveal": "never"
@@ -47,12 +50,15 @@
 			}
 		},
 		{
-			"type": "npm",
-			"script": "watch:tsc",
+			"label": "watch:tsc",
+			"type": "shell",
+			"command": "npx tsc --noEmit --watch --project tsconfig.json",
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
 			"group": "build",
 			"problemMatcher": "$tsc-watch",
 			"isBackground": true,
-			"label": "npm: watch:tsc",
 			"presentation": {
 				"group": "watch",
 				"reveal": "never"

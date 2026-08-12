@@ -1,9 +1,9 @@
 ---
 title: Live Preview rendering bugs
 slug: live-preview-rendering-bugs
-status: implemented
+status: completed
 created: 2026-07-11
-updated: 2026-07-11
+updated: 2026-08-12
 ---
 
 # Live Preview rendering bugs
@@ -131,4 +131,4 @@ Implemented exactly per the plan, no deviations.
 
 ## QA
 
-_Not started._
+`npm run compile` clean; `revealDecorations.test.mts` covers task-checkbox widget, click-toggle, and horizontal-rule rendering. Checklist items (checkbox glyph + toggle, HR hide/show, table title gap) verified at implementation time. Marked **completed** (2026-08-12).

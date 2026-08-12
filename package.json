@@ -1,9 +1,9 @@
 {
-    "name": "xlsx-viewer",
+    "name": "super-file-viewer",
     "displayName": "XLSX, CSV, TSV & Markdown Editor",
     "description": "View and edit xlsx files with colors, fonts and styles (supporting in-table editing), and view and edit CSV, TSV & Markdown files in VS Code. This is an open-source project.",
     "version": "1.9.91",
-    "publisher": "muhammad-ahmad",
+    "publisher": "nacho-allendesalazar",
     "engines": {
         "vscode": "^1.60.0"
     },
@@ -97,9 +97,69 @@
                 "command": "xlsx-viewer.convertFile",
                 "title": "Convert File...",
                 "category": "Spreadsheet/CSV/TSV"
+            },
+            {
+                "command": "xlsx-viewer.openWithXlsx",
+                "title": "XLSX Viewer & Editor"
+            },
+            {
+                "command": "xlsx-viewer.openWithCsv",
+                "title": "CSV Viewer & Editor"
+            },
+            {
+                "command": "xlsx-viewer.openWithTsv",
+                "title": "TSV Viewer & Editor"
+            },
+            {
+                "command": "xlsx-viewer.openWithMd",
+                "title": "Markdown Viewer & Editor"
             }
         ],
         "menus": {
+            "explorer/context": [
+                {
+                    "command": "xlsx-viewer.openWithXlsx",
+                    "when": "resourceExtname == '.xlsx'",
+                    "group": "navigation"
+                },
+                {
+                    "command": "xlsx-viewer.openWithCsv",
+                    "when": "resourceExtname == '.csv'",
+                    "group": "navigation"
+                },
+                {
+                    "command": "xlsx-viewer.openWithTsv",
+                    "when": "resourceExtname == '.tsv'",
+                    "group": "navigation"
+                },
+                {
+                    "command": "xlsx-viewer.openWithMd",
+                    "when": "resourceExtname == '.md'",
+                    "group": "navigation"
+                }
+            ],
+            "editor/title/context": [
+                {
+                    "command": "xlsx-viewer.openWithXlsx",
+                    "when": "resourceExtname == '.xlsx'",
+                    "group": "navigation"
+                },
+                {
+                    "command": "xlsx-viewer.openWithCsv",
+                    "when": "resourceExtname == '.csv'",
+                    "group": "navigation"
+                },
+                {
+                    "command": "xlsx-viewer.openWithTsv",
+                    "when": "resourceExtname == '.tsv'",
+                    "group": "navigation"
+                },
+                {
+                    "command": "xlsx-viewer.openWithMd",
+                    "when": "resourceExtname == '.md'",
+                    "group": "navigation"
+                }
+            ],
             "editor/title": [
                 {
                     "when": "resourceExtname == '.xlsx' && activeEditor != 'xlsxViewer.xlsx'",
@@ -255,20 +315,6 @@
                     "default": true,
                     "description": "Enable word wrap in the Markdown preview."
                 },
-                "xlsxViewer.md.syncScroll": {
-                    "type": "boolean",
-                    "default": true,
-                    "description": "Synchronize scroll position between editor and preview in split view."
-                },
-                "xlsxViewer.md.previewPosition": {
-                    "type": "string",
-                    "default": "right",
-                    "enum": [
-                        "left",
-                        "right"
-                    ],
-                    "description": "Position of the preview pane in split view (left or right)."
-                },
                 "xlsxViewer.md.showOutline": {
                     "type": "boolean",
                     "default": true,
@@ -293,34 +339,6 @@
                     "type": "boolean",
                     "default": false,
                     "description": "In Markdown Preview Edit mode, show line numbers in the editor gutter."
-                },
-                "xlsxViewer.md.livePreviewEngine": {
-                    "type": "string",
-                    "default": "cm6",
-                    "enum": [
-                        "cm6",
-                        "legacy"
-                    ],
-                    "enumDescriptions": [
-                        "CodeMirror 6 editor with live-preview reveal (recommended).",
-                        "Legacy contentEditable + turndown editor (fallback kill-switch)."
-                    ],
-                    "description": "Engine for Markdown Preview Edit mode. 'cm6' uses the CodeMirror 6 live-preview editor; 'legacy' falls back to the old contentEditable editor."
-                },
-                "xlsxViewer.md.defaultViewMode": {
-                    "type": "string",
-                    "default": "preview",
-                    "enum": [
-                        "preview",
-                        "split",
-                        "reading"
-                    ],
-                    "enumDescriptions": [
-                        "Preview Edit — Obsidian/Notion-style live WYSIWYG editing (recommended).",
-                        "Split Edit — raw markdown textarea alongside a rendered preview.",
-                        "Reading — static rendered preview, no editing."
-                    ],
-                    "description": "View mode a Markdown file opens in. Split Edit and Reading remain available at any time from the editor's view-mode dropdown."
                 }
             }
         }
@@ -339,12 +357,12 @@
         "check-types": "tsc --noEmit",
         "lint": "eslint \"src/**/*.ts\"",
         "test": "vscode-test",
-        "test:unit": "node --test \"src/webviews/md/livePreview/**/*.test.mts\""
+        "test:unit": "node --test \"src/webviews/md/**/*.test.mts\""
     },
     "devDependencies": {
+        "@types/js-yaml": "^4.0.9",
         "@types/mocha": "^8.2.2",
         "@types/node": "14.x",
-        "@types/turndown": "^5.0.6",
         "@types/vscode": "^1.60.0",
         "@typescript-eslint/eslint-plugin": "^8.30.1",
         "@typescript-eslint/parser": "^8.30.1",
@@ -360,6 +378,7 @@
         "@codemirror/commands": "^6.8.1",
         "@codemirror/lang-markdown": "^6.3.2",
         "@codemirror/language": "^6.11.0",
+        "@codemirror/lint": "^6.9.7",
         "@codemirror/search": "^6.5.10",
         "@codemirror/state": "^6.5.2",
         "@codemirror/view": "^6.36.5",
@@ -369,6 +388,7 @@
         "@types/markdown-it-container": "^2.0.11",
         "exceljs": "^4.3.0",
         "highlight.js": "^11.11.1",
+        "js-yaml": "^5.2.1",
         "katex": "^0.16.45",
         "markdown-it": "^14.1.0",
         "markdown-it-abbr": "^2.0.0",
@@ -383,8 +403,7 @@
         "markdown-it-sup": "^2.0.0",
         "markdown-it-task-lists": "^2.1.1",
         "mermaid": "^11.4.0",
-        "turndown": "^7.2.2",
-        "turndown-plugin-gfm": "^1.0.2"
+        "typo-js": "^1.3.2"
     },
     "license": "MIT",
     "icon": "icon.png"

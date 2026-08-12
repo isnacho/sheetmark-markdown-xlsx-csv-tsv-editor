@@ -12,11 +12,15 @@ import {
     computeToggleLinePrefix,
     computeInsertAtCursor,
     computeInsertLink,
+    isPasteableUrl,
+    isPasteLinkifyBlocked,
+    computePasteLink,
     computeInsertImage,
     computeInsertTable,
     computeInsertHorizontalRule,
     computeToggleCodeBlock,
     computeMultiLineIndent,
+    computeMultiLineListAwareIndent,
     computeTabIndent,
     enclosingListItem,
     listItemDepth,
@@ -87,6 +91,63 @@ test('insertLink: inserts a placeholder snippet and selects "text" when nothing 
     const { doc, sel } = apply(state, computeInsertLink(state));
     assert.equal(doc, '[text](url)');
     assert.deepEqual([sel.from, sel.to], [1, 5]);
+});
+
+test('isPasteableUrl: accepts http(s) and www. single-line URLs', () => {
+    assert.ok(isPasteableUrl('https://example.com'));
+    assert.ok(isPasteableUrl('http://foo.bar/baz'));
+    assert.ok(isPasteableUrl('www.example.com/path'));
+    assert.ok(isPasteableUrl('  https://trim.me  '));
+});
+
+test('isPasteableUrl: rejects multi-line and non-URL text', () => {
+    assert.equal(isPasteableUrl('https://a.com\nhttps://b.com'), false);
+    assert.equal(isPasteableUrl('not a url'), false);
+    assert.equal(isPasteableUrl('ftp://files.example.com'), false);
+});
+
+test('pasteLink: no selection wraps the URL as label and target', () => {
+    const state = stateFor('see ', 4, 4);
+    const { doc, sel } = apply(state, computePasteLink(state, 'https://example.com')!);
+    assert.equal(doc, 'see [https://example.com](https://example.com)');
+    assert.equal(sel.from, sel.to);
+    assert.equal(sel.from, doc.length);
+});
+
+test('pasteLink: selection becomes the link label', () => {
+    const state = stateFor('see docs here', 4, 8);
+    const { doc, sel } = apply(state, computePasteLink(state, 'https://example.com')!);
+    assert.equal(doc, 'see [docs](https://example.com) here');
+    assert.equal(sel.from, doc.indexOf(' here'));
+    assert.equal(sel.to, sel.from);
+});
+
+test('pasteLink: skipped inside inline code', () => {
+    const doc = 'use `code` here';
+    const pos = doc.indexOf('code');
+    const state = stateFor(doc, pos, pos + 4);
+    assert.equal(computePasteLink(state, 'https://example.com'), null);
+});
+
+test('pasteLink: skipped inside an existing link', () => {
+    const doc = '[label](https://old.com)';
+    const pos = doc.indexOf('label');
+    const state = stateFor(doc, pos, pos + 5);
+    assert.equal(computePasteLink(state, 'https://new.com'), null);
+});
+
+test('pasteLink: skipped for multi-line clipboard', () => {
+    const state = stateFor('', 0, 0);
+    assert.equal(computePasteLink(state, 'https://a.com\nline two'), null);
+});
+
+test('isPasteLinkifyBlocked: false for plain text, true inside fenced code', () => {
+    const plain = stateFor('hello', 2, 2);
+    assert.equal(isPasteLinkifyBlocked(plain, 2, 2), false);
+    const doc = '```\ncode\n```';
+    const pos = doc.indexOf('code');
+    const fenced = stateFor(doc, pos, pos);
+    assert.equal(isPasteLinkifyBlocked(fenced, pos, pos), true);
 });
 
 test('insertImage: uses the selection as alt text and selects "image-url"', () => {
@@ -192,22 +253,22 @@ test('listItemDepth: 0 for plain text, increases one level per nesting', () => {
     assert.equal(listItemDepth(stateFor(nested, 0), nested.indexOf('two')), 2);
 });
 
-test('tabIndent: list-aware — mid-line Tab nests the item under its preceding sibling, preserving cursor offset', () => {
+test('tabIndent: list-aware — mid-line Tab nests the item under its preceding sibling by exactly the marker width (2 for "- "), preserving cursor offset', () => {
     const doc = '- one\n- two three\n';
     const pos = doc.indexOf('ree'); // mid-word, inside "three"
     const state = stateFor(doc, pos);
     const { doc: newDoc, sel } = apply(state, computeTabIndent(state, false));
-    assert.equal(newDoc, '- one\n    - two three\n');
-    assert.equal(sel.from, pos + 4);
+    assert.equal(newDoc, '- one\n  - two three\n');
+    assert.equal(sel.from, pos + 2);
 });
 
 test('tabIndent: list-aware — Shift-Tab outdents a nested item back to a sibling, symmetrically', () => {
-    const doc = '- one\n    - two three\n';
+    const doc = '- one\n  - two three\n';
     const pos = doc.indexOf('ree');
     const state = stateFor(doc, pos);
     const { doc: newDoc, sel } = apply(state, computeTabIndent(state, true));
     assert.equal(newDoc, '- one\n- two three\n');
-    assert.equal(sel.from, pos - 4);
+    assert.equal(sel.from, pos - 2);
 });
 
 test('tabIndent: list-aware — Shift-Tab on an already-flush list line is a true no-op', () => {
@@ -225,40 +286,50 @@ test('tabIndent: list-aware — Tab is disabled (no-op) when there is no precedi
     assert.equal(computeTabIndent(state, false), null);
 });
 
-test('tabIndent: list-aware — an ordered-list item nests correctly under its preceding sibling', () => {
+test('tabIndent: list-aware — an ordered-list item nests correctly under its preceding sibling by exactly the marker width (3 for "1. "), and its own digit resets to 1 since it becomes the first child of a brand-new nested list', () => {
     const doc = '1. one\n2. two three\n';
     const pos = doc.indexOf('ree');
     const state = stateFor(doc, pos);
     const { doc: newDoc, sel } = apply(state, computeTabIndent(state, false));
-    assert.equal(newDoc, '1. one\n    2. two three\n');
-    assert.equal(sel.from, pos + 4);
+    assert.equal(newDoc, '1. one\n   1. two three\n');
+    assert.equal(sel.from, pos + 3);
 });
 
-test('tabIndent: list-aware — a second consecutive Tab press on an ordered-list item is disabled once it would overshoot a level', () => {
-    const doc = '1. one\n    2. two three\n';
+test('tabIndent: list-aware — nesting under a sibling that already has its own nested list appends without touching the moved item\'s digit (only the first child\'s digit seeds numbering)', () => {
+    const doc = '1. one\n2. two\n   1. sub-a\n3. three\n';
+    const pos = doc.indexOf('ree');
+    const state = stateFor(doc, pos);
+    const { doc: newDoc, sel } = apply(state, computeTabIndent(state, false));
+    assert.equal(newDoc, '1. one\n2. two\n   1. sub-a\n   3. three\n');
+    assert.equal(sel.from, pos + 3);
+});
+
+test('tabIndent: list-aware — a second consecutive Tab press on an ordered-list item is disabled: it is already the only item at its depth, nothing to nest under', () => {
+    const doc = '1. one\n   1. two three\n';
     const pos = doc.indexOf('ree');
     const state = stateFor(doc, pos);
     assert.equal(computeTabIndent(state, false), null);
 });
 
-test('tabIndent: list-aware — a second consecutive Tab press on the same line is disabled once it would overshoot a level', () => {
-    // Regression: bullet markers only need 2 columns per level, but each Tab
-    // adds a flat 4 — nesting once (0->4 spaces) happens to still be valid,
-    // but nesting again (4->8 spaces) overshoots CommonMark's "4+ relative
-    // spaces = code block" cutoff and swallows the item's own marker entirely.
-    const doc = '- one\n    - two three\n';
+test('tabIndent: list-aware — a second consecutive Tab press on the same line is disabled: it is already the only item at its depth, nothing to nest under', () => {
+    // Regression: this used to be framed as "overshoots CommonMark's relative-
+    // indent tolerance" back when Tab added a flat 4 spaces regardless of marker
+    // width; now that the step is exactly the marker width, a second Tab is
+    // still disabled, but for the ordinary reason — the once-nested item is an
+    // only child, with no sibling at its new depth to nest under.
+    const doc = '- one\n  - two three\n';
     const pos = doc.indexOf('ree');
     const state = stateFor(doc, pos);
     assert.equal(computeTabIndent(state, false), null);
 });
 
-test('tabIndent: list-aware — a wrapped continuation line indents too', () => {
+test('tabIndent: list-aware — a wrapped continuation line indents too, by its own item\'s marker width', () => {
     const doc = '- one\n  continued line\n';
     const pos = doc.indexOf('nued'); // mid-word, inside "continued"
     const state = stateFor(doc, pos);
     const { doc: newDoc, sel } = apply(state, computeTabIndent(state, false));
-    assert.equal(newDoc, '- one\n      continued line\n');
-    assert.equal(sel.from, pos + 4);
+    assert.equal(newDoc, '- one\n    continued line\n');
+    assert.equal(sel.from, pos + 2);
 });
 
 test('tabIndent: non-list line is unaffected by the list-aware path', () => {
@@ -266,6 +337,108 @@ test('tabIndent: non-list line is unaffected by the list-aware path', () => {
     const { doc, sel } = apply(state, computeTabIndent(state, false));
     assert.equal(doc, 'plain     text');
     assert.equal(sel.from, 9);
+});
+
+test('multiLineListAwareIndent: selecting two sibling items nests both under the preceding item, together', () => {
+    const doc = '- top\n- one\n- two';
+    const state = stateFor(doc, doc.indexOf('- one'), doc.length);
+    const { doc: newDoc, sel } = apply(state, computeMultiLineListAwareIndent(state, false));
+    assert.equal(newDoc, '- top\n  - one\n  - two');
+    assert.deepEqual([sel.from, sel.to], [doc.indexOf('- one') + 2, newDoc.length]);
+});
+
+test('multiLineListAwareIndent: outdents multiple nested siblings back to top-level, symmetrically', () => {
+    const doc = '- top\n  - one\n  - two';
+    const state = stateFor(doc, doc.indexOf('- one'), doc.length);
+    const { doc: newDoc, sel } = apply(state, computeMultiLineListAwareIndent(state, true));
+    assert.equal(newDoc, '- top\n- one\n- two');
+});
+
+test('multiLineListAwareIndent: best-effort — an item with no sibling to nest under is left in place, the rest still move', () => {
+    // "only" is the first (and only) item in the whole list: nothing to nest it under,
+    // ever. It must not block "two", which has a real neighbor ("only") to nest under.
+    const doc = '- only\n- two';
+    const state = stateFor(doc, 0, doc.length);
+    const { doc: newDoc } = apply(state, computeMultiLineListAwareIndent(state, false));
+    assert.equal(newDoc, '- only\n  - two');
+});
+
+test('multiLineListAwareIndent: selecting an ENTIRE flat list nests every item but the first one under it', () => {
+    const doc = '- one\n- two\n- three\n- four';
+    const state = stateFor(doc, 0, doc.length);
+    const { doc: newDoc } = apply(state, computeMultiLineListAwareIndent(state, false));
+    assert.equal(newDoc, '- one\n  - two\n  - three\n  - four');
+});
+
+test('multiLineListAwareIndent: sibling ordered items across the single/double-digit boundary shift by the SAME width, no jagged misalignment', () => {
+    const items = [];
+    for (let i = 1; i <= 12; i++) { items.push(`${i}. item${i}`); }
+    const doc = items.join('\n');
+    const state = stateFor(doc, doc.indexOf('item10'), doc.indexOf('item11') + 'item11'.length);
+    const { doc: newDoc } = apply(state, computeMultiLineListAwareIndent(state, false));
+    const newLines = newDoc.split('\n');
+    assert.equal(newLines[9], '   1. item10'); // first nested under item9 seeds at 1
+    assert.equal(newLines[10], '   11. item11'); // same step width, digit untouched as non-first child
+});
+
+test('multiLineListAwareIndent: mixed selection — list marker lines get list-aware shift, plain lines keep the flat shift', () => {
+    const doc = '- zero\n- top\n- one\n\npara';
+    const state = stateFor(doc, doc.indexOf('- top'), doc.length);
+    const { doc: newDoc } = apply(state, computeMultiLineListAwareIndent(state, false));
+    assert.equal(newDoc, '- zero\n  - top\n  - one\n    \n    para');
+});
+
+test('multiLineListAwareIndent: a wrapped continuation line inside the selection rides along at its own item\'s marker width', () => {
+    const doc = '- top\n- one\n  continued line';
+    const state = stateFor(doc, doc.indexOf('- one'), doc.length);
+    const { doc: newDoc } = apply(state, computeMultiLineListAwareIndent(state, false));
+    assert.equal(newDoc, '- top\n  - one\n    continued line');
+});
+
+test('multiLineListAwareIndent: selection with no list items at all behaves exactly like the flat multi-line indent', () => {
+    const state = stateFor('one\ntwo', 0, 7);
+    const { doc, sel } = apply(state, computeMultiLineListAwareIndent(state, false));
+    assert.equal(doc, '    one\n    two');
+    assert.deepEqual([sel.from, sel.to], [4, 15]);
+});
+
+test('multiLineListAwareIndent: nesting two sibling ordered items under a parent resets only the first mover\'s digit to 1', () => {
+    const doc = '1. one\n2. two\n3. three';
+    const state = stateFor(doc, doc.indexOf('2. two'), doc.length);
+    const { doc: newDoc } = apply(state, computeMultiLineListAwareIndent(state, false));
+    assert.equal(newDoc, '1. one\n   1. two\n   3. three');
+});
+
+test('multiLineListAwareIndent: mixed-depth selection moves as one rigid unit, preserving the gap between levels', () => {
+    // "two" and "three" are depth-1 siblings; "three-a" is already one level deeper
+    // than "three". All three selected together: "three-a" must keep its +1 relative
+    // depth versus "three", not get left behind at its old absolute depth.
+    const doc = '- one\n- two\n- three\n  - three-a';
+    const state = stateFor(doc, doc.indexOf('- two'), doc.length);
+    const { doc: newDoc } = apply(state, computeMultiLineListAwareIndent(state, false));
+    assert.equal(newDoc, '- one\n  - two\n  - three\n    - three-a');
+});
+
+test('multiLineListAwareIndent: a 3-level ancestor chain selected together shifts uniformly, gaps intact', () => {
+    const doc = '- a\n- b\n  - b1\n    - b1a';
+    const state = stateFor(doc, doc.indexOf('- b'), doc.length);
+    const { doc: newDoc } = apply(state, computeMultiLineListAwareIndent(state, false));
+    assert.equal(newDoc, '- a\n  - b\n    - b1\n      - b1a');
+});
+
+test('multiLineListAwareIndent: outdenting a mixed-depth selection is symmetric', () => {
+    const doc = '- one\n  - two\n  - three\n    - three-a';
+    const state = stateFor(doc, doc.indexOf('two'), doc.length);
+    const { doc: newDoc } = apply(state, computeMultiLineListAwareIndent(state, true));
+    assert.equal(newDoc, '- one\n- two\n- three\n  - three-a');
+});
+
+test('multiLineListAwareIndent: a child rides along with its parent — if the parent can\'t move, neither does the child', () => {
+    // "three" is the very first item overall: it can never have a sibling above it.
+    // "three-a" (its only child) must not independently nest deeper on its own.
+    const doc = '- three\n  - three-a';
+    const state = stateFor(doc, 0, doc.length);
+    assert.equal(computeMultiLineListAwareIndent(state, false), null);
 });
 
 test('duplicateLine: duplicates the current line below, keeping cursor offset', () => {

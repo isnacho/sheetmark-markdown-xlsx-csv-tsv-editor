@@ -6,7 +6,8 @@ Fork of upstream `xlsx-viewer` v1.9.91, ~20k lines TypeScript. Read this file fu
 Deep references (load on demand): [.docs/ARCHITECTURE.md](.docs/ARCHITECTURE.md) ·
 [.docs/MESSAGE-PROTOCOL.md](.docs/MESSAGE-PROTOCOL.md) ·
 [.docs/MAP-spreadsheetWebview.md](.docs/MAP-spreadsheetWebview.md) ·
-[.docs/MAP-mdWebview.md](.docs/MAP-mdWebview.md) · roadmap: [.docs/PLAN.md](.docs/PLAN.md)
+[.docs/MAP-mdWebview.md](.docs/MAP-mdWebview.md) · roadmap: [.docs/PLAN.md](.docs/PLAN.md) ·
+local dev install/reversal: [.docs/LOCAL-DEV-INSTALL.md](.docs/LOCAL-DEV-INSTALL.md)
 
 ---
 

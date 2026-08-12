@@ -1,3 +1,4 @@
+import { setDelayedTitleText } from './delayedTitleTooltip';
 import { Icons } from './icons';
 
 export function renderThemeToggleSettingItem(buttonId: string): string {
@@ -179,16 +180,7 @@ export class ThemeManager {
         this.button.setAttribute('data-selected-side', this.selectedIconOnLeft ? 'left' : 'right');
 
         const label = nextTheme === 'vscode' ? 'VS Code' : (nextTheme === 'dark' ? 'Dark' : 'Light');
-        const tooltipText = `Switch to <b>${label} theme</b>`;
-        const wrapper = this.button.closest('.tooltip');
-        if (wrapper) {
-            const tip = wrapper.querySelector('.tooltiptext');
-            if (tip) {
-                tip.innerHTML = tooltipText;
-            }
-        } else {
-            this.button.title = `Switch to ${label} theme`;
-        }
+        setDelayedTitleText(this.button, `Switch to ${label} theme`);
     }
 
     private handleVsCodeThemeChange(_kind: number) {

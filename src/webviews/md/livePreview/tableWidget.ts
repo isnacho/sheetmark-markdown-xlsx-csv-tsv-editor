@@ -55,18 +55,31 @@
 // in-webview CM6 state and the drag UI.
 
 import MarkdownIt from 'markdown-it';
-import { EditorState, StateField, StateEffect } from '@codemirror/state';
+import { EditorState, StateField, StateEffect, EditorSelection } from '@codemirror/state';
 import type { TransactionSpec } from '@codemirror/state';
 import { EditorView, Decoration, WidgetType } from '@codemirror/view';
 import type { DecorationSet } from '@codemirror/view';
 import { syntaxTree } from '@codemirror/language';
 import type { SyntaxNode } from '@lezer/common';
 import type { VisibleRange } from './revealDecorations';
+import { Icons } from '../../shared/icons';
+
+function remapColumnWidths(widths: readonly number[], fromCol: number, toCol: number): readonly number[] {
+    if (fromCol === toCol || fromCol < 0 || toCol < 0 || fromCol >= widths.length) { return widths; }
+    const arr = widths.slice();
+    const [item] = arr.splice(fromCol, 1);
+    const target = Math.min(toCol, arr.length);
+    arr.splice(target, 0, item);
+    return arr;
+}
 
 /** Below this, a column stops shrinking under drag. */
 const MIN_COL_WIDTH_PX = 40;
 
-const md = new MarkdownIt();
+// Match mdWebview.ts's core options so inline HTML in cells (e.g. <br> line
+// breaks) renders instead of showing escaped literal tags when the cell is
+// inactive. linkify keeps bare URLs consistent with reading mode.
+const md = new MarkdownIt({ html: true, linkify: true });
 const defaultTableOpen = md.renderer.rules.table_open || ((tokens, idx, options, _env, self) => self.renderToken(tokens, idx, options));
 md.renderer.rules.table_open = (tokens, idx, options, env, self) => {
     tokens[idx].attrJoin('class', 'md-table');
@@ -111,17 +124,56 @@ function rangesIntersect(aFrom: number, aTo: number, bFrom: number, bTo: number)
  * delimiters and padding whitespace, so these ranges can be used directly
  * both for `rangesIntersect` selection checks and as CM6 transaction targets.
  */
-export function buildCellGrid(tableNode: SyntaxNode): CellRange[][] {
+export function buildCellGrid(state: EditorState, tableNode: SyntaxNode): CellRange[][] {
     const grid: CellRange[][] = [];
     for (let row = tableNode.firstChild; row; row = row.nextSibling) {
         if (row.name !== 'TableHeader' && row.name !== 'TableRow') { continue; }
-        const cells: CellRange[] = [];
-        for (let cell = row.firstChild; cell; cell = cell.nextSibling) {
-            if (cell.name === 'TableCell') { cells.push({ from: cell.from, to: cell.to }); }
-        }
-        grid.push(cells);
+        grid.push(cellRangesFromRowLine(state, row));
     }
     return grid;
+}
+
+/**
+ * Per-cell doc ranges from a header/body row's physical source line. Lezer's
+ * GFM table parser omits `TableCell` nodes for empty cells, but markdown-it
+ * still renders them — so the grid must follow pipe boundaries on the line,
+ * not just syntax-tree children.
+ */
+function cellRangesFromRowLine(state: EditorState, rowNode: SyntaxNode): CellRange[] {
+    const lineFrom = rowNode.from;
+    const lineText = state.sliceDoc(rowNode.from, rowNode.to);
+    const cellTexts = splitTableRowCells(lineText);
+    const ranges: CellRange[] = [];
+
+    const findPipe = (from: number): number => {
+        for (let i = from; i < lineText.length; i++) {
+            if (lineText[i] === '\\' && lineText[i + 1] === '|') { i++; continue; }
+            if (lineText[i] === '|') { return i; }
+        }
+        return lineText.length;
+    };
+
+    let scan = findPipe(0);
+    for (const cellText of cellTexts) {
+        void cellText;
+        scan++; // past opening pipe
+        const contentStart = scan;
+        const closingPipe = findPipe(scan);
+        const raw = lineText.slice(contentStart, closingPipe);
+        const trimmed = raw.trim();
+        if (trimmed.length === 0) {
+            ranges.push({ from: lineFrom + contentStart, to: lineFrom + contentStart });
+        } else {
+            const leadingPad = raw.length - raw.trimStart().length;
+            const trailingPad = raw.length - raw.trimEnd().length;
+            ranges.push({
+                from: lineFrom + contentStart + leadingPad,
+                to: lineFrom + closingPipe - trailingPad,
+            });
+        }
+        scan = closingPipe;
+    }
+    return ranges;
 }
 
 /**
@@ -167,6 +219,12 @@ export function findActiveCell(state: EditorState, grid: readonly CellRange[][],
         if (cols.length === 0 || state.doc.lineAt(cols[0].from).number !== line) { continue; }
         for (let col = 0; col < cols.length; col++) {
             const cell = cols[col];
+            // Empty cells (common after insert row/column) can have pos ===
+            // cell.to sitting on the boundary with the next column; midpoint
+            // logic would assign that to the neighbor and show its text.
+            if (isEmptyTableCellContent(state, cell) && pos >= cell.from && pos <= cell.to) {
+                return { row, col, from: cell.from, to: cell.to };
+            }
             const midLow = col === 0 ? -Infinity : (cols[col - 1].to + cell.from) / 2;
             const midHigh = col === cols.length - 1 ? Infinity : (cell.to + cols[col + 1].from) / 2;
             if (pos >= midLow && pos <= midHigh) {
@@ -360,6 +418,53 @@ export function computeMoveRowDown(state: EditorState, tableNode: SyntaxNode, gr
     return { changes: { from: current.from, to: next.to, insert: nextText + '\n' + currentText } };
 }
 
+/** Move a body row to a new body-row index (0 = first body row). */
+export function computeMoveRowTo(
+    state: EditorState,
+    tableNode: SyntaxNode,
+    grid: readonly CellRange[][],
+    fromRow: number,
+    toBodyIndex: number,
+): TransactionSpec | null {
+    if (fromRow < 1 || fromRow >= grid.length) { return null; }
+    const { body } = tableRowNodes(tableNode);
+    const fromBodyIdx = fromRow - 1;
+    if (fromBodyIdx < 0 || fromBodyIdx >= body.length) { return null; }
+    if (toBodyIndex < 0 || toBodyIndex > body.length) { return null; }
+    const to = Math.min(toBodyIndex, body.length - 1);
+    if (fromBodyIdx === to) { return null; }
+
+    const texts = body.map(r => state.sliceDoc(r.from, r.to));
+    const [moved] = texts.splice(fromBodyIdx, 1);
+    texts.splice(to, 0, moved);
+
+    const bodyFrom = body[0].from;
+    const bodyTo = body[body.length - 1].to;
+    return { changes: { from: bodyFrom, to: bodyTo, insert: texts.join('\n') } };
+}
+
+/** Move a column to a new column index. */
+export function computeMoveColumnTo(
+    state: EditorState,
+    tableNode: SyntaxNode,
+    grid: readonly CellRange[][],
+    fromCol: number,
+    toCol: number,
+): TransactionSpec | null {
+    const { colCount, header, delimiter, body } = readColumnData(state, tableNode, grid);
+    if (fromCol < 0 || fromCol >= colCount || toCol < 0 || toCol > colCount) { return null; }
+    if (fromCol === toCol || (fromCol + 1 === toCol && toCol === colCount)) { return null; }
+
+    const cols = header.map((_, i) => i);
+    const [moved] = cols.splice(fromCol, 1);
+    const target = Math.min(toCol, cols.length);
+    cols.splice(target, 0, moved);
+
+    const reorder = <T>(arr: readonly T[]): T[] => cols.map(i => arr[i]);
+    const insert = buildTableSource(reorder(header), reorder(delimiter), body.map(row => reorder(row)));
+    return { changes: { from: tableNode.from, to: tableNode.to, insert } };
+}
+
 /** Deleting the header promotes the first body row to take its place — the alternative (a table with no header) isn't valid GFM. */
 export function computeDeleteRow(state: EditorState, tableNode: SyntaxNode, _grid: readonly CellRange[][], row: number): TransactionSpec | null {
     const { header, delimiter, body } = tableRowNodes(tableNode);
@@ -491,6 +596,38 @@ export function computeTableContextMenu(grid: readonly CellRange[][], row: numbe
     return [cellGroup, rowGroup, columnGroup];
 }
 
+function isEmptyTableCellContent(state: EditorState, cell: CellRange): boolean {
+    return state.sliceDoc(cell.from, cell.to).trim().length === 0;
+}
+
+/** Doc position to activate when the user clicks an inactive cell. */
+export function collapsedClickPosForCell(state: EditorState, cell: CellRange): number {
+    return isEmptyTableCellContent(state, cell) ? cell.from : cell.to;
+}
+
+/** Cursor position inside a newly inserted row/column, after the menu transaction applies. */
+export function selectionPosAfterTableInsert(
+    state: EditorState,
+    tableNode: SyntaxNode,
+    actionId: TableMenuActionId,
+    row: number,
+    col: number,
+): number | null {
+    const grid = buildCellGrid(state, tableNode);
+    switch (actionId) {
+        case 'insertRowAbove':
+            return row === 0 ? null : (grid[row]?.[col]?.from ?? null);
+        case 'insertRowBelow':
+            return grid[row + 1]?.[col]?.from ?? null;
+        case 'insertColumnLeft':
+            return grid[row]?.[col]?.from ?? null;
+        case 'insertColumnRight':
+            return grid[row]?.[col + 1]?.from ?? null;
+        default:
+            return null;
+    }
+}
+
 /** One entry point for every menu action — mirrors formatCommands.ts's `runFormatCommand` dispatch table. */
 export function computeTableMenuTransaction(
     state: EditorState,
@@ -532,9 +669,292 @@ export function findTableNodeByIndex(state: EditorState, tableIndex: number): Sy
     return found;
 }
 
-/** Strip newlines a paste might inject — GFM pipe-table rows are one physical line each. */
+/** Encode pasted/typed newlines as inline breaks — GFM pipe-table rows stay one physical line. */
+export function sanitizeTableCellInput(text: string): string {
+    return text.replace(/\r\n?/g, '\n').replace(/\n+/g, '<br>');
+}
+
+export function wrapTableCellTextSelection(
+    text: string,
+    start: number,
+    end: number,
+    before: string,
+    after: string,
+): { text: string; cursor: number } {
+    const selected = text.slice(start, end);
+    const bLen = before.length;
+    const aLen = after.length;
+    if (start >= bLen && text.slice(start - bLen, start) === before && text.slice(end, end + aLen) === after) {
+        const next = text.slice(0, start - bLen) + selected + text.slice(end + aLen);
+        return { text: next, cursor: start - bLen + selected.length };
+    }
+    const next = text.slice(0, start) + before + selected + after + text.slice(end);
+    const cursor = start === end ? start + bLen : start + bLen + selected.length;
+    return { text: next, cursor };
+}
+
+export function insertTableCellLink(text: string, start: number, end: number): { text: string; cursor: number; selectFrom: number; selectTo: number } {
+    const selected = text.slice(start, end);
+    if (selected) {
+        const insert = `[${selected}](url)`;
+        const next = text.slice(0, start) + insert + text.slice(end);
+        const urlStart = start + selected.length + 3;
+        return { text: next, cursor: urlStart, selectFrom: urlStart, selectTo: urlStart + 3 };
+    }
+    const insert = '[text](url)';
+    const next = text.slice(0, start) + insert + text.slice(end);
+    return { text: next, cursor: start + 1, selectFrom: start + 1, selectTo: start + 5 };
+}
+
+const TABLE_CELL_INLINE_FORMAT_ACTIONS = new Set(['bold', 'italic', 'strikethrough', 'inlineCode', 'link']);
+const BR_TAG_RE = /<br\s*\/?>/gi;
+
+let activeTableEditingCell: HTMLElement | null = null;
+const tableCellCommitHandlers = new WeakMap<HTMLElement, () => void>();
+
+export function applyTableCellInlineFormatAction(action: string): boolean {
+    const cell = activeTableEditingCell;
+    if (!cell || !TABLE_CELL_INLINE_FORMAT_ACTIONS.has(action)) { return false; }
+    if (!applyCellInlineFormat(cell, action)) { return false; }
+    tableCellCommitHandlers.get(cell)?.();
+    cell.focus();
+    return true;
+}
+
+function serializeCellContent(el: HTMLElement): string {
+    let out = '';
+    const walk = (node: Node) => {
+        if (node.nodeType === Node.TEXT_NODE) {
+            out += node.textContent ?? '';
+            return;
+        }
+        if (node.nodeType !== Node.ELEMENT_NODE) { return; }
+        const element = node as HTMLElement;
+        if (element.tagName === 'BR') {
+            out += '<br>';
+            return;
+        }
+        element.childNodes.forEach(walk);
+    };
+    Array.from(el.childNodes).forEach(walk);
+    return out;
+}
+
+function loadCellForEditing(td: HTMLElement, rawText: string): void {
+    td.replaceChildren();
+    const parts = rawText.split(BR_TAG_RE);
+    parts.forEach((part, index) => {
+        if (part) { td.appendChild(document.createTextNode(part)); }
+        if (index < parts.length - 1) { td.appendChild(document.createElement('br')); }
+    });
+    if (!td.childNodes.length) { td.appendChild(document.createTextNode('')); }
+}
+
+function measureSerializedOffset(root: HTMLElement, endNode: Node, endOffset: number): number {
+    let out = '';
+    let found = false;
+
+    const walk = (node: Node): boolean => {
+        if (found) { return true; }
+        if (node === endNode) {
+            if (node.nodeType === Node.TEXT_NODE) {
+                out += (node.textContent ?? '').slice(0, endOffset);
+            }
+            found = true;
+            return true;
+        }
+        if (node.nodeType === Node.TEXT_NODE) {
+            out += node.textContent ?? '';
+            return false;
+        }
+        if (node.nodeType === Node.ELEMENT_NODE) {
+            const element = node as HTMLElement;
+            if (element.tagName === 'BR') {
+                out += '<br>';
+                return false;
+            }
+            Array.from(element.childNodes).forEach((child) => {
+                if (walk(child)) { return; }
+            });
+            if (found) { return true; }
+        }
+        return false;
+    };
+
+    for (const child of Array.from(root.childNodes)) {
+        if (walk(child)) { break; }
+    }
+    return out.length;
+}
+
+function getCellSelectionOffsets(el: HTMLElement): { start: number; end: number } {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) { return { start: 0, end: 0 }; }
+    const range = sel.getRangeAt(0);
+    return {
+        start: measureSerializedOffset(el, range.startContainer, range.startOffset),
+        end: measureSerializedOffset(el, range.endContainer, range.endOffset),
+    };
+}
+
+function placeCaretAtSerializedOffset(el: HTMLElement, offset: number): void {
+    const target = Math.max(0, offset);
+    let remaining = target;
+    let placedNode: Node = el;
+    let placedOffset = 0;
+    let placed = false;
+
+    const walk = (node: Node): boolean => {
+        if (node.nodeType === Node.TEXT_NODE) {
+            const text = node.textContent ?? '';
+            if (remaining <= text.length) {
+                placedNode = node;
+                placedOffset = remaining;
+                placed = true;
+                return true;
+            }
+            remaining -= text.length;
+            return false;
+        }
+        if (node.nodeType === Node.ELEMENT_NODE) {
+            const element = node as HTMLElement;
+            if (element.tagName === 'BR') {
+                if (remaining === 0) {
+                    placedNode = element;
+                    placedOffset = 0;
+                    placed = true;
+                    return true;
+                }
+                if (remaining < 4) {
+                    placedNode = element;
+                    placedOffset = 0;
+                    placed = true;
+                    return true;
+                }
+                if (remaining === 4) {
+                    placedNode = element;
+                    placedOffset = 1;
+                    placed = true;
+                    return true;
+                }
+                remaining -= 4;
+                return false;
+            }
+            Array.from(element.childNodes).forEach((child) => {
+                if (walk(child)) { return; }
+            });
+            if (placed) { return true; }
+        }
+        return false;
+    };
+
+    Array.from(el.childNodes).forEach((child) => {
+        if (walk(child)) { return; }
+    });
+
+    const range = document.createRange();
+    if (placed) {
+        if (placedNode.nodeType === Node.TEXT_NODE) {
+            range.setStart(placedNode, placedOffset);
+        } else if (placedOffset === 0) {
+            range.setStartBefore(placedNode);
+        } else {
+            range.setStartAfter(placedNode);
+        }
+    } else {
+        range.selectNodeContents(el);
+        range.collapse(false);
+    }
+    range.collapse(true);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+}
+
+function selectSerializedRange(el: HTMLElement, start: number, end: number): void {
+    placeCaretAtSerializedOffset(el, start);
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) { return; }
+    const range = sel.getRangeAt(0).cloneRange();
+    placeCaretAtSerializedOffset(el, end);
+    const endSel = window.getSelection();
+    if (!endSel || endSel.rangeCount === 0) { return; }
+    const endPoint = endSel.getRangeAt(0);
+    range.setEnd(endPoint.startContainer, endPoint.startOffset);
+    sel.removeAllRanges();
+    sel.addRange(range);
+}
+
+function insertLineBreakAtCaret(el: HTMLElement): void {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) { return; }
+    const range = sel.getRangeAt(0);
+    if (!el.contains(range.commonAncestorContainer)) { return; }
+    range.deleteContents();
+    const br = document.createElement('br');
+    range.insertNode(br);
+    range.setStartAfter(br);
+    range.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(range);
+}
+
+function applyCellInlineFormat(el: HTMLElement, action: string): boolean {
+    const { start, end } = getCellSelectionOffsets(el);
+    const current = serializeCellContent(el);
+    let nextText = current;
+    let cursor = start;
+    let selectFrom: number | null = null;
+    let selectTo: number | null = null;
+
+    switch (action) {
+        case 'bold': {
+            const result = wrapTableCellTextSelection(current, start, end, '**', '**');
+            nextText = result.text;
+            cursor = result.cursor;
+            break;
+        }
+        case 'italic': {
+            const result = wrapTableCellTextSelection(current, start, end, '*', '*');
+            nextText = result.text;
+            cursor = result.cursor;
+            break;
+        }
+        case 'strikethrough': {
+            const result = wrapTableCellTextSelection(current, start, end, '~~', '~~');
+            nextText = result.text;
+            cursor = result.cursor;
+            break;
+        }
+        case 'inlineCode': {
+            const result = wrapTableCellTextSelection(current, start, end, '`', '`');
+            nextText = result.text;
+            cursor = result.cursor;
+            break;
+        }
+        case 'link': {
+            const result = insertTableCellLink(current, start, end);
+            nextText = result.text;
+            cursor = result.cursor;
+            selectFrom = result.selectFrom;
+            selectTo = result.selectTo;
+            break;
+        }
+        default:
+            return false;
+    }
+
+    loadCellForEditing(el, nextText);
+    if (selectFrom !== null && selectTo !== null) {
+        selectSerializedRange(el, selectFrom, selectTo);
+    } else {
+        placeCaretAtSerializedOffset(el, cursor);
+    }
+    return true;
+}
+
 function sanitizeCellInput(text: string): string {
-    return text.replace(/[\r\n]+/g, ' ');
+    return sanitizeTableCellInput(text);
 }
 
 function selectRange(view: EditorView, target: CellRange): void {
@@ -549,21 +969,12 @@ function caretOffsetIn(el: HTMLElement): number | null {
     const sel = window.getSelection();
     if (!sel || sel.rangeCount === 0 || !sel.isCollapsed) { return null; }
     const range = sel.getRangeAt(0);
-    if (range.startContainer === el) {
-        return range.startOffset === 0 ? 0 : (el.textContent?.length ?? 0);
-    }
-    if (range.startContainer === el.firstChild) { return range.startOffset; }
-    return null;
+    if (!el.contains(range.commonAncestorContainer)) { return null; }
+    return measureSerializedOffset(el, range.startContainer, range.startOffset);
 }
 
 function placeCaretAtOffset(el: HTMLElement, offset: number): void {
-    const textNode = el.firstChild ?? el.appendChild(document.createTextNode(''));
-    const range = document.createRange();
-    range.setStart(textNode, Math.max(0, Math.min(offset, textNode.textContent?.length ?? 0)));
-    range.collapse(true);
-    const sel = window.getSelection();
-    sel?.removeAllRanges();
-    sel?.addRange(range);
+    placeCaretAtSerializedOffset(el, offset);
 }
 
 function selectAllTextIn(el: HTMLElement): void {
@@ -675,6 +1086,347 @@ function wireResizeHandle(th: HTMLElement, table: HTMLTableElement, view: Editor
     });
 }
 
+function ensureTableInsertionLine(wrap: HTMLElement, orientation: 'row' | 'col'): HTMLElement {
+    const rowCls = 'cm-md-table-drag-insertion-line';
+    const colCls = 'cm-md-table-drag-insertion-line-col';
+    const selector = orientation === 'col' ? `.${rowCls}.${colCls}` : `.${rowCls}:not(.${colCls})`;
+    let line = wrap.querySelector<HTMLElement>(selector);
+    if (!line) {
+        line = document.createElement('div');
+        line.className = orientation === 'col' ? `${rowCls} ${colCls}` : rowCls;
+        wrap.appendChild(line);
+    }
+    return line;
+}
+
+function syncColInsertionLineHeight(insertionLine: HTMLElement, wrap: HTMLElement): void {
+    const table = wrap.querySelector('table');
+    if (!table) { return; }
+    const wrapRect = wrap.getBoundingClientRect();
+    const tableRect = table.getBoundingClientRect();
+    insertionLine.style.top = `${tableRect.top - wrapRect.top}px`;
+    insertionLine.style.height = `${tableRect.height}px`;
+}
+
+/** Map a drop target from the drag UI to a valid body-row index (0..n-1). */
+function normalizeRowDropIndex(pendingToBodyIdx: number, bodyLength: number): number {
+    return Math.min(Math.max(0, pendingToBodyIdx), bodyLength - 1);
+}
+
+function bodyRowAtY(wrap: HTMLElement, clientY: number): { tr: HTMLElement; gridRow: number } | null {
+    const rows = wrap.querySelectorAll('tbody tr');
+    for (let i = 0; i < rows.length; i++) {
+        const tr = rows[i] as HTMLElement;
+        const rect = tr.getBoundingClientRect();
+        if (clientY >= rect.top && clientY <= rect.bottom) {
+            return { tr, gridRow: i + 1 };
+        }
+    }
+    return null;
+}
+
+function headerColAtX(wrap: HTMLElement, clientX: number): { th: HTMLElement; col: number } | null {
+    const ths = wrap.querySelectorAll('thead th');
+    for (let i = 0; i < ths.length; i++) {
+        const th = ths[i] as HTMLElement;
+        const rect = th.getBoundingClientRect();
+        if (clientX >= rect.left && clientX <= rect.right) {
+            return { th, col: i };
+        }
+    }
+    return null;
+}
+
+/** Header column under the pointer, including the top gutter above `<thead>`. */
+function columnTargetAt(wrap: HTMLElement, clientX: number, clientY: number): { th: HTMLElement; col: number } | null {
+    const col = headerColAtX(wrap, clientX);
+    if (!col) { return null; }
+    const wrapRect = wrap.getBoundingClientRect();
+    const thRect = col.th.getBoundingClientRect();
+    const yInStrip = clientY >= wrapRect.top && clientY <= thRect.bottom + 4;
+    const xInCol = clientX >= thRect.left - 4 && clientX <= thRect.right + 4;
+    return yInStrip && xInCol ? col : null;
+}
+
+/** One shared row/column grip pair per table — positioned on wrap mousemove. */
+function wireTableDragUI(
+    wrap: HTMLElement,
+    view: EditorView,
+    tableIndex: number,
+    grid: readonly CellRange[][],
+): void {
+    const rowHandle = document.createElement('div');
+    rowHandle.className = 'cm-md-row-drag-handle';
+    rowHandle.innerHTML = Icons.DragGrip;
+    rowHandle.title = 'Drag to move row';
+
+    const colHandle = document.createElement('div');
+    colHandle.className = 'cm-md-col-drag-handle';
+    colHandle.innerHTML = Icons.DragGrip;
+    colHandle.title = 'Drag to move column';
+
+    wrap.appendChild(rowHandle);
+    wrap.appendChild(colHandle);
+
+    let rowTarget: { gridRow: number } | null = null;
+    let colTarget: { col: number } | null = null;
+    let rowDragging = false;
+    let colDragging = false;
+
+    const positionRowHandle = (tr: HTMLElement) => {
+        const wrapRect = wrap.getBoundingClientRect();
+        const trRect = tr.getBoundingClientRect();
+        rowHandle.style.top = `${trRect.top - wrapRect.top + trRect.height / 2}px`;
+        rowHandle.style.transform = 'translateY(-50%)';
+    };
+
+    const positionColHandle = (th: HTMLElement) => {
+        const wrapRect = wrap.getBoundingClientRect();
+        const thRect = th.getBoundingClientRect();
+        const gripHeight = 16;
+        colHandle.style.left = `${thRect.left - wrapRect.left + thRect.width / 2}px`;
+        // Straddle the header top edge so the grip is reachable without leaving the hit strip.
+        colHandle.style.top = `${Math.max(0, thRect.top - wrapRect.top - gripHeight / 2)}px`;
+        colHandle.style.transform = 'translateX(-50%) rotate(90deg)';
+    };
+
+    const hideRowHandle = () => {
+        if (!rowDragging) {
+            rowTarget = null;
+            rowHandle.classList.remove('cm-md-drag-grip-visible');
+        }
+    };
+
+    const hideColHandle = () => {
+        if (!colDragging) {
+            colTarget = null;
+            colHandle.classList.remove('cm-md-drag-grip-visible');
+        }
+    };
+
+    wrap.addEventListener('mousemove', (event) => {
+        if (rowDragging || colDragging) { return; }
+
+        const row = bodyRowAtY(wrap, event.clientY);
+        if (row) {
+            rowTarget = { gridRow: row.gridRow };
+            positionRowHandle(row.tr);
+            rowHandle.classList.add('cm-md-drag-grip-visible');
+        } else {
+            hideRowHandle();
+        }
+
+        const col = columnTargetAt(wrap, event.clientX, event.clientY);
+        if (col) {
+            colTarget = { col: col.col };
+            positionColHandle(col.th);
+            colHandle.classList.add('cm-md-drag-grip-visible');
+        } else {
+            hideColHandle();
+        }
+    });
+
+    colHandle.addEventListener('mouseenter', () => {
+        if (colTarget) {
+            colHandle.classList.add('cm-md-drag-grip-visible');
+        }
+    });
+
+    wrap.addEventListener('mouseleave', () => {
+        hideRowHandle();
+        hideColHandle();
+    });
+
+    wrap.addEventListener('scroll', () => {
+        if (rowTarget) {
+            const row = bodyRowAtY(wrap, rowHandle.getBoundingClientRect().top + 1);
+            if (row) { positionRowHandle(row.tr); }
+        }
+        if (colTarget) {
+            const col = headerColAtX(wrap, colHandle.getBoundingClientRect().left + 1);
+            if (col) { positionColHandle(col.th); }
+        }
+    }, { passive: true });
+
+    const startRowDrag = (event: MouseEvent) => {
+        if (!rowTarget) { return; }
+        event.preventDefault();
+        event.stopPropagation();
+        if (document.activeElement?.classList.contains('cm-md-table-cell-editing')) { return; }
+
+        const tableNode = findTableNodeByIndex(view.state, tableIndex);
+        if (!tableNode) { return; }
+        const { body } = tableRowNodes(tableNode);
+        const gridRow = rowTarget.gridRow;
+        const fromBodyIdx = gridRow - 1;
+        const insertionLine = ensureTableInsertionLine(wrap, 'row');
+        insertionLine.style.display = 'block';
+        rowDragging = true;
+        wrap.classList.add('cm-md-table-dragging');
+        rowHandle.classList.add('cm-md-drag-grip-visible');
+        let pendingToBodyIdx = fromBodyIdx;
+
+        const onMove = (moveEvent: MouseEvent) => {
+            const row = bodyRowAtY(wrap, moveEvent.clientY);
+            if (row) { positionRowHandle(row.tr); }
+            const rows = wrap.querySelectorAll('tbody tr');
+            const wrapRect = wrap.getBoundingClientRect();
+            let targetIdx = fromBodyIdx;
+            for (let i = 0; i < rows.length; i++) {
+                const rect = (rows[i] as HTMLElement).getBoundingClientRect();
+                const mid = (rect.top + rect.bottom) / 2;
+                if (moveEvent.clientY < mid) {
+                    targetIdx = i;
+                    insertionLine.style.top = `${rect.top - wrapRect.top}px`;
+                    break;
+                }
+                targetIdx = i + 1;
+                insertionLine.style.top = `${rect.bottom - wrapRect.top}px`;
+            }
+            pendingToBodyIdx = targetIdx;
+        };
+
+        const onUp = () => {
+            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('mouseup', onUp);
+            insertionLine.style.display = 'none';
+            rowDragging = false;
+            wrap.classList.remove('cm-md-table-dragging');
+            const toBodyIdx = normalizeRowDropIndex(pendingToBodyIdx, body.length);
+            const spec = computeMoveRowTo(view.state, tableNode, grid, gridRow, toBodyIdx);
+            if (spec) { view.dispatch(spec); }
+        };
+
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
+        onMove(event);
+    };
+
+    const startColDrag = (event: MouseEvent) => {
+        if (!colTarget) { return; }
+        event.preventDefault();
+        event.stopPropagation();
+        if (document.activeElement?.classList.contains('cm-md-table-cell-editing')) { return; }
+
+        const tableNode = findTableNodeByIndex(view.state, tableIndex);
+        if (!tableNode) { return; }
+        const col = colTarget.col;
+        const insertionLine = ensureTableInsertionLine(wrap, 'col');
+        insertionLine.style.display = 'block';
+        syncColInsertionLineHeight(insertionLine, wrap);
+        colDragging = true;
+        wrap.classList.add('cm-md-table-dragging');
+        colHandle.classList.add('cm-md-drag-grip-visible');
+        let pendingToCol = col;
+
+        const onMove = (moveEvent: MouseEvent) => {
+            const headerCol = headerColAtX(wrap, moveEvent.clientX);
+            if (headerCol) { positionColHandle(headerCol.th); }
+            syncColInsertionLineHeight(insertionLine, wrap);
+            const ths = wrap.querySelectorAll('thead th');
+            const wrapRect = wrap.getBoundingClientRect();
+            let targetCol = col;
+            for (let i = 0; i < ths.length; i++) {
+                const rect = (ths[i] as HTMLElement).getBoundingClientRect();
+                const mid = (rect.left + rect.right) / 2;
+                if (moveEvent.clientX < mid) {
+                    targetCol = i;
+                    insertionLine.style.left = `${rect.left - wrapRect.left}px`;
+                    break;
+                }
+                targetCol = i + 1;
+                insertionLine.style.left = `${rect.right - wrapRect.left}px`;
+            }
+            pendingToCol = targetCol;
+        };
+
+        const onUp = () => {
+            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('mouseup', onUp);
+            insertionLine.style.display = 'none';
+            colDragging = false;
+            wrap.classList.remove('cm-md-table-dragging');
+            const spec = computeMoveColumnTo(view.state, tableNode, grid, col, pendingToCol);
+            if (!spec) { return; }
+            const widthsMap = view.state.field(columnWidthsField);
+            const widths = widthsMap[tableIndex];
+            if (widths && widths.length > 0) {
+                const newWidths = remapColumnWidths(widths, col, pendingToCol);
+                view.dispatch({
+                    ...spec,
+                    effects: setColumnWidthsEffect.of({ tableIndex, widths: newWidths }),
+                });
+            } else {
+                view.dispatch(spec);
+            }
+        };
+
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
+        onMove(event);
+    };
+
+    rowHandle.addEventListener('mousedown', startRowDrag);
+    colHandle.addEventListener('mousedown', startColDrag);
+
+    // Gutter click starts a drag even if the pointer misses the 14px grip icon.
+    wrap.addEventListener('mousedown', (event) => {
+        if (rowDragging || colDragging) { return; }
+        const wrapRect = wrap.getBoundingClientRect();
+        if (event.clientX - wrapRect.left <= 20 && rowTarget) {
+            startRowDrag(event);
+            return;
+        }
+        const col = columnTargetAt(wrap, event.clientX, event.clientY);
+        if (col) {
+            colTarget = { col: col.col };
+            startColDrag(event);
+        }
+    });
+}
+
+const PREVIEW_TABLE_MIN_ROW_HEIGHT_PX = 36;
+let editingRowHeightSyncFrame = 0;
+
+function syncRowMinHeight(row: HTMLElement): void {
+    row.style.height = 'auto';
+    row.querySelectorAll('th, td').forEach((cell) => {
+        (cell as HTMLElement).style.height = 'auto';
+    });
+
+    const measured = Math.max(PREVIEW_TABLE_MIN_ROW_HEIGHT_PX, Math.ceil(row.getBoundingClientRect().height));
+    const heightPx = `${measured}px`;
+    row.style.height = heightPx;
+    row.querySelectorAll('th, td').forEach((cell) => {
+        (cell as HTMLElement).style.height = heightPx;
+    });
+}
+
+function syncEditingRowHeight(td: HTMLElement): void {
+    const row = td.closest('tr') as HTMLElement | null;
+    if (!row) { return; }
+    syncRowMinHeight(row);
+}
+
+function syncAllTableRowMinHeights(table: HTMLTableElement): void {
+    table.querySelectorAll('tr').forEach((row) => {
+        syncRowMinHeight(row as HTMLElement);
+    });
+}
+
+function scheduleAllTableRowMinHeightsSync(table: HTMLTableElement): void {
+    requestAnimationFrame(() => {
+        syncAllTableRowMinHeights(table);
+    });
+}
+
+function scheduleEditingRowHeightSync(td: HTMLElement): void {
+    cancelAnimationFrame(editingRowHeightSyncFrame);
+    editingRowHeightSyncFrame = requestAnimationFrame(() => {
+        syncEditingRowHeight(td);
+    });
+}
+
 /**
  * Wires one <td>/<th> as the live, directly-editable surface for `active`.
  * Every input event does a full replace of the cell's current doc range with
@@ -689,40 +1441,82 @@ function wireResizeHandle(th: HTMLElement, table: HTMLTableElement, view: Editor
  */
 function wireActiveCell(td: HTMLElement, view: EditorView, active: ActiveCell, grid: readonly CellRange[][]): void {
     td.contentEditable = 'true';
-    td.spellcheck = false;
+    td.spellcheck = true;
     td.classList.add('cm-md-table-cell-editing');
-    td.textContent = view.state.sliceDoc(active.from, active.to);
+    loadCellForEditing(td, view.state.sliceDoc(active.from, active.to));
+    activeTableEditingCell = td;
 
     let live: CellRange = { from: active.from, to: active.to };
     let composing = false;
 
     const commit = () => {
         if (composing) { return; }
-        const text = sanitizeCellInput(td.textContent ?? '');
+        const text = sanitizeCellInput(serializeCellContent(td));
         const { from, to } = live;
         live = { from, to: from + text.length };
         view.dispatch({ changes: { from, to, insert: text } });
+        scheduleEditingRowHeightSync(td);
     };
+    tableCellCommitHandlers.set(td, commit);
 
     td.addEventListener('compositionstart', () => { composing = true; });
     td.addEventListener('compositionend', () => { composing = false; commit(); });
     td.addEventListener('input', commit);
     td.addEventListener('keydown', (event) => {
+        if ((event.metaKey || event.ctrlKey) && !event.altKey) {
+            const key = event.key.toLowerCase();
+            if (key === 'b') {
+                event.preventDefault();
+                applyCellInlineFormat(td, 'bold');
+                commit();
+                return;
+            }
+            if (key === 'i') {
+                event.preventDefault();
+                applyCellInlineFormat(td, 'italic');
+                commit();
+                return;
+            }
+            if (key === 'e' && !event.shiftKey) {
+                event.preventDefault();
+                applyCellInlineFormat(td, 'inlineCode');
+                commit();
+                return;
+            }
+            if (key === 'k') {
+                event.preventDefault();
+                applyCellInlineFormat(td, 'link');
+                commit();
+                return;
+            }
+            if (key === 'x' && event.shiftKey) {
+                event.preventDefault();
+                applyCellInlineFormat(td, 'strikethrough');
+                commit();
+                return;
+            }
+        }
+
         if (event.key === 'Tab') {
             event.preventDefault();
             const target = event.shiftKey ? prevCell(grid, active) : nextCell(grid, active);
             if (target) { selectRange(view, target); }
         } else if (event.key === 'Enter') {
             event.preventDefault();
-            const target = cellBelow(grid, active);
-            if (target) { selectRange(view, target); }
-        } else if (event.key === 'ArrowRight' && caretOffsetIn(td) === (td.textContent?.length ?? 0)) {
+            if (event.shiftKey) {
+                insertLineBreakAtCaret(td);
+                commit();
+            } else {
+                const target = cellBelow(grid, active);
+                if (target) { selectRange(view, target); }
+            }
+        } else if (event.key === 'ArrowRight' && caretOffsetIn(td) === serializeCellContent(td).length) {
             const target = nextCell(grid, active);
             if (target) { event.preventDefault(); placeCollapsed(view, target.from); }
         } else if (event.key === 'ArrowLeft' && caretOffsetIn(td) === 0) {
             const target = prevCell(grid, active);
             if (target) { event.preventDefault(); placeCollapsed(view, target.to); }
-        } else if (event.key === 'ArrowDown' && caretOffsetIn(td) === (td.textContent?.length ?? 0)) {
+        } else if (event.key === 'ArrowDown' && caretOffsetIn(td) === serializeCellContent(td).length) {
             const target = cellBelow(grid, active);
             if (target) { event.preventDefault(); placeCollapsed(view, target.from); }
         } else if (event.key === 'ArrowUp' && caretOffsetIn(td) === 0) {
@@ -745,6 +1539,7 @@ function wireActiveCell(td: HTMLElement, view: EditorView, active: ActiveCell, g
         } else {
             placeCaretAtOffset(td, sel.from - active.from);
         }
+        scheduleEditingRowHeightSync(td);
     });
 }
 
@@ -805,8 +1600,17 @@ function showTableContextMenu(event: MouseEvent, view: EditorView, tableIndex: n
                 hideTableContextMenu();
                 const tableNode = findTableNodeByIndex(view.state, tableIndex);
                 if (!tableNode) { return; }
-                const spec = computeTableMenuTransaction(view.state, tableNode, buildCellGrid(tableNode), row, col, item.id);
-                if (spec) { view.dispatch(spec); }
+                const spec = computeTableMenuTransaction(view.state, tableNode, buildCellGrid(view.state, tableNode), row, col, item.id);
+                if (!spec) { return; }
+                const nextState = view.state.update(spec).state;
+                const tableAfter = findTableNodeByIndex(nextState, tableIndex);
+                const selectionPos = tableAfter
+                    ? selectionPosAfterTableInsert(nextState, tableAfter, item.id, row, col)
+                    : null;
+                view.dispatch({
+                    ...spec,
+                    ...(selectionPos !== null ? { selection: EditorSelection.cursor(selectionPos) } : {}),
+                });
             });
             menu.appendChild(btn);
         });
@@ -864,7 +1668,7 @@ export class TableWidget extends WidgetType {
                 const target = pos ? this.grid[pos.row]?.[pos.col] : undefined;
                 if (!target) { return; }
                 event.preventDefault();
-                placeCollapsed(view, target.to);
+                placeCollapsed(view, collapsedClickPosForCell(view.state, target));
             });
         });
 
@@ -889,9 +1693,11 @@ export class TableWidget extends WidgetType {
         // that header cell turned out to be the active one), it would be
         // silently removed the instant that header cell is being edited.
         if (table) {
+            wireTableDragUI(wrap, view, this.tableIndex, this.grid);
             wrap.querySelectorAll('thead th').forEach((th, col) => {
                 wireResizeHandle(th as HTMLElement, table, view, col, this.tableIndex);
             });
+            scheduleAllTableRowMinHeightsSync(table);
         }
 
         return wrap;
@@ -956,7 +1762,7 @@ export function computeTableDecorations(
             to,
             enter(node) {
                 if (node.name !== 'Table') { return; }
-                const grid = buildCellGrid(node.node);
+                const grid = buildCellGrid(state, node.node);
                 const activeCell = findActiveCell(state, grid, selFrom, selTo);
                 const source = state.sliceDoc(node.from, node.to);
                 const index = tableIndex++;

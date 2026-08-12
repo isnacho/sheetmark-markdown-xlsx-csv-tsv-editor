@@ -1695,7 +1695,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
             }
 
             if (message?.command === 'getSystemDetails') {
-                const ext = vscode.extensions.getExtension('muhammad-ahmad.xlsx-viewer');
+                const ext = vscode.extensions.getExtension('nacho-allendesalazar.super-file-viewer');
                 const editorName = vscode.env.appName || 'VS Code';
                 webview.postMessage({
                     command: 'systemDetails',

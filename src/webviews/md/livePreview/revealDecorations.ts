@@ -17,9 +17,11 @@
 // in it (confirmed against real usage: headings should keep their size when
 // selected). Only the marker's visibility toggles: hidden (Decoration.replace)
 // when the selection doesn't intersect the element, shown dimmed
-// (Decoration.mark) when it does. This sidesteps the plan's "block-height
-// reveal" hazard entirely for headings, since size no longer changes on
-// cursor enter/exit — there's nothing left to cause a scroll jump.
+// (Decoration.mark) when it does. ATX headings use a line-based collapsed-caret
+// check so "#" / "# " mid-typing (caret at node end) still reveals the marker.
+// This sidesteps the plan's "block-height reveal" hazard entirely for headings,
+// since size no longer changes on cursor enter/exit — there's nothing left to
+// cause a scroll jump.
 //
 // Caret-behavior decision (the "atomic ranges" hazard from the plan): NOT using
 // an `atomicRanges` facet. Because decorations recompute on every selection
@@ -297,7 +299,26 @@ export function computeRevealDecorations(
     const dimMark = Decoration.mark({ class: 'cm-md-reveal-mark' });
     const hiddenMark = Decoration.replace({});
 
-    const isActive = (from: number, to: number) => rangesIntersect(selFrom, selTo, from, to);
+    const isActive = (from: number, to: number) => {
+        // Lezer node ranges are half-open [from, to). A collapsed caret sitting
+        // exactly at `to` (immediately after the closing mark) must not count as
+        // inside — otherwise paste-to-link, which places the caret there, leaves
+        // the link permanently expanded.
+        if (selFrom === selTo) {
+            return from <= selFrom && selFrom < to;
+        }
+        return rangesIntersect(selFrom, selTo, from, to);
+    };
+
+    function isHeadingLineActive(node: SyntaxNode): boolean {
+        if (selFrom !== selTo) {
+            return isActive(node.from, node.to);
+        }
+        // Collapsed caret: anywhere on the heading line reveals "#" (including
+        // title-less "#" / "# " while typing, where the caret sits at node.to
+        // and the global isActive half-open rule would hide the marker).
+        return state.doc.lineAt(selFrom).number === state.doc.lineAt(node.from).number;
+    }
 
     function handleHeading(node: SyntaxNode, level: number) {
         const marks = node.getChildren('HeaderMark');
@@ -308,9 +329,9 @@ export function computeRevealDecorations(
         // a leading space once the marker's hidden.
         const hasGapSpace = state.sliceDoc(open.to, open.to + 1) === ' ';
         const gapEnd = hasGapSpace ? open.to + 1 : open.to;
-        const active = isActive(node.from, node.to);
-        // The dimmed "#" (shown while the cursor is on the heading) gets the
-        // SAME `cm-md-hN` size class as the content, not the base editor font
+        const active = isHeadingLineActive(node);
+        // The dimmed "#" (shown while the cursor is on the heading line) gets
+        // the SAME `cm-md-hN` size class as the content, not the base editor font
         // size `cm-md-reveal-mark` alone would give it — otherwise the marker
         // renders visibly smaller than the heading text sitting right next to
         // it. Marker + its trailing gap space are one combined span so the
@@ -460,9 +481,18 @@ export function computeRevealDecorations(
     function handleTaskMarker(node: SyntaxNode) {
         const done = /\[[xX]\]/.test(state.sliceDoc(node.from, node.to));
         specs.push({ from: node.from, to: node.to, value: Decoration.replace({ widget: new TaskCheckboxWidget(done, node.from, node.to) }) });
+        // The grammar skips exactly one space after "[ ]"/"[x]" without giving
+        // it a node of its own — hide it too, since the checkbox widget's own
+        // marginRight (cm6Theme.ts) already supplies that gap; leaving the
+        // literal space in place doubled it up.
+        const hasGapSpace = state.sliceDoc(node.to, node.to + 1) === ' ';
+        const gapEnd = hasGapSpace ? node.to + 1 : node.to;
+        if (hasGapSpace) {
+            specs.push({ from: node.to, to: gapEnd, value: hiddenMark });
+        }
         const task = node.parent;
-        if (done && task && node.to < task.to) {
-            specs.push({ from: node.to, to: task.to, value: taskDoneContentDeco });
+        if (done && task && gapEnd < task.to) {
+            specs.push({ from: gapEnd, to: task.to, value: taskDoneContentDeco });
         }
     }
 

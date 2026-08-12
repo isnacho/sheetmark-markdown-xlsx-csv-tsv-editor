@@ -4,12 +4,15 @@ import * as path from 'path';
 import type { IncomingMessage } from 'http';
 import { VERSION_HISTORY_RETENTION_MS, VERSION_HISTORY_SNAPSHOT_DEBOUNCE_MS, buildGroupedVersionHistoryItems, formatVersionHistoryTimestamp, getVersionHistoryFile } from './shared/versionHistory';
 import { TableColumnWidthStorageService } from './shared/tableColumnWidthStorageService';
+import { FrontmatterPanelStorageService } from './shared/frontmatterPanelStorageService';
 
 export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
     private readonly tableColumnWidthStorage: TableColumnWidthStorageService;
+    private readonly frontmatterPanelStorage: FrontmatterPanelStorageService;
 
     constructor(private readonly context: vscode.ExtensionContext) {
         this.tableColumnWidthStorage = new TableColumnWidthStorageService(context);
+        this.frontmatterPanelStorage = new FrontmatterPanelStorageService(context);
     }
 
     async openCustomDocument(
@@ -120,7 +123,8 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                 documentUri: document.uri.toString(),
                 documentDirUri: documentDirUri.toString(),
                 workspaceFolderUri,
-                tableColumnWidths: this.tableColumnWidthStorage.getWidths(document.uri)
+                tableColumnWidths: this.tableColumnWidthStorage.getWidths(document.uri),
+                frontmatterPanelCollapsed: this.frontmatterPanelStorage.getCollapsed(document.uri)
             });
 
             // Set up webview
@@ -167,14 +171,10 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                             const settings = {
                                 stickyToolbar: cfg.get('md.stickyToolbar', true),
                                 wordWrap: cfg.get('md.wordWrap', true),
-                                syncScroll: cfg.get('md.syncScroll', true),
-                                previewPosition: cfg.get('md.previewPosition', 'right'),
                                 showOutline: cfg.get('md.showOutline', true),
                                 showLineNumbers: cfg.get('md.showLineNumbers', true),
                                 livePreviewReveal: cfg.get('md.livePreviewReveal', true),
                                 livePreviewLineNumbers: cfg.get('md.livePreviewLineNumbers', false),
-                                livePreviewEngine: cfg.get('md.livePreviewEngine', 'cm6'),
-                                defaultViewMode: cfg.get('md.defaultViewMode', 'preview'),
                                 moveMdButtonsToEnd: cfg.get('md.moveMdButtonsToEnd', false),
                                 isMdEnabled: isMdEnabled
                             };
@@ -226,8 +226,6 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                             const cfg = vscode.workspace.getConfiguration('xlsxViewer');
                             await cfg.update('md.stickyToolbar', !!s.stickyToolbar, vscode.ConfigurationTarget.Global);
                             await cfg.update('md.wordWrap', !!s.wordWrap, vscode.ConfigurationTarget.Global);
-                            await cfg.update('md.syncScroll', !!s.syncScroll, vscode.ConfigurationTarget.Global);
-                            await cfg.update('md.previewPosition', s.previewPosition || 'right', vscode.ConfigurationTarget.Global);
                             await cfg.update('md.moveMdButtonsToEnd', !!s.moveMdButtonsToEnd, vscode.ConfigurationTarget.Global);
                             if (typeof s.showOutline === 'boolean') {
                                 await cfg.update('md.showOutline', !!s.showOutline, vscode.ConfigurationTarget.Global);
@@ -240,9 +238,6 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                             }
                             if (typeof s.livePreviewLineNumbers === 'boolean') {
                                 await cfg.update('md.livePreviewLineNumbers', !!s.livePreviewLineNumbers, vscode.ConfigurationTarget.Global);
-                            }
-                            if (s.livePreviewEngine === 'cm6' || s.livePreviewEngine === 'legacy') {
-                                await cfg.update('md.livePreviewEngine', s.livePreviewEngine, vscode.ConfigurationTarget.Global);
                             }
                         } catch (err) {
                             console.error('Failed to persist settings:', err);
@@ -284,6 +279,14 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                             await this.tableColumnWidthStorage.saveWidths(document.uri, widths);
                         } catch (err) {
                             vscode.window.showErrorMessage(`Error saving table column widths: ${err}`);
+                        }
+                        break;
+
+                    case 'saveFrontmatterPanelCollapsed':
+                        try {
+                            await this.frontmatterPanelStorage.saveCollapsed(document.uri, !!message.collapsed);
+                        } catch (err) {
+                            vscode.window.showErrorMessage(`Error saving frontmatter panel state: ${err}`);
                         }
                         break;
 
@@ -447,7 +450,7 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                         break;
 
                     case 'getSystemDetails': {
-                        const ext = vscode.extensions.getExtension('muhammad-ahmad.xlsx-viewer');
+                        const ext = vscode.extensions.getExtension('nacho-allendesalazar.super-file-viewer');
                         const editorName = vscode.env.appName || 'VS Code';
                         webviewPanel.webview.postMessage({
                             command: 'systemDetails',
@@ -514,14 +517,10 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                              const settings = {
                                  stickyToolbar: cfg.get('md.stickyToolbar', true),
                                  wordWrap: cfg.get('md.wordWrap', true),
-                                 syncScroll: cfg.get('md.syncScroll', true),
-                                 previewPosition: cfg.get('md.previewPosition', 'right'),
                                  showOutline: cfg.get('md.showOutline', true),
                                  showLineNumbers: cfg.get('md.showLineNumbers', true),
                                  livePreviewReveal: cfg.get('md.livePreviewReveal', true),
                                  livePreviewLineNumbers: cfg.get('md.livePreviewLineNumbers', false),
-                                 livePreviewEngine: cfg.get('md.livePreviewEngine', 'cm6'),
-                                 defaultViewMode: cfg.get('md.defaultViewMode', 'preview'),
                                  moveMdButtonsToEnd: cfg.get('md.moveMdButtonsToEnd', false),
                                  isMdEnabled: true
                              };
@@ -557,14 +556,10 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                     const settings = {
                         stickyToolbar: cfg.get('md.stickyToolbar', true),
                         wordWrap: cfg.get('md.wordWrap', true),
-                        syncScroll: cfg.get('md.syncScroll', true),
-                        previewPosition: cfg.get('md.previewPosition', 'right'),
                         showOutline: cfg.get('md.showOutline', true),
                         showLineNumbers: cfg.get('md.showLineNumbers', true),
                         livePreviewReveal: cfg.get('md.livePreviewReveal', true),
                         livePreviewLineNumbers: cfg.get('md.livePreviewLineNumbers', false),
-                        livePreviewEngine: cfg.get('md.livePreviewEngine', 'cm6'),
-                        defaultViewMode: cfg.get('md.defaultViewMode', 'preview'),
                         moveMdButtonsToEnd: cfg.get('md.moveMdButtonsToEnd', false),
                         isMdEnabled: isMdEnabled
                     };
@@ -623,6 +618,8 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
         const themeUri = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'shared', 'theme.css'));
         const highlightUri = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'md', 'highlight.css'));
         const feedbackStyleUri = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'shared', 'feedback.css'));
+        const spellAffUri = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'spell', 'en_US.aff'));
+        const spellDicUri = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'spell', 'en_US.dic'));
         const cspSource = webview.cspSource;
 
         return `
@@ -719,9 +716,6 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                         </div>
                         <div id="tocBody" class="toc-body"></div>
                     </aside>
-                    <div class="editor-wrapper">
-                        <textarea id="markdownEditor" class="markdown-editor" spellcheck="false"></textarea>
-                    </div>
                     <div id="markdownPreview" class="markdown-preview"></div>
                 </div>
             </div>
@@ -738,6 +732,7 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                     JavaScript is disabled in this webview, so the Markdown preview cannot load.
                 </div>
             </noscript>
+            <script>window.__SPELL_DICT__={aff:${JSON.stringify(spellAffUri.toString())},dic:${JSON.stringify(spellDicUri.toString())}};</script>
             <script src="${scriptUri}"></script>
         </body>
         </html>`;

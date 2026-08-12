@@ -1,3 +1,4 @@
+import { applyDelayedTitle, plainTooltipText, setDelayedTitleText } from './delayedTitleTooltip';
 
 export interface ToolbarButton {
     id: string;
@@ -15,11 +16,17 @@ export class ToolbarManager {
     private buttons: Map<string, HTMLButtonElement> = new Map();
     private resizeObserver: ResizeObserver | null = null;
     private isSticky: boolean = false;
+    private headerHeightHook: (() => void) | null = null;
 
     constructor(containerId: string) {
         const el = document.getElementById(containerId);
         if (!el) {throw new Error(`Toolbar container ${containerId} not found`);} 
         this.container = el;
+    }
+
+    /** Optional hook fired after each header-height recompute (e.g. MD formatting bar). */
+    setHeaderHeightHook(hook: (() => void) | null) {
+        this.headerHeightHook = hook;
     }
 
     applyStickyLayout(stickyToolbar: boolean, contentId: string = 'content', scrollQuery: string = '.table-scroll') {
@@ -88,6 +95,7 @@ export class ToolbarManager {
 
         if (!this.isSticky) {
             document.documentElement.style.setProperty('--header-height', '0px');
+            document.documentElement.style.setProperty('--main-toolbar-height', '0px');
             if (headerBg) {headerBg.style.height = '';}
             return;
         }
@@ -97,10 +105,14 @@ export class ToolbarManager {
         const maxHeight = parseInt(maxHeightStr, 10) || 96;
         height = Math.min(height, maxHeight);
 
+        document.documentElement.style.setProperty('--main-toolbar-height', height + 'px');
         document.documentElement.style.setProperty('--header-height', height + 'px');
 
         if (headerBg) {
             headerBg.style.height = height + 'px';
+        }
+        if (this.headerHeightHook) {
+            this.headerHeightHook();
         }
     }
 
@@ -120,10 +132,6 @@ export class ToolbarManager {
         buttonEl.className = `toggle-button`;
         if (btn.enabled === false) {buttonEl.disabled = true;}
         
-        const tooltipText = document.createElement('span');
-        tooltipText.className = 'tooltiptext';
-        tooltipText.innerHTML = btn.tooltip;
-
         if (btn.icon.trim().startsWith('<svg')) {
             buttonEl.innerHTML = btn.icon;
         } else {
@@ -143,9 +151,12 @@ export class ToolbarManager {
         });
 
         wrapper.appendChild(buttonEl);
-        wrapper.appendChild(tooltipText);
         this.container.appendChild(wrapper);
         this.buttons.set(btn.id, buttonEl);
+
+        if (!btn.label && btn.tooltip) {
+            applyDelayedTitle(buttonEl, plainTooltipText(btn.tooltip));
+        }
     }
 
     setButtonEnabled(id: string, enabled: boolean) {
@@ -166,13 +177,7 @@ export class ToolbarManager {
     setButtonTooltip(id: string, tooltip: string) {
         const btn = this.buttons.get(id);
         if (btn) {
-            const wrapper = btn.closest('.tooltip');
-            if (wrapper) {
-                const tip = wrapper.querySelector('.tooltiptext');
-                if (tip) {tip.innerHTML = tooltip;}
-            } else {
-                btn.title = tooltip;
-            }
+            setDelayedTitleText(btn, plainTooltipText(tooltip));
         }
     }
 

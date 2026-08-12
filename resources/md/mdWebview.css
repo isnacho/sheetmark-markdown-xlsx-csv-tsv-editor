@@ -2,6 +2,22 @@
     box-sizing: border-box;
 }
 
+:root {
+    --md-scrollbar-thumb: #e0e0e5;
+    --md-scrollbar-thumb-hover: #c7c7cc;
+    --md-scrollbar-track: transparent;
+}
+
+body.dark-mode {
+    --md-scrollbar-thumb: #48484a;
+    --md-scrollbar-thumb-hover: #636366;
+}
+
+body.vscode-theme {
+    --md-scrollbar-thumb: var(--vscode-scrollbarSlider-background, #e0e0e5);
+    --md-scrollbar-thumb-hover: var(--vscode-scrollbarSlider-hoverBackground, #c7c7cc);
+}
+
 body {
     font-family: var(--font-family);
     padding: 0;
@@ -15,7 +31,58 @@ body {
 }
 
 body.sticky-toolbar-enabled {
-    padding-top: var(--header-height);
+    /* Flex chrome + scrollable #content is more reliable in the MD webview than
+       position:fixed (which breaks once Preview Edit shows the formatting bar
+       and CM6 nests its own scroll container). */
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+    padding-top: 0;
+}
+
+body.sticky-toolbar-enabled .header-background {
+    display: none;
+}
+
+body.sticky-toolbar-enabled .toolbar-wrapper {
+    height: auto;
+    flex-shrink: 0;
+}
+
+body.sticky-toolbar-enabled #toolbar.toolbar {
+    position: relative;
+    top: auto;
+    left: auto;
+    right: auto;
+    min-height: 0;
+}
+
+body.sticky-toolbar-enabled #formattingToolbar.formatting-toolbar:not(.hidden) {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: center;
+    position: relative;
+    top: auto;
+    left: auto;
+    right: auto;
+    flex-shrink: 0;
+}
+
+body.sticky-toolbar-enabled #content {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    height: auto;
+    overflow: hidden;
+}
+
+body.sticky-toolbar-enabled .markdown-container {
+    flex: 1 1 auto;
+    min-height: 0;
+    height: auto;
 }
 
 body.edit-mode #content {
@@ -47,34 +114,6 @@ body.edit-mode #content {
 
 .toggle-button.active svg {
     stroke: var(--accent-color);
-}
-
-.view-mode-select-wrapper {
-    display: flex;
-    align-items: center;
-}
-
-.view-mode-select {
-    height: 32px;
-    padding: 0 8px;
-    font-size: 13px;
-    font-weight: 500;
-    font-family: var(--font-family);
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    cursor: pointer;
-    background-color: transparent;
-    color: var(--text-color);
-    transition: background-color 0.15s ease;
-}
-
-.view-mode-select:hover {
-    background-color: var(--hover-bg);
-}
-
-.view-mode-select:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
 }
 
 /* ===== Version Preview Banner ===== */
@@ -203,7 +242,6 @@ body:not(.sticky-toolbar-enabled) .markdown-container {
 }
 
 body:not(.sticky-toolbar-enabled) .markdown-preview,
-body:not(.sticky-toolbar-enabled) .markdown-editor,
 body:not(.sticky-toolbar-enabled) .toc-panel {
     height: auto;
     min-height: 100%;
@@ -227,8 +265,6 @@ body:not(.sticky-toolbar-enabled) .toc-panel {
     display: flex;
     overflow: hidden;
     --toc-width: 260px;
-    --split-left: 1fr;
-    --split-right: 1fr;
 }
 
 /* ===== Outline (TOC) ===== */
@@ -239,12 +275,14 @@ body:not(.sticky-toolbar-enabled) .toc-panel {
     grid-auto-flow: column;
 }
 
-.markdown-container.toc-open.split-view {
-    grid-template-columns: var(--toc-width) auto var(--split-left) auto var(--split-right);
-}
 
 .markdown-container.toc-open.preview-edit {
     grid-template-columns: var(--toc-width) auto 1fr;
+}
+
+.markdown-container.toc-open > * {
+    grid-row: 1;
+    min-height: 0;
 }
 
 .toc-panel {
@@ -329,100 +367,26 @@ body:not(.sticky-toolbar-enabled) .toc-panel {
     padding: 8px;
 }
 
-.markdown-container.word-wrap .markdown-preview,
-.markdown-container.word-wrap .markdown-editor {
+.markdown-container.word-wrap .markdown-preview {
     word-wrap: break-word;
     overflow-wrap: break-word;
 }
 
-/* ===== Split View (Edit Mode) ===== */
-.markdown-container.split-view {
-    display: grid;
-    grid-template-columns: var(--split-left) auto var(--split-right);
-    grid-template-rows: 1fr;
-    grid-auto-flow: column;
-    gap: 0;
-}
-
-/* Ensure all grid children stay on the same row */
-.markdown-container.split-view > *,
-.markdown-container.toc-open > * {
-    grid-row: 1;
-    min-height: 0;
-}
-
-/* Preview on left side option - only swaps editor and preview, outline stays left */
-.markdown-container.split-view.preview-left .editor-wrapper {
-    order: 2;
-}
-
-.markdown-container.split-view.preview-left .markdown-preview {
-    order: -1;
-}
-
-.markdown-container.split-view.preview-left .resize-handle-split {
-    order: 1;
-}
-
-.markdown-container.toc-open.split-view .resize-handle-toc {
-    grid-column: 2;
-}
-
-.markdown-container.toc-open.split-view .editor-wrapper {
-    grid-column: 3;
-}
-
-.markdown-container.toc-open.split-view .resize-handle-split {
-    grid-column: 4;
-}
-
-.markdown-container.toc-open.split-view .markdown-preview {
-    grid-column: 5;
-}
-
-.markdown-container.toc-open.split-view.preview-left .markdown-preview {
-    grid-column: 3;
-    order: unset;
-}
-
-.markdown-container.toc-open.split-view.preview-left .resize-handle-split {
-    grid-column: 4;
-    order: unset;
-}
-
-.markdown-container.toc-open.split-view.preview-left .editor-wrapper {
-    grid-column: 5;
-    order: unset;
-}
-
-.markdown-container.toc-open:not(.split-view):not(.preview-edit) .markdown-preview {
-    grid-column: 3;
-}
-
-.markdown-container.split-view .editor-wrapper {
-    display: flex;
-    overflow: hidden;
-    min-width: 0;
-}
-
-.markdown-container.split-view .markdown-preview {
-    overflow-y: auto;
-    min-width: 0;
-}
 
 /* ===== Preview Edit Mode (WYSIWYG) ===== */
-.markdown-container.preview-edit .editor-wrapper {
-    display: none;
-}
 
 .markdown-container.preview-edit .markdown-preview {
     flex: 1;
+    min-height: 0;
     overflow-y: auto;
 }
 
-.markdown-container.preview-edit .resize-handle-split {
-    display: none;
+/* CM6 owns scrolling via .cm-scroller — keep the preview pane a flex box only. */
+body.cm6-preview-active .markdown-container.preview-edit .markdown-preview {
+    overflow: hidden;
+    padding: 0;
 }
+
 
 body.preview-edit-mode .markdown-preview {
     cursor: text;
@@ -473,13 +437,6 @@ body.resizing .resize-handle {
     display: block;
 }
 
-.resize-handle-split {
-    display: none;
-}
-
-.markdown-container.split-view .resize-handle-split {
-    display: block;
-}
 
 body.resizing {
     user-select: none;
@@ -490,39 +447,6 @@ body.resizing * {
     cursor: col-resize !important;
 }
 
-/* ===== Editor Wrapper ===== */
-.editor-wrapper {
-    display: none;
-    position: relative;
-    background: var(--bg-color);
-    height: 100%;
-    min-height: 0;
-}
-
-.markdown-container.split-view .editor-wrapper {
-    display: flex;
-}
-
-/* ===== Markdown Editor ===== */
-.markdown-editor {
-    flex: 1;
-    width: 100%;
-    height: 100%;
-    border: none;
-    outline: none;
-    resize: none;
-    font-family: var(--font-mono);
-    font-size: 13px;
-    line-height: 1.6;
-    padding: 16px;
-    background: var(--bg-color);
-    color: var(--text-color);
-    tab-size: 4;
-}
-
-.markdown-editor.hidden {
-    display: none;
-}
 
 /* ===== Markdown Preview ===== */
 .markdown-preview {
@@ -584,8 +508,7 @@ body.resizing * {
 /* Inline code */
 .markdown-preview .inline-code {
     font-family: var(--font-mono);
-    font-size: 85%;
-    font-weight: 600;
+    font-size: 90%;
     background: var(--code-bg);
     padding: 0.2em 0.4em;
     border-radius: 6px;
@@ -678,7 +601,6 @@ body.show-line-numbers .markdown-preview pre {
     padding: 0;
     border: none;
     font-size: inherit;
-    font-weight: 600;
     color: inherit;
 }
 
@@ -775,6 +697,165 @@ body.show-line-numbers .markdown-preview pre {
     border-color: var(--success-color);
 }
 
+/* YAML frontmatter card */
+.markdown-preview .yaml-frontmatter-card {
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--panel-bg);
+    margin: 0 0 20px 0;
+    overflow: hidden;
+}
+
+.markdown-preview .yaml-frontmatter-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--header-bg);
+    color: var(--text-color);
+    font-weight: 600;
+}
+
+.markdown-preview .yaml-frontmatter-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.markdown-preview .yaml-frontmatter-edit-btn,
+.markdown-preview .yaml-frontmatter-toggle {
+    border: 1px solid var(--border-color);
+    background: var(--panel-bg);
+    color: var(--text-muted);
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 11px;
+    line-height: 1;
+    padding: 4px 8px;
+}
+
+.markdown-preview .yaml-frontmatter-toggle {
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.markdown-preview .yaml-frontmatter-edit-btn:hover,
+.markdown-preview .yaml-frontmatter-toggle:hover {
+    color: var(--text-color);
+    border-color: color-mix(in srgb, var(--accent-color) 45%, var(--border-color));
+}
+
+.markdown-preview .yaml-frontmatter-editing .yaml-frontmatter-toggle {
+    opacity: 0.45;
+    pointer-events: none;
+}
+
+.markdown-preview .yaml-frontmatter-title {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+}
+
+.markdown-preview .yaml-frontmatter-chevron::before {
+    content: '▾';
+    color: var(--text-muted);
+    font-size: 12px;
+}
+
+.markdown-preview .yaml-frontmatter-collapsed .yaml-frontmatter-chevron::before {
+    content: '▸';
+}
+
+.markdown-preview .yaml-frontmatter-collapsed .yaml-frontmatter-body {
+    display: none;
+}
+
+.markdown-preview .yaml-frontmatter-body {
+    padding: 8px 12px 12px;
+}
+
+.markdown-preview .yaml-frontmatter-field {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    padding: 6px 0;
+    font-size: 13px;
+    line-height: 1.5;
+    border-bottom: 1px solid color-mix(in srgb, var(--border-color) 55%, transparent);
+}
+
+.markdown-preview .yaml-frontmatter-field:last-child {
+    border-bottom: none;
+}
+
+.markdown-preview .yaml-frontmatter-key {
+    flex: 0 0 140px;
+    color: var(--text-muted);
+    font-weight: 500;
+}
+
+.markdown-preview .yaml-frontmatter-value {
+    flex: 1;
+    color: var(--text-color);
+    word-break: break-word;
+}
+
+.markdown-preview .yaml-frontmatter-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    flex: 1;
+}
+
+.markdown-preview .yaml-frontmatter-chip {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--accent-color) 18%, var(--panel-bg));
+    border: 1px solid color-mix(in srgb, var(--accent-color) 35%, var(--border-color));
+    color: var(--text-color);
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.markdown-preview .yaml-frontmatter-field-object .yaml-frontmatter-key {
+    font-weight: 600;
+    color: var(--text-color);
+}
+
+.markdown-preview .yaml-frontmatter-field-editable {
+    align-items: center;
+}
+
+.markdown-preview .yaml-frontmatter-input {
+    flex: 1;
+    min-width: 0;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--bg-color);
+    color: var(--text-color);
+    font: inherit;
+    font-size: 13px;
+    padding: 4px 8px;
+}
+
+.markdown-preview .yaml-frontmatter-input:focus {
+    outline: none;
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-color) 35%, transparent);
+}
+
+.cm-md-frontmatter-widget .yaml-frontmatter-field {
+    cursor: default;
+}
+
 /* Horizontal Rule */
 .markdown-preview hr {
     border: none;
@@ -803,7 +884,8 @@ body.show-line-numbers .markdown-preview pre {
 
 body.preview-edit-mode .markdown-preview table.md-table th,
 body.preview-edit-mode .markdown-preview table.md-table td {
-    height: 36px;
+    min-height: 36px;
+    height: auto;
     vertical-align: top;
 }
 
@@ -814,6 +896,23 @@ body.preview-edit-mode .markdown-preview table.md-table td {
 
 .markdown-preview table.md-table tr:nth-child(2n) {
     background: var(--header-bg);
+}
+
+/* CM6 live-preview table widget: enforce table layout so min-height on cells
+   applies to every row (tableWidget.ts). Reading-mode tables keep display:block
+   for overflow scrolling; editable widget tables need display:table. */
+body.preview-edit-mode .markdown-preview .cm-md-table-widget table.md-table {
+    display: table;
+    width: max-content;
+    max-width: 100%;
+}
+
+/* Empty cells have no text node — give them a line box so rows don't collapse
+   before JS row-height sync runs (tableWidget.ts). */
+body.preview-edit-mode .markdown-preview .cm-md-table-widget table.md-table th:empty::after,
+body.preview-edit-mode .markdown-preview .cm-md-table-widget table.md-table td:empty::after {
+    content: '\00a0';
+    visibility: hidden;
 }
 
 /* CM6 live-preview table widget: drag-to-resize columns (tableWidget.ts) */
@@ -844,12 +943,96 @@ body.preview-edit-mode .markdown-preview table.md-table td {
     opacity: 0.5;
 }
 
+/* CM6 live-preview: Notion-style 6-dot drag grips outside table chrome */
+.cm-md-row-drag-handle,
+.cm-md-col-drag-handle {
+    position: absolute;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 10;
+    cursor: grab;
+    color: var(--text-muted);
+    border-radius: 3px;
+    background: transparent;
+    transition: opacity 0.12s ease, color 0.12s ease, background-color 0.12s ease;
+}
+
+.cm-md-row-drag-handle.cm-md-drag-grip-visible,
+.cm-md-col-drag-handle.cm-md-drag-grip-visible {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.cm-md-row-drag-handle:active,
+.cm-md-col-drag-handle:active {
+    cursor: grabbing;
+}
+
+.cm-md-row-drag-handle svg,
+.cm-md-col-drag-handle svg {
+    display: block;
+    pointer-events: none;
+}
+
+.cm-md-row-drag-handle {
+    left: 2px;
+    width: 14px;
+    height: 16px;
+}
+
+.cm-md-col-drag-handle {
+    width: 14px;
+    height: 16px;
+}
+
+.cm-md-row-drag-handle.cm-md-drag-grip-visible:hover,
+.cm-md-col-drag-handle.cm-md-drag-grip-visible:hover {
+    color: var(--text-color);
+    background: color-mix(in srgb, var(--text-muted) 12%, transparent);
+}
+
+.cm-md-table-drag-insertion-line {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: var(--accent-color);
+    pointer-events: none;
+    z-index: 5;
+    display: none;
+}
+
+.cm-md-table-drag-insertion-line.cm-md-table-drag-insertion-line-col {
+    right: auto;
+    width: 2px;
+    height: auto;
+    top: 0;
+}
+
+.cm-md-table-widget.cm-md-table-dragging .cm-md-row-drag-handle,
+.cm-md-table-widget.cm-md-table-dragging .cm-md-col-drag-handle {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.cm-md-table-widget {
+    position: relative;
+    /* Gutter space for row grips (left) and column grips (top) outside the <table>. */
+    padding-left: 18px;
+    padding-top: 16px;
+}
+
 /* CM6 live-preview table widget: the single active/editable cell (tableWidget.ts) */
 .markdown-preview table.md-table .cm-md-table-cell-editing {
     outline: 2px solid var(--accent-color);
     outline-offset: -2px;
     background: var(--bg-color);
-    white-space: pre;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
 }
 
 /* CM6 live-preview table widget: right-click row/column menu (tableWidget.ts) */
@@ -1134,33 +1317,33 @@ body.edit-mode .edit-mode-hide {
 /* --------------------------------------------------------- */
 
 .markdown-preview,
-.markdown-editor {
+#content {
     /* Firefox */
     scrollbar-width: thin;
-    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+    scrollbar-color: var(--md-scrollbar-thumb) var(--md-scrollbar-track);
 }
 
 /* WebKit-based browsers (Chrome, Edge, Safari) */
 body::-webkit-scrollbar,
 html::-webkit-scrollbar,
-.markdown-preview::-webkit-scrollbar,
-.markdown-editor::-webkit-scrollbar {
+#content::-webkit-scrollbar,
+.markdown-preview::-webkit-scrollbar {
     width: 10px;
     height: 10px;
 }
 
 body::-webkit-scrollbar-track,
 html::-webkit-scrollbar-track,
-.markdown-preview::-webkit-scrollbar-track,
-.markdown-editor::-webkit-scrollbar-track {
-    background: var(--scrollbar-track);
+#content::-webkit-scrollbar-track,
+.markdown-preview::-webkit-scrollbar-track {
+    background: var(--md-scrollbar-track);
 }
 
 body::-webkit-scrollbar-thumb,
 html::-webkit-scrollbar-thumb,
-.markdown-preview::-webkit-scrollbar-thumb,
-.markdown-editor::-webkit-scrollbar-thumb {
-    background-color: var(--scrollbar-thumb);
+#content::-webkit-scrollbar-thumb,
+.markdown-preview::-webkit-scrollbar-thumb {
+    background-color: var(--md-scrollbar-thumb);
     border: 3px solid transparent;
     background-clip: content-box;
     border-radius: 10px;
@@ -1168,19 +1351,19 @@ html::-webkit-scrollbar-thumb,
 
 body::-webkit-scrollbar-thumb:hover,
 html::-webkit-scrollbar-thumb:hover,
-.markdown-preview::-webkit-scrollbar-thumb:hover,
-.markdown-editor::-webkit-scrollbar-thumb:hover {
-    background-color: var(--scrollbar-thumb-hover);
+#content::-webkit-scrollbar-thumb:hover,
+.markdown-preview::-webkit-scrollbar-thumb:hover {
+    background-color: var(--md-scrollbar-thumb-hover);
 }
 
 body::-webkit-scrollbar-button,
 html::-webkit-scrollbar-button,
+#content::-webkit-scrollbar-button,
 .markdown-preview::-webkit-scrollbar-button,
-.markdown-editor::-webkit-scrollbar-button,
 body::-webkit-scrollbar-corner,
 html::-webkit-scrollbar-corner,
-.markdown-preview::-webkit-scrollbar-corner,
-.markdown-editor::-webkit-scrollbar-corner {
+#content::-webkit-scrollbar-corner,
+.markdown-preview::-webkit-scrollbar-corner {
     display: none;
     background: transparent;
 }
@@ -1188,6 +1371,8 @@ html::-webkit-scrollbar-corner,
 /* ===== Formatting Toolbar ===== */
 .formatting-toolbar {
     display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
     align-items: center;
     gap: 2px;
     padding: 4px 12px;
@@ -1196,11 +1381,6 @@ html::-webkit-scrollbar-corner,
     overflow-x: auto;
     scrollbar-width: none;
     z-index: 19;
-}
-
-body.sticky-toolbar-enabled .formatting-toolbar {
-    position: sticky;
-    top: var(--header-height);
 }
 
 .formatting-toolbar.hidden {
@@ -1213,11 +1393,15 @@ body.sticky-toolbar-enabled .formatting-toolbar {
 
 .fmt-group {
     display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    flex-shrink: 0;
     align-items: center;
     gap: 1px;
 }
 
 .fmt-sep {
+    flex-shrink: 0;
     width: 1px;
     height: 20px;
     margin: 0 6px;
@@ -1357,13 +1541,12 @@ body.sticky-toolbar-enabled .formatting-toolbar {
     position: fixed;
     top: 0;
     left: 0;
-    height: 3px;
+    height: 2px;
     width: 0%;
-    background: linear-gradient(90deg, var(--progress-bar-start), var(--progress-bar-end));
+    background: var(--button-bg);
     z-index: 100001;
     transition: width 0.15s ease-out;
     border-radius: 0 2px 2px 0;
-    box-shadow: 0 0 10px var(--progress-bar-glow);
 }
 
 /* ===== Heading Anchor Links ===== */
@@ -1511,20 +1694,6 @@ body.dark-mode .search-highlight.current {
     box-shadow: 0 0 0 2px var(--accent-color);
 }
 
-/* ===== Focus Mode ===== */
-body.focus-mode .markdown-preview > * {
-    opacity: 0.2;
-    filter: blur(0.4px);
-    transition: opacity 0.4s ease, filter 0.4s ease;
-}
-
-body.focus-mode .markdown-preview > *:hover,
-body.focus-mode .markdown-preview > *:focus-within {
-    opacity: 1;
-    filter: none;
-    transition: opacity 0.15s ease, filter 0.15s ease;
-}
-
 /* ===== Code Block Line Numbers ===== */
 .markdown-preview pre code {
     counter-reset: line;
@@ -1544,9 +1713,8 @@ body.show-line-numbers .markdown-preview .code-line::before {
     margin-right: 0.45em;
     padding-left: 5px;
     padding-right: 0px;
-    text-align: left;
-    color: var(--text-secondary);
-    opacity: 0.72;
+    text-align: right;
+    color: var(--text-muted);
     border-right: 1px solid var(--border-color);
     user-select: none;
     font-size: 0.85em;

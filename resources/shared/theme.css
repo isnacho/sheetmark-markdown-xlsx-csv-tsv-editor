@@ -4,6 +4,7 @@
     --font-family: system-ui, -apple-system, sans-serif;
     --font-mono: Consolas, 'Courier New', monospace;
     --header-height: 40px;
+    --main-toolbar-height: 40px;
     --header-height-max: 96px;
     /* Compact */
     --row-header-width: 40px;
@@ -371,6 +372,14 @@ body.vscode-theme {
     border: 1px solid var(--border-color);
     font-size: 12px;
     pointer-events: none;
+}
+
+.toolbar-floating-tooltip {
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    white-space: nowrap;
+    transition: opacity 80ms ease;
 }
 
 .global-tooltip span {
@@ -745,6 +754,13 @@ body:not(.sticky-toolbar-enabled) .toolbar.expanded-toolbar {
     width: 100%;
     min-width: 100%;
     flex-shrink: 0;
+}
+
+/* #toolbar is position:fixed when sticky; overflow:hidden on the wrapper would
+   clip it once a sibling (e.g. the MD formatting bar) gives the wrapper height. */
+body.sticky-toolbar-enabled .toolbar-wrapper {
+    overflow: visible;
+    height: 0;
 }
 
 /* Update the existing .toolbar rule and add a .toolbar-wrapper rule */

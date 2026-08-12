@@ -24,8 +24,7 @@ Runtime context, hard rules, and the message protocol are in [CLAUDE.md](../CLAU
 | 1216–1268 | Scroll spy (outline tracking) | `updateScrollSpy` active-TOC highlight, `initScrollSpy` |
 | 1269–1299 | Lightbox | Image lightbox open/show/close |
 | 1300–1464 | Search in preview | Search overlay, `doSearch`, highlight/navigate/count |
-| 1465–1474 | Focus mode | `toggleFocusMode` |
-| 1475–1679 | Settings | `applySettings`, `initializeSettings`, `reorderMdToolbarButtons` |
+| 1465–1679 | Settings | `applySettings`, `initializeSettings`, `reorderMdToolbarButtons` |
 | 1680–1686 | Header height | `updateHeaderHeight` layout offset |
 | 1687–1755 | **Message handler (host→webview)** | `window.addEventListener('message')` `switch (m.command)` — see [MESSAGE-PROTOCOL.md](MESSAGE-PROTOCOL.md) |
 | 1756–1940 | Button handlers & toolbar build | `wireButtons`, `buildToolbarButtons` (edit/preview/save/version/view-toggle) |

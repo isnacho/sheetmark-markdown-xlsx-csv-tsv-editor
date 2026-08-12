@@ -1,5 +1,7 @@
  
 
+import { wireDelayedToolbarTooltips } from '../../shared/delayedTitleTooltip';
+
 export interface XlsxFindMatch {
     row: number;
     col: number;
@@ -201,6 +203,8 @@ export class XlsxFindManager {
         closeBtn?.addEventListener('click', () => {
             this.close();
         });
+
+        wireDelayedToolbarTooltips(overlay);
     }
 
     private updateCount() {

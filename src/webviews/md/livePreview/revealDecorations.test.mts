@@ -42,6 +42,15 @@ test('heading: cursor away hides "#" and its gap space, applies heading-size cla
     ]);
 });
 
+test('heading: collapsed caret at end of title-less "#" or "# " reveals the marker while typing', () => {
+    assert.deepEqual(decorate('#', 1), [
+        { from: 0, to: 1, class: 'cm-md-reveal-mark cm-md-h1' },
+    ]);
+    assert.deepEqual(decorate('# ', 2), [
+        { from: 0, to: 2, class: 'cm-md-reveal-mark cm-md-h1' },
+    ]);
+});
+
 test('heading: cursor on the heading line shows "#" dimmed AT THE HEADING\'S OWN SIZE, and content KEEPS its size styling', () => {
     const doc = '# Title\n\nbody';
     const decos = decorate(doc, doc.indexOf('Title'));
@@ -175,6 +184,26 @@ test('link: cursor inside shows "[" and "](url)" dimmed but KEEPS the label styl
         { from: 4, to: 5, class: 'cm-md-reveal-mark' },
         { from: 5, to: 9, class: 'cm-md-link-content' },
         { from: 9, to: 15, class: 'cm-md-reveal-mark' },
+    ]);
+});
+
+test('link: cursor immediately after the closing ")" stays collapsed (paste-to-link caret)', () => {
+    const doc = 'see [text](url) here';
+    const decos = decorate(doc, doc.indexOf(') ') + 1);
+    assert.deepEqual(decos, [
+        { from: 4, to: 5, class: undefined },
+        { from: 5, to: 9, class: 'cm-md-link-content' },
+        { from: 9, to: 15, class: undefined },
+    ]);
+});
+
+test('link: URL-as-label (paste-to-link with no selection) collapses when caret is after the link', () => {
+    const doc = '[https://example.com](https://example.com)';
+    const decos = decorate(doc, doc.length);
+    assert.deepEqual(decos, [
+        { from: 0, to: 1, class: undefined },
+        { from: 1, to: 20, class: 'cm-md-link-content' },
+        { from: 20, to: doc.length, class: undefined },
     ]);
 });
 

@@ -119,15 +119,22 @@ export class SettingsManager {
         const container = document.querySelector('.toolbar');
         if (!container) {return;}
         const rect = container.getBoundingClientRect();
-        
+        const fmtToolbar = document.getElementById('formattingToolbar');
+        let top = rect.bottom;
+        if (fmtToolbar && !fmtToolbar.classList.contains('hidden')) {
+            top = Math.max(top, fmtToolbar.getBoundingClientRect().bottom);
+        }
+
         this.panel!.style.position = 'fixed';
         this.panel!.style.left = Math.max(8, rect.left) + 'px';
-        this.panel!.style.top = rect.bottom + 'px';
+        this.panel!.style.top = top + 'px';
         this.panel!.style.right = 'auto';
         const maxWidth = Math.min(window.innerWidth - 16, rect.width);
         this.panel!.style.width = Math.max(280, maxWidth) + 'px';
-        this.panel!.style.zIndex = '10001';
-        
+        this.panel!.style.maxHeight = Math.max(120, window.innerHeight - top - 16) + 'px';
+        this.panel!.style.overflowY = 'auto';
+        this.panel!.style.zIndex = '200001';
+
         if (this.onReposition) {this.onReposition();}
     }
 
@@ -186,6 +193,8 @@ export class SettingsManager {
         this.panel!.style.top = '';
         this.panel!.style.width = '';
         this.panel!.style.right = '';
+        this.panel!.style.maxHeight = '';
+        this.panel!.style.overflowY = '';
         this.panel!.style.zIndex = '';
 
         // Restore original parent/position

@@ -13,8 +13,10 @@ import {
     nextCell, prevCell, cellBelow, cellAbove, columnWidthsField, setColumnWidthsEffect,
     computeTableContextMenu, computeTableMenuTransaction, findTableNodeByIndex,
     computeClearCell, computeClearRow, computeClearColumn,
-    computeMoveRowUp, computeMoveRowDown, computeDeleteRow, computeInsertRow,
-    computeMoveColumn, computeDeleteColumn, computeInsertColumn,
+    computeMoveRowUp, computeMoveRowDown, computeMoveRowTo, computeDeleteRow, computeInsertRow,
+    computeMoveColumn, computeMoveColumnTo, computeDeleteColumn, computeInsertColumn,
+    sanitizeTableCellInput, wrapTableCellTextSelection, insertTableCellLink,
+    collapsedClickPosForCell, selectionPosAfterTableInsert,
 } from './tableWidget.ts';
 import type { CellRange, TableMenuItem } from './tableWidget.ts';
 
@@ -76,7 +78,7 @@ test('regression: a trailing space typed at the end of a cell keeps that SAME ce
     // still resolve to that cell.
     const doc = '| Cell 1  | Cell 2 |\n| ------- | ------- |\n| a       | b       |';
     const state = stateFor(doc);
-    const grid = buildCellGrid(tableNode(state));
+    const grid = buildCellGrid(state, tableNode(state));
     const cell1 = grid[0][0]; // "Cell 1", with two trailing padding spaces before the next "|"
     const oneSpacePastEnd = cell1.to + 1;
     assert.deepEqual(findActiveCell(state, grid, oneSpacePastEnd, oneSpacePastEnd), { row: 0, col: 0, ...cell1 });
@@ -85,7 +87,7 @@ test('regression: a trailing space typed at the end of a cell keeps that SAME ce
 test('buildCellGrid maps header + body rows to trimmed cell ranges', () => {
     const doc = '| Header 1 | Header 2 |\n| -------- | -------- |\n| Cell 1   | Cell 2   |\n';
     const state = stateFor(doc);
-    const grid = buildCellGrid(tableNode(state));
+    const grid = buildCellGrid(state, tableNode(state));
     assert.equal(grid.length, 2);
     assert.equal(state.sliceDoc(grid[0][0].from, grid[0][0].to), 'Header 1');
     assert.equal(state.sliceDoc(grid[0][1].from, grid[0][1].to), 'Header 2');
@@ -96,7 +98,7 @@ test('buildCellGrid maps header + body rows to trimmed cell ranges', () => {
 test('findActiveCell resolves the cell containing the selection', () => {
     const doc = '| a | b |\n| - | - |\n| 1 | 2 |';
     const state = stateFor(doc);
-    const grid = buildCellGrid(tableNode(state));
+    const grid = buildCellGrid(state, tableNode(state));
     const pos = doc.indexOf('2');
     assert.deepEqual(findActiveCell(state, grid, pos, pos), { row: 1, col: 1, from: pos, to: pos + 1 });
     // Position 0 is the row's opening pipe, before any cell's trimmed range —
@@ -200,7 +202,7 @@ function findItem(groups: readonly TableMenuItem[][], id: TableMenuItem['id']): 
 
 test('computeTableContextMenu: header cell in a 2-col table with one body row', () => {
     const doc = '| a | b |\n| - | - |\n| 1 | 2 |';
-    const grid = buildCellGrid(tableNode(stateFor(doc)));
+    const grid = buildCellGrid(stateFor(doc), tableNode(stateFor(doc)));
     const groups = computeTableContextMenu(grid, 0, 0);
 
     assert.equal(findItem(groups, 'clearCell').enabled, true);
@@ -221,7 +223,7 @@ test('computeTableContextMenu: header cell in a 2-col table with one body row', 
 
 test('computeTableContextMenu: deleting the header is disabled when there is no body row to promote', () => {
     const doc = '| a | b |\n| - | - |';
-    const grid = buildCellGrid(tableNode(stateFor(doc)));
+    const grid = buildCellGrid(stateFor(doc), tableNode(stateFor(doc)));
     const item = findItem(computeTableContextMenu(grid, 0, 0), 'deleteRow');
     assert.equal(item.enabled, false);
     assert.equal(item.disabledReason, 'Table needs a header row');
@@ -229,7 +231,7 @@ test('computeTableContextMenu: deleting the header is disabled when there is no 
 
 test('computeTableContextMenu: first body row can\'t move up (would cross the header), but can move down', () => {
     const doc = '| a |\n| - |\n| 1 |\n| 2 |\n| 3 |';
-    const grid = buildCellGrid(tableNode(stateFor(doc)));
+    const grid = buildCellGrid(stateFor(doc), tableNode(stateFor(doc)));
     const groups = computeTableContextMenu(grid, 1, 0);
     assert.equal(findItem(groups, 'moveRowUp').enabled, false);
     assert.equal(findItem(groups, 'moveRowUp').disabledReason, "Can't move above the header row");
@@ -239,7 +241,7 @@ test('computeTableContextMenu: first body row can\'t move up (would cross the he
 
 test('computeTableContextMenu: last body row can move up but not down', () => {
     const doc = '| a |\n| - |\n| 1 |\n| 2 |\n| 3 |';
-    const grid = buildCellGrid(tableNode(stateFor(doc)));
+    const grid = buildCellGrid(stateFor(doc), tableNode(stateFor(doc)));
     const groups = computeTableContextMenu(grid, 3, 0);
     assert.equal(findItem(groups, 'moveRowUp').enabled, true);
     assert.equal(findItem(groups, 'moveRowDown').enabled, false);
@@ -248,7 +250,7 @@ test('computeTableContextMenu: last body row can move up but not down', () => {
 
 test('computeTableContextMenu: middle row/column have both move directions enabled', () => {
     const doc = '| a | b | c |\n| - | - | - |\n| 1 | 2 | 3 |\n| 4 | 5 | 6 |\n| 7 | 8 | 9 |';
-    const grid = buildCellGrid(tableNode(stateFor(doc)));
+    const grid = buildCellGrid(stateFor(doc), tableNode(stateFor(doc)));
     const groups = computeTableContextMenu(grid, 2, 1);
     assert.equal(findItem(groups, 'moveRowUp').enabled, true);
     assert.equal(findItem(groups, 'moveRowDown').enabled, true);
@@ -258,7 +260,7 @@ test('computeTableContextMenu: middle row/column have both move directions enabl
 
 test('computeTableContextMenu: a single-column table disables delete column on both edges', () => {
     const doc = '| a |\n| - |\n| 1 |';
-    const grid = buildCellGrid(tableNode(stateFor(doc)));
+    const grid = buildCellGrid(stateFor(doc), tableNode(stateFor(doc)));
     const item = findItem(computeTableContextMenu(grid, 1, 0), 'deleteColumn');
     assert.equal(item.enabled, false);
     assert.equal(item.disabledReason, 'Table needs at least one column');
@@ -269,7 +271,7 @@ test('computeTableContextMenu: a single-column table disables delete column on b
 test('computeClearCell empties only the targeted cell', () => {
     const doc = '| a | b |\n| - | - |\n| 1 | 2 |';
     const state = stateFor(doc);
-    const grid = buildCellGrid(tableNode(state));
+    const grid = buildCellGrid(state, tableNode(state));
     const spec = computeClearCell(grid, 1, 0);
     assert.ok(spec);
     assert.equal(state.update(spec!).state.doc.toString(), '| a | b |\n| - | - |\n|  | 2 |');
@@ -278,7 +280,7 @@ test('computeClearCell empties only the targeted cell', () => {
 test('computeClearRow empties every cell in that row, header included', () => {
     const doc = '| a | b |\n| - | - |\n| 1 | 2 |';
     const state = stateFor(doc);
-    const grid = buildCellGrid(tableNode(state));
+    const grid = buildCellGrid(state, tableNode(state));
     const spec = computeClearRow(grid, 0);
     assert.ok(spec);
     assert.equal(state.update(spec!).state.doc.toString(), '|  |  |\n| - | - |\n| 1 | 2 |');
@@ -287,7 +289,7 @@ test('computeClearRow empties every cell in that row, header included', () => {
 test('computeClearColumn empties every cell in that column, header included', () => {
     const doc = '| a | b |\n| - | - |\n| 1 | 2 |\n| 3 | 4 |';
     const state = stateFor(doc);
-    const grid = buildCellGrid(tableNode(state));
+    const grid = buildCellGrid(state, tableNode(state));
     const spec = computeClearColumn(grid, 1);
     assert.ok(spec);
     assert.equal(state.update(spec!).state.doc.toString(), '| a |  |\n| - | - |\n| 1 |  |\n| 3 |  |');
@@ -299,7 +301,7 @@ test('computeMoveRowUp swaps a body row with its predecessor', () => {
     const doc = '| a |\n| - |\n| 1 |\n| 2 |\n| 3 |';
     const state = stateFor(doc);
     const node = tableNode(state);
-    const grid = buildCellGrid(node);
+    const grid = buildCellGrid(state, node);
     const spec = computeMoveRowUp(state, node, grid, 2); // "2" moves above "1"
     assert.ok(spec);
     assert.equal(state.update(spec!).state.doc.toString(), '| a |\n| - |\n| 2 |\n| 1 |\n| 3 |');
@@ -309,7 +311,7 @@ test('computeMoveRowUp refuses to move the header or the first body row', () => 
     const doc = '| a |\n| - |\n| 1 |\n| 2 |';
     const state = stateFor(doc);
     const node = tableNode(state);
-    const grid = buildCellGrid(node);
+    const grid = buildCellGrid(state, node);
     assert.equal(computeMoveRowUp(state, node, grid, 0), null);
     assert.equal(computeMoveRowUp(state, node, grid, 1), null);
 });
@@ -318,7 +320,7 @@ test('computeMoveRowDown swaps a body row with its successor and refuses past th
     const doc = '| a |\n| - |\n| 1 |\n| 2 |\n| 3 |';
     const state = stateFor(doc);
     const node = tableNode(state);
-    const grid = buildCellGrid(node);
+    const grid = buildCellGrid(state, node);
     const spec = computeMoveRowDown(state, node, grid, 1); // "1" moves below "2"
     assert.ok(spec);
     assert.equal(state.update(spec!).state.doc.toString(), '| a |\n| - |\n| 2 |\n| 1 |\n| 3 |');
@@ -330,7 +332,7 @@ test('computeDeleteRow on the header promotes the first body row', () => {
     const doc = '| a | b |\n| - | - |\n| 1 | 2 |\n| 3 | 4 |';
     const state = stateFor(doc);
     const node = tableNode(state);
-    const grid = buildCellGrid(node);
+    const grid = buildCellGrid(state, node);
     const spec = computeDeleteRow(state, node, grid, 0);
     assert.ok(spec);
     assert.equal(state.update(spec!).state.doc.toString(), '| 1 | 2 |\n| - | - |\n| 3 | 4 |');
@@ -340,7 +342,7 @@ test('computeDeleteRow on the header with no body rows is refused', () => {
     const doc = '| a | b |\n| - | - |';
     const state = stateFor(doc);
     const node = tableNode(state);
-    const grid = buildCellGrid(node);
+    const grid = buildCellGrid(state, node);
     assert.equal(computeDeleteRow(state, node, grid, 0), null);
 });
 
@@ -348,7 +350,7 @@ test('computeDeleteRow on a body row removes just that line', () => {
     const doc = '| a |\n| - |\n| 1 |\n| 2 |\n| 3 |';
     const state = stateFor(doc);
     const node = tableNode(state);
-    const grid = buildCellGrid(node);
+    const grid = buildCellGrid(state, node);
     const spec = computeDeleteRow(state, node, grid, 2); // delete "2"
     assert.ok(spec);
     assert.equal(state.update(spec!).state.doc.toString(), '| a |\n| - |\n| 1 |\n| 3 |');
@@ -358,7 +360,7 @@ test('computeInsertRow above/below a body row, and below the header (can\'t inse
     const doc = '| a | b |\n| - | - |\n| 1 | 2 |';
     const state = stateFor(doc);
     const node = tableNode(state);
-    const grid = buildCellGrid(node);
+    const grid = buildCellGrid(state, node);
 
     assert.equal(computeInsertRow(state, node, grid, 0, 'above'), null);
 
@@ -381,7 +383,7 @@ test('computeMoveColumn reorders header, delimiter, and every body row together'
     const doc = '| a | b | c |\n| :-- | :-: | --: |\n| 1 | 2 | 3 |\n| 4 | 5 | 6 |';
     const state = stateFor(doc);
     const node = tableNode(state);
-    const grid = buildCellGrid(node);
+    const grid = buildCellGrid(state, node);
     const spec = computeMoveColumn(state, node, grid, 0, 'right'); // "a" swaps with "b"
     assert.ok(spec);
     assert.equal(
@@ -394,7 +396,7 @@ test('computeMoveColumn refuses past either edge', () => {
     const doc = '| a | b |\n| - | - |\n| 1 | 2 |';
     const state = stateFor(doc);
     const node = tableNode(state);
-    const grid = buildCellGrid(node);
+    const grid = buildCellGrid(state, node);
     assert.equal(computeMoveColumn(state, node, grid, 0, 'left'), null);
     assert.equal(computeMoveColumn(state, node, grid, 1, 'right'), null);
 });
@@ -403,21 +405,21 @@ test('computeDeleteColumn removes a column from every row and refuses on the las
     const doc = '| a | b | c |\n| - | - | - |\n| 1 | 2 | 3 |';
     const state = stateFor(doc);
     const node = tableNode(state);
-    const grid = buildCellGrid(node);
+    const grid = buildCellGrid(state, node);
     const spec = computeDeleteColumn(state, node, grid, 1);
     assert.ok(spec);
     assert.equal(state.update(spec!).state.doc.toString(), '| a | c |\n| - | - |\n| 1 | 3 |');
 
     const oneColState = stateFor('| a |\n| - |\n| 1 |');
     const oneColNode = tableNode(oneColState);
-    assert.equal(computeDeleteColumn(oneColState, oneColNode, buildCellGrid(oneColNode), 0), null);
+    assert.equal(computeDeleteColumn(oneColState, oneColNode, buildCellGrid(oneColState, oneColNode), 0), null);
 });
 
 test('computeInsertColumn adds an empty cell and a default-aligned delimiter token on either side', () => {
     const doc = '| a | b |\n| - | - |\n| 1 | 2 |';
     const state = stateFor(doc);
     const node = tableNode(state);
-    const grid = buildCellGrid(node);
+    const grid = buildCellGrid(state, node);
 
     const left = computeInsertColumn(state, node, grid, 1, 'left');
     assert.equal(state.update(left).state.doc.toString(), '| a |  | b |\n| - | --- | - |\n| 1 |  | 2 |');
@@ -430,9 +432,52 @@ test('computeInsertColumn pads a ragged body row to the header\'s column count b
     const doc = '| a | b |\n| - | - |\n| 1 |';
     const state = stateFor(doc);
     const node = tableNode(state);
-    const grid = buildCellGrid(node);
+    const grid = buildCellGrid(state, node);
     const spec = computeInsertColumn(state, node, grid, 1, 'right');
     assert.equal(state.update(spec).state.doc.toString(), '| a | b |  |\n| - | - | --- |\n| 1 |  |  |');
+});
+
+test('findActiveCell keeps an empty inserted column cell active at its boundary (not the neighbor)', () => {
+    const doc = '| a | b |\n| - | - |\n| 1 | 2 |';
+    const state = stateFor(doc);
+    const node = tableNode(state);
+    const spec = computeInsertColumn(state, node, buildCellGrid(state, node), 0, 'right');
+    const inserted = state.update(spec).state;
+    const insertedDoc = inserted.doc.toString();
+    const insertedNode = tableNode(inserted);
+    const grid = buildCellGrid(inserted, insertedNode);
+    const emptyBodyCell = grid[1].find(c => insertedDoc.slice(c.from, c.to).trim() === '');
+    assert.ok(emptyBodyCell, 'expected an empty body cell after insert column right');
+    const clickPos = collapsedClickPosForCell(inserted, emptyBodyCell);
+    assert.equal(clickPos, emptyBodyCell.from);
+    const active = findActiveCell(inserted, grid, clickPos, clickPos);
+    assert.deepEqual(active, { row: 1, col: grid[1].indexOf(emptyBodyCell), ...emptyBodyCell });
+    assert.equal(insertedDoc.slice(active!.from, active!.to).trim(), '');
+});
+
+test('selectionPosAfterTableInsert lands in the new row or column', () => {
+    const doc = '| a | b |\n| - | - |\n| 1 | 2 |';
+    const state = stateFor(doc);
+    const node = tableNode(state);
+    const grid = buildCellGrid(state, node);
+
+    const colSpec = computeInsertColumn(state, node, grid, 0, 'right');
+    const afterCol = state.update(colSpec).state;
+    const colNode = tableNode(afterCol);
+    const colGrid = buildCellGrid(afterCol, colNode);
+    const newCol = selectionPosAfterTableInsert(afterCol, colNode, 'insertColumnRight', 1, 0);
+    assert.ok(newCol !== null);
+    const emptyAfterCol = colGrid[1].find(c => afterCol.sliceDoc(c.from, c.to).trim() === '');
+    assert.ok(emptyAfterCol);
+    assert.equal(newCol, emptyAfterCol.from);
+
+    const rowSpec = computeInsertRow(state, node, grid, 1, 'below');
+    const afterRow = state.update(rowSpec).state;
+    const rowNode = tableNode(afterRow);
+    const rowGrid = buildCellGrid(afterRow, rowNode);
+    assert.equal(rowGrid.length, 3);
+    const newRowPos = selectionPosAfterTableInsert(afterRow, rowNode, 'insertRowBelow', 1, 1);
+    assert.equal(newRowPos, rowGrid[2][1].from);
 });
 
 // ===== Dispatch table + table-node lookup by index =====
@@ -441,7 +486,7 @@ test('computeTableMenuTransaction routes every action id to its compute function
     const doc = '| a | b |\n| - | - |\n| 1 | 2 |';
     const state = stateFor(doc);
     const node = tableNode(state);
-    const grid = buildCellGrid(node);
+    const grid = buildCellGrid(state, node);
     const spec = computeTableMenuTransaction(state, node, grid, 1, 0, 'clearCell');
     assert.ok(spec);
     assert.equal(state.update(spec!).state.doc.toString(), '| a | b |\n| - | - |\n|  | 2 |');
@@ -456,4 +501,57 @@ test('findTableNodeByIndex resolves tables in order of appearance', () => {
     assert.equal(state.sliceDoc(first!.from, first!.to), '| a |\n| - |\n| 1 |');
     assert.equal(state.sliceDoc(second!.from, second!.to), '| b |\n| - |\n| 2 |');
     assert.equal(findTableNodeByIndex(state, 2), null);
+});
+
+test('computeMoveRowTo moves a body row to an arbitrary index', () => {
+    const doc = '| a | b |\n| - | - |\n| 1 | 2 |\n| 3 | 4 |';
+    const state = stateFor(doc);
+    const node = tableNode(state);
+    const grid = buildCellGrid(state, node);
+    const spec = computeMoveRowTo(state, node, grid, 1, 1); // row "1|2" after row "3|4"
+    assert.ok(spec);
+    assert.equal(state.update(spec!).state.doc.toString(), '| a | b |\n| - | - |\n| 3 | 4 |\n| 1 | 2 |');
+});
+
+test('computeMoveRowTo clamps a drop-past-end target to the last row', () => {
+    const doc = '| a | b |\n| - | - |\n| 1 | 2 |\n| 3 | 4 |';
+    const state = stateFor(doc);
+    const node = tableNode(state);
+    const grid = buildCellGrid(state, node);
+    const spec = computeMoveRowTo(state, node, grid, 1, 99);
+    assert.ok(spec);
+    assert.equal(state.update(spec!).state.doc.toString(), '| a | b |\n| - | - |\n| 3 | 4 |\n| 1 | 2 |');
+});
+
+test('computeMoveColumnTo moves a column to an arbitrary index', () => {
+    const doc = '| a | b | c |\n| - | - | - |\n| 1 | 2 | 3 |';
+    const state = stateFor(doc);
+    const node = tableNode(state);
+    const grid = buildCellGrid(state, node);
+    const spec = computeMoveColumnTo(state, node, grid, 0, 2); // "a" after "b" and "c"
+    assert.ok(spec);
+    assert.equal(state.update(spec!).state.doc.toString(), '| b | c | a |\n| - | - | - |\n| 2 | 3 | 1 |');
+});
+
+test('sanitizeTableCellInput converts pasted newlines to <br>', () => {
+    assert.equal(sanitizeTableCellInput('one\ntwo'), 'one<br>two');
+    assert.equal(sanitizeTableCellInput('one\r\ntwo\rthree'), 'one<br>two<br>three');
+});
+
+test('wrapTableCellTextSelection toggles markdown wrappers', () => {
+    const wrapped = wrapTableCellTextSelection('hello', 0, 5, '**', '**');
+    assert.equal(wrapped.text, '**hello**');
+    const unwrapped = wrapTableCellTextSelection(wrapped.text, 2, 7, '**', '**');
+    assert.equal(unwrapped.text, 'hello');
+});
+
+test('insertTableCellLink wraps the selection or inserts a placeholder', () => {
+    const empty = insertTableCellLink('cell', 2, 2);
+    assert.equal(empty.text, 'ce[text](url)ll');
+    assert.equal(empty.selectFrom, 3);
+    assert.equal(empty.selectTo, 7);
+    const selected = insertTableCellLink('cell', 0, 4);
+    assert.equal(selected.text, '[cell](url)');
+    assert.equal(selected.selectFrom, 7);
+    assert.equal(selected.selectTo, 10);
 });

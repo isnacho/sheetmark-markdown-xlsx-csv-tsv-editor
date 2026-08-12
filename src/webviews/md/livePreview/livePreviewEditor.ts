@@ -44,7 +44,10 @@ import type { Cm6Interaction } from './livePreviewInteractions';
 import { livePreviewRevealPlugin, orderedListAtomicRanges } from './revealDecorations';
 import { codeStylingPlugin } from './codeStyling';
 import { tableWidgetField, columnWidthsField, setColumnWidthsEffect } from './tableWidget';
-import { runFormatCommand, livePreviewFormatKeymap } from './formatCommands';
+import { frontmatterWidgetField, seedFrontmatterCollapsed, seedFrontmatterEditing, setFrontmatterCollapsedCallback } from './frontmatterWidget';
+import { runFormatCommand, livePreviewFormatKeymap, computePasteLink } from './formatCommands';
+import { applyTableCellInlineFormatAction } from './tableWidget';
+import { spellcheckExtensions, loadSpellDictionary } from './spellcheck';
 
 export interface LivePreviewMountOptions {
     /** Element to mount the editor into (its children are cleared first). */
@@ -67,6 +70,10 @@ export interface LivePreviewMountOptions {
     columnWidths?: Record<number, readonly number[]>;
     /** Fired once per completed column-resize drag (never per-pixel) — mdWebview.ts persists it to the host. */
     onColumnWidthsChanged?: (widths: Record<number, readonly number[]>) => void;
+    /** Persisted YAML frontmatter card collapsed state, read from the host on load. */
+    frontmatterCollapsed?: boolean;
+    /** Fired when the user toggles the YAML card — mdWebview.ts persists it to the host. */
+    onFrontmatterCollapsedChanged?: (collapsed: boolean) => void;
     /** Fired on any selection/cursor change (including plain cursor moves with no doc change) — drives the status-bar Ln/Col display. */
     onSelectionChange?: () => void;
 }
@@ -75,7 +82,6 @@ let view: EditorView | null = null;
 const wrapCompartment = new Compartment();
 const revealCompartment = new Compartment();
 const gutterCompartment = new Compartment();
-
 /** Line-number gutter: clicking a line number selects that line's text. */
 function buildLineNumbersGutter() {
     return lineNumbers({
@@ -104,8 +110,11 @@ export function mountLivePreview(opts: LivePreviewMountOptions): EditorView {
     const {
         parent, doc, onDocChanged, lineWrapping = true, onScroll, onModifierClick, reveal = true,
         showLineNumbers = false, columnWidths, onColumnWidthsChanged, onSelectionChange,
+        frontmatterCollapsed = false, onFrontmatterCollapsedChanged,
     } = opts;
     parent.innerHTML = '';
+    setFrontmatterCollapsedCallback(onFrontmatterCollapsedChanged);
+    void loadSpellDictionary();
 
     const updateListener = EditorView.updateListener.of((update) => {
         if (update.viewportChanged) { onScroll?.(); }
@@ -122,12 +131,21 @@ export function mountLivePreview(opts: LivePreviewMountOptions): EditorView {
         onDocChanged(update.state.doc.toString());
     });
 
-    const clickHandler = EditorView.domEventHandlers({
+    const domHandlers = EditorView.domEventHandlers({
         mousedown(event, editorView) {
             if (!onModifierClick || !(event.ctrlKey || event.metaKey)) { return false; }
             const pos = editorView.posAtCoords({ x: event.clientX, y: event.clientY });
             if (pos === null) { return false; }
             onModifierClick(pos);
+            return true;
+        },
+        paste(event, editorView) {
+            const text = event.clipboardData?.getData('text/plain');
+            if (!text) { return false; }
+            const spec = computePasteLink(editorView.state, text);
+            if (!spec) { return false; }
+            editorView.dispatch(spec);
+            event.preventDefault();
             return true;
         },
         scroll() { onScroll?.(); },
@@ -164,10 +182,14 @@ export function mountLivePreview(opts: LivePreviewMountOptions): EditorView {
             // which would re-`create()` (i.e. reset to `{}`) any StateField
             // living inside it. Column widths must survive that toggle.
             columnWidthsField.init(() => columnWidths ?? {}),
+            seedFrontmatterCollapsed(frontmatterCollapsed),
+            seedFrontmatterEditing(false),
+            frontmatterWidgetField,
             revealCompartment.of(reveal ? [livePreviewRevealPlugin, tableWidgetField, orderedListAtomicRanges] : []),
             codeStylingPlugin,
+            ...spellcheckExtensions,
             autocompletion({ override: [livePreviewSlashSource], icons: false }),
-            clickHandler,
+            domHandlers,
             updateListener,
         ],
     });
@@ -184,6 +206,7 @@ export function unmountLivePreview(): void {
         if (parent) { parent.innerHTML = ''; }
         view = null;
     }
+    setFrontmatterCollapsedCallback(undefined);
 }
 
 export function isLivePreviewActive(): boolean {
@@ -221,6 +244,7 @@ export function applyLivePreviewFormat(action: string): boolean {
     if (!view) { return false; }
     if (action === 'undo') { return livePreviewUndo(); }
     if (action === 'redo') { return livePreviewRedo(); }
+    if (applyTableCellInlineFormatAction(action)) { return true; }
     const handled = runFormatCommand(view, action);
     if (handled) { view.focus(); }
     return handled;

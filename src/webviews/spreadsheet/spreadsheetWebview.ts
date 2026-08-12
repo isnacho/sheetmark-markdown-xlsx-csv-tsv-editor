@@ -5,6 +5,7 @@ import { ThemeManager, renderThemeToggleSettingItem } from '../shared/themeManag
 import { SettingsManager } from '../shared/settingsManager';
 import { ToolbarManager } from '../shared/toolbarManager';
 import { applyToolbarLayout } from '../shared/toolbarLayout';
+import { wireDelayedToolbarTooltips } from '../shared/delayedTitleTooltip';
 import { Utils } from '../shared/utils';
 import { Icons } from '../shared/icons';
 import { vscode, VirtualScrollConfig, debounce } from '../shared/common';
@@ -4115,6 +4116,8 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
         byId<HTMLButtonElement>('unmergeCellsButton')?.addEventListener('click', () => queueMergeOperation('unmergeRange'));
         byId<HTMLButtonElement>('formatPainterButton')?.addEventListener('click', () => toggleFormatPainter());
         byId<HTMLButtonElement>('clearFormatButton')?.addEventListener('click', () => clearFormattingOnSelection());
+
+        wireDelayedToolbarTooltips(strip);
     }
 
     function reorderToolbarAroundFind(isEditModeEnabled: boolean) {
@@ -7504,6 +7507,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
         wireEditFormattingControls();
 
         wireSettingsUI();
+        wireDelayedToolbarTooltips();
 
         document.addEventListener('click', (e) => {
             const target = e.target as HTMLElement | null;

@@ -86,9 +86,6 @@ Provider: [mdEditorProvider.ts](../src/mdEditorProvider.ts)
 | `showVersionHistory` | — | :1902 | :268 |
 | `restoreVersion` | — (uses preview id) | :825 | :347 |
 | `cancelVersionPreview` | — | :828 | :324 |
-| `enableMdEditor` | — | :1782 | :486 |
-| `disableMdEditor` | — | :1801 | :465 |
-| `toggleMdAssociation` | `enable` | shared module | :509 |
 | `saveTableColumnWidths` | `widths` (table order-index -> px per column) | :860 | :274 |
 | `saveFrontmatterPanelCollapsed` | `collapsed` (boolean) | :~ | :~ |
 | `saveMermaidPreviewMode` | `mode` (`diagram` \| `code`) | :~ | :~ |

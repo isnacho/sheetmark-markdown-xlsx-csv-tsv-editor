@@ -106,7 +106,7 @@ const MIN_COL_WIDTH_PX = 40;
 
 // Match mdWebview.ts's core options so inline HTML in cells (e.g. <br> line
 // breaks) renders instead of showing escaped literal tags when the cell is
-// inactive. linkify keeps bare URLs consistent with reading mode.
+// inactive. linkify keeps bare URLs consistent with the main editor.
 const md = new MarkdownIt({ html: true, linkify: true });
 const defaultTableOpen = md.renderer.rules.table_open || ((tokens, idx, options, _env, self) => self.renderToken(tokens, idx, options));
 md.renderer.rules.table_open = (tokens, idx, options, env, self) => {
@@ -867,6 +867,7 @@ function wireResizeHandle(th: HTMLElement, table: HTMLTableElement, view: Editor
     const currentThs = () => Array.from(table.querySelectorAll('thead th')) as HTMLElement[];
 
     handle.addEventListener('mousedown', (event) => {
+        if (view.state.readOnly) { return; }
         // Without this, the event bubbles to the <th>'s own mousedown
         // listener (from the cell-activation feature) and starting a drag
         // would also activate the header cell for text editing.
@@ -991,6 +992,24 @@ const ROW_GRIP_TABLE_GAP_PX = 4;
 const ROW_GRIP_WIDTH_PX = 14;
 const ROW_GRIP_GUTTER_PX = 20;
 
+/** Enable horizontal scroll on the table wrapper only when the table exceeds it. */
+function wireTableScrollUI(scroll: HTMLElement): void {
+    const table = scroll.querySelector('table');
+    if (!table) { return; }
+
+    const update = () => {
+        const overflows = table.getBoundingClientRect().width > scroll.clientWidth + 1;
+        scroll.classList.toggle('cm-md-table-overflow-x', overflows);
+    };
+
+    update();
+    requestAnimationFrame(update);
+    const ro = new ResizeObserver(update);
+    ro.observe(scroll);
+    ro.observe(table);
+    scroll.addEventListener('scroll', update, { passive: true });
+}
+
 /** One shared row/column grip pair per table — positioned on wrap mousemove. */
 function wireTableDragUI(
     wrap: HTMLElement,
@@ -1103,6 +1122,7 @@ function wireTableDragUI(
     }, { passive: true });
 
     const startRowDrag = (event: MouseEvent) => {
+        if (view.state.readOnly) { return; }
         if (!rowTarget) { return; }
         event.preventDefault();
         event.stopPropagation();
@@ -1157,6 +1177,7 @@ function wireTableDragUI(
     };
 
     const startColDrag = (event: MouseEvent) => {
+        if (view.state.readOnly) { return; }
         if (!colTarget) { return; }
         event.preventDefault();
         event.stopPropagation();
@@ -1530,6 +1551,7 @@ export class TableWidget extends WidgetType {
 
         wrap.querySelectorAll('th, td').forEach((cellEl) => {
             cellEl.addEventListener('mousedown', (event) => {
+                if (view.state.readOnly) { return; }
                 // The active cell IS a real contentEditable — let the browser
                 // place its own caret at the clicked pixel natively. Only
                 // clicks on an INACTIVE cell need to be intercepted, to
@@ -1567,6 +1589,7 @@ export class TableWidget extends WidgetType {
         // that header cell turned out to be the active one), it would be
         // silently removed the instant that header cell is being edited.
         if (table) {
+            wireTableScrollUI(scroll);
             wireTableDragUI(wrap, view, this.tableIndex, this.grid);
             wrap.querySelectorAll('thead th').forEach((th, col) => {
                 wireResizeHandle(th as HTMLElement, table, view, col, this.tableIndex);

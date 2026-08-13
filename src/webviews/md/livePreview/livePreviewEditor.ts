@@ -116,6 +116,7 @@ let view: EditorView | null = null;
 const wrapCompartment = new Compartment();
 const revealCompartment = new Compartment();
 const gutterCompartment = new Compartment();
+const readOnlyCompartment = new Compartment();
 /** Line-number gutter: clicking a line number selects that line's text. */
 function buildLineNumbersGutter() {
     return lineNumbers({
@@ -225,6 +226,7 @@ export function mountLivePreview(opts: LivePreviewMountOptions): EditorView {
             // different plugin.
             wrapCompartment.of(lineWrapping ? EditorView.lineWrapping : []),
             gutterCompartment.of(showLineNumbers ? [buildLineNumbersGutter()] : []),
+            readOnlyCompartment.of([]),
             keymap.of(livePreviewFormatKeymap),
             paragraphNavigationKeymap,
             keymap.of([...defaultKeymap, ...historyKeymap]),
@@ -316,7 +318,7 @@ export function canLivePreviewRedo(): boolean {
 
 /** Toolbar/keyboard-shortcut entry point (Phase 5). `view` never leaks past this module. */
 export function applyLivePreviewFormat(action: string): boolean {
-    if (!view) { return false; }
+    if (!view || view.state.readOnly) { return false; }
     if (action === 'undo') { return livePreviewUndo(); }
     if (action === 'redo') { return livePreviewRedo(); }
     if (applyTableCellInlineFormatAction(action)) { return true; }
@@ -355,6 +357,17 @@ export function setLivePreviewMermaidMode(mode: MermaidPreviewMode): void {
 export function setLivePreviewCalloutDefaultType(type: string): void {
     if (!view) { return; }
     view.dispatch({ effects: setCalloutDefaultTypeEffect.of(type) });
+}
+
+/** Version-history preview: block doc edits while keeping scroll/selection/search. */
+export function setLivePreviewReadOnly(on: boolean): void {
+    view?.dispatch({
+        effects: readOnlyCompartment.reconfigure(on ? [EditorState.readOnly.of(true)] : []),
+    });
+}
+
+export function isLivePreviewReadOnly(): boolean {
+    return view?.state.readOnly ?? false;
 }
 
 // ===== Re-integration (Phase 2): scroll metrics, TOC scroll, search, click =====

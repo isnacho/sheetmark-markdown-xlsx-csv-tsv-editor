@@ -1,28 +1,5 @@
 import MarkdownIt from 'markdown-it';
-// @ts-ignore
-import taskLists from 'markdown-it-task-lists';
-// @ts-ignore
-import container from 'markdown-it-container';
-// @ts-ignore
-import deflist from 'markdown-it-deflist';
-// @ts-ignore
-import footnote from 'markdown-it-footnote';
-// @ts-ignore
-import sub from 'markdown-it-sub';
-// @ts-ignore
-import sup from 'markdown-it-sup';
-// @ts-ignore
-import ins from 'markdown-it-ins';
-// @ts-ignore
-import mark from 'markdown-it-mark';
-// @ts-ignore
-import abbr from 'markdown-it-abbr';
-// @ts-ignore
-import { full as emoji } from 'markdown-it-emoji';
-// @ts-ignore
-import katex from 'markdown-it-katex';
 
-import hljs from 'highlight.js';
 import { ThemeManager, renderThemeToggleSettingItem } from '../shared/themeManager';
 import { SettingsManager } from '../shared/settingsManager';
 import { ToolbarManager, type ToolbarButton } from '../shared/toolbarManager';
@@ -32,13 +9,12 @@ import { Utils } from '../shared/utils';
 import { Icons } from '../shared/icons';
 import { vscode, debounce } from '../shared/common';
 import { FeedbackModal } from '../shared/feedbackModal';
-import { ProjectsModal } from '../shared/projectsModal';
 import {
     mountLivePreview,
-    unmountLivePreview,
     isLivePreviewActive,
     getLivePreviewContent,
     setLivePreviewContent,
+    setLivePreviewReadOnly,
     focusLivePreview,
     getLivePreviewScrollMetrics,
     getLivePreviewTopLine,
@@ -49,6 +25,7 @@ import {
     clearLivePreviewSearchHighlights,
     scrollLivePreviewToMatch,
     setLivePreviewReveal,
+    setLivePreviewLineWrapping,
     setLivePreviewLineNumbers,
     setLivePreviewMermaidMode,
     setLivePreviewCalloutDefaultType,
@@ -59,46 +36,8 @@ import {
     refreshLivePreviewImages,
 } from './livePreview/livePreviewEditor';
 import { setImageUriResolver } from './livePreview/imageWidget';
-import { resolveFrontmatterForRender, markdownBodyWithoutFrontmatter, extractFrontmatter } from './frontmatter';
-import { createFrontmatterCardElement } from './frontmatterCardUi';
+import { markdownBodyWithoutFrontmatter, extractFrontmatter } from './frontmatter';
 import type { Cm6Match } from './livePreview/livePreviewSearch';
-import { isMermaidFenceContent } from './livePreview/mermaidDetection';
-import mermaid from 'mermaid';
-
-// Inline custom plugin that mimics the markdown-it-mermaid API and behavior,
-// but uses standard ES imports bundled properly by esbuild for the browser.
-function markdownItMermaid(md: any) {
-    md.mermaid = mermaid;
-
-     
-    (mermaid as any).loadPreferences = function (preferences: any) {
-        let theme = preferences.get('mermaid-theme');
-        if (theme === undefined) {
-            theme = 'default';
-        }
-        let ganttAxisFormat = preferences.get('gantt-axis-format');
-        if (ganttAxisFormat === undefined) {
-            ganttAxisFormat = '%Y-%m-%d';
-        }
-        mermaid.initialize({
-            theme: theme,
-            gantt: {
-                axisFormatter: [
-                    [
-                        ganttAxisFormat,
-                        function (date: Date) {
-                            return date.getDay() === 1;
-                        }
-                    ]
-                ]
-            }
-        } as any);
-        return {
-            'mermaid-theme': theme,
-            'gantt-axis-format': ganttAxisFormat
-        };
-    };
-}
 
 // ===== Throttle Utility =====
 function throttleRAF(fn: () => void): () => void {
@@ -155,9 +94,7 @@ let currentSettings = {
     showLineNumbers: true,
     livePreviewReveal: true,
     livePreviewLineNumbers: false,
-    moveMdButtonsToEnd: false,
-    autoSave: false,
-    isMdEnabled: true
+    autoSave: false
 };
 
 /** CM6 has no rendered code blocks — honor either line-number setting in the gutter. */
@@ -165,7 +102,6 @@ function wantsLivePreviewLineNumbers(): boolean {
     return !!(currentSettings.showLineNumbers || currentSettings.livePreviewLineNumbers);
 }
 
-let searchMatches: Element[] = [];
 let cm6SearchMatches: Cm6Match[] = [];
 let searchCurrentIndex = -1;
 
@@ -201,36 +137,14 @@ function shouldResolveLocalImage(value: string): boolean {
     return !isRemoteOrInlineUri(src);
 }
 
-function wrapCodeLines(html: string): string {
-    const lines = html.split('\n');
-    if (lines.length > 0 && lines[lines.length - 1] === '') {
-        lines.pop();
-    }
-    if (lines.length === 0) {return '<span class="code-line"> </span>';}
-
-    let openStack: string[] = [];
-
-    return lines.map(line => {
-        const reopenTags = openStack.join('');
-        const tagRegex = /<(\/?)([a-z][a-z0-9]*)[^>]*?>/gi;
-        let m;
-        while ((m = tagRegex.exec(line)) !== null) {
-            if (m[1] === '/') {
-                openStack.pop();
-            } else {
-                openStack.push(m[0]);
-            }
-        }
-        const closeTags = openStack.slice().reverse().map(tag => {
-            const nameMatch = tag.match(/<([a-z][a-z0-9]*)/i);
-            return nameMatch ? `</${nameMatch[1]}>` : '';
-        }).join('');
-        return `<span class="code-line">${reopenTags}${line}${closeTags}</span>`;
-    }).join('');
-}
+// ===== Markdown-it (TOC parse only — CM6 renders the document) =====
+const md = new MarkdownIt({
+    html: true,
+    linkify: true,
+});
 
 function setButtonsEnabled(enabled: boolean) {
-    const ids = ['enableMdEditorButton', 'disableMdEditorButton', 'openSettingsButton', 'versionHistoryButton'];
+    const ids = ['openSettingsButton', 'versionHistoryButton'];
     ids.forEach((id) => {
         const el = $(id) as HTMLButtonElement;
         if (el) {el.disabled = !enabled;}
@@ -254,6 +168,14 @@ function updateEditToolbarButtons() {
         return;
     }
 
+    if (isVersionPreviewMode) {
+        toolbarManager.setButtonEnabled('saveEditsButton', false);
+        toolbarManager.setButtonEnabled('reloadFromDiskButton', false);
+        toolbarManager.setButtonEnabled('undoEditsButton', false);
+        toolbarManager.setButtonEnabled('redoEditsButton', false);
+        return;
+    }
+
     const blocked = isSaving || isReloadingFromDisk;
     const dirty = isEditorDirty();
 
@@ -263,113 +185,6 @@ function updateEditToolbarButtons() {
     toolbarManager.setButtonEnabled('redoEditsButton', !blocked && isLivePreviewActive() && canLivePreviewRedo());
 }
 
-// ===== Markdown-it Setup =====
-const md = new MarkdownIt({
-    html: true,
-    linkify: true,
-    typographer: true,
-    breaks: true, // GFM style line breaks
-    highlight: function (str, lang) {
-        if (lang && hljs.getLanguage(lang)) {
-            try {
-                return hljs.highlight(str, { language: lang }).value;
-            } catch (__) { }
-        }
-        return ''; // use external default escaping
-    }
-});
-md.use(taskLists, { enabled: false, label: true, labelAfter: true });
- 
-md.use(container as any, 'warning');
- 
-md.use(container as any, 'info');
- 
-md.use(container as any, 'error');
- 
-md.use(container as any, 'success');
-
-md.use(deflist);
-md.use(footnote);
-md.use(katex);
-md.use(sub);
-md.use(sup);
-md.use(ins);
-md.use(mark);
-md.use(abbr);
-md.use(emoji);
-md.use(markdownItMermaid);
-
-// Inline code styling
- 
-const defaultInlineCode = md.renderer.rules.code_inline || function (tokens: any, idx: number, options: any, env: any, self: any) {
-    return self.renderToken(tokens, idx, options);
-};
- 
-md.renderer.rules.code_inline = function (tokens: any, idx: number, options: any, env: any, self: any) {
-    tokens[idx].attrJoin('class', 'inline-code');
-    return defaultInlineCode(tokens, idx, options, env, self);
-};
-
-// Inject line numbers for sync scroll
- 
-function injectLineNumbers(tokens: any, idx: number, options: any, env: any, self: any) {
-    const token = tokens[idx];
-    if (token.map && token.level === 0) {
-        token.attrSet('data-line', String(token.map[0]));
-    }
-    return self.renderToken(tokens, idx, options, env, self);
-}
-
-// Apply to block-level elements
-md.renderer.rules.paragraph_open = injectLineNumbers;
-md.renderer.rules.heading_open = injectLineNumbers;
-md.renderer.rules.bullet_list_open = injectLineNumbers;
-md.renderer.rules.ordered_list_open = injectLineNumbers;
-md.renderer.rules.list_item_open = injectLineNumbers;
-md.renderer.rules.blockquote_open = injectLineNumbers;
-md.renderer.rules.hr = injectLineNumbers;
-
-md.renderer.rules.table_open = function (tokens: any, idx: number, options: any, env: any, self: any) {
-    tokens[idx].attrJoin('class', 'md-table');
-    return `<div class="md-table-scroll">${injectLineNumbers(tokens, idx, options, env, self)}`;
-};
-
-const defaultTableClose = md.renderer.rules.table_close || function (tokens: any, idx: number, options: any, env: any, self: any) {
-    return self.renderToken(tokens, idx, options, env, self);
-};
-md.renderer.rules.table_close = function (tokens: any, idx: number, options: any, env: any, self: any) {
-    return defaultTableClose(tokens, idx, options, env, self) + '</div>';
-};
-
-// Heading close: inject anchor links for copyable heading URLs
-md.renderer.rules.heading_close = function (tokens: any, idx: number, options: any, env: any, self: any) {
-    const openToken = tokens[idx - 2];
-    const id = openToken && openToken.type === 'heading_open' ? openToken.attrGet('id') : null;
-    let anchor = '';
-    if (id) {
-        anchor = `<a class="heading-anchor" href="#${md.utils.escapeHtml(id)}" data-heading-id="${escapeHtmlAttr(encodeURIComponent(id))}" title="Copy link">#</a>`;
-    }
-    return anchor + self.renderToken(tokens, idx, options);
-};
-
-// Image renderer: add zoomable class for lightbox
-const defaultImageRender = md.renderer.rules.image || function (tokens: any, idx: number, options: any, env: any, self: any) {
-    return self.renderToken(tokens, idx, options);
-};
-md.renderer.rules.image = function (tokens: any, idx: number, options: any, env: any, self: any) {
-    tokens[idx].attrJoin('class', 'md-image zoomable');
-    tokens[idx].attrSet('loading', 'lazy');
-    const src = (tokens[idx].attrGet('src') || '').trim();
-    if (shouldResolveLocalImage(src)) {
-        const resolved = resolvedImageUriCache.get(src);
-        if (resolved) {
-            tokens[idx].attrSet('src', resolved);
-        } else {
-            tokens[idx].attrSet('data-md-src', src);
-        }
-    }
-    return defaultImageRender(tokens, idx, options, env, self);
-};
 
 function wireImageUriResolver() {
     setImageUriResolver({
@@ -390,29 +205,6 @@ function wireImageUriResolver() {
     });
 }
 
-function requestLocalImageResolution() {
-    const preview = $('markdownPreview');
-    if (!preview) {return;}
-
-    const pending = new Set<string>();
-    preview.querySelectorAll('img[data-md-src]').forEach((node) => {
-        const src = (node.getAttribute('data-md-src') || '').trim();
-        if (!src || resolvedImageUriCache.has(src)) {
-            return;
-        }
-        pending.add(src);
-    });
-
-    if (pending.size === 0) {
-        return;
-    }
-
-    vscode.postMessage({
-        command: 'resolveImageUris',
-        sources: Array.from(pending)
-    });
-}
-
 function applyResolvedImageUris(resolved: Record<string, string>) {
     if (!resolved || typeof resolved !== 'object') {
         return;
@@ -430,62 +222,8 @@ function applyResolvedImageUris(resolved: Record<string, string>) {
         pendingCm6LightboxSrc = null;
     }
 
-    const preview = $('markdownPreview');
-    if (!preview) {
-        return;
-    }
-
-    preview.querySelectorAll('img[data-md-src]').forEach((node) => {
-        const source = (node.getAttribute('data-md-src') || '').trim();
-        const uri = resolvedImageUriCache.get(source);
-        if (!uri) {
-            return;
-        }
-        node.addEventListener('load', refreshDataLineCache, { once: true });
-        node.setAttribute('src', uri);
-        node.removeAttribute('data-md-src');
-    });
-
-    refreshDataLineCache();
     refreshLivePreviewImages();
 }
-
-// Fence (code blocks) needs special handling as it's a self-closing block token in terms of rendering
- 
- 
-md.renderer.rules.fence = function (tokens: any, idx: number, options: any, env: any, self: any) {
-    const token = tokens[idx];
-    const info = token.info ? md.utils.unescapeAll(token.info).trim() : '';
-    const langName = info ? info.split(/\s+/g)[0] : '';
-    const code = token.content || '';
-
-    if (isMermaidFenceContent(langName, code)) {
-        const dataLine = token.map && token.level === 0 ? ` data-line="${token.map[0]}"` : '';
-        return `<div class="mermaid"${dataLine}>${code}</div>`;
-    }
-
-    let highlighted = '';
-    if (langName && hljs.getLanguage(langName)) {
-        try {
-            highlighted = hljs.highlight(code, { language: langName }).value;
-        } catch {
-            highlighted = md.utils.escapeHtml(code);
-        }
-    } else {
-        highlighted = md.utils.escapeHtml(code);
-    }
-
-    const dataLine = token.map && token.level === 0 ? ` data-line="${token.map[0]}"` : '';
-    const langLabel = langName ? `<div class="code-lang">${md.utils.escapeHtml(langName)}</div>` : `<div class="code-lang muted">text</div>`;
-    const encoded = encodeURIComponent(code);
-    const copyButton = `<button class="code-copy" data-code="${escapeHtmlAttr(encoded)}" title="Copy code">${Icons.Copy}<span>Copy</span></button>`;
-    const langClass = langName ? ` class="language-${langName}"` : '';
-
-    // Wrap each line for line numbers
-    const numberedCode = wrapCodeLines(highlighted);
-
-    return `<div class="code-block"${dataLine}><div class="code-block-header">${langLabel}${copyButton}</div><pre><code${langClass}>${numberedCode}</code></pre></div>`;
-};
 
 function addHeadingIds(tokens: any[]) {
     const slugCounts: Record<string, number> = {};
@@ -535,10 +273,7 @@ function sanitizeMarkdownCopyLinkArtifacts(markdown: string): string {
     }).join('\n');
 }
 
-// id <-> CM6 line number (1-indexed), refreshed every buildToc() call. CM6 shows
-// raw markdown text, not the rendered HTML the reading/split TOC-click and
-// scroll-spy logic uses `#id` elements for — this is how the CM6 branch of that
-// logic (updateScrollSpy, wireTocPanel's click handler) finds a heading's line.
+// id <-> CM6 line number (1-indexed), refreshed every buildToc() call.
 const tocIdToLine = new Map<string, number>();
 const tocLineToId = new Map<number, string>();
 
@@ -575,7 +310,7 @@ function buildToc(tokens: any[]) {
     }).join('');
 }
 
-/** Re-derive the TOC + its id<->line map from live CM6 content (renderMarkdown/updateToc aren't called in CM6 mode). */
+/** Re-derive the TOC + its id<->line map from live CM6 content. */
 function refreshCm6Toc(content: string) {
     const body = markdownBodyWithoutFrontmatter(content || '');
     const tokens = md.parse(sanitizeMarkdownCopyLinkArtifacts(body), {});
@@ -585,30 +320,6 @@ function refreshCm6Toc(content: string) {
 
 const debouncedCm6TocRefresh = debounce((content: string) => refreshCm6Toc(content), 300);
 
-// ===== Rendering =====
-function renderMermaidFlowcharts() {
-    const mermaidLib = (md as any).mermaid;
-    if (!mermaidLib) {return;}
-
-    const isDark = document.body.classList.contains('dark-mode') ||
-        document.body.classList.contains('dark-theme') ||
-        document.body.classList.contains('vscode-dark') ||
-        (document.body.classList.contains('vscode-theme') && document.body.classList.contains('vscode-dark'));
-
-    mermaidLib.initialize({
-        startOnLoad: false,
-        theme: isDark ? 'dark' : 'default'
-    });
-
-    const nodes = document.querySelectorAll('.mermaid');
-    if (nodes.length > 0) {
-        mermaidLib.run({
-            nodes: Array.from(nodes) as any
-        }).catch((err: any) => {
-            console.error('Mermaid render error:', err);
-        });
-    }
-}
 
 function persistFrontmatterPanelCollapsed(collapsed: boolean) {
     frontmatterPanelCollapsed = collapsed;
@@ -629,62 +340,13 @@ function applyFrontmatterBlockToDocument(newBlock: string) {
     const extracted = extractFrontmatter(currentContent);
     if (!extracted) { return; }
     currentContent = newBlock + extracted.body;
-    if (isPreviewEditMode) {
+    if (isLivePreviewActive()) {
         setLivePreviewContent(currentContent);
         refreshCm6Toc(currentContent);
-    } else {
-        renderMarkdown(currentContent);
     }
     updateStatusInfo();
 }
 
-function mountPreviewFrontmatterCard(cardData: NonNullable<ReturnType<typeof resolveFrontmatterForRender>['card']>) {
-    const preview = $('markdownPreview');
-    if (!preview || !cardData) { return; }
-    const card = createFrontmatterCardElement({
-        yamlText: cardData.yamlText,
-        rows: cardData.rows,
-        collapsed: frontmatterPanelCollapsed,
-        editing: false,
-        onCollapsedChange: persistFrontmatterPanelCollapsed,
-        onEditingChange: () => { /* preview pane only persists on Done */ },
-        onSave: (block) => {
-            applyFrontmatterBlockToDocument(block);
-        },
-    });
-    card.dataset.line = '0';
-    preview.insertBefore(card, preview.firstChild);
-}
-
-function renderMarkdown(content: string) {
-    const preview = $('markdownPreview');
-    if (preview) {
-        const env: any = {};
-        const resolved = resolveFrontmatterForRender(content || '', frontmatterPanelCollapsed);
-        const normalizedContent = sanitizeMarkdownCopyLinkArtifacts(resolved.body || '');
-        const tokens = md.parse(normalizedContent, env);
-        addHeadingIds(tokens);
-        preview.innerHTML = md.renderer.render(tokens, md.options, env);
-        if (resolved.card) {
-            mountPreviewFrontmatterCard(resolved.card);
-        }
-        preview.querySelectorAll('img').forEach((node) => {
-            if (!(node instanceof HTMLImageElement)) {return;}
-            if (!node.complete) {
-                node.addEventListener('load', refreshDataLineCache, { once: true });
-            }
-        });
-        updateToc(tokens);
-        refreshDataLineCache();
-        requestAnimationFrame(() => {
-            updateScrollSpy();
-            updateProgressBar();
-            reapplySearch();
-            requestLocalImageResolution();
-            renderMermaidFlowcharts();
-        });
-    }
-}
 
 function updateToc(tokens: any[]) {
     const tocBody = $('tocBody');
@@ -693,12 +355,35 @@ function updateToc(tokens: any[]) {
 }
 
 // ===== Preview Edit Mode (CM6 live preview) =====
+function updateVersionPreviewChrome() {
+    const hideEdit = isVersionPreviewMode;
+    const saveBtn = $('saveEditsButton');
+    const undoBtn = $('undoEditsButton');
+    const redoBtn = $('redoEditsButton');
+    const reloadBtn = $('reloadFromDiskButton');
+    const fmtToolbar = $('formattingToolbar');
+
+    const saveTarget = (saveBtn?.closest('.tooltip') as HTMLElement | null) || saveBtn;
+    const undoTarget = (undoBtn?.closest('.tooltip') as HTMLElement | null) || undoBtn;
+    const redoTarget = (redoBtn?.closest('.tooltip') as HTMLElement | null) || redoBtn;
+    const reloadTarget = (reloadBtn?.closest('.tooltip') as HTMLElement | null) || reloadBtn;
+
+    if (saveTarget) { saveTarget.classList.toggle('hidden', hideEdit); }
+    if (undoTarget) { undoTarget.classList.toggle('hidden', hideEdit); }
+    if (redoTarget) { redoTarget.classList.toggle('hidden', hideEdit); }
+    if (reloadTarget) { reloadTarget.classList.toggle('hidden', hideEdit); }
+    if (fmtToolbar) { fmtToolbar.classList.toggle('hidden', hideEdit); }
+    updateEditToolbarButtons();
+}
+
 function setPreviewEditMode(enabled: boolean) {
+    if (!enabled) { return; }
     isPreviewEditMode = enabled;
     isEditMode = enabled;
     document.body.classList.toggle('edit-mode', enabled);
     document.body.classList.toggle('preview-edit-mode', enabled);
     document.body.classList.toggle('cm6-preview-active', enabled);
+    document.body.classList.toggle('cm6-word-wrap', enabled && currentSettings.wordWrap);
 
     const saveBtn = $('saveEditsButton');
     const undoBtn = $('undoEditsButton');
@@ -735,6 +420,7 @@ function setPreviewEditMode(enabled: boolean) {
                 doc: currentContent,
                 lineWrapping: currentSettings.wordWrap,
                 onDocChanged: (doc) => {
+                    if (isVersionPreviewMode) { return; }
                     currentContent = doc;
                     updateStatusInfo();
                     debouncedCm6TocRefresh(doc);
@@ -769,16 +455,6 @@ function setPreviewEditMode(enabled: boolean) {
             refreshCm6Toc(currentContent);
             focusLivePreview();
         }
-    } else {
-        if (isLivePreviewActive()) {
-            unmountLivePreview();
-        }
-        if (preview) {
-            preview.contentEditable = 'false';
-        }
-        container?.classList.remove('preview-edit');
-        container?.classList.remove('preview-left');
-        renderMarkdown(currentContent);
     }
 
     applyToolbarLayout(toolbarManager, {
@@ -793,10 +469,7 @@ function setPreviewEditMode(enabled: boolean) {
     updateStatusInfo();
 }
 
-// Ctrl/Cmd+Click actions inside CM6 Preview Edit — the click-handling port of
-// wirePreviewInteractions' link/image/heading-anchor/code-copy behaviors. Plain
-// click keeps CM6's normal "place the caret" behavior since this surface (unlike
-// the old non-editable render) is real editable text.
+// Ctrl/Cmd+Click actions inside CM6 Preview Edit.
 function handleLivePreviewModifierClick(pos: number) {
     const interaction = resolveLivePreviewInteraction(pos);
     if (!interaction) {return;}
@@ -858,7 +531,7 @@ function getActiveEditorContent(): string {
 }
 
 function ensurePreviewEditMode() {
-    if (!isPreviewEditMode && !isVersionPreviewMode) {
+    if (!isPreviewEditMode) {
         setPreviewEditMode(true);
     }
 }
@@ -897,7 +570,8 @@ function setVersionPreviewMode(enabled: boolean, label?: string) {
     isVersionPreviewMode = enabled;
     document.body.classList.toggle('version-preview-mode', enabled);
     if (enabled) {
-        setPreviewEditMode(false);
+        setLivePreviewReadOnly(true);
+        updateVersionPreviewChrome();
         const banner = ensureVersionPreviewBanner();
         const text = $('versionPreviewText');
         if (text) {
@@ -905,16 +579,17 @@ function setVersionPreviewMode(enabled: boolean, label?: string) {
         }
         banner.classList.remove('hidden');
     } else {
+        setLivePreviewReadOnly(false);
         const banner = $('versionPreviewBanner');
         if (banner) {
             banner.classList.add('hidden');
         }
-        ensurePreviewEditMode();
+        updateVersionPreviewChrome();
     }
 }
 
 function performSave(isAutosave = false) {
-    if (isSaving || !isEditMode) {return;}
+    if (isSaving || !isEditMode || isVersionPreviewMode) {return;}
     if (!isEditorDirty()) {return;}
     if (pendingDiskContent !== null) {
         // Autosave never interrupts with a dialog over an unresolved conflict — it
@@ -944,7 +619,7 @@ function doSave(force = false, isAutosave = false) {
 let autoSaveTimer: number | null = null;
 
 function scheduleAutosave() {
-    if (!currentSettings.autoSave || !isEditMode) {return;}
+    if (!currentSettings.autoSave || !isEditMode || isVersionPreviewMode) {return;}
     if (autoSaveTimer !== null) {window.clearTimeout(autoSaveTimer);}
     autoSaveTimer = window.setTimeout(() => {
         autoSaveTimer = null;
@@ -973,12 +648,10 @@ function applyReloadedContent(text: string) {
     originalContent = text;
     resolvedImageUriCache.clear();
 
-    if (isPreviewEditMode) {
+    if (isLivePreviewActive()) {
         setLivePreviewContent(text);
         refreshCm6Toc(text);
         reapplySearch();
-    } else {
-        renderMarkdown(text);
     }
 
     updateStatusInfo();
@@ -987,7 +660,7 @@ function applyReloadedContent(text: string) {
 
 // VS Code webviews are sandboxed without `allow-modals` — window.confirm()/alert()/
 // prompt() are silently blocked, so a real dialog is built here reusing the shared
-// .feedback-overlay/.feedback-modal pattern (same one FeedbackModal/ProjectsModal use).
+// .feedback-overlay/.feedback-modal pattern (same one FeedbackModal uses).
 function confirmModal(title: string, message: string, confirmLabel: string): Promise<boolean> {
     return new Promise((resolve) => {
         const overlay = document.createElement('div');
@@ -1051,44 +724,8 @@ async function requestReloadFromDisk() {
     vscode.postMessage({ command: 'requestFreshData' });
 }
 
-// ===== Preview line cache (reading-mode render) =====
-let cachedDataLineElements: HTMLElement[] = [];
-let cachedPreviewLineMap: Array<{ line: number, top: number }> = [];
-
-function normalizeLineMap(entries: Array<{ line: number, top: number }>): Array<{ line: number, top: number }> {
-    const sorted = entries
-        .filter(entry => Number.isFinite(entry.line) && Number.isFinite(entry.top))
-        .sort((a, b) => a.line - b.line || a.top - b.top);
-
-    const deduped: Array<{ line: number, top: number }> = [];
-    for (const entry of sorted) {
-        const last = deduped[deduped.length - 1];
-        if (!last || last.line !== entry.line) {
-            deduped.push(entry);
-        }
-    }
-
-    return deduped;
-}
-
-function refreshDataLineCache() {
-    const preview = $('markdownPreview');
-    if (!preview) {
-        cachedDataLineElements = [];
-        cachedPreviewLineMap = [];
-        return;
-    }
-    cachedDataLineElements = Array.from(preview.querySelectorAll('[data-line]')) as HTMLElement[];
-    const previewTop = preview.getBoundingClientRect().top;
-    const scrollOffset = preview.scrollTop;
-    cachedPreviewLineMap = normalizeLineMap(cachedDataLineElements.map(el => ({
-        line: parseInt(el.getAttribute('data-line') || '0'),
-        top: el.getBoundingClientRect().top - previewTop + scrollOffset
-    })));
-}
-
 function applyFormat(action: string) {
-    if (!isPreviewEditMode) {return;}
+    if (!isPreviewEditMode || isVersionPreviewMode) {return;}
     applyLivePreviewFormat(action);
 }
 
@@ -1203,20 +840,10 @@ function updateProgressBar() {
     const bar = $('readingProgressBar');
     if (!bar) {return;}
 
-    // CM6's own `.cm-scroller` scrolls; #markdownPreview (view.dom's parent) does not.
-    const cm6Metrics = isLivePreviewActive() ? getLivePreviewScrollMetrics() : null;
-    let scrollTop: number, usableHeight: number;
-    if (cm6Metrics) {
-        scrollTop = cm6Metrics.scrollTop;
-        usableHeight = cm6Metrics.scrollHeight - cm6Metrics.clientHeight;
-    } else {
-        const preview = $('markdownPreview');
-        if (!preview) {return;}
-        scrollTop = preview.scrollTop;
-        usableHeight = preview.scrollHeight - preview.clientHeight;
-    }
-
-    const progress = usableHeight > 0 ? (scrollTop / usableHeight) * 100 : 0;
+    const cm6Metrics = getLivePreviewScrollMetrics();
+    if (!cm6Metrics) {return;}
+    const usableHeight = cm6Metrics.scrollHeight - cm6Metrics.clientHeight;
+    const progress = usableHeight > 0 ? (cm6Metrics.scrollTop / usableHeight) * 100 : 0;
     bar.style.width = progress + '%';
 }
 
@@ -1235,24 +862,10 @@ function nearestTocIdForLine(line: number): string {
 
 function updateScrollSpy() {
     const tocBody = $('tocBody');
-    if (!tocBody) {return;}
+    if (!tocBody || !isLivePreviewActive()) {return;}
 
-    let current = '';
-    if (isLivePreviewActive()) {
-        const topLine = getLivePreviewTopLine();
-        current = topLine !== null ? nearestTocIdForLine(topLine) : '';
-    } else {
-        const preview = $('markdownPreview');
-        if (!preview) {return;}
-        const headings = Array.from(preview.querySelectorAll('.md-heading'));
-        const scrollTop = preview.scrollTop;
-        for (const heading of headings) {
-            const el = heading as HTMLElement;
-            if (el.offsetTop - 16 <= scrollTop + 100) {
-                current = heading.id;
-            }
-        }
-    }
+    const topLine = getLivePreviewTopLine();
+    const current = topLine !== null ? nearestTocIdForLine(topLine) : '';
 
     const links = tocBody.querySelectorAll('.toc-item a');
     let activeLink: HTMLElement | null = null;
@@ -1352,70 +965,23 @@ function closeSearch() {
     if (!overlay) {return;}
     overlay.classList.remove('active');
     clearSearchHighlights();
-    searchMatches = [];
+    cm6SearchMatches = [];
     searchCurrentIndex = -1;
     updateSearchCount();
 }
 
 function doSearch(query: string) {
     clearSearchHighlights();
-    searchMatches = [];
     cm6SearchMatches = [];
     searchCurrentIndex = -1;
 
-    if (!query || query.length < 2) {
+    if (!query || query.length < 2 || !isLivePreviewActive()) {
         updateSearchCount();
         return;
     }
 
-    if (isLivePreviewActive()) {
-        // CM6 doc is raw text — no rendered DOM to TreeWalker, use CM6's own SearchCursor.
-        cm6SearchMatches = findLivePreviewMatches(query);
-        if (cm6SearchMatches.length > 0) {
-            searchCurrentIndex = 0;
-            highlightCurrentMatch();
-        }
-        updateSearchCount();
-        return;
-    }
-
-    const preview = $('markdownPreview');
-    if (!preview) {return;}
-
-    const lowerQuery = query.toLowerCase();
-    const walker = document.createTreeWalker(preview, NodeFilter.SHOW_TEXT, null);
-    const nodesToProcess: { node: Text; indices: number[] }[] = [];
-
-    let textNode: Text | null;
-    while ((textNode = walker.nextNode() as Text | null)) {
-        const text = textNode.textContent || '';
-        const lowerText = text.toLowerCase();
-        const indices: number[] = [];
-        let idx = 0;
-        while ((idx = lowerText.indexOf(lowerQuery, idx)) !== -1) {
-            indices.push(idx);
-            idx += lowerQuery.length;
-        }
-        if (indices.length > 0) {
-            nodesToProcess.push({ node: textNode, indices });
-        }
-    }
-
-    for (let i = nodesToProcess.length - 1; i >= 0; i--) {
-        const { node, indices } = nodesToProcess[i];
-        for (let j = indices.length - 1; j >= 0; j--) {
-            const startIdx = indices[j];
-            const range = document.createRange();
-            range.setStart(node, startIdx);
-            range.setEnd(node, startIdx + query.length);
-            const highlightMark = document.createElement('mark');
-            highlightMark.className = 'search-highlight';
-            range.surroundContents(highlightMark);
-            searchMatches.unshift(highlightMark);
-        }
-    }
-
-    if (searchMatches.length > 0) {
+    cm6SearchMatches = findLivePreviewMatches(query);
+    if (cm6SearchMatches.length > 0) {
         searchCurrentIndex = 0;
         highlightCurrentMatch();
     }
@@ -1423,38 +989,17 @@ function doSearch(query: string) {
 }
 
 function clearSearchHighlights() {
-    if (isLivePreviewActive()) {
-        clearLivePreviewSearchHighlights();
-        return;
-    }
-    const preview = $('markdownPreview');
-    if (!preview) {return;}
-    preview.querySelectorAll('.search-highlight').forEach(mark => {
-        const parent = mark.parentNode;
-        if (parent) {
-            parent.replaceChild(document.createTextNode(mark.textContent || ''), mark);
-            parent.normalize();
-        }
-    });
+    clearLivePreviewSearchHighlights();
 }
 
 function highlightCurrentMatch() {
-    if (isLivePreviewActive()) {
-        setLivePreviewSearchHighlights(cm6SearchMatches, searchCurrentIndex);
-        const match = cm6SearchMatches[searchCurrentIndex];
-        if (match) {scrollLivePreviewToMatch(match);}
-        return;
-    }
-    searchMatches.forEach((m, i) => {
-        m.classList.toggle('current', i === searchCurrentIndex);
-    });
-    if (searchMatches[searchCurrentIndex]) {
-        searchMatches[searchCurrentIndex].scrollIntoView({ block: 'center', behavior: 'smooth' });
-    }
+    setLivePreviewSearchHighlights(cm6SearchMatches, searchCurrentIndex);
+    const match = cm6SearchMatches[searchCurrentIndex];
+    if (match) {scrollLivePreviewToMatch(match);}
 }
 
 function navigateSearch(direction: 'next' | 'prev') {
-    const count = isLivePreviewActive() ? cm6SearchMatches.length : searchMatches.length;
+    const count = cm6SearchMatches.length;
     if (count === 0) {return;}
     if (direction === 'next') {
         searchCurrentIndex = (searchCurrentIndex + 1) % count;
@@ -1468,7 +1013,7 @@ function navigateSearch(direction: 'next' | 'prev') {
 function updateSearchCount() {
     const countEl = $('searchCount');
     if (!countEl) {return;}
-    const count = isLivePreviewActive() ? cm6SearchMatches.length : searchMatches.length;
+    const count = cm6SearchMatches.length;
     if (count === 0) {
         countEl.textContent = 'No results';
     } else {
@@ -1526,10 +1071,11 @@ function applySettings(settings: any, persist = false) {
 
     if (isLivePreviewActive()) {
         setLivePreviewReveal(currentSettings.livePreviewReveal);
+        setLivePreviewLineWrapping(currentSettings.wordWrap);
         setLivePreviewLineNumbers(wantsLivePreviewLineNumbers());
     }
 
-    refreshDataLineCache();
+    document.body.classList.toggle('cm6-word-wrap', isLivePreviewActive() && currentSettings.wordWrap);
 
     // Sticky toolbar
     applyToolbarLayout(toolbarManager, {
@@ -1565,14 +1111,8 @@ function applySettings(settings: any, persist = false) {
     if (tocPanel) {tocPanel.classList.toggle('hidden', !currentSettings.showOutline);}
 
     if (toolbarManager) {
-        reorderMdToolbarButtons();
         const btn = toolbarManager.getButton('toggleTocButton');
         if (btn) {btn.classList.toggle('active', !!currentSettings.showOutline);}
-    }
-
-    if (toolbarManager) {
-        toolbarManager.setButtonVisibility('disableMdEditorButton', !!currentSettings.isMdEnabled);
-        toolbarManager.setButtonVisibility('enableMdEditorButton', !currentSettings.isMdEnabled);
     }
 
     if (persist) {
@@ -1643,16 +1183,6 @@ function initializeSettings() {
             }
         },
         {
-            id: 'chkMoveMdButtonsToEnd',
-            label: 'Move Enable/Disable MD Buttons Near Help',
-            tooltip: 'Place the Enable/Disable MD buttons just before Help & Feedback instead of at the start of the toolbar.',
-            defaultValue: currentSettings.moveMdButtonsToEnd,
-            onChange: (val: boolean) => {
-                currentSettings.moveMdButtonsToEnd = val;
-                applySettings(currentSettings, true);
-            }
-        },
-        {
             id: 'chkAutoSave',
             label: 'Autosave',
             tooltip: 'Automatically save Markdown edits after a short debounce.',
@@ -1679,41 +1209,6 @@ function initializeSettings() {
     new ThemeManager('themeSelect', {
         onBeforeCycle: () => true
     }, vscode);
-}
-
-function reorderMdToolbarButtons() {
-    if (!toolbarManager) {return;}
-
-    const toolbar = document.getElementById('toolbar');
-    const startGroup = toolbar?.querySelector('.toolbar-group-start') as HTMLElement | null;
-    const endGroup = toolbar?.querySelector('.toolbar-group-end') as HTMLElement | null;
-    const enableBtn = toolbarManager.getButton('enableMdEditorButton');
-    const disableBtn = toolbarManager.getButton('disableMdEditorButton');
-    const saveBtn = toolbarManager.getButton('saveEditsButton');
-    const anchorWrap = (saveBtn?.closest('.tooltip') as HTMLElement | null) || saveBtn;
-    const helpBtn = toolbarManager.getButton('helpButton');
-
-    if (!toolbar || !enableBtn || !disableBtn || !anchorWrap || !helpBtn) {
-        return;
-    }
-
-    const enableWrap = enableBtn.closest('.tooltip') as HTMLElement | null;
-    const disableWrap = disableBtn.closest('.tooltip') as HTMLElement | null;
-    const helpWrap = helpBtn.closest('.tooltip') as HTMLElement | null;
-
-    if (!enableWrap || !disableWrap || !anchorWrap || !helpWrap) {
-        return;
-    }
-
-    if (currentSettings.moveMdButtonsToEnd) {
-        const targetParent = endGroup || toolbar;
-        targetParent.insertBefore(enableWrap, helpWrap);
-        targetParent.insertBefore(disableWrap, helpWrap);
-    } else {
-        const targetParent = startGroup || toolbar;
-        targetParent.insertBefore(enableWrap, anchorWrap);
-        targetParent.insertBefore(disableWrap, anchorWrap);
-    }
 }
 
 // ===== Header Height =====
@@ -1802,12 +1297,10 @@ window.addEventListener('message', (event) => {
                 ? m.calloutDefaultType.toLowerCase()
                 : 'info';
             resolvedImageUriCache.clear();
-            if (isPreviewEditMode && isLivePreviewActive()) {
+            if (isLivePreviewActive()) {
                 setLivePreviewMermaidMode(mermaidPreviewMode);
                 setLivePreviewCalloutDefaultType(calloutDefaultType);
                 applyReloadedContent(currentContent);
-            } else if (hasEnteredPreviewEdit || isVersionPreviewMode) {
-                renderMarkdown(currentContent);
             }
             updateStatusInfo();
             updateEditToolbarButtons();
@@ -1836,9 +1329,8 @@ window.addEventListener('message', (event) => {
             // A real change supersedes any prior "deleted" notification.
             pendingDiskDeleted = false;
 
-            // An explicit reload request (button already handled its own dirty-check/
-            // confirm) or reading mode (nothing local can be lost) applies directly —
-            // the persistent toast below is only for unprompted watcher-detected changes.
+            // An explicit reload request applies directly — the persistent toast
+            // below is only for unprompted watcher-detected changes.
             if (wasManualReload || !isEditMode) {
                 pendingDiskContent = null;
                 applyReloadedContent(m.content || '');
@@ -1954,41 +1446,20 @@ function wireButtons() {
     toolbarManager.setHeaderHeightHook(() => syncMdHeaderHeight());
 
     toolbarManager.setButtons(buildToolbarButtons());
-    reorderMdToolbarButtons();
+}
+
+function copyMarkdownToClipboard() {
+    if (!navigator.clipboard) {
+        showToast('Copy failed', undefined, { icon: 'warning' });
+        return;
+    }
+    navigator.clipboard.writeText(getActiveEditorContent())
+        .then(() => showToast('Markdown copied'))
+        .catch(() => showToast('Copy failed', undefined, { icon: 'warning' }));
 }
 
 function buildToolbarButtons(): ToolbarButton[] {
-    const buttons: ToolbarButton[] = [
-        {
-            id: 'enableMdEditorButton',
-            icon: Icons.Zap,
-            label: 'Enable MD',
-            tooltip: 'Enable Markdown Viewer for all Markdown files (Make Default)',
-            cls: 'edit-mode-hide',
-            hidden: true,
-            onClick: () => {
-                vscode.postMessage({ command: 'enableMdEditor' });
-            }
-        },
-        {
-            id: 'refreshButton',
-            icon: Icons.Refresh,
-            tooltip: 'Reload file from disk',
-            cls: 'icon-only edit-mode-hide',
-            onClick: () => {
-                vscode.postMessage({ command: 'requestFreshData' });
-            }
-        },
-        {
-            id: 'disableMdEditorButton',
-            icon: Icons.ZapOff,
-            label: 'Disable MD',
-            tooltip: 'Disable Markdown Viewer for all Markdown files',
-            cls: 'edit-mode-hide',
-            onClick: () => {
-                vscode.postMessage({ command: 'disableMdEditor' });
-            }
-        },
+    return [
         {
             id: 'reloadFromDiskButton',
             icon: Icons.Refresh,
@@ -2041,6 +1512,34 @@ function buildToolbarButtons(): ToolbarButton[] {
             onClick: () => toggleSearchOverlay()
         },
         {
+            id: 'copyMarkdownButton',
+            icon: Icons.Copy,
+            tooltip: 'Copy as Markdown',
+            cls: 'icon-only',
+            section: 'end',
+            onClick: () => copyMarkdownToClipboard()
+        },
+        {
+            id: 'versionHistoryButton',
+            icon: Icons.VersionHistory,
+            tooltip: 'Version History',
+            cls: 'icon-only',
+            section: 'end',
+            onClick: () => {
+                vscode.postMessage({ command: 'showVersionHistory' });
+            }
+        },
+        {
+            id: 'helpButton',
+            icon: Icons.Help,
+            tooltip: 'Help & Feedback',
+            cls: 'icon-only',
+            section: 'end',
+            onClick: () => {
+                FeedbackModal.show();
+            }
+        },
+        {
             id: 'openSettingsButton',
             icon: Icons.Settings,
             tooltip: 'Settings',
@@ -2048,69 +1547,7 @@ function buildToolbarButtons(): ToolbarButton[] {
             section: 'end',
             onClick: () => { /* Handled by wireSettingsUI */ }
         },
-        {
-            id: 'copyHtmlButton',
-            icon: Icons.CopyHtml,
-            tooltip: 'Copy as HTML',
-            cls: 'icon-only edit-mode-hide',
-            section: 'end',
-            onClick: () => {
-                const preview = $('markdownPreview');
-                if (preview && navigator.clipboard) {
-                    navigator.clipboard.writeText(preview.innerHTML)
-                        .then(() => showToast('HTML copied'))
-                        .catch(() => showToast('Copy failed', undefined, { icon: 'warning' }));
-                }
-            }
-        },
-        {
-            id: 'versionHistoryButton',
-            icon: Icons.VersionHistory,
-            tooltip: 'Version History',
-            cls: 'icon-only edit-mode-hide',
-            section: 'end',
-            onClick: () => {
-                vscode.postMessage({ command: 'showVersionHistory' });
-            }
-        },
-        {
-            id: 'projectsButton',
-            icon: Icons.Link,
-            tooltip: 'Other Projects',
-            cls: 'icon-only edit-mode-hide',
-            section: 'end',
-            onClick: () => {
-                ProjectsModal.show();
-            }
-        },
-        {
-            id: 'helpButton',
-            icon: Icons.Help,
-            tooltip: 'Help & Feedback',
-            cls: 'icon-only edit-mode-hide',
-            section: 'end',
-            onClick: () => {
-                FeedbackModal.show();
-            }
-        },
     ];
-
-    if (currentSettings.moveMdButtonsToEnd) {
-        const enableButton = buttons.shift();
-        const disableButton = buttons.shift();
-        const helpIndex = buttons.findIndex((button) => button.id === 'helpButton');
-        if (enableButton && disableButton) {
-            enableButton.section = 'end';
-            disableButton.section = 'end';
-            if (helpIndex >= 0) {
-                buttons.splice(helpIndex, 0, enableButton, disableButton);
-            } else {
-                buttons.push(enableButton, disableButton);
-            }
-        }
-    }
-
-    return buttons;
 }
 
 // ===== Keyboard Shortcuts =====
@@ -2197,89 +1634,11 @@ function wireResizeHandle(handle: HTMLElement) {
         document.body.classList.remove('resizing');
         document.removeEventListener('mousemove', onMouseMove);
         document.removeEventListener('mouseup', onMouseUp);
-        refreshDataLineCache();
     }
 
     handle.addEventListener('mousedown', onMouseDown);
 }
 
-// ===== Editor Events =====
-// ===== Preview Interactions =====
-function wirePreviewInteractions() {
-    const preview = $('markdownPreview');
-    if (!preview) {return;}
-    const wired = (preview as any)._wired;
-    if (wired) {return;}
-    (preview as any)._wired = true;
-
-    preview.addEventListener('click', (e) => {
-        const target = e.target as HTMLElement;
-
-        const copyBtn = target.closest('.code-copy') as HTMLElement | null;
-        if (copyBtn) {
-            e.preventDefault();
-            const encoded = copyBtn.getAttribute('data-code') || '';
-            const code = decodeURIComponent(encoded);
-            if (navigator.clipboard) {
-                navigator.clipboard.writeText(code).then(() => showToast('Copied')).catch(() => showToast('Copy failed', undefined, { icon: 'warning' }));
-            }
-            return;
-        }
-
-        // Heading anchor link: copy URL
-        const anchorLink = target.closest('.heading-anchor') as HTMLElement | null;
-        if (anchorLink) {
-            e.preventDefault();
-            e.stopPropagation();
-            const headingId = anchorLink.getAttribute('data-heading-id');
-            if (headingId && navigator.clipboard) {
-                const decoded = decodeURIComponent(headingId);
-                navigator.clipboard.writeText(`#${decoded}`)
-                    .then(() => showToast('Link copied'))
-                    .catch(() => showToast('Copy failed', undefined, { icon: 'warning' }));
-            }
-            return;
-        }
-
-        // Image lightbox: click to zoom
-        const img = target.closest('.zoomable') as HTMLImageElement | null;
-        if (img) {
-            e.preventDefault();
-            showLightbox(img.src, img.alt);
-            return;
-        }
-
-        const link = target.closest('a') as HTMLAnchorElement | null;
-        if (link && link.href) {
-            const href = link.getAttribute('href') || '';
-
-            // Handle external links
-            if (href.startsWith('http://') || href.startsWith('https://') || href.startsWith('mailto:')) {
-                e.preventDefault();
-                e.stopPropagation();
-                vscode.postMessage({ command: 'openExternal', url: href });
-                return;
-            }
-
-            // Handle anchor links (same document)
-            if (href.startsWith('#')) {
-                // Let the browser handle anchor navigation
-                return;
-            }
-
-            // Handle relative links to other files
-            if (href && !href.startsWith('http://') && !href.startsWith('https://') && !href.startsWith('mailto:')) {
-                e.preventDefault();
-                e.stopPropagation();
-                vscode.postMessage({
-                    command: 'openRelativeFile',
-                    href: href,
-                    documentUri: documentUri
-                });
-            }
-        }
-    });
-}
 
 function wireTocPanel() {
     const tocBody = $('tocBody');
@@ -2293,16 +1652,8 @@ function wireTocPanel() {
             e.preventDefault();
             const id = link.getAttribute('data-target') || '';
             if (!id) {return;}
-            if (isLivePreviewActive()) {
-                const line = tocIdToLine.get(id);
-                if (line !== undefined) {scrollLivePreviewToLine(line);}
-                return;
-            }
-            const preview = $('markdownPreview');
-            const el = preview?.querySelector(`#${CSS.escape(id)}`) as HTMLElement | null;
-            if (el) {
-                el.scrollIntoView({ block: 'start', behavior: 'smooth' });
-            }
+            const line = tocIdToLine.get(id);
+            if (line !== undefined) {scrollLivePreviewToLine(line);}
         });
     }
 
@@ -2427,7 +1778,6 @@ initializeSettings();
 wireFormattingToolbar();
 wireDelayedToolbarTooltips();
 wireHoverTooltip();
-wirePreviewInteractions();
 wireTocPanel();
 initLightbox();
 initSearchOverlay();
@@ -2438,12 +1788,6 @@ updateHeaderHeight();
 // Ensure settings are applied once toolbar is ready
 if (currentSettings) {
     applySettings(currentSettings);
-}
-
-if ((md as any).mermaid) {
-    (md as any).mermaid.initialize({
-        startOnLoad: false
-    });
 }
 
 vscode.postMessage({ command: 'webviewReady' });

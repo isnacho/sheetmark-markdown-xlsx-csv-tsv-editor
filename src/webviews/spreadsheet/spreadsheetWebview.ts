@@ -14,7 +14,6 @@ import { createXlsxRowHtml, getExcelColumnLabel, renderDropdownCellContent } fro
 import { XlsxSelectionManager } from './components/spreadsheetSelectionComponent';
 import { createXlsxToolbarButtons } from './components/spreadsheetToolbarComponent';
 import { FeedbackModal } from '../shared/feedbackModal';
-import { ProjectsModal } from '../shared/projectsModal';
 import {
     XlsxViewSettings,
     defaultXlsxViewSettings,
@@ -7477,9 +7476,6 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
             onOpenSettings: () => { },
             onHelp: () => {
                 FeedbackModal.show();
-            },
-            onProjects: () => {
-                ProjectsModal.show();
             },
             onConvertFile: () => {
                 if (isEditMode) {return;}

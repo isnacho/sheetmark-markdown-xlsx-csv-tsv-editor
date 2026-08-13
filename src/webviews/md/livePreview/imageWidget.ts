@@ -1,4 +1,4 @@
-// Rendered image previews in CM6 Preview Edit (reading mode uses markdown-it).
+// Rendered image previews in CM6 live preview.
 //
 // Runtime: WEBVIEW (browser). URI resolution is delegated to mdWebview.ts via
 // setImageUriResolver (same resolveImageUris host round-trip as reading preview).

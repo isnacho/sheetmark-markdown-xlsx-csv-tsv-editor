@@ -24,15 +24,20 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
         '.cm-scroller': {
             fontFamily: 'var(--font-family)',
             lineHeight: '1.7',
-            overflow: 'auto',
+            overflowY: 'auto',
+            overflowX: 'hidden',
             padding: '0',
             position: 'relative',
         },
         '.cm-content': {
             caretColor: 'var(--text-color)',
             maxWidth: '900px',
+            minWidth: '0',
             margin: '0 auto',
-            padding: '8px 16px',
+            paddingTop: '8px',
+            paddingRight: '16px',
+            paddingBottom: '64px',
+            paddingLeft: '16px',
         },
         '.cm-editor': {
             position: 'relative',
@@ -100,7 +105,7 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
         '.cm-md-heading-line': {
             fontWeight: '600',
         },
-        // Preview Edit: smaller than reading-mode h1–h3 (mdWebview.css 2em/1.5em/1.25em)
+        // Preview Edit: smaller than static-render h1–h3 defaults in mdWebview.css
         // so headings stay hierarchical without dominating the editor canvas.
         '.cm-content .cm-md-h1': { fontSize: '1.6em' },
         '.cm-content .cm-md-h2': { fontSize: '1.4em' },
@@ -145,6 +150,8 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             borderRadius: 'var(--surface-radius)',
             overflow: 'hidden',
             background: 'var(--pre-bg)',
+            maxWidth: '100%',
+            boxSizing: 'border-box',
         },
         '.cm-md-mermaid-toolbar': {
             display: 'flex',
@@ -182,11 +189,18 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
         '.cm-md-mermaid-diagram': {
             padding: '12px 16px',
             overflowX: 'auto',
+            overflowY: 'hidden',
             maxWidth: '100%',
+            boxSizing: 'border-box',
         },
         '.cm-md-mermaid-diagram .mermaid': {
             display: 'flex',
             justifyContent: 'center',
+            maxWidth: '100%',
+        },
+        '.cm-md-mermaid-diagram .mermaid svg': {
+            maxWidth: '100%',
+            height: 'auto',
         },
         '.cm-md-mermaid-error': {
             fontSize: '13px',
@@ -197,12 +211,22 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             display: 'block',
             cursor: 'text',
             overflow: 'visible',
+            boxSizing: 'border-box',
+            width: 'calc(100% + var(--cm-md-row-grip-gutter, 20px))',
+            maxWidth: 'calc(100% + var(--cm-md-row-grip-gutter, 20px))',
         },
         '.cm-md-table-scroll': {
-            overflowX: 'auto',
+            width: 'fit-content',
+            maxWidth: '100%',
+            boxSizing: 'border-box',
+            overflowX: 'hidden',
             overflowY: 'hidden',
             border: '1px solid var(--border-color)',
             borderRadius: 'var(--surface-radius)',
+            lineHeight: '0',
+        },
+        '.cm-md-table-scroll.cm-md-table-overflow-x': {
+            overflowX: 'auto',
         },
         // Undoes the shared .markdown-preview table.md-table rule's
         // display:block/overflow:auto on the <table> itself (resources/md/
@@ -218,6 +242,7 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
         '.cm-md-table-widget table.md-table': {
             display: 'table',
             overflow: 'visible',
+            lineHeight: '1.5',
         },
         '.cm-md-frontmatter-widget': {
             display: 'block',

@@ -162,19 +162,6 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                             // Send content to webview
                             webviewPanel.webview.postMessage(buildInitMarkdownPayload(content));
 
-                            // Calculate if MD is enabled as default
-                            const globalCfg = vscode.workspace.getConfiguration('workbench');
-                            const associations: any = globalCfg.get('editorAssociations');
-                            let isMdEnabled = false;
-                            
-                            if (associations) {
-                                if (Array.isArray(associations)) {
-                                    isMdEnabled = associations.some(a => a.viewType === 'xlsxViewer.md' && (a.filenamePattern === '*.md' || a.filenamePattern === '**/*.md'));
-                                } else {
-                                    isMdEnabled = associations["*.md"] === 'xlsxViewer.md' || associations["**/*.md"] === 'xlsxViewer.md';
-                                }
-                            }
-
                             // Send settings
                             const cfg = vscode.workspace.getConfiguration('xlsxViewer');
                             const settings = {
@@ -184,9 +171,7 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                                 showLineNumbers: cfg.get('md.showLineNumbers', true),
                                 livePreviewReveal: cfg.get('md.livePreviewReveal', true),
                                 livePreviewLineNumbers: cfg.get('md.livePreviewLineNumbers', false),
-                                moveMdButtonsToEnd: cfg.get('md.moveMdButtonsToEnd', false),
-                                autoSave: cfg.get('md.autoSave', false),
-                                isMdEnabled: isMdEnabled
+                                autoSave: cfg.get('md.autoSave', false)
                             };
                             webviewPanel.webview.postMessage({ command: 'initSettings', settings });
 
@@ -236,7 +221,6 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                             const cfg = vscode.workspace.getConfiguration('xlsxViewer');
                             await cfg.update('md.stickyToolbar', !!s.stickyToolbar, vscode.ConfigurationTarget.Global);
                             await cfg.update('md.wordWrap', !!s.wordWrap, vscode.ConfigurationTarget.Global);
-                            await cfg.update('md.moveMdButtonsToEnd', !!s.moveMdButtonsToEnd, vscode.ConfigurationTarget.Global);
                             if (typeof s.showOutline === 'boolean') {
                                 await cfg.update('md.showOutline', !!s.showOutline, vscode.ConfigurationTarget.Global);
                             }
@@ -533,74 +517,13 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                         }
                         break;
                     }
-
-                    case 'disableMdEditor':
-                        try {
-                            const result = await vscode.window.showWarningMessage(
-                                "Are you sure you want to disable Markdown Viewer for all Markdown files? You will be prompted to select a new default editor.",
-                                "Yes, Disable",
-                                "Cancel"
-                            );
-
-                            if (result === "Yes, Disable") {
-                                // 1. First remove our association so it's not the default anymore
-                                await vscode.commands.executeCommand('xlsx-viewer.toggleMdAssociation', false);
-                                
-                                // 2. Trigger the "Reopen With..." picker which allows selecting a new default
-                                // We use this command as it is more widely available than changeDefaultViewType
-                                await vscode.commands.executeCommand('workbench.action.reopenWithEditor');
-                            }
-                        } catch (err) {
-                            vscode.window.showErrorMessage(`Error disabling MD editor: ${err}`);
-                        }
-                        break;
-                    
-                    case 'enableMdEditor':
-                        try {
-                            await vscode.commands.executeCommand('xlsx-viewer.toggleMdAssociation', true);
-                            
-                             // Send updated settings
-                             const cfg = vscode.workspace.getConfiguration('xlsxViewer');
-                             const settings = {
-                                 stickyToolbar: cfg.get('md.stickyToolbar', true),
-                                 wordWrap: cfg.get('md.wordWrap', true),
-                                 showOutline: cfg.get('md.showOutline', true),
-                                 showLineNumbers: cfg.get('md.showLineNumbers', true),
-                                 livePreviewReveal: cfg.get('md.livePreviewReveal', true),
-                                 livePreviewLineNumbers: cfg.get('md.livePreviewLineNumbers', false),
-                                 moveMdButtonsToEnd: cfg.get('md.moveMdButtonsToEnd', false),
-                                 autoSave: cfg.get('md.autoSave', false),
-                                 isMdEnabled: true
-                             };
-                             webviewPanel.webview.postMessage({ command: 'initSettings', settings });
-
-                        } catch (err) {
-                            vscode.window.showErrorMessage(`Error enabling MD editor: ${err}`);
-                        }
-                        break;
-                    
-                    case 'toggleMdAssociation':
-                        await vscode.commands.executeCommand('xlsx-viewer.toggleMdAssociation', !!message.enable);
-                        break;
                 }
             });
 
             // Forward settings changes
             const configChangeDisposable = vscode.workspace.onDidChangeConfiguration(e => {
-                if (e.affectsConfiguration('xlsxViewer.md') || e.affectsConfiguration('xlsxViewer') || e.affectsConfiguration('workbench.editorAssociations')) {
+                if (e.affectsConfiguration('xlsxViewer.md') || e.affectsConfiguration('xlsxViewer')) {
                     const cfg = vscode.workspace.getConfiguration('xlsxViewer');
-                    const globalCfg = vscode.workspace.getConfiguration('workbench');
-                    const associations: any = globalCfg.get('editorAssociations');
-                    let isMdEnabled = false;
-                    
-                    if (associations) {
-                        if (Array.isArray(associations)) {
-                            isMdEnabled = associations.some(a => a.viewType === 'xlsxViewer.md' && (a.filenamePattern === '*.md' || a.filenamePattern === '**/*.md'));
-                        } else {
-                            isMdEnabled = associations["*.md"] === 'xlsxViewer.md' || associations["**/*.md"] === 'xlsxViewer.md';
-                        }
-                    }
-
                     const settings = {
                         stickyToolbar: cfg.get('md.stickyToolbar', true),
                         wordWrap: cfg.get('md.wordWrap', true),
@@ -608,9 +531,7 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                         showLineNumbers: cfg.get('md.showLineNumbers', true),
                         livePreviewReveal: cfg.get('md.livePreviewReveal', true),
                         livePreviewLineNumbers: cfg.get('md.livePreviewLineNumbers', false),
-                        moveMdButtonsToEnd: cfg.get('md.moveMdButtonsToEnd', false),
-                        autoSave: cfg.get('md.autoSave', false),
-                        isMdEnabled: isMdEnabled
+                        autoSave: cfg.get('md.autoSave', false)
                     };
                     try {
                         webviewPanel.webview.postMessage({ command: 'settingsUpdated', settings });

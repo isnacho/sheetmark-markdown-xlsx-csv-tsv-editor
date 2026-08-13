@@ -340,11 +340,6 @@
                     "default": true,
                     "description": "Show the Markdown outline panel in the preview."
                 },
-                "xlsxViewer.md.moveMdButtonsToEnd": {
-                    "type": "boolean",
-                    "default": false,
-                    "description": "Move the Enable/Disable MD buttons near Help & Feedback instead of keeping them at the start of the toolbar."
-                },
                 "xlsxViewer.md.showLineNumbers": {
                     "type": "boolean",
                     "default": true,

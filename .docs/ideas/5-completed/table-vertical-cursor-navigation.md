@@ -1,9 +1,9 @@
 ---
 title: Table vertical cursor navigation
 slug: table-vertical-cursor-navigation
-status: to-qa
+status: completed
 created: 2026-08-12
-updated: 2026-08-12
+updated: 2026-08-13
 ---
 
 # Table vertical cursor navigation
@@ -59,4 +59,16 @@ Verification: `npm run compile` clean; `tableBoundaryEditing.test.mts` 18/18 pas
 
 ## QA
 
-_Not started._
+**Build:** `npm run compile` — pass (0 type + 0 lint errors, 2026-08-13).
+
+**Unit tests:** `tableBoundaryEditing.test.mts` — 18/18 pass (delimiter skip, multi-row ↓/↑ without early exit, enter/exit boundaries, blank-line adjacency).
+
+**Static verification (code):**
+
+| Check | Result |
+|---|---|
+| Vertical ↑↓ routed through visual cell grid (`buildCellGrid`) | Pass |
+| `tableWidget.ts` in-cell ↑↓ uses `collapsedClickPosForCell` for chained moves | Pass |
+| Enter/exit only from header row / last body row | Pass |
+
+**Manual F5 spot-check recommended:** open a `.md` with a multi-row GFM table → arrow through every body row without premature exit; enter from above/below and repeat ↑↓ chain.

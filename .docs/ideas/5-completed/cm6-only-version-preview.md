@@ -1,9 +1,9 @@
 ---
 title: CM6-only Markdown — drop static version preview render
 slug: cm6-only-version-preview
-status: to-qa
+status: completed
 created: 2026-08-12
-updated: 2026-08-12
+updated: 2026-08-13
 ---
 
 # CM6-only Markdown — drop static version preview render
@@ -179,4 +179,17 @@ Manual smoke (F5, sample `.md`):
 
 ## QA
 
-_Not started — manual smoke per Plan step 6._
+**Build:** `npm run compile` — pass (0 type + 0 lint errors, 2026-08-13).
+
+**Static verification (code):**
+
+| Check | Result |
+|---|---|
+| `renderMarkdown()` removed from `mdWebview.ts` | Pass |
+| `setLivePreviewReadOnly()` / `readOnlyCompartment` in `livePreviewEditor.ts` | Pass |
+| Version preview sets read-only + banner without unmounting CM6 | Pass |
+| Static-render CSS removed; `body.version-preview-mode` widget guards added | Pass |
+| `tableWidget.ts` read-only guards on resize/drag/cell mousedown | Pass |
+| markdown-it slimmed to TOC parse path only | Pass |
+
+**Manual F5 spot-check recommended:** open `samples/test.md` → Version history → preview old version (read-only CM6 + banner) → Cancel and Restore paths return to editable mode with correct content.

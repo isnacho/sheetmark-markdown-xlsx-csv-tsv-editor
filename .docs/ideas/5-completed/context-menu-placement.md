@@ -1,9 +1,9 @@
 ---
 title: Context menu placement for discoverability
 slug: context-menu-placement
-status: to-qa
+status: completed
 created: 2026-08-12
-updated: 2026-08-12
+updated: 2026-08-13
 ---
 
 # Context menu placement for discoverability
@@ -44,4 +44,15 @@ Make the plugin more accessible in Cursor by improving where its context-menu en
 
 ## QA
 
-_Not started._
+**Build:** `npm run compile` — pass (0 type + 0 lint errors, 2026-08-13).
+
+**Static verification (manifest):**
+
+| Check | Result |
+|---|---|
+| Explorer + tab context menus use `navigation@100` on all eight `openWith*` entries | Pass |
+| More Actions overflow (`editor/title`) has four `openWith*` entries in `3_open@100` | Pass |
+| `goBackTo*` entries unchanged (not regressed) | Pass |
+| Per-type `when` clauses preserved | Pass |
+
+**Manual F5 spot-check recommended:** right-click `samples/test.md` in Explorer — "Open with …" appears below built-in Open/Preview entries; open built-in Markdown preview and confirm More Actions (⋯) shows the extension entry.

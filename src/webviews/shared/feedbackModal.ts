@@ -6,8 +6,6 @@ export class FeedbackModal {
     private static isInitialized = false;
     private static container: HTMLElement | null = null;
     private static overlay: HTMLElement | null = null;
-    private static emailContainer: HTMLElement | null = null;
-    private static emailInput: HTMLInputElement | null = null;
 
     public static initialize() {
         if (this.isInitialized) {return;}
@@ -35,62 +33,48 @@ export class FeedbackModal {
                 <form id="feedbackForm">
                     <div class="form-group">
                         <label>System Information</label>
-                        <textarea id="feedbackSystemDetails" name="entry.1764429077" readonly rows="4"></textarea>
+                        <textarea id="feedbackSystemDetails" name="entry.1173041044" readonly rows="4"></textarea>
                     </div>
 
                     <div class="form-group">
-                        <label>What is the primary reason for filling out this form? *</label>
+                        <label>What brings you here today? *</label>
                         <div class="radio-group">
                             <label class="radio-label">
-                                <input type="radio" name="entry.1195554625" value="I need help or want to report an issue (Bug/Support)" required>
-                                <span>Bug/Support</span>
+                                <input type="radio" name="entry.500729934" value="Found a bug/issue" required>
+                                <span>Found a bug/issue</span>
                             </label>
                             <label class="radio-label">
-                                <input type="radio" name="entry.1195554625" value="I want to provide general feedback on the existing product/service" required>
-                                <span>General Feedback</span>
+                                <input type="radio" name="entry.500729934" value="Got an idea" required>
+                                <span>Got an idea</span>
                             </label>
                             <label class="radio-label">
-                                <input type="radio" name="entry.1195554625" value="I want to suggest a new feature or enhancement" required>
-                                <span>Feature Suggestion</span>
+                                <input type="radio" name="entry.500729934" value="General feedback" required>
+                                <span>General feedback</span>
                             </label>
                         </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Please describe your issue or suggestion *</label>
+                        <textarea name="entry.1328099188" required rows="5" placeholder="Describe your issue, bug, feedback, or feature suggestion..."></textarea>
                     </div>
 
                     <div class="form-group">
                         <label>How satisfied are you overall? *</label>
                         <div class="linear-scale">
                             <span>Very Dissatisfied</span>
-                            <label><input type="radio" name="entry.1343045643" value="1" required> 1</label>
-                            <label><input type="radio" name="entry.1343045643" value="2" required> 2</label>
-                            <label><input type="radio" name="entry.1343045643" value="3" required> 3</label>
-                            <label><input type="radio" name="entry.1343045643" value="4" required> 4</label>
-                            <label><input type="radio" name="entry.1343045643" value="5" required> 5</label>
+                            <label><input type="radio" name="entry.2123855879" value="1" required> 1</label>
+                            <label><input type="radio" name="entry.2123855879" value="2" required> 2</label>
+                            <label><input type="radio" name="entry.2123855879" value="3" required> 3</label>
+                            <label><input type="radio" name="entry.2123855879" value="4" required> 4</label>
+                            <label><input type="radio" name="entry.2123855879" value="5" required> 5</label>
                             <span>Very Satisfied</span>
                         </div>
                     </div>
 
                     <div class="form-group">
-                        <label>Please describe your issue or suggestion *</label>
-                        <textarea name="entry.1542169572" required rows="5" placeholder="Describe your issue, bug, feedback, or feature suggestion..."></textarea>
-                    </div>
-
-                    <div class="form-group">
-                        <label>Would you be open to a follow-up discussion? *</label>
-                        <div class="radio-group">
-                            <label class="radio-label">
-                                <input type="radio" id="followUpYes" name="entry.730555287" value="Yes" required>
-                                <span>Yes, I'd like to be contacted</span>
-                            </label>
-                            <label class="radio-label">
-                                <input type="radio" id="followUpNo" name="entry.730555287" value="No" required>
-                                <span>No, I prefer not to be contacted</span>
-                            </label>
-                        </div>
-                    </div>
-
-                    <div class="form-group hidden" id="emailContainer">
-                        <label>Email Address *</label>
-                        <input type="email" id="emailInput" name="entry.1168676234" placeholder="your.email@example.com">
+                        <label>Okay if I follow up?</label>
+                        <input type="email" name="entry.1729939963" placeholder="your.email@example.com (optional)">
                     </div>
                 </form>
             </div>
@@ -98,17 +82,6 @@ export class FeedbackModal {
             <div class="feedback-footer">
                 <button type="button" class="btn-cancel" id="feedbackCancelBtn">Cancel</button>
                 <button type="submit" class="btn-submit" id="feedbackSubmitBtn" form="feedbackForm">Submit</button>
-            </div>
-
-            <!-- Confirmation Popup -->
-            <div id="feedbackWarningPopup" class="feedback-warning-popup hidden">
-                <div class="warning-content">
-                    <p>You have selected not to follow up, so you will not receive any information about fixes made or suggestions implemented.</p>
-                    <div class="warning-actions">
-                        <button type="button" class="btn-cancel" id="warningCancelBtn">Cancel</button>
-                        <button type="button" class="btn-submit" id="warningSubmitBtn">Submit Anyway</button>
-                    </div>
-                </div>
             </div>
         `;
         document.body.appendChild(this.container);
@@ -134,7 +107,6 @@ export class FeedbackModal {
                     this.hide();
                     const form = document.getElementById('feedbackForm') as HTMLFormElement;
                     if (form) {form.reset();}
-                    this.updateEmailVisibility();
                 } else {
                     Utils.showToast('Failed to submit feedback.', false);
                 }
@@ -157,22 +129,11 @@ export class FeedbackModal {
             e.preventDefault();
             vscode.postMessage({
                 command: 'openExternal',
-                url: 'https://github.com/Mahmadabid/XLSX-CSV-TSV-MARKDOWN-Editor-Vscode-Extension/issues/new'
+                url: 'https://github.com/nacho-allendesalazar/vscode-super-viewer/issues/new'
             });
         });
 
-        const followUpYes = document.getElementById('followUpYes') as HTMLInputElement;
-        const followUpNo = document.getElementById('followUpNo') as HTMLInputElement;
-        this.emailContainer = document.getElementById('emailContainer');
-        this.emailInput = document.getElementById('emailInput') as HTMLInputElement;
-
-        followUpYes?.addEventListener('change', () => this.updateEmailVisibility());
-        followUpNo?.addEventListener('change', () => this.updateEmailVisibility());
-
         const form = document.getElementById('feedbackForm') as HTMLFormElement;
-        const warningPopup = document.getElementById('feedbackWarningPopup');
-        const warningCancelBtn = document.getElementById('warningCancelBtn');
-        const warningSubmitBtn = document.getElementById('warningSubmitBtn');
 
         form?.addEventListener('submit', (e) => {
             e.preventDefault();
@@ -182,36 +143,8 @@ export class FeedbackModal {
                 return;
             }
 
-            if (followUpNo?.checked) {
-                warningPopup?.classList.remove('hidden');
-            } else {
-                this.submitForm(form);
-            }
-        });
-
-        warningCancelBtn?.addEventListener('click', () => {
-            warningPopup?.classList.add('hidden');
-        });
-
-        warningSubmitBtn?.addEventListener('click', () => {
-            warningPopup?.classList.add('hidden');
             this.submitForm(form);
         });
-    }
-
-    private static updateEmailVisibility() {
-        if (!this.emailContainer || !this.emailInput) {return;}
-
-        const followUpYes = document.getElementById('followUpYes') as HTMLInputElement;
-
-        if (followUpYes?.checked) {
-            this.emailContainer.classList.remove('hidden');
-            this.emailInput.required = true;
-        } else {
-            this.emailContainer.classList.add('hidden');
-            this.emailInput.required = false;
-            this.emailInput.value = '';
-        }
     }
 
     private static submitForm(form: HTMLFormElement) {

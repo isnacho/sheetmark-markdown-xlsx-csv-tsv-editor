@@ -1,9 +1,9 @@
 ---
 title: Markdown disk sync overhaul (reload, save conflicts, autosave)
 slug: markdown-disk-sync-overhaul
-status: to-qa
+status: completed
 created: 2026-07-22
-updated: 2026-08-12
+updated: 2026-08-13
 ---
 
 # Auto-reload on disk change
@@ -222,4 +222,19 @@ and Implement this round).
 
 ## QA
 
-_Not started._
+**Build:** `npm run compile` — pass (0 type + 0 lint errors, 2026-08-13).
+
+**Static verification (code + manifest):**
+
+| Check | Result |
+|---|---|
+| Persistent toast with Reload / × on `diskChangedExternally` | Pass |
+| `diskDeletedExternally` handler + informational persistent toast | Pass |
+| Save overwrite-conflict guard (`pendingDiskContent` + host `saveConflict`) | Pass |
+| `xlsxViewer.md.autoSave` setting (default `false`) in `package.json` | Pass |
+| Autosave debounce + defer while conflict toast active | Pass |
+| Watcher race guard (`isSaving` + `lastSaveTime` 1s window) | Pass |
+| Toast repositioned bottom-center with close button | Pass |
+| `.docs/MESSAGE-PROTOCOL.md` updated | Pass |
+
+**Manual F5 spot-check recommended:** edit `samples/test.md` externally while editor is open (clean vs dirty) → persistent toast + Reload/discard flow; enable autosave in settings and confirm debounced save; delete file externally and confirm informational toast.

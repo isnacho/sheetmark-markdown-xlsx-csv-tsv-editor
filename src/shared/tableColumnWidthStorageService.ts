@@ -36,4 +36,18 @@ export class TableColumnWidthStorageService {
     public async clearWidths(uri: vscode.Uri): Promise<void> {
         await this.context.workspaceState.update(this.getStorageKey(uri), undefined);
     }
+
+    public async migrateUri(oldUri: vscode.Uri, newUri: vscode.Uri): Promise<void> {
+        const oldKey = this.getStorageKey(oldUri);
+        const newKey = this.getStorageKey(newUri);
+        if (oldKey === newKey) {
+            return;
+        }
+        const value = this.context.workspaceState.get<Record<number, number[]>>(oldKey);
+        if (value === undefined) {
+            return;
+        }
+        await this.context.workspaceState.update(newKey, value);
+        await this.context.workspaceState.update(oldKey, undefined);
+    }
 }

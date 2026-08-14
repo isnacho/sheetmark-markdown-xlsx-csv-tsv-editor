@@ -260,6 +260,53 @@ export class StyleStorageService {
     /**
      * Utility to clean up all expired styles in workspaceState.
      */
+    public async migrateUri(oldUri: vscode.Uri, newUri: vscode.Uri): Promise<void> {
+        const oldStylesKey = this.getStorageKey(oldUri);
+        const newStylesKey = this.getStorageKey(newUri);
+        if (oldStylesKey !== newStylesKey) {
+            const styles = this.context.workspaceState.get<FileStyleData>(oldStylesKey);
+            if (styles !== undefined) {
+                await this.context.workspaceState.update(newStylesKey, styles);
+                await this.context.workspaceState.update(oldStylesKey, undefined);
+            }
+            const oldLegacyKey = `${STORAGE_KEY_PREFIX}${oldUri.fsPath}`;
+            const newLegacyKey = `${STORAGE_KEY_PREFIX}${newUri.fsPath}`;
+            if (oldLegacyKey !== newLegacyKey) {
+                const legacyStyles = this.context.workspaceState.get<FileStyleData>(oldLegacyKey);
+                if (legacyStyles !== undefined) {
+                    await this.context.workspaceState.update(newLegacyKey, legacyStyles);
+                    await this.context.workspaceState.update(oldLegacyKey, undefined);
+                }
+            }
+        }
+
+        const oldViewKey = this.getViewModeStorageKey(oldUri);
+        const newViewKey = this.getViewModeStorageKey(newUri);
+        if (oldViewKey !== newViewKey) {
+            const viewMode = this.context.workspaceState.get<string>(oldViewKey);
+            if (viewMode !== undefined) {
+                await this.context.workspaceState.update(newViewKey, viewMode);
+                await this.context.workspaceState.update(oldViewKey, undefined);
+            }
+            const oldLegacyViewKey = `${STORAGE_VIEW_MODE_KEY_PREFIX}${oldUri.fsPath}`;
+            const newLegacyViewKey = `${STORAGE_VIEW_MODE_KEY_PREFIX}${newUri.fsPath}`;
+            if (oldLegacyViewKey !== newLegacyViewKey) {
+                const legacyViewMode = this.context.workspaceState.get<string>(oldLegacyViewKey);
+                if (legacyViewMode !== undefined) {
+                    await this.context.workspaceState.update(newLegacyViewKey, legacyViewMode);
+                    await this.context.workspaceState.update(oldLegacyViewKey, undefined);
+                }
+            }
+        }
+
+        const nextIndex = this.normalizeIndex(this.getIndex());
+        const existingIndex = nextIndex.findIndex(entry => entry.path.toLowerCase() === oldUri.fsPath.toLowerCase());
+        if (existingIndex >= 0) {
+            nextIndex[existingIndex] = { ...nextIndex[existingIndex], path: newUri.fsPath };
+            await this.setIndex(nextIndex);
+        }
+    }
+
     public async pruneAllExpiredStyles(): Promise<void> {
         const now = Date.now();
         const kept: StyleIndexEntry[] = [];

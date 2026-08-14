@@ -103,12 +103,23 @@ function buildFromState(state: EditorState): DecorationSet {
     }
     const collapsed = state.field(frontmatterCollapsedField);
     const editing = state.field(frontmatterEditingField);
-    return Decoration.set([
+    const specs = [
         Decoration.replace({
             block: true,
             widget: new FrontmatterWidget(data, collapsed, editing, onCollapsedChangedCallback),
         }).range(data.range.from, data.range.to),
-    ]);
+    ];
+
+    // CM6's height map ignores widget padding/margins (see headingGutterSync.ts).
+    // Pad the first body line so the card and document content don't touch.
+    if (data.range.to < state.doc.length) {
+        const firstBodyLine = state.doc.lineAt(data.range.to);
+        specs.push(
+            Decoration.line({ class: 'cm-md-after-frontmatter-line' }).range(firstBodyLine.from),
+        );
+    }
+
+    return Decoration.set(specs);
 }
 
 export const frontmatterWidgetField = StateField.define<DecorationSet>({

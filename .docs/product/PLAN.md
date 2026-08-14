@@ -2,7 +2,7 @@
 
 > Working plan for taking this project from "downloaded fork" to "my own
 > published, actively-developed VS Code extension."
-> Last updated: 2026-07-03
+> Last updated: 2026-08-14
 
 ---
 
@@ -62,22 +62,23 @@ republishing **only if** the original copyright + license text are retained.
 
 ---
 
-## 4. Phase 1 — Rebrand  ⏳ NEXT (blocked on inputs)
+## 4. Phase 1 — Rebrand  ⏳ IN PROGRESS
 
-**Blocking inputs needed:**
-- **Marketplace publisher ID** — created at
-  <https://marketplace.visualstudio.com/manage> (needs an Azure DevOps org +
-  a Personal Access Token, scope *Marketplace → Manage*). Required only to
-  *publish*, not to build/test. The `package.json` `publisher` field must match
-  it exactly.
-- Final `name`, `displayName`, `version`, `repository.url`, icon choice.
+**Done so far:**
+- `publisher` → `nacho-allendesalazar`, `name` → `super-file-viewer` (in `package.json`).
+- Local symlink install documented in [.docs/product/LOCAL-DEV-INSTALL.md](LOCAL-DEV-INSTALL.md).
+
+**Still open** (tracked in [.docs/ideas/3-to-implement/publish-to-vscode-marketplace.md](../ideas/3-to-implement/publish-to-vscode-marketplace.md)):
+- **Marketplace publisher account** — register at
+  <https://marketplace.visualstudio.com/manage> (needs Azure DevOps org + PAT).
+- Final `displayName`, `version` reset, `repository.url`, icon, README attribution.
 
 **`package.json` fields to change** (defaults proposed):
 
 | Field | Current | Proposed |
 |-------|---------|----------|
-| `publisher` | `muhammad-ahmad` | _your publisher ID_ |
-| `name` | `xlsx-viewer` | `super-viewer` |
+| `publisher` | `muhammad-ahmad` | `nacho-allendesalazar` ✅ |
+| `name` | `xlsx-viewer` | `super-file-viewer` ✅ |
 | `displayName` | `XLSX, CSV, TSV & Markdown Editor` | _TBD_ |
 | `version` | `1.9.91` | `1.0.0` (reset to signal new lineage) |
 | `repository.url` | upstream | _your repo, or blank for now_ |
@@ -115,7 +116,8 @@ _Backlog — fill in as ideas land. Candidates:_
 |-----------------|----------|
 | Spreadsheet grid UI / behavior | `src/webviews/spreadsheet/` (+ `components/`) |
 | Spreadsheet save / file I/O | `src/spreadsheetEditorProvider.ts` |
-| Markdown preview / editor | `src/webviews/md/mdWebview.ts`, `src/mdEditorProvider.ts` |
+| Markdown preview / editor | `src/webviews/md/mdWebview.ts`, `src/webviews/md/livePreview/**`, `src/mdEditorProvider.ts` |
+| External file watch + move | `src/shared/fileExternalChangeWatcher.ts`, `src/shared/migrateFileUriState.ts` |
 | File conversion (csv↔tsv↔xlsx) | `src/shared/fileConversionService.ts` |
 | Commands / activation / providers | `src/extension.ts` |
 | Settings (marketplace-visible) | `contributes.configuration` in `package.json` |
@@ -125,13 +127,14 @@ _Backlog — fill in as ideas land. Candidates:_
 
 ## 8. Known gaps / tech debt
 
-- **No tests.** `package.json` references `vscode-test` + `mocha`, but there are
-  no test files and no `.vscode-test` config. `npm test` is currently dead.
-  Add a `test/` suite if development gets serious.
+- **No extension-host tests.** `package.json` references `vscode-test`, but there are no host test
+  files. CM6 `livePreview/` has co-located `*.test.mts` unit tests. `npm test` is currently dead
+  for the extension host. Add a `test/` suite if development gets serious.
 - **5 ESLint `curly` warnings** in `versionHistory.ts` and
   `spreadsheetUtilities.ts` — auto-fixable with `eslint --fix`.
-- Two very large files (`spreadsheetWebview.ts` ~7.7k lines,
-  `mdWebview.ts` ~3.7k) — expect slow navigation; consider splitting if touched heavily.
+- Large UI surface split across `spreadsheetWebview.ts` (~7.7k),
+  `mdWebview.ts` (~1.8k shell) + `livePreview/` (~7k, especially `tableWidget.ts` ~1.8k) —
+  use the MAPs; do not read end-to-end.
 
 ---
 

@@ -7,6 +7,8 @@ import { TableColumnWidthStorageService } from './shared/tableColumnWidthStorage
 import { FrontmatterPanelStorageService } from './shared/frontmatterPanelStorageService';
 import { MermaidPreviewModeStorageService } from './shared/mermaidPreviewModeStorageService';
 import { CalloutDefaultTypeStorageService } from './shared/calloutDefaultTypeStorageService';
+import { createExternalFileChangeWatcher } from './shared/fileExternalChangeWatcher';
+import { migrateFileUriState } from './shared/migrateFileUriState';
 
 export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
     private readonly tableColumnWidthStorage: TableColumnWidthStorageService;
@@ -35,10 +37,11 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
         token: vscode.CancellationToken
     ): Promise<void> {
         try {
-            const filePath = document.uri.fsPath;
-            const documentDirUri = vscode.Uri.file(path.dirname(filePath));
+            let filePath = document.uri.fsPath;
+            let currentUri = document.uri;
+            let documentDirUri = vscode.Uri.file(path.dirname(filePath));
             const workspaceFolders = vscode.workspace.workspaceFolders?.map(f => f.uri) ?? [];
-            const workspaceFolderUri = vscode.workspace.getWorkspaceFolder(document.uri)?.uri.toString() || null;
+            const workspaceFolderUri = vscode.workspace.getWorkspaceFolder(currentUri)?.uri.toString() || null;
             const markdownLocalResourceRoots = this.buildMarkdownLocalResourceRoots(
                 filePath,
                 documentDirUri,
@@ -131,12 +134,12 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
             const buildInitMarkdownPayload = (content: string) => ({
                 command: 'initMarkdown',
                 content,
-                fileName: vscode.workspace.asRelativePath(document.uri),
-                documentUri: document.uri.toString(),
+                fileName: vscode.workspace.asRelativePath(currentUri),
+                documentUri: currentUri.toString(),
                 documentDirUri: documentDirUri.toString(),
                 workspaceFolderUri,
-                tableColumnWidths: this.tableColumnWidthStorage.getWidths(document.uri),
-                frontmatterPanelCollapsed: this.frontmatterPanelStorage.getCollapsed(document.uri),
+                tableColumnWidths: this.tableColumnWidthStorage.getWidths(currentUri),
+                frontmatterPanelCollapsed: this.frontmatterPanelStorage.getCollapsed(currentUri),
                 mermaidPreviewMode: this.mermaidPreviewModeStorage.getMode(),
                 calloutDefaultType: this.calloutDefaultTypeStorage.getType(),
             });
@@ -200,7 +203,7 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                                     continue;
                                 }
 
-                                const resolvedUri = this.resolveMarkdownImageUri(trimmed, document.uri, webviewPanel.webview);
+                                const resolvedUri = this.resolveMarkdownImageUri(trimmed, currentUri, webviewPanel.webview);
                                 if (resolvedUri) {
                                     resolved[trimmed] = resolvedUri;
                                 }
@@ -273,7 +276,7 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                             }
 
                             isSaving = true;
-                            await vscode.workspace.fs.writeFile(document.uri, Buffer.from(text, 'utf8'));
+                            await vscode.workspace.fs.writeFile(currentUri, Buffer.from(text, 'utf8'));
                             currentContent = text;
                             lastSaveTime = Date.now();
                             saveVersionSnapshot(text);
@@ -288,7 +291,7 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                     case 'saveTableColumnWidths':
                         try {
                             const widths = message.widths && typeof message.widths === 'object' ? message.widths : {};
-                            await this.tableColumnWidthStorage.saveWidths(document.uri, widths);
+                            await this.tableColumnWidthStorage.saveWidths(currentUri, widths);
                         } catch (err) {
                             vscode.window.showErrorMessage(`Error saving table column widths: ${err}`);
                         }
@@ -296,7 +299,7 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
 
                     case 'saveFrontmatterPanelCollapsed':
                         try {
-                            await this.frontmatterPanelStorage.saveCollapsed(document.uri, !!message.collapsed);
+                            await this.frontmatterPanelStorage.saveCollapsed(currentUri, !!message.collapsed);
                         } catch (err) {
                             vscode.window.showErrorMessage(`Error saving frontmatter panel state: ${err}`);
                         }
@@ -417,7 +420,7 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                                         break;
                                     }
 
-                                    await vscode.workspace.fs.writeFile(document.uri, Buffer.from(entry.content, 'utf8'));
+                                    await vscode.workspace.fs.writeFile(currentUri, Buffer.from(entry.content, 'utf8'));
                                     currentContent = entry.content;
                                     lastSaveTime = Date.now();
                                     previewVersionId = null;
@@ -549,34 +552,70 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                 } catch { }
             });
 
-            const watcher = vscode.workspace.createFileSystemWatcher(
-                new vscode.RelativePattern(vscode.Uri.file(path.dirname(filePath)), path.basename(filePath))
-            );
-            const watcherDisposable = watcher.onDidChange(async () => {
-                if (isSaving || Date.now() - lastSaveTime < 1000) {
-                    return;
-                }
-                try {
-                    const content = await fs.promises.readFile(filePath, 'utf-8');
-                    currentContent = content;
-                    webviewPanel.webview.postMessage({ ...buildInitMarkdownPayload(content), command: 'diskChangedExternally' });
-                } catch {
-                    // ignore reload errors
-                }
-            });
-            const deleteWatcherDisposable = watcher.onDidDelete(() => {
+            const handleMove = async (newUri: vscode.Uri) => {
                 if (isSaving) {
                     return;
                 }
-                webviewPanel.webview.postMessage({ command: 'diskDeletedExternally' });
+                const oldUri = currentUri;
+                currentUri = newUri;
+                filePath = newUri.fsPath;
+                documentDirUri = vscode.Uri.file(path.dirname(filePath));
+
+                await migrateFileUriState(this.context, oldUri, newUri, {
+                    kind: 'md',
+                    isSpreadsheet: false,
+                    tableColumnWidthStorage: this.tableColumnWidthStorage,
+                    frontmatterPanelStorage: this.frontmatterPanelStorage,
+                });
+
+                externalFileWatcher.repoint(filePath, currentUri);
+                webviewPanel.webview.options = {
+                    enableScripts: true,
+                    localResourceRoots: this.buildMarkdownLocalResourceRoots(
+                        filePath,
+                        documentDirUri,
+                        workspaceFolders,
+                    ),
+                };
+
+                try {
+                    webviewPanel.webview.postMessage({
+                        command: 'diskMovedExternally',
+                        fileName: vscode.workspace.asRelativePath(newUri),
+                        documentUri: newUri.toString(),
+                        documentDirUri: documentDirUri.toString(),
+                    });
+                } catch { }
+            };
+
+            const externalFileWatcher = createExternalFileChangeWatcher({
+                filePath,
+                documentUri: currentUri,
+                onChange: async () => {
+                    if (isSaving || Date.now() - lastSaveTime < 1000) {
+                        return;
+                    }
+                    try {
+                        const content = await fs.promises.readFile(filePath, 'utf-8');
+                        currentContent = content;
+                        webviewPanel.webview.postMessage({ ...buildInitMarkdownPayload(content), command: 'diskChangedExternally' });
+                    } catch {
+                        // ignore reload errors
+                    }
+                },
+                onDelete: () => {
+                    if (isSaving) {
+                        return;
+                    }
+                    webviewPanel.webview.postMessage({ command: 'diskDeletedExternally' });
+                },
+                onMove: (newUri) => { void handleMove(newUri); },
             });
 
             webviewPanel.onDidDispose(() => {
                 configChangeDisposable.dispose();
                 themeChangeDisposable.dispose();
-                watcherDisposable.dispose();
-                deleteWatcherDisposable.dispose();
-                watcher.dispose();
+                externalFileWatcher.dispose();
                 if (versionSnapshotDebounceTimer) {
                     clearTimeout(versionSnapshotDebounceTimer);
                     versionSnapshotDebounceTimer = null;

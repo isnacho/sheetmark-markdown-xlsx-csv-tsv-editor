@@ -1,5 +1,9 @@
 # Obsidian-style live preview + slash menu for Markdown "Preview Edit" mode
 
+> **Status: completed** (2026-08). All eight phases landed; legacy `contentEditable`/
+> turndown path removed in [remove-reading-split-view-modes.md](../../ideas/5-completed/remove-reading-split-view-modes.md).
+> Kept for historical context — current architecture is in [ARCHITECTURE.md](../../dev/ARCHITECTURE.md).
+
 > Revision 2. Changes from r1: corrected the formatting-command port framing
 > (rewrite, not accessor-swap); added an explicit dual-surface state-sync
 > contract; reordered phases so there is no regression window; added a headless
@@ -11,7 +15,7 @@
 Today's "Preview Edit" (WYSIWYG) mode renders markdown-it HTML into a
 `contentEditable` `#markdownPreview`, and on save/mode-switch converts that
 HTML back to markdown via `turndown` (`extractCurrentEditorContent`,
-[mdWebview.ts:801](../src/webviews/md/mdWebview.ts#L801)).
+[mdWebview.ts:801](../../../src/webviews/md/mdWebview.ts#L801)).
 That architecture can't cleanly support "show `##`/`**` near the cursor,
 hide it otherwise" — the DOM has already thrown the raw syntax away.
 
@@ -21,7 +25,7 @@ single source of truth, and a decoration layer hides/reveals syntax markers
 based on cursor position. Split mode (raw textarea) and Reading mode (static
 preview) are untouched. This also **removes the turndown round-trip entirely**
 for this mode. Verified: turndown has exactly one `.turndown()` call site
-([mdWebview.ts:814](../src/webviews/md/mdWebview.ts#L814)) plus its
+([mdWebview.ts:814](../../../src/webviews/md/mdWebview.ts#L814)) plus its
 `new TurndownService(...)` / `.use(gfm)` setup — all three go away once
 extraction no longer needs HTML→MD.
 
@@ -54,7 +58,7 @@ Confirmed scope for v1 (from user):
   (bold/italic/heading-size class via `Decoration.mark`). This one mechanic is
   Improvement 1. See "Reveal-engine hazards" below for the non-obvious cases.
 - **Theme**: read the existing semantic CSS vars from
-  [resources/shared/theme.css](../resources/shared/theme.css)
+  [resources/shared/theme.css](../../../resources/shared/theme.css)
   (`--text-color`, `--bg-color`, `--border-color`, `--code-bg`, `--selection-bg`,
   already mapped to `--vscode-*` tokens) via `getComputedStyle` in a CM6
   `EditorView.theme()`/`HighlightStyle`, so the editor matches VS Code's theme
@@ -76,9 +80,9 @@ Confirmed scope for v1 (from user):
 There are now **two editing surfaces**: Split mode owns the `<textarea>`
 (`editor.value`); Preview Edit mode owns the CM6 doc. Save/cancel/dirty logic
 today reads `editor.value` directly
-([mdWebview.ts:921,932,953](../src/webviews/md/mdWebview.ts#L921)) and
+([mdWebview.ts:921,932,953](../../../src/webviews/md/mdWebview.ts#L921)) and
 `setEditMode`/`setPreviewEditMode` both seed content from `currentContent`
-([mdWebview.ts:686-697,734](../src/webviews/md/mdWebview.ts#L686)). The turndown
+([mdWebview.ts:686-697,734](../../../src/webviews/md/mdWebview.ts#L686)). The turndown
 removal was meant to kill content drift — a sloppy two-surface handoff would
 just reintroduce it. So define one rule set up front:
 
@@ -104,7 +108,7 @@ a comment in `livePreviewEditor.ts`.
 
 Correction to r1, which claimed the Split-mode helpers port "almost 1:1 by
 swapping `editor.value`/`selectionStart/End`". They do not. Inspect
-[mdWebview.ts:2033-2090](../src/webviews/md/mdWebview.ts#L2033): each helper
+[mdWebview.ts:2033-2090](../../../src/webviews/md/mdWebview.ts#L2033): each helper
 takes `editor: HTMLTextAreaElement`, **mutates** `editor.value`, sets
 `selectionStart/End`, calls `editor.focus()`, and ends with `onEditorInput()`.
 That is an imperative mutate-then-read model. CM6 is compute-a-`ChangeSpec`-from-
@@ -122,13 +126,13 @@ For each command:
   `ChangeSpec`.
 
 Commands to port (all in
-[mdWebview.ts:1993-2414](../src/webviews/md/mdWebview.ts#L1993)):
+[mdWebview.ts:1993-2414](../../../src/webviews/md/mdWebview.ts#L1993)):
 `wrapSelection`, `toggleLinePrefix`, `insertAtCursor`, `insertLink`,
 `insertImage`, `insertTable`, `insertHorizontalRule`, `toggleCodeBlock`,
 `toggleCheckboxList`, `toggleBlockquote`, `multiLineIndent`, `duplicateLine`,
 `deleteLine`, `moveLineUp`/`moveLineDown`, `selectWord`, `transformCase`,
 `sortSelectedLines`, `trimTrailingWhitespace`. Enter-key list continuation +
-Tab-indent ([mdWebview.ts:3195-3294](../src/webviews/md/mdWebview.ts#L3195))
+Tab-indent ([mdWebview.ts:3195-3294](../../../src/webviews/md/mdWebview.ts#L3195))
 become CM6 `keymap` commands using `state.doc.lineAt(range.head)`.
 
 **Not ported (deleted, not migrated):**
@@ -136,7 +140,7 @@ become CM6 `keymap` commands using `state.doc.lineAt(range.head)`.
   — replaced by CM6's `history()` extension.
 - `applyWysiwygFormat`, `getPreviewSnapshot`/`restorePreviewSnapshot`, and the
   ~500-line table-hover-editing subsystem (`createTableHoverControls`,
-  [mdWebview.ts:2570-3075](../src/webviews/md/mdWebview.ts#L2570)) — all
+  [mdWebview.ts:2570-3075](../../../src/webviews/md/mdWebview.ts#L2570)) — all
   `contentEditable`-only, dead once tables are plain text.
 
 ### Slash menu — built on `@codemirror/autocomplete` (changed from r1)
@@ -180,7 +184,7 @@ completion source + option table, not a popup subsystem.
 
 ### CSP — verified, no change needed
 
-The md webview CSP ([mdEditorProvider.ts:595](../src/mdEditorProvider.ts#L595))
+The md webview CSP ([mdEditorProvider.ts:595](../../../src/mdEditorProvider.ts#L595))
 is `... style-src ${cspSource} https: 'unsafe-inline'; script-src ${cspSource}
 'unsafe-inline'`. CM6 injects styles via `style-mod` `<style>` elements, which
 `'unsafe-inline'` in `style-src` permits — so **no CSP change is required.**
@@ -210,15 +214,15 @@ calls CM6's `undo`/`redo`.
 ### Needs adaptation, not full rewrite
 
 - **Scroll spy / TOC** (`updateScrollSpy`, `wireTocPanel`,
-  [mdWebview.ts:1252-1290, 3538-3564](../src/webviews/md/mdWebview.ts#L1252)):
+  [mdWebview.ts:1252-1290, 3538-3564](../../../src/webviews/md/mdWebview.ts#L1252)):
   derive the active heading from CM6 viewport/line info; click-to-heading uses
   CM6's scroll effect instead of `Element.scrollIntoView`.
 - **Search-in-preview when in Preview Edit mode** (`doSearch`,
-  [mdWebview.ts:1371-1464](../src/webviews/md/mdWebview.ts#L1371)): swap the
+  [mdWebview.ts:1371-1464](../../../src/webviews/md/mdWebview.ts#L1371)): swap the
   TreeWalker+Range trick for a `@codemirror/search` extension. Reading/Split
   search untouched (different DOM).
 - **Click handling** inside Preview Edit (`wirePreviewInteractions`,
-  [mdWebview.ts:3368-3536](../src/webviews/md/mdWebview.ts#L3368)):
+  [mdWebview.ts:3368-3536](../../../src/webviews/md/mdWebview.ts#L3368)):
   link/image/code-copy/heading-anchor re-wired against the CM6 DOM (reading
   mode's identical handling is unaffected).
 - Version-preview banner / focus mode: orchestration-only — call the new
@@ -276,7 +280,7 @@ before the reveal engine so reveal ships with tests.
 8. **Cleanup.** Delete the legacy `contentEditable`/table-WYSIWYG path, the
    `livePreviewEngine` kill-switch, and the `turndown`/`turndown-plugin-gfm`
    deps — **only after** the full smoke checklist passes on CM6. Update
-   `.docs/MAP-mdWebview.md` line-range table and `.docs/MESSAGE-PROTOCOL.md`
+   `.docs/dev/MAP-mdWebview.md` line-range table and `.docs/dev/MESSAGE-PROTOCOL.md`
    (new settings) to match reality.
 
 ## Verification

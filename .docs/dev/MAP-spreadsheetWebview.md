@@ -1,11 +1,11 @@
-# Navigation map — spreadsheetWebview.ts (~7,729 lines)
+# Navigation map — spreadsheetWebview.ts (~7,726 lines)
 
-[src/webviews/spreadsheet/spreadsheetWebview.ts](../src/webviews/spreadsheet/spreadsheetWebview.ts)
+[src/webviews/spreadsheet/spreadsheetWebview.ts](../../src/webviews/spreadsheet/spreadsheetWebview.ts)
 runs in the **webview (browser)**. It's too large to read end-to-end — use this index to jump to
 the section you need with `Read(offset, limit)`, then read only that range.
 
 One big IIFE. Runtime context, hard rules, and the message protocol are in
-[CLAUDE.md](../CLAUDE.md) and [MESSAGE-PROTOCOL.md](MESSAGE-PROTOCOL.md). Line ranges are
+[CLAUDE.md](../../CLAUDE.md) and [MESSAGE-PROTOCOL.md](MESSAGE-PROTOCOL.md). Line ranges are
 approximate — confirm by reading the boundary.
 
 | Lines | Section | Responsibility |
@@ -47,9 +47,9 @@ approximate — confirm by reading the boundary.
 | 7083–7357 | Edit-mode toggle & save flow | `setEditMode`, `captureOriginalCellValues`, `saveEdits` (**sends `saveXlsxEdits`**) |
 | 7358–7538 | Expanded mode, settings UI, handler attach | `setExpandedMode`, `wireSettingsUI`, `attachHandlersOnce` (toolbar buttons + their sends) |
 | 7539–7564 | Sheet selector | `populateSheetSelector` |
-| 7565–7725 | **Message handler (host→webview)** | `window.addEventListener('message')` dispatch on `message.command` — see [MESSAGE-PROTOCOL.md](MESSAGE-PROTOCOL.md) |
-| 7726–7729 | Bootstrap | `DOMContentLoaded` → posts `webviewReady`; IIFE close |
+| 7556–7680 | **Message handler (host→webview)** | Includes `diskMovedExternally` / `diskDeletedExternally`; see [MESSAGE-PROTOCOL.md](MESSAGE-PROTOCOL.md) |
+| 7721–7726 | Bootstrap | `DOMContentLoaded` → posts `webviewReady`; IIFE close |
 
 Component files (imported here, live in
-[components/](../src/webviews/spreadsheet/components/)): render, selection, toolbar, find, border,
+[components/](../../src/webviews/spreadsheet/components/)): render, selection, toolbar, find, border,
 rich-text, settings, copy, sheet-data, types.

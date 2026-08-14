@@ -1,5 +1,8 @@
 # Architecture review request: is CodeMirror 6 the right foundation for a Notion/Obsidian-grade WYSIWYG markdown experience?
 
+> **Status: completed** — one-time review brief (historical). The CM6 live-preview
+> rebuild described here was implemented per [PLAN-obsidian-live-preview.md](PLAN-obsidian-live-preview.md).
+
 ## Ask
 
 Independently evaluate the architecture choice for this project's Markdown "Preview
@@ -14,7 +17,7 @@ it, not so you protect it.
 
 A VS Code extension (fork of `xlsx-viewer` v1.9.91, ~20k lines TypeScript) providing
 custom editors for spreadsheets (`.xlsx`/`.csv`/`.tsv`) and Markdown (`.md`). Full
-architecture: [.docs/ARCHITECTURE.md](ARCHITECTURE.md). The Markdown editor has three
+architecture: [.docs/dev/ARCHITECTURE.md](../../dev/ARCHITECTURE.md). The Markdown editor has three
 modes: **Split** (raw textarea + rendered preview side by side), **Reading** (static
 markdown-it render), and **Preview Edit** — the one in question, meant to be a
 live, WYSIWYG-ish editing surface where you type near-plain markdown and see it
@@ -25,7 +28,7 @@ Hard structural constraint that will not change regardless of architecture chose
 this is a **VS Code webview**. Two runtimes — Node.js extension host and a sandboxed
 browser webview — talking only via `postMessage`. The webview has no `fs`, no
 `require`, no arbitrary network access; assets must be enumerated in a CSP and
-`localResourceRoots`. Full rules: root [CLAUDE.md](../CLAUDE.md). Any proposed engine
+`localResourceRoots`. Full rules: root [CLAUDE.md](../../../CLAUDE.md). Any proposed engine
 must run as a bundled, CSP-compliant, offline, browser-sandboxed JS bundle — same
 constraints Obsidian's own Electron-based live preview does NOT have (Obsidian is not
 sandboxed the same way; that matters for what's actually portable from its approach).
@@ -38,7 +41,7 @@ could not support "show raw syntax near the cursor, hide it elsewhere" — the D
 already discarded the raw markdown, so there was no source of truth to reveal.
 
 Decision made ~7 phases ago (documented in
-[.docs/PLAN-obsidian-live-preview.md](PLAN-obsidian-live-preview.md)): rebuild Preview
+[PLAN-obsidian-live-preview.md](PLAN-obsidian-live-preview.md)): rebuild Preview
 Edit mode on **CodeMirror 6** — explicitly because this is the same engine class
 Obsidian's own Live Preview uses. Raw markdown text stays the single source of truth
 in a CM6 `EditorState`; a decoration layer (`ViewPlugin`/`StateField` over the
@@ -139,6 +142,6 @@ multi-line editing, nested lists, etc.) and the test-infrastructure investment
 needed to catch this bug class before users do. If switching, name the real
 migration cost (what in `src/webviews/md/livePreview/` is reusable — the pure
 `compute*` functions and the message-protocol/state-sync contract in
-[.docs/PLAN-obsidian-live-preview.md](PLAN-obsidian-live-preview.md) almost certainly
+[PLAN-obsidian-live-preview.md](PLAN-obsidian-live-preview.md) almost certainly
 carry over regardless of rendering engine — versus what must be rebuilt from
 scratch) and the honest new bug surface it introduces.

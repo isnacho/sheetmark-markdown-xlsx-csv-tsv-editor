@@ -28,12 +28,13 @@ The extension turns VS Code into a practical spreadsheet and Markdown workspace.
 
 ### Advanced Markdown Viewer & Editor
 
-- **Split view with sync scroll:** Edit Markdown on one side and preview it on the other.
-- **Preview edit mode:** Edit Markdown directly from the rendered preview with a rich formatting toolbar.
-- **GitHub-Flavored Markdown:** Tables, task lists, code blocks, and footnotes are supported.
+- **CM6 live preview editing:** Obsidian-style live preview — edit formatted Markdown directly in a CodeMirror 6 surface (tables, callouts, mermaid, frontmatter widgets).
+- **GitHub-Flavored Markdown:** Tables, task lists, code blocks, footnotes, and callouts.
 - **Interactive outline panel:** Navigate long documents with an auto-scrolling table of contents.
 - **Local asset support:** Render relative links and local images.
-- **Code block enhancements:** Copy buttons and line numbers are built into fenced code blocks.
+- **Disk sync:** Detect external changes, moves, and deletions; reload from disk with conflict handling.
+- **Code block enhancements:** Copy buttons, optional line numbers, and Mermaid diagram/code preview toggle.
+- **Spellcheck** in live preview (Typo.js dictionary bundled).
 
 ### Native VS Code Experience
 
@@ -66,9 +67,11 @@ The tabular editor is now merged into a single implementation:
 
 ### Working with Markdown
 
-1. Open a `.md` file and use **Open in Preview** from the editor title bar or command palette.
-2. Edit Markdown in split view with synchronized scrolling.
-3. Use **Edit Preview** to modify the document from the rendered view.
+1. Open a `.md` file — the custom editor opens in live preview edit mode.
+2. Type and format directly in the rendered document (toolbar, slash menu, keyboard shortcuts).
+3. Use the outline panel to jump between headings.
+4. **Reload from disk** when external tools change the file; the editor surfaces change/move/delete toasts.
+5. Toggle word wrap, outline, line numbers, and live-preview reveal in Settings.
 
 ---
 
@@ -80,9 +83,11 @@ Key settings include:
 - **Sticky elements (`xlsxViewer.*.stickyToolbar`, `xlsxViewer.*.stickyHeader`):** Keep toolbars and headers visible while scrolling.
 - **Spacious cells (`xlsxViewer.*.spaciousCells`):** Increase cell padding for a more readable grid.
 - **Spreadsheet controls (`xlsxViewer.xlsx.allowInteractiveControlsOutsideEditMode`):** Allow interactive controls outside table edit mode.
-- **Markdown layout (`xlsxViewer.md.previewPosition`, `xlsxViewer.md.syncScroll`):** Control preview placement and synchronized scrolling.
+- **Markdown layout (`xlsxViewer.md.wordWrap`, `xlsxViewer.md.showOutline`, `xlsxViewer.md.livePreviewReveal`, `xlsxViewer.md.livePreviewLineNumbers`):** Control wrap, outline, syntax reveal, and gutter line numbers in live preview.
 
 Open VS Code Settings and search for `xlsxViewer` to see all options.
+
+See [CHANGELOG.md](CHANGELOG.md) for release history and fork changes since upstream v1.9.91.
 
 ---
 

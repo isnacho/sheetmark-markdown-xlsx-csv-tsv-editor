@@ -1,5 +1,43 @@
 # Changelog
 
+## Unreleased (fork — `super-file-viewer` / `nacho-allendesalazar`)
+
+Fork of upstream **xlsx-viewer** v1.9.91. Changes below are relative to that baseline.
+
+### Markdown — CM6 live preview rebuild
+- Replaced legacy reading mode, split view, and contentEditable/turndown WYSIWYG with a **CodeMirror 6 live preview** editor (`src/webviews/md/livePreview/`).
+- Single editing surface: live preview opens automatically on first load (no view-mode dropdown).
+- Rich widgets: **tables** (resize, drag reorder, context menu), **callouts**, **YAML frontmatter card**, **Mermaid** (diagram vs code toggle), **local images**, slash menu.
+- **Spellcheck** in live preview (bundled Typo.js dictionary).
+- Formatting toolbar routes through CM6 format commands; `currentContent` in `mdWebview.ts` is the save/disk-sync source of truth.
+- TOC still uses markdown-it token parsing; document body is CM6-rendered.
+
+### Markdown — disk sync & external files
+- **External change detection:** persistent toasts for disk changes with optional Reload; dirty-state confirm before overwrite.
+- **Save conflict handling:** host `saveConflict` when disk diverged from baseline; explicit overwrite confirm in webview.
+- **Reload from disk** toolbar action and `requestFreshData` round-trip.
+- **External move detection:** `diskMovedExternally` — auto-follow renames, migrate URI-keyed state, update relative image paths.
+- **External delete detection:** `diskDeletedExternally` with persistent toast; save recreates deleted files.
+
+### Spreadsheet — external files
+- Shared **external file watcher** for tabular editors: auto-reload on change (`initVirtualTable`), delete toast (`diskDeletedExternally`), move toast + state migration (`diskMovedExternally`).
+
+### Shared infrastructure
+- [fileExternalChangeWatcher.ts](src/shared/fileExternalChangeWatcher.ts): VS Code watcher + `fs.watch` fallback, debounced delete, `onDidRenameFiles`.
+- [migrateFileUriState.ts](src/shared/migrateFileUriState.ts): version history + per-file extension state migration on move.
+- Per-file MD preference storage: table column widths, frontmatter panel collapsed, global mermaid preview mode, global callout default type.
+
+### UI & product
+- Theme toggle moved from toolbar into the settings panel.
+- Help & Feedback wired to a dedicated Google Form.
+- Removed in-webview enable/disable MD editor controls and projects modal (markdown toolbar simplification).
+
+### Documentation
+- Refreshed `.docs/dev/` (ARCHITECTURE, MESSAGE-PROTOCOL, MAP-mdWebview, MAP-spreadsheetWebview) for CM6 split, disk-sync messages, and current line anchors.
+- Aligned `CLAUDE.md`, `.docs/README.md`, `.docs/product/PLAN.md`, and user `README.md` with the current architecture.
+
+---
+
 ## v1.9.91 - Sticky Header Layout and Border Fixes
 - Fixed sticky header disappearing when scrolling past the first few rows (virtual scrolling logic now keeps row 0 rendered).
 - Fixed the row header "1" cell not staying sticky when the header is sticky.

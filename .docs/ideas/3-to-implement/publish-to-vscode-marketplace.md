@@ -128,8 +128,8 @@ File: [CHANGELOG.md](../../../CHANGELOG.md)
 
 #### E — Internal docs (non-blocking, same PR ok)
 
-- [ ] [.docs/LOCAL-DEV-INSTALL.md](../../../.docs/LOCAL-DEV-INSTALL.md) — update marketplace ID references to `nacho-allendesalazar.super-file-viewer`
-- [ ] [.docs/PLAN.md](../../../.docs/PLAN.md) — mark publisher/rename items done or update table (optional housekeeping)
+- [ ] [.docs/product/LOCAL-DEV-INSTALL.md](../../../.docs/product/LOCAL-DEV-INSTALL.md) — update marketplace ID references to `nacho-allendesalazar.super-file-viewer`
+- [ ] [.docs/product/PLAN.md](../../../.docs/product/PLAN.md) — mark publisher/rename items done or update table (optional housekeeping)
 
 #### F — Build & local smoke test (before publish)
 

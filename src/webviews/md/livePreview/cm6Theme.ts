@@ -247,7 +247,11 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
         '.cm-md-frontmatter-widget': {
             display: 'block',
             margin: '0',
-            paddingBottom: '20px',
+        },
+        // Block replace widgets can't reserve space via padding/margin; pad the
+        // first body line instead (same pattern as fenced-code-line-first).
+        '.cm-md-after-frontmatter-line': {
+            paddingTop: '32px',
         },
         // Phase 7: extended reveal set (strikethrough/inline-code marker hide/
         // dim reuses .cm-md-reveal-mark above; these are the new content classes).

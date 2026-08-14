@@ -5,7 +5,7 @@
 // headlessly in tableWidget.test.mts. Only TableWidget's DOM wiring
 // (toDOM/updateDOM and the editable-cell event handlers) needs a real
 // browser and is verified by manual F5 testing, per this project's test
-// infrastructure (see CLAUDE.md and .docs/PLAN-obsidian-live-preview.md).
+// infrastructure (see CLAUDE.md and .docs/product/completed/PLAN-obsidian-live-preview.md).
 //
 // CM6 has no built-in table grid — unlike headings/bold/italic (inline
 // Decoration.mark/replace), a table needs an actual rendered <table> element,
@@ -1607,7 +1607,7 @@ export class TableWidget extends WidgetType {
      * almost continuously while typing — without this, CM6 would rebuild the
      * whole widget and steal focus on every character. Every real bug in this
      * feature so far was a widget-lifecycle surprise only caught by manual
-     * testing (see file header + .docs/PLAN-obsidian-live-preview.md) — this
+     * testing (see file header + .docs/product/completed/PLAN-obsidian-live-preview.md) — this
      * is exactly that bug class, addressed up front rather than discovered.
      * Only continues the no-op path when the active cell's own input handler
      * is the thing that produced this update (still focused, same row/col);

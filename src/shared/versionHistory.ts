@@ -1,3 +1,4 @@
+import * as fs from 'fs';
 import * as path from 'path';
 import { createHash } from 'crypto';
 import * as vscode from 'vscode';
@@ -24,6 +25,40 @@ export function getVersionHistoryFile(
 
 export function getVersionHistoryDir(globalStoragePath: string, filePath: string, kind: string): string {
     return path.join(getVersionHistoryRoot(globalStoragePath), `${kind}-${getHistoryKey(filePath)}`);
+}
+
+export async function migrateVersionHistory(
+    globalStoragePath: string,
+    oldPath: string,
+    newPath: string,
+    kind: string,
+    isDirectory: boolean,
+): Promise<void> {
+    const oldLocation = isDirectory
+        ? getVersionHistoryDir(globalStoragePath, oldPath, kind)
+        : getVersionHistoryFile(globalStoragePath, oldPath, kind);
+    const newLocation = isDirectory
+        ? getVersionHistoryDir(globalStoragePath, newPath, kind)
+        : getVersionHistoryFile(globalStoragePath, newPath, kind);
+
+    if (oldLocation === newLocation) {
+        return;
+    }
+
+    try {
+        await fs.promises.access(oldLocation);
+    } catch {
+        return;
+    }
+
+    try {
+        await fs.promises.access(newLocation);
+        return;
+    } catch {
+        // Destination does not exist yet — proceed with rename.
+    }
+
+    await fs.promises.rename(oldLocation, newLocation);
 }
 
 export function formatVersionHistoryGroupLabel(timestamp: number): string {

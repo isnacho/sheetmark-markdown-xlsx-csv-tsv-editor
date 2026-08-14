@@ -2,7 +2,7 @@
 
 ## v1.0.0
 
-Initial release of **Sheetmark: XLSX, CSV, TSV & Markdown** (`nacho-allendesalazar.sheetmark`).
+Initial release of **Sheetmark: XLSX, CSV, TSV & Markdown** (`iggyinc.sheetmark`).
 
 - Unified spreadsheet editor for XLSX, CSV, and TSV with formatting, sorting, filtering, conversion, and version history.
 - Markdown live-preview editing with tables, callouts, Mermaid, outline panel, and disk sync.

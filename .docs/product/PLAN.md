@@ -65,7 +65,7 @@ republishing **only if** the original copyright + license text are retained.
 ## 4. Phase 1 — Rebrand  ⏳ IN PROGRESS
 
 **Done so far:**
-- `publisher` → `nacho-allendesalazar`, `name` → `sheetmark` (in `package.json`).
+- `publisher` → `iggyinc`, `name` → `sheetmark` (in `package.json`).
 - Local symlink install documented in [.docs/product/LOCAL-DEV-INSTALL.md](LOCAL-DEV-INSTALL.md).
 
 **Still open** (tracked in [.docs/ideas/3-to-implement/publish-to-vscode-marketplace.md](../ideas/3-to-implement/publish-to-vscode-marketplace.md)):
@@ -79,7 +79,7 @@ republishing **only if** the original copyright + license text are retained.
 
 | Field | Current | Proposed |
 |-------|---------|----------|
-| `publisher` | `muhammad-ahmad` | `nacho-allendesalazar` ✅ |
+| `publisher` | `muhammad-ahmad` | `iggyinc` ✅ |
 | `name` | `xlsx-viewer` | `sheetmark` ✅ |
 | `displayName` | `XLSX, CSV, TSV & Markdown Editor` | `Sheetmark: XLSX, CSV, TSV & Markdown` ✅ |
 | `version` | `1.9.91` | `1.0.0` (reset to signal new lineage) |

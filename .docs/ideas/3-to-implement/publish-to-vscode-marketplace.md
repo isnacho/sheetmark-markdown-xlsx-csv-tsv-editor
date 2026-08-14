@@ -44,12 +44,12 @@ fork's own copyright. No other legal blocker found.
 - **Repo:** `github.com/nachosdesign/sheetmark-markdown-xlsx-csv-tsv-editor`. Update
   `package.json` `repository`/`bugs`/`homepage`, README links/badges/install
   command, and the feedback modal's GitHub-issue URL to point here.
-- **Publisher:** `nacho-allendesalazar` (already set in `package.json`).
+- **Publisher:** `iggyinc` (already set in `package.json`).
   Marketplace publisher account still needs to be registered — auth via
   **Microsoft Entra ID** (`vsce publish --azure-credential`), not a global PAT
   (global PATs retired Dec 1, 2026).
 - **Package id (`package.json` "name"):** `sheetmark` → extension ID
-  `nacho-allendesalazar.sheetmark`.
+  `iggyinc.sheetmark`.
 - **Marketplace displayName:** `Sheetmark: XLSX, CSV, TSV & Markdown` — short brand
   **Sheetmark** up front for identity, plus the full format list after the colon so
   Marketplace search still surfaces it for "xlsx", "csv", "tsv", "markdown" queries.
@@ -69,7 +69,7 @@ fork's own copyright. No other legal blocker found.
 
 ## Plan
 
-Target extension ID: **`nacho-allendesalazar.sheetmark`**
+Target extension ID: **`iggyinc.sheetmark`**
 
 ### Checklist
 
@@ -78,20 +78,20 @@ Target extension ID: **`nacho-allendesalazar.sheetmark`**
 - [x] Google Form wired to user's form (`own-feedback-google-form` — completed)
 - [x] Feedback GitHub-issue URL → `nachosdesign/sheetmark-markdown-xlsx-csv-tsv-editor`
 - [x] `LICENSE` — second copyright line for Nacho Allendesalazar Rivas (2026)
-- [x] `publisher` in `package.json` → `nacho-allendesalazar`
-- [x] Extension self-lookup → `nacho-allendesalazar.sheetmark` (`mdEditorProvider.ts`, `spreadsheetEditorProvider.ts`)
+- [x] `publisher` in `package.json` → `iggyinc`
+- [x] Extension self-lookup → `iggyinc.sheetmark` (`mdEditorProvider.ts`, `spreadsheetEditorProvider.ts`)
 - [x] Projects modal removed from `src/` (no `projectsModal` references remain)
 
 #### A — Publisher account (manual, blocking publish)
 
-- [ ] Create [Marketplace publisher](https://marketplace.visualstudio.com/manage/createpublisher) with ID `nacho-allendesalazar` (same Microsoft account you'll use to publish)
+- [x] Marketplace publisher created with ID `iggyinc`
 - [ ] **Entra ID (recommended):** install [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli), then:
   ```bash
   az login
   npx @vscode/vsce publish --no-dependencies --azure-credential
   ```
   See [VS Code publishing docs — secure automated publishing](https://code.visualstudio.com/api/working-with-extensions/publishing-extension#_secure-automated-publishing-to-visual-studio-marketplace).
-- [ ] **Legacy fallback (until Dec 1, 2026):** org-scoped PAT with **Marketplace → Manage** only — **not** a global PAT (`All accessible organizations`). `npx @vscode/vsce login nacho-allendesalazar` then `npx @vscode/vsce publish --no-dependencies`.
+- [ ] **PAT-backed GitHub Actions (until Dec 1, 2026):** create a PAT with **Marketplace → Manage** and the `All accessible organizations` setting specified in the [official publishing guide](https://code.visualstudio.com/api/working-with-extensions/publishing-extension#get-a-personal-access-token). Save it as the repository Actions secret `VSCE_PAT`; publishing runs when a GitHub Release is published. Migrate to Microsoft Entra workload identity before global PAT retirement.
 
 #### B — `package.json` metadata
 
@@ -112,10 +112,10 @@ File: [package.json](../../../package.json)
 File: [README.md](../../../README.md)
 
 - [x] Update H1/title to match new `displayName` (or close variant)
-- [x] Install command → `code --install-extension nacho-allendesalazar.sheetmark`
+- [x] Install command → `code --install-extension iggyinc.sheetmark`
 - [x] Marketplace search hint → new display name
 - [x] GitHub links → `nachosdesign/sheetmark-markdown-xlsx-csv-tsv-editor`
-- [x] Marketplace link → `itemName=nacho-allendesalazar.sheetmark` (placeholder URL until live)
+- [x] Marketplace link → `itemName=iggyinc.sheetmark` (placeholder URL until live)
 - [x] Open VSX link → update or remove until published there
 - [x] Add short attribution note: fork of upstream MIT project; original copyright retained in LICENSE
 
@@ -127,7 +127,7 @@ File: [CHANGELOG.md](../../../CHANGELOG.md)
 
 #### E — Internal docs (non-blocking, same PR ok)
 
-- [x] [.docs/product/LOCAL-DEV-INSTALL.md](../../../.docs/product/LOCAL-DEV-INSTALL.md) — update marketplace ID references to `nacho-allendesalazar.sheetmark`
+- [x] [.docs/product/LOCAL-DEV-INSTALL.md](../../../.docs/product/LOCAL-DEV-INSTALL.md) — update marketplace ID references to `iggyinc.sheetmark`
 - [x] [.docs/product/PLAN.md](../../../.docs/product/PLAN.md) — mark publisher/rename items done or update table (optional housekeeping)
 
 #### F — Build & local smoke test (before publish)
@@ -143,7 +143,7 @@ File: [CHANGELOG.md](../../../CHANGELOG.md)
 #### G — Publish
 
 - [ ] `npx @vscode/vsce publish --no-dependencies --azure-credential` (or legacy PAT login; see section A)
-- [ ] Confirm listing live at `marketplace.visualstudio.com/items?itemName=nacho-allendesalazar.sheetmark`
+- [ ] Confirm listing live at `marketplace.visualstudio.com/items?itemName=iggyinc.sheetmark`
 - [ ] Update README Marketplace link with live URL if placeholder was used
 
 #### H — Post-publish (optional, out of scope for code PR)

@@ -484,7 +484,7 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                         break;
 
                     case 'getSystemDetails': {
-                        const ext = vscode.extensions.getExtension('nacho-allendesalazar.sheetmark');
+                        const ext = vscode.extensions.getExtension('iggyinc.sheetmark');
                         const editorName = vscode.env.appName || 'VS Code';
                         webviewPanel.webview.postMessage({
                             command: 'systemDetails',

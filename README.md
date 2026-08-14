@@ -101,7 +101,7 @@ See [CHANGELOG.md](CHANGELOG.md) for release history.
 You can also install it from the command line:
 
 ```bash
-code --install-extension nacho-allendesalazar.sheetmark
+code --install-extension iggyinc.sheetmark
 ```
 
 ---
@@ -119,4 +119,10 @@ This project is licensed under the MIT License. It is a fork of the upstream MIT
 ## Links
 
 - GitHub: [nachosdesign/sheetmark-markdown-xlsx-csv-tsv-editor](https://github.com/nachosdesign/sheetmark-markdown-xlsx-csv-tsv-editor)
-- VS Code Marketplace: [Download Extension](https://marketplace.visualstudio.com/items?itemName=nacho-allendesalazar.sheetmark)
+- VS Code Marketplace: [Download Extension](https://marketplace.visualstudio.com/items?itemName=iggyinc.sheetmark)
+
+## Publishing updates
+
+Publishing is automated by GitHub Actions. Bump the version in `package.json`, commit it with the changelog update, then create and publish a GitHub Release from that commit. The release workflow publishes the matching version to the VS Code Marketplace.
+
+The repository requires a `VSCE_PAT` Actions secret containing an Azure DevOps PAT with the `Marketplace > Manage` scope. This is a transitional authentication method: Microsoft will retire global PATs on December 1, 2026, so the workflow should be migrated to Microsoft Entra workload identity before then.

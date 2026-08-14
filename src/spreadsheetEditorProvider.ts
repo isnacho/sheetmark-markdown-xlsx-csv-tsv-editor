@@ -1698,7 +1698,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
             }
 
             if (message?.command === 'getSystemDetails') {
-                const ext = vscode.extensions.getExtension('nacho-allendesalazar.sheetmark');
+                const ext = vscode.extensions.getExtension('iggyinc.sheetmark');
                 const editorName = vscode.env.appName || 'VS Code';
                 webview.postMessage({
                     command: 'systemDetails',
@@ -3276,5 +3276,4 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
 
 
 }
-
 

@@ -15,10 +15,10 @@ undo it and go back to the published `muhammad-ahmad.xlsx-viewer` identity.
   | field | upstream (published) | current (local dev) |
   |---|---|---|
   | `name` | `xlsx-viewer` | `sheetmark` |
-  | `publisher` | `muhammad-ahmad` | `nacho-allendesalazar` |
+  | `publisher` | `muhammad-ahmad` | `iggyinc` |
 
   This changes the extension ID from `muhammad-ahmad.xlsx-viewer` to
-  `nacho-allendesalazar.sheetmark`. **`displayName`, and all `xlsxViewer.*` viewTypes /
+  `iggyinc.sheetmark`. **`displayName`, and all `xlsxViewer.*` viewTypes /
   `xlsx-viewer.*` command IDs were left untouched** — those are protected per [CLAUDE.md](../../CLAUDE.md)
   §3 and are unrelated to the publisher/name identity fields.
 - The marketplace version `muhammad-ahmad.xlsx-viewer` was **uninstalled** from Cursor
@@ -26,7 +26,7 @@ undo it and go back to the published `muhammad-ahmad.xlsx-viewer` identity.
   registering the same `viewType` (e.g. `xlsxViewer.xlsx`) conflict.
 - This repo folder is **symlinked** into Cursor's extensions dir:
   ```
-  ~/.cursor/extensions/nacho-allendesalazar.sheetmark-1.0.0 -> <this repo path>
+  ~/.cursor/extensions/iggyinc.sheetmark-1.0.0 -> <this repo path>
   ```
 - `npm run watch` runs continuously in this repo, rebuilding `dist/**` on save. Cursor does **not**
   hot-reload extension code — after a rebuild, run **"Developer: Reload Window"** in the target
@@ -59,15 +59,15 @@ same silent-breakage class as the message-protocol rule in CLAUDE.md §2). Any f
 
 1. Confirm editor + extensions dir: `ls ~/.cursor/extensions` (Cursor) or `~/.vscode/extensions`
    (VS Code). Use the matching CLI (`cursor` or `code`) for install/uninstall commands below.
-2. Confirm `package.json` has `name: "sheetmark"`, `publisher: "nacho-allendesalazar"`,
-   and that both `getExtension('nacho-allendesalazar.sheetmark')` call sites match.
+2. Confirm `package.json` has `name: "sheetmark"`, `publisher: "iggyinc"`,
+   and that both `getExtension('iggyinc.sheetmark')` call sites match.
 3. Uninstall any conflicting marketplace install of the original fork, if present:
    ```bash
    cursor --uninstall-extension muhammad-ahmad.xlsx-viewer
    ```
 4. Symlink this repo in:
    ```bash
-   ln -s "$(pwd)" ~/.cursor/extensions/nacho-allendesalazar.sheetmark-<version>
+   ln -s "$(pwd)" ~/.cursor/extensions/iggyinc.sheetmark-<version>
    ```
    (`<version>` is cosmetic — matches `package.json` `version` by convention, not enforced.)
 5. `npm run compile` once to confirm a clean `dist/`, then `npm run watch` and leave it running.
@@ -81,7 +81,7 @@ same silent-breakage class as the message-protocol rule in CLAUDE.md §2). Any f
 1. Stop the `npm run watch` process (if running).
 2. Remove the symlink (this does **not** touch the repo — it only removes the extensions-dir entry):
    ```bash
-   rm ~/.cursor/extensions/nacho-allendesalazar.sheetmark-1.0.0
+   rm ~/.cursor/extensions/iggyinc.sheetmark-1.0.0
    ```
 3. Revert the identity fields in `package.json`:
    | field | set back to |

@@ -135,8 +135,11 @@ function rebuildBody(card: HTMLElement, opts: FrontmatterCardOptions, editing: b
 }
 
 export function createFrontmatterCardElement(opts: FrontmatterCardOptions): HTMLElement {
+    const wrap = document.createElement('div');
+    wrap.className = 'cm-md-frontmatter-widget';
+
     const card = document.createElement('div');
-    card.className = 'yaml-frontmatter-card cm-md-frontmatter-widget';
+    card.className = 'yaml-frontmatter-card';
     if (opts.collapsed) { card.classList.add('yaml-frontmatter-collapsed'); }
     if (opts.editing) { card.classList.add('yaml-frontmatter-editing'); }
 
@@ -174,5 +177,11 @@ export function createFrontmatterCardElement(opts: FrontmatterCardOptions): HTML
     rebuildBody(card, opts, opts.editing);
     wireCardButtons(card, opts);
 
-    return card;
+    const spacer = document.createElement('div');
+    spacer.className = 'yaml-frontmatter-tail-spacer';
+    spacer.setAttribute('aria-hidden', 'true');
+
+    wrap.appendChild(card);
+    wrap.appendChild(spacer);
+    return wrap;
 }

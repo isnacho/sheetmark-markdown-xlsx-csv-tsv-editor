@@ -616,6 +616,13 @@ body.cm6-preview-active .markdown-preview .yaml-frontmatter-card {
     margin: 0;
 }
 
+/* Measured as part of the block widget root — reserve space below the card border. */
+.markdown-preview .yaml-frontmatter-tail-spacer {
+    display: block;
+    height: 40px;
+    pointer-events: none;
+}
+
 .markdown-preview .yaml-frontmatter-header {
     display: flex;
     align-items: center;

@@ -1,94 +1,53 @@
-# Sheetmark: Markdown, XLSX, CSV & TSV
+# Sheetmark for VS Code
 
-IDEs like VS Code aren't just to write code anymore.
+**Edit Markdown and spreadsheets without leaving VS Code.** Sheetmark gives `.md`, `.xlsx`, `.csv`, and `.tsv` files a polished, visual editing experience—so your specs, notes, data, and code can live in one workspace.
 
-As a PM and designer, VS Code has become the main way I build and collaborate with AI agents. I create PRDs, analyse user feedback, write copy... and Markdown docs and spreadsheets are as much a part of this work as code is.
+[Install from the VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=iggyinc.sheetmark) · [`code --install-extension iggyinc.sheetmark`](#install)
 
-But previewing and editing those files inside an IDE leaves a lot to be desired, and it was slowing me down.
+## Why Sheetmark?
 
-So I built Sheetmark for VS Code: proper, thoughtfully-designed editing and preview for exactly the files my agents and I are already using.
+As a PM and designer, I increasingly use VS Code as the place where I build with AI. I draft PRDs, analyse user feedback, write product copy, and keep the Markdown docs and spreadsheets that support that work beside the code.
 
-I can't imagine collaborating with AI agents without it now.
+Those files should not mean switching to another app, but the existing extensions fell short. So I built my own.
 
----
+- **Write Markdown visually.** Work directly in a live rendered document, with Markdown syntax appearing only where you are editing.
+- **Use spreadsheets like spreadsheets.** Edit, format, search, sort, filter, and navigate cells in XLSX, CSV, and TSV files.
+- **Feel at home in VS Code.** Sheetmark follows your light, dark, and high-contrast theme and offers configurable toolbars, headers, and density.
 
-## Markdown editing & preview
+## Markdown, beautifully editable
 
-It's a great Markdown editing experience, inspired by tools like Notion and built around one idea: what you see is what you edit.
+See your document as you write it—not as a wall of markers. Click a heading, paragraph, table, or list to edit it in place; move away and the source syntax fades back into the finished document.
 
-- **Edit right inside the rendered preview.** Click into a table and add a row, tweak a heading and restyle a paragraph.
-- **GitHub-Flavored Markdown.** Tables, task lists, fenced code blocks, and footnotes render the way they do on GitHub.
-- **Other features.** Table-of-contents outline navigation, line numbers on code blocks, one-click copy of the full document as Markdown, and local images and links that just render.
+- **Edit the document, not its markup.** Write, restructure, and format directly in the rendered view.
+- **Keep complex docs readable.** Tables, task lists, callouts, Mermaid diagrams, images, links, code blocks, and footnotes render in context.
+- **Find your way around.** Use the outline panel, word wrap, and optional line numbers in code blocks.
 
-## Spreadsheet editing: XLSX, CSV, TSV
+## Spreadsheets, right inside your IDE
 
-- **One grid, three formats.** XLSX, CSV, and TSV open in the same spreadsheet webview, so muscle memory transfers between them.
-- **Real formatting, not just data entry.** Text and background color, bold/italic/underline/strikethrough, alignment, borders, font family and size, wrapping, format painter, and clear-formatting, all in styled mode.
-- **CSV/TSV get styling too.** Delimited files can't store formatting natively, so styled-mode formatting is kept in a local style layer alongside the file, and can be carried forward when you convert to XLSX.
-- **Cell types beyond plain text.** Checkboxes, dropdowns, star ratings, and dates work as interactive controls across XLSX, CSV, and TSV; XLSX also renders embedded images inline.
-- **Find, sort, filter.** In-grid find, plus per-column sort and filters (contains, equals, starts-with, non-empty, case-sensitive) from the column header's right-click menu, combined across columns.
-- **Convert formats.** Save a CSV, TSV, or XLSX copy of the file in another format straight from the toolbar, without reaching for an external tool.
-- **Version history.** Every autosaved or manual save is archived; preview and roll back to an earlier version from inside the editor.
-- **Handles large files.** Rows are windowed and fetched on demand, so multi-thousand-row sheets scroll smoothly instead of loading everything into memory at once.
-- **Spreadsheet-grade navigation.** Multi-cell and range selection, row/column selection, column resize and auto-fit, and full keyboard navigation.
-- **Plain view when you just want the data.** Drop styling and inspect raw values without visual noise.
+Spreadsheets are a powerful way to collect, organise, and share information. People send feedback, research, content inventories, requirements, and working data in them—and they often arrive as CSV or Excel files.
 
-## Built to feel native
+Sheetmark lets you work with that information without leaving VS Code. Open an XLSX, CSV, or TSV file in one familiar grid, then shape the data and make it easy to use. Their clear structure also makes spreadsheets excellent context for AI when you want an agent to understand or update a dataset.
 
-- **Theme-aware.** Matches your active VS Code light, dark, or high-contrast theme automatically.
-- **Layout is yours to configure.** Toggle sticky toolbars, sticky headers, spacious cells, header rows, and hyperlink previews per format.
+- **Make the important things visible.** Edit cells and apply text and background colours, fonts, alignment, borders, wrapping, format painter, and clear formatting.
+- **Turn rows into useful working data.** Add checkboxes, dropdowns, star ratings, and dates; XLSX files can also display inline images.
+- **Sort, filter, and find the signal.** Search in-grid, then combine per-column filters such as contains, equals, starts with, non-empty, and case-sensitive.
+- **Work at spreadsheet speed.** Select ranges, rows, and columns; resize or auto-fit columns; and use full keyboard navigation—even in multi-thousand-row files.
+- **Keep data flexible and recoverable.** Convert directly between CSV, TSV, and XLSX, and preview or restore a recent version when needed.
 
----
+## Install
 
-## Getting started
-
-**Spreadsheets**
-
-1. Open a `.xlsx`, `.csv`, or `.tsv` file. It opens in the spreadsheet editor by default.
-2. Click a cell to select or edit it directly in plain mode.
-3. Switch to styled mode (CSV/TSV) or stay in it (XLSX), then click **Edit Table** to bring up the formatting toolbar.
-4. Select a range and use the toolbar for color, borders, alignment, wrapping, or fonts.
-5. Right-click a column header to sort or filter it.
-6. Use **Convert** on the toolbar to save a copy in another format.
-7. Open the history icon to preview or restore a previous version.
-
-**Markdown**
-
-1. Open a `.md` file. It opens directly in the live-preview editor, no mode switch needed.
-2. Click anywhere in the rendered view and start typing to edit it directly.
-3. If VS Code opened the file in its plain text editor instead, use **Open in Preview** from the editor title bar or Command Palette to switch to this editor.
-
----
-
-## Installation
-
-Open the Extensions view (`Ctrl+Shift+X` / `Cmd+Shift+X`), search for **Sheetmark**, and click **Install**, or install from the command line:
+Install Sheetmark from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=iggyinc.sheetmark), or run:
 
 ```bash
 code --install-extension iggyinc.sheetmark
 ```
 
-Or install directly from the [VS Code Marketplace listing](https://marketplace.visualstudio.com/items?itemName=iggyinc.sheetmark).
+Then open an `.xlsx`, `.csv`, `.tsv`, or `.md` file and choose **Open with Sheetmark** if it is not already selected as the editor.
 
----
+## Feedback and support
 
-## Feedback & support
-
-- **In-editor:** use **Help & Feedback** in the toolbar of any supported file type.
-- **GitHub:** file bugs and feature requests at [nachosdesign/sheetmark-markdown-xlsx-csv-tsv-editor](https://github.com/nachosdesign/sheetmark-markdown-xlsx-csv-tsv-editor/issues).
-- **Marketplace review:** a rating on the [Marketplace listing](https://marketplace.visualstudio.com/items?itemName=iggyinc.sheetmark) helps other people find the extension.
+Use **Help & Feedback** in the toolbar of any supported file, or [report a bug / request a feature on GitHub](https://github.com/nachosdesign/sheetmark-markdown-xlsx-csv-tsv-editor/issues). If Sheetmark helps your workflow, a [Marketplace review](https://marketplace.visualstudio.com/items?itemName=iggyinc.sheetmark) makes it easier for others to discover.
 
 ## License
 
-MIT. See [LICENSE](LICENSE): the original 2024 copyright notice is preserved alongside the fork's own. Sheetmark started as a fork of Muhammad Ahmad's [XLSX, CSV, TSV & Markdown Editor](https://github.com/Mahmadabid/XLSX-CSV-TSV-MARKDOWN-Editor-Vscode-Extension), credit to the original project for the foundation.
-
-## Links
-
-- GitHub: [nachosdesign/sheetmark-markdown-xlsx-csv-tsv-editor](https://github.com/nachosdesign/sheetmark-markdown-xlsx-csv-tsv-editor)
-- VS Code Marketplace: [iggyinc.sheetmark](https://marketplace.visualstudio.com/items?itemName=iggyinc.sheetmark)
-
-## Publishing updates
-
-Publishing is automated by GitHub Actions. Bump the version in `package.json`, commit it with the changelog update, then create and publish a GitHub Release from that commit. The release workflow publishes the matching version to the VS Code Marketplace.
-
-The repository requires a `VSCE_PAT` Actions secret containing an Azure DevOps PAT with the `Marketplace > Manage` scope. This is a transitional authentication method: Microsoft will retire global PATs on December 1, 2026, so the workflow should be migrated to Microsoft Entra workload identity before then.
+MIT. See [LICENSE](LICENSE). Sheetmark began as a fork of Muhammad Ahmad’s [XLSX, CSV, TSV & Markdown Editor](https://github.com/Mahmadabid/XLSX-CSV-TSV-MARKDOWN-Editor-Vscode-Extension); the original 2024 copyright notice is preserved alongside the fork’s own.

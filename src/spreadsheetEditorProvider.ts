@@ -1640,7 +1640,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                 try {
                     const associationType = currentFileType === 'csv' || currentFileType === 'tsv' ? currentFileType : 'xlsx';
                     const result = await vscode.window.showWarningMessage(
-                        `Are you sure you want to disable Spreadsheet Viewer for all .${associationType} files? You will be prompted to select a new default editor.`,
+                        `Are you sure you want to disable Sheetmark for all .${associationType} files? You will be prompted to select a new default editor.`,
                         "Yes, Disable",
                         "Cancel"
                     );
@@ -1698,7 +1698,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
             }
 
             if (message?.command === 'getSystemDetails') {
-                const ext = vscode.extensions.getExtension('nacho-allendesalazar.super-file-viewer');
+                const ext = vscode.extensions.getExtension('nacho-allendesalazar.sheetmark');
                 const editorName = vscode.env.appName || 'VS Code';
                 webview.postMessage({
                     command: 'systemDetails',

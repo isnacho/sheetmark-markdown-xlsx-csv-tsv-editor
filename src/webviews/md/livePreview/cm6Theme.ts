@@ -77,6 +77,20 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
         '.cm-activeLineGutter': {
             backgroundColor: 'transparent',
         },
+        '&.cm-focused .cm-activeLineGutter': {
+            color: 'var(--text-color)',
+            fontWeight: '700',
+            position: 'relative',
+        },
+        '&.cm-focused .cm-activeLineGutter::before': {
+            content: '""',
+            position: 'absolute',
+            left: '0',
+            top: '0',
+            bottom: '0',
+            width: '2px',
+            backgroundColor: 'var(--text-color)',
+        },
         '.cm-md-search-match': {
             backgroundColor: 'color-mix(in srgb, var(--warning-color) 35%, transparent)',
             borderRadius: '2px',
@@ -216,7 +230,7 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             maxWidth: 'calc(100% + var(--cm-md-row-grip-gutter, 20px))',
         },
         '.cm-md-table-scroll': {
-            width: 'fit-content',
+            width: '100%',
             maxWidth: '100%',
             boxSizing: 'border-box',
             overflowX: 'hidden',
@@ -243,6 +257,21 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             display: 'table',
             overflow: 'visible',
             lineHeight: '1.5',
+        },
+        '.cm-md-table-widget table.md-table:not(.cm-md-table-resized)': {
+            width: '100%',
+            maxWidth: '100%',
+            tableLayout: 'fixed',
+        },
+        '.cm-md-table-widget table.md-table:not(.cm-md-table-resized) th, .cm-md-table-widget table.md-table:not(.cm-md-table-resized) td': {
+            overflowWrap: 'anywhere',
+            wordWrap: 'break-word',
+            whiteSpace: 'normal',
+        },
+        '.cm-md-table-widget table.md-table.cm-md-table-resized': {
+            width: 'auto',
+            maxWidth: 'none',
+            tableLayout: 'fixed',
         },
         '.cm-md-frontmatter-widget': {
             display: 'block',

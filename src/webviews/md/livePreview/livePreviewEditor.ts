@@ -27,7 +27,7 @@
 // ============================================================================
 
 import { EditorState, Compartment, Annotation, EditorSelection } from '@codemirror/state';
-import { EditorView, keymap, drawSelection, highlightActiveLine, lineNumbers } from '@codemirror/view';
+import { EditorView, keymap, drawSelection, highlightActiveLine, highlightActiveLineGutter, lineNumbers } from '@codemirror/view';
 import { history, historyKeymap, defaultKeymap, undo, redo, undoDepth, redoDepth } from '@codemirror/commands';
 import { markdown } from '@codemirror/lang-markdown';
 import { GFM } from '@lezer/markdown';
@@ -210,6 +210,7 @@ export function mountLivePreview(opts: LivePreviewMountOptions): EditorView {
             history(),
             drawSelection(),
             highlightActiveLine(),
+            highlightActiveLineGutter(),
             markdown({ extensions: GFM }),
             // No `syntaxHighlighting(defaultHighlightStyle)` here — it was
             // unused boilerplate, not a real dependency: no `codeLanguages` is

@@ -114,11 +114,11 @@ md.renderer.rules.table_open = (tokens, idx, options, env, self) => {
     const openTag = defaultTableOpen(tokens, idx, options, env, self);
     // Always emit a <colgroup> (even with no explicit widths) so drag code
     // never has to special-case "no colgroup yet" on a table's first-ever
-    // resize — a <col> with no width style is visually inert under the
-    // default table-layout:auto, so untouched tables render exactly as
-    // before. `colCount`/`widths` are threaded through markdown-it's own
-    // per-render `env` param (not widget state — this rule is a shared
-    // singleton across every TableWidget instance).
+    // resize — a <col> with no width style defers to equal column split under
+    // the default page-width `table-layout: fixed` CSS. `colCount`/`widths`
+    // are threaded through markdown-it's own per-render `env` param (not
+    // widget state — this rule is a shared singleton across every TableWidget
+    // instance).
     const colCount: number = (env as { colCount?: number } | undefined)?.colCount ?? 0;
     const widths: readonly number[] | null = (env as { widths?: readonly number[] } | undefined)?.widths ?? null;
     if (colCount === 0) { return openTag; }
@@ -846,6 +846,11 @@ function widthsEqual(a: readonly number[] | null, b: readonly number[] | null): 
     return a.length === b.length && a.every((v, i) => v === b[i]);
 }
 
+/** True when at least one column has a user-committed pixel width. */
+function hasExplicitColumnWidths(widths: readonly number[]): boolean {
+    return widths.some(w => w > 0);
+}
+
 /**
  * A thin drag strip on a <th>'s right edge — resize handles live only on the
  * header row, one per column (Excel/Sheets/Notion convention: resize from the
@@ -902,6 +907,9 @@ function wireResizeHandle(th: HTMLElement, table: HTMLTableElement, view: Editor
             window.removeEventListener('mousemove', onMove);
             window.removeEventListener('mouseup', onUp);
             const widths = cols.map(c => Math.round(parseFloat(c.style.width) || 0));
+            if (!hasExplicitColumnWidths(widths)) {
+                table.classList.remove('cm-md-table-resized');
+            }
             view.dispatch({ effects: setColumnWidthsEffect.of({ tableIndex, widths }) });
         };
         window.addEventListener('mousemove', onMove);
@@ -909,9 +917,8 @@ function wireResizeHandle(th: HTMLElement, table: HTMLTableElement, view: Editor
     });
 
     // Excel/Sheets/Notion convention: double-click a handle clears that
-    // column's manual override. Under table-layout:fixed this means "share
-    // remaining space with other auto columns," not a true content-measuring
-    // autofit — an honest v1 simplification, not real content measurement.
+    // column's manual override. When no explicit widths remain, revert to the
+    // default page-width equal-column layout.
     handle.addEventListener('dblclick', (event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -921,6 +928,9 @@ function wireResizeHandle(th: HTMLElement, table: HTMLTableElement, view: Editor
         if (!targetCol) { return; }
         targetCol.style.width = '';
         const widths = cols.map(c => Math.round(parseFloat(c.style.width) || 0));
+        if (!hasExplicitColumnWidths(widths)) {
+            table.classList.remove('cm-md-table-resized');
+        }
         view.dispatch({ effects: setColumnWidthsEffect.of({ tableIndex, widths }) });
     });
 }
@@ -1547,7 +1557,7 @@ export class TableWidget extends WidgetType {
         wrap.appendChild(scroll);
 
         const table = scroll.querySelector('table.md-table') as HTMLTableElement | null;
-        if (table && this.widths?.some(w => w > 0)) { table.classList.add('cm-md-table-resized'); }
+        if (table && this.widths && hasExplicitColumnWidths(this.widths)) { table.classList.add('cm-md-table-resized'); }
 
         wrap.querySelectorAll('th, td').forEach((cellEl) => {
             cellEl.addEventListener('mousedown', (event) => {
@@ -1705,7 +1715,13 @@ export const columnWidthsField = StateField.define<Record<number, readonly numbe
     update(value, tr) {
         for (const effect of tr.effects) {
             if (effect.is(setColumnWidthsEffect)) {
-                value = { ...value, [effect.value.tableIndex]: effect.value.widths };
+                const { tableIndex, widths } = effect.value;
+                if (hasExplicitColumnWidths(widths)) {
+                    value = { ...value, [tableIndex]: widths };
+                } else {
+                    const { [tableIndex]: _removed, ...rest } = value;
+                    value = rest;
+                }
             }
         }
         return value;

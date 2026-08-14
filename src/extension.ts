@@ -479,7 +479,7 @@ export function activate(context: vscode.ExtensionContext) {
                         newAssociations[pattern] = viewType;
                     }
                     await cfg.update('workbench.editorAssociations', newAssociations, vscode.ConfigurationTarget.Global);
-                    vscode.window.showInformationMessage(`Spreadsheet Viewer is now set as the default editor for ${label} files.`);
+                    vscode.window.showInformationMessage(`Sheetmark is now set as the default editor for ${label} files.`);
                 } else {
                     const inspect = cfg.inspect('workbench.editorAssociations');
                     const targets: Array<{ target: vscode.ConfigurationTarget; value: any }> = [

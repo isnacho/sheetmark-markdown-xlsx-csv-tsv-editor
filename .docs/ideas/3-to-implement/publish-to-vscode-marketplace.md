@@ -3,7 +3,7 @@ title: Publish extension to VS Code Marketplace
 slug: publish-to-vscode-marketplace
 status: to-implement
 created: 2026-08-12
-updated: 2026-08-13
+updated: 2026-08-14
 ---
 
 # Publish extension to VS Code Marketplace
@@ -41,19 +41,18 @@ fork's own copyright. No other legal blocker found.
 
 **Decisions:**
 
-- **Repo:** `github.com/nacho-allendesalazar/vscode-super-viewer`. Update
+- **Repo:** `github.com/nachosdesign/sheetmark-markdown-xlsx-csv-tsv-editor`. Update
   `package.json` `repository`/`bugs`/`homepage`, README links/badges/install
   command, and the feedback modal's GitHub-issue URL to point here.
 - **Publisher:** `nacho-allendesalazar` (already set in `package.json`).
-  Marketplace publisher account itself still needs to be registered/confirmed
-  (Azure DevOps org + PAT) — not yet done.
-- **Package id (`package.json` "name"):** keep `super-file-viewer` — already
-  rebranded away from `xlsx-viewer`, no reason to rename again and risk churn.
-- **Marketplace displayName:** `Vibe Editor: Markdown, XLSX, CSV & TSV` — a
-  brand ("Vibe", nod to vibe coding) up front for identity, plus the full
-  format list after the colon so Marketplace search still surfaces it for
-  "xlsx", "csv", "tsv", "markdown" queries (the same keyword-forward pattern
-  the current listing already uses, just with a brand added).
+  Marketplace publisher account still needs to be registered — auth via
+  **Microsoft Entra ID** (`vsce publish --azure-credential`), not a global PAT
+  (global PATs retired Dec 1, 2026).
+- **Package id (`package.json` "name"):** `sheetmark` → extension ID
+  `nacho-allendesalazar.sheetmark`.
+- **Marketplace displayName:** `Sheetmark: XLSX, CSV, TSV & Markdown` — short brand
+  **Sheetmark** up front for identity, plus the full format list after the colon so
+  Marketplace search still surfaces it for "xlsx", "csv", "tsv", "markdown" queries.
 - **License:** keep the existing MIT `LICENSE` file and its
   `Copyright (c) 2024 Muhammad Ahmad` line as-is (legally required). Add a
   second line below it: `Copyright (c) 2026 Nacho Allendesalazar Rivas` for
@@ -70,81 +69,81 @@ fork's own copyright. No other legal blocker found.
 
 ## Plan
 
-Target extension ID: **`nacho-allendesalazar.super-file-viewer`**
+Target extension ID: **`nacho-allendesalazar.sheetmark`**
 
 ### Checklist
 
 #### Already done
 
 - [x] Google Form wired to user's form (`own-feedback-google-form` — completed)
-- [x] Feedback GitHub-issue URL → `nacho-allendesalazar/vscode-super-viewer`
+- [x] Feedback GitHub-issue URL → `nachosdesign/sheetmark-markdown-xlsx-csv-tsv-editor`
 - [x] `LICENSE` — second copyright line for Nacho Allendesalazar Rivas (2026)
 - [x] `publisher` in `package.json` → `nacho-allendesalazar`
-- [x] Extension self-lookup → `nacho-allendesalazar.super-file-viewer` (`mdEditorProvider.ts`, `spreadsheetEditorProvider.ts`)
+- [x] Extension self-lookup → `nacho-allendesalazar.sheetmark` (`mdEditorProvider.ts`, `spreadsheetEditorProvider.ts`)
 - [x] Projects modal removed from `src/` (no `projectsModal` references remain)
 
 #### A — Publisher account (manual, blocking publish)
 
-- [ ] Create [Azure DevOps](https://dev.azure.com) org (if needed)
-- [ ] Create [Marketplace publisher](https://marketplace.visualstudio.com/manage/createpublisher) with ID `nacho-allendesalazar`
-- [ ] Generate a Personal Access Token (PAT) with **Marketplace → Manage** scope
-- [ ] `npx @vscode/vsce login nacho-allendesalazar` (store PAT)
+- [ ] Create [Marketplace publisher](https://marketplace.visualstudio.com/manage/createpublisher) with ID `nacho-allendesalazar` (same Microsoft account you'll use to publish)
+- [ ] **Entra ID (recommended):** install [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli), then:
+  ```bash
+  az login
+  npx @vscode/vsce publish --no-dependencies --azure-credential
+  ```
+  See [VS Code publishing docs — secure automated publishing](https://code.visualstudio.com/api/working-with-extensions/publishing-extension#_secure-automated-publishing-to-visual-studio-marketplace).
+- [ ] **Legacy fallback (until Dec 1, 2026):** org-scoped PAT with **Marketplace → Manage** only — **not** a global PAT (`All accessible organizations`). `npx @vscode/vsce login nacho-allendesalazar` then `npx @vscode/vsce publish --no-dependencies`.
 
 #### B — `package.json` metadata
 
 File: [package.json](../../../package.json)
 
-- [ ] `displayName` → `Vibe Editor: Markdown, XLSX, CSV & TSV`
-- [ ] `version` → `1.0.0`
-- [ ] `repository.url` → `https://github.com/nacho-allendesalazar/vscode-super-viewer`
-- [ ] Add `bugs.url` → `https://github.com/nacho-allendesalazar/vscode-super-viewer/issues`
-- [ ] Add `homepage` → `https://github.com/nacho-allendesalazar/vscode-super-viewer`
-- [ ] Review `description` — mention "Vibe Editor" brand if desired (optional polish)
-- [ ] Review `keywords` — add `markdown` if missing; keep format-search terms
-- [ ] Confirm `categories` (`Other` is fine for v1.0.0)
-- [ ] **Do not rename** `name`, `xlsxViewer.*` viewTypes, or `xlsx-viewer.*` command IDs (load-bearing per CLAUDE.md)
+- [x] `displayName` → `Sheetmark: XLSX, CSV, TSV & Markdown`
+- [x] `version` → `1.0.0`
+- [x] `repository.url` → `https://github.com/nachosdesign/sheetmark-markdown-xlsx-csv-tsv-editor`
+- [x] Add `bugs.url` → `https://github.com/nachosdesign/sheetmark-markdown-xlsx-csv-tsv-editor/issues`
+- [x] Add `homepage` → `https://github.com/nachosdesign/sheetmark-markdown-xlsx-csv-tsv-editor`
+- [x] Review `description` — mention "Sheetmark" brand if desired (optional polish)
+- [x] Review `keywords` — add `markdown` if missing; keep format-search terms
+- [x] Confirm `categories` (`Other` is fine for v1.0.0)
+- [x] **Do not rename** `xlsxViewer.*` viewTypes or `xlsx-viewer.*` command IDs (load-bearing per CLAUDE.md)
 
 #### C — README (Marketplace landing page)
 
 File: [README.md](../../../README.md)
 
-- [ ] Update H1/title to match new `displayName` (or close variant)
-- [ ] Install command → `code --install-extension nacho-allendesalazar.super-file-viewer`
-- [ ] Marketplace search hint → new display name
-- [ ] GitHub links → `nacho-allendesalazar/vscode-super-viewer`
-- [ ] Marketplace link → `itemName=nacho-allendesalazar.super-file-viewer` (placeholder URL until live)
-- [ ] Open VSX link → update or remove until published there
-- [ ] Add short attribution note: fork of upstream MIT project; original copyright retained in LICENSE
+- [x] Update H1/title to match new `displayName` (or close variant)
+- [x] Install command → `code --install-extension nacho-allendesalazar.sheetmark`
+- [x] Marketplace search hint → new display name
+- [x] GitHub links → `nachosdesign/sheetmark-markdown-xlsx-csv-tsv-editor`
+- [x] Marketplace link → `itemName=nacho-allendesalazar.sheetmark` (placeholder URL until live)
+- [x] Open VSX link → update or remove until published there
+- [x] Add short attribution note: fork of upstream MIT project; original copyright retained in LICENSE
 
 #### D — Changelog
 
 File: [CHANGELOG.md](../../../CHANGELOG.md)
 
-- [ ] Prepend `## v1.0.0` entry (do not rewrite history below):
-  - Independent republish under `nacho-allendesalazar.super-file-viewer`
-  - Rebrand display name to Vibe Editor
-  - Removed upstream projects modal; feedback → own Google Form + repo
-  - Fork maintained at new GitHub repo
+- [x] Prepend `## v1.0.0` entry (do not rewrite history below):
 
 #### E — Internal docs (non-blocking, same PR ok)
 
-- [ ] [.docs/product/LOCAL-DEV-INSTALL.md](../../../.docs/product/LOCAL-DEV-INSTALL.md) — update marketplace ID references to `nacho-allendesalazar.super-file-viewer`
-- [ ] [.docs/product/PLAN.md](../../../.docs/product/PLAN.md) — mark publisher/rename items done or update table (optional housekeeping)
+- [x] [.docs/product/LOCAL-DEV-INSTALL.md](../../../.docs/product/LOCAL-DEV-INSTALL.md) — update marketplace ID references to `nacho-allendesalazar.sheetmark`
+- [x] [.docs/product/PLAN.md](../../../.docs/product/PLAN.md) — mark publisher/rename items done or update table (optional housekeeping)
 
 #### F — Build & local smoke test (before publish)
 
-- [ ] `npm run compile` — 0 type + 0 lint errors
-- [ ] `npm run package` — production bundle
-- [ ] `npx @vscode/vsce package` — produces `.vsix`
-- [ ] Install `.vsix` locally (`code --install-extension *.vsix` or Cursor equivalent)
-- [ ] Smoke test: open `samples/test.xlsx`, `.csv`, `.tsv`, `.md`
-- [ ] Smoke test: Help & Feedback submit → row in Google Form
-- [ ] Smoke test: GitHub issue button opens correct repo
+- [x] `npm run compile` — 0 type + 0 lint errors
+- [x] `npm run package` — production bundle
+- [x] `npx @vscode/vsce package` — produces `.vsix` (added `.vscodeignore`; `sheetmark-1.0.0.vsix` ~1.75 MB)
+- [x] Install `.vsix` locally (`code --install-extension *.vsix` or Cursor equivalent) — user confirmed works
+- [x] Smoke test: open `samples/test.xlsx`, `.csv`, `.tsv`, `.md`
+- [x] Smoke test: Help & Feedback submit → row in Google Form
+- [x] Smoke test: GitHub issue button opens correct repo
 
 #### G — Publish
 
-- [ ] `npx @vscode/vsce publish` (or `publish -p <pat>` in CI later)
-- [ ] Confirm listing live at `marketplace.visualstudio.com/items?itemName=nacho-allendesalazar.super-file-viewer`
+- [ ] `npx @vscode/vsce publish --no-dependencies --azure-credential` (or legacy PAT login; see section A)
+- [ ] Confirm listing live at `marketplace.visualstudio.com/items?itemName=nacho-allendesalazar.sheetmark`
 - [ ] Update README Marketplace link with live URL if placeholder was used
 
 #### H — Post-publish (optional, out of scope for code PR)
@@ -168,7 +167,19 @@ File: [CHANGELOG.md](../../../CHANGELOG.md)
 
 ## Implementation Log
 
-_Not started._
+**2026-08-14 — Step 1 (B + C + D):** metadata and docs for v1.0.0 marketplace publish.
+
+- `package.json` — `displayName`, `description`, `version` 1.0.0, `repository`/`bugs`/`homepage` → `nachosdesign/sheetmark-markdown-xlsx-csv-tsv-editor`; added `markdown` keyword.
+- `README.md` — Sheetmark title, install command, Marketplace search hint, GitHub/Marketplace links, upstream fork attribution; removed stale Open VSX link.
+- `CHANGELOG.md` — prepended `## v1.0.0` republish entry (upstream history below unchanged).
+
+**2026-08-14 — Rebrand:** display name **Vibe Editor** → **Sheetmark** (`Sheetmark: XLSX, CSV, TSV & Markdown`) in `package.json`, `README.md`, `CHANGELOG.md`, and related docs.
+
+**2026-08-14 — Changelog:** cleared upstream history; fresh `v1.0.0` entry only.
+
+**2026-08-14 — Step 2 (F):** production package + `.vscodeignore` added; `sheetmark-1.0.0.vsix` built; user smoke-tested OK.
+
+**2026-08-14 — Step 3 (G) attempt:** `vsce publish` blocked — no valid Marketplace PAT on this machine (`TF400813` auth error). User must complete publisher login, then re-run publish.
 
 ## QA
 

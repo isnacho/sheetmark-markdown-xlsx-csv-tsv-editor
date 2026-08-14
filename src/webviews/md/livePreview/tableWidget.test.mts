@@ -192,6 +192,13 @@ test('columnWidthsField applies setColumnWidthsEffect per table index without cl
     assert.deepEqual(tr2.state.field(columnWidthsField), { 0: [10], 1: [50, 60] });
 });
 
+test('columnWidthsField drops a table entry when all committed widths are cleared', () => {
+    const state = EditorState.create({ extensions: [columnWidthsField] });
+    const seeded = state.update({ effects: setColumnWidthsEffect.of({ tableIndex: 1, widths: [50, 60] }) });
+    const cleared = seeded.state.update({ effects: setColumnWidthsEffect.of({ tableIndex: 1, widths: [0, 0] }) });
+    assert.deepEqual(cleared.state.field(columnWidthsField), {});
+});
+
 // ===== Right-click table menu: item availability =====
 
 function findItem(groups: readonly TableMenuItem[][], id: TableMenuItem['id']): TableMenuItem {

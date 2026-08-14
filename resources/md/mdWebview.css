@@ -789,7 +789,7 @@ body.cm6-preview-active .markdown-preview .yaml-frontmatter-card {
 /* Tables — rounded corners need a scroll wrapper to clip cell borders
    (border-collapse: collapse ignores border-radius on cells). */
 .cm-md-table-scroll {
-    width: fit-content;
+    width: 100%;
     max-width: 100%;
     box-sizing: border-box;
     margin: 16px 0;
@@ -807,8 +807,9 @@ body.cm6-preview-active .markdown-preview .yaml-frontmatter-card {
 }
 
 .cm-md-table-scroll table.md-table {
-    width: max-content;
-    max-width: none;
+    width: 100%;
+    max-width: 100%;
+    table-layout: fixed;
     margin: 0;
     font-size: 13px;
     line-height: 1.5;
@@ -817,6 +818,13 @@ body.cm6-preview-active .markdown-preview .yaml-frontmatter-card {
     border-radius: 0;
     display: table;
     overflow: visible;
+}
+
+.cm-md-table-scroll table.md-table:not(.cm-md-table-resized) th,
+.cm-md-table-scroll table.md-table:not(.cm-md-table-resized) td {
+    overflow-wrap: anywhere;
+    word-wrap: break-word;
+    white-space: normal;
 }
 
 .cm-md-table-scroll table.md-table th,
@@ -868,8 +876,6 @@ body.preview-edit-mode .markdown-preview .cm-md-table-widget .cm-md-table-scroll
 
 body.preview-edit-mode .markdown-preview .cm-md-table-widget table.md-table {
     display: table;
-    width: max-content;
-    max-width: none;
     margin: 0;
 }
 
@@ -891,6 +897,7 @@ body.preview-edit-mode .markdown-preview .cm-md-table-widget table.md-table td:e
     display: table;
     table-layout: fixed;
     width: auto;
+    max-width: none;
 }
 
 .cm-md-col-resize-handle {

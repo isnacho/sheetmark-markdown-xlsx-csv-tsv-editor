@@ -1,4 +1,4 @@
-# vscode-super-viewer — Development & Publishing Plan
+# Sheetmark — Development & Publishing Plan
 
 > Working plan for taking this project from "downloaded fork" to "my own
 > published, actively-developed VS Code extension."
@@ -10,7 +10,7 @@
 
 A fork of the open-source extension **`xlsx-viewer`** by Muhammad Ahmad
 ([upstream repo](https://github.com/Mahmadabid/XLSX-CSV-TSV-MARKDOWN-Editor-Vscode-Extension)),
-imported at version **1.9.91**. Folder renamed to `vscode-super-viewer`.
+imported at version **1.9.91**. Repo: [nachosdesign/sheetmark-markdown-xlsx-csv-tsv-editor](https://github.com/nachosdesign/sheetmark-markdown-xlsx-csv-tsv-editor).
 
 - ~20k lines of TypeScript.
 - **Two custom editors**:
@@ -65,12 +65,14 @@ republishing **only if** the original copyright + license text are retained.
 ## 4. Phase 1 — Rebrand  ⏳ IN PROGRESS
 
 **Done so far:**
-- `publisher` → `nacho-allendesalazar`, `name` → `super-file-viewer` (in `package.json`).
+- `publisher` → `nacho-allendesalazar`, `name` → `sheetmark` (in `package.json`).
 - Local symlink install documented in [.docs/product/LOCAL-DEV-INSTALL.md](LOCAL-DEV-INSTALL.md).
 
 **Still open** (tracked in [.docs/ideas/3-to-implement/publish-to-vscode-marketplace.md](../ideas/3-to-implement/publish-to-vscode-marketplace.md)):
 - **Marketplace publisher account** — register at
-  <https://marketplace.visualstudio.com/manage> (needs Azure DevOps org + PAT).
+  <https://marketplace.visualstudio.com/manage>. Publish with Entra ID:
+  `az login` then `npx @vscode/vsce publish --azure-credential` (global PATs
+  retired Dec 1, 2026 — see [Microsoft blog](https://devblogs.microsoft.com/devops/retirement-of-global-personal-access-tokens-in-azure-devops/)).
 - Final `displayName`, `version` reset, `repository.url`, icon, README attribution.
 
 **`package.json` fields to change** (defaults proposed):
@@ -78,8 +80,8 @@ republishing **only if** the original copyright + license text are retained.
 | Field | Current | Proposed |
 |-------|---------|----------|
 | `publisher` | `muhammad-ahmad` | `nacho-allendesalazar` ✅ |
-| `name` | `xlsx-viewer` | `super-file-viewer` ✅ |
-| `displayName` | `XLSX, CSV, TSV & Markdown Editor` | _TBD_ |
+| `name` | `xlsx-viewer` | `sheetmark` ✅ |
+| `displayName` | `XLSX, CSV, TSV & Markdown Editor` | `Sheetmark: XLSX, CSV, TSV & Markdown` ✅ |
 | `version` | `1.9.91` | `1.0.0` (reset to signal new lineage) |
 | `repository.url` | upstream | _your repo, or blank for now_ |
 | `icon` | `icon.png` (his) | keep for now, swap later |
@@ -100,8 +102,7 @@ republishing **only if** the original copyright + license text are retained.
 
 ## 6. Phase 3 — Publish (when ready)
 
-- [ ] `npx vsce login <publisher>` with the PAT.
-- [ ] `npx vsce publish` (or publish the `.vsix` via the marketplace UI).
+- [ ] `az login` then `npx @vscode/vsce publish --no-dependencies --azure-credential` (or org-scoped PAT until Dec 2026).
 - [ ] Verify listing, icon, README render on the marketplace.
 
 ---

@@ -484,7 +484,7 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                         break;
 
                     case 'getSystemDetails': {
-                        const ext = vscode.extensions.getExtension('nacho-allendesalazar.super-file-viewer');
+                        const ext = vscode.extensions.getExtension('nacho-allendesalazar.sheetmark');
                         const editorName = vscode.env.appName || 'VS Code';
                         webviewPanel.webview.postMessage({
                             command: 'systemDetails',
@@ -645,7 +645,7 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
             <meta charset="UTF-8">
             <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${cspSource} https: data:; style-src ${cspSource} https: 'unsafe-inline'; font-src ${cspSource} https:; script-src ${cspSource} 'unsafe-inline';">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Markdown Viewer</title>
+            <title>Sheetmark</title>
             <link href="${themeUri}" rel="stylesheet" />
             <link href="${styleUri}" rel="stylesheet" />
             <link href="${highlightUri}" rel="stylesheet" />

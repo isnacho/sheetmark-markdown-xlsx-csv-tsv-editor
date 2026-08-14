@@ -1,4 +1,4 @@
-# XLSX, CSV, TSV & Markdown Editor - VS Code Extension
+# Sheetmark: XLSX, CSV, TSV & Markdown
 
 This open-source extension lets you view and edit XLSX, CSV, TSV, and GitHub Flavored Markdown files directly in VS Code. XLSX, CSV, and TSV now share one unified spreadsheet editor, one webview, and one editing pipeline, so selection, virtualization, sorting, filtering, conversion, settings, and save behavior stay consistent across tabular formats.
 
@@ -87,7 +87,7 @@ Key settings include:
 
 Open VS Code Settings and search for `xlsxViewer` to see all options.
 
-See [CHANGELOG.md](CHANGELOG.md) for release history and fork changes since upstream v1.9.91.
+See [CHANGELOG.md](CHANGELOG.md) for release history.
 
 ---
 
@@ -95,13 +95,13 @@ See [CHANGELOG.md](CHANGELOG.md) for release history and fork changes since upst
 
 1. Open VS Code.
 2. Go to the Extensions Marketplace with `Ctrl+Shift+X`.
-3. Search for `XLSX, CSV, TSV & Markdown Editor`.
+3. Search for `Sheetmark`.
 4. Click **Install**.
 
 You can also install it from the command line:
 
 ```bash
-code --install-extension muhammad-ahmad.xlsx-viewer
+code --install-extension nacho-allendesalazar.sheetmark
 ```
 
 ---
@@ -110,14 +110,13 @@ code --install-extension muhammad-ahmad.xlsx-viewer
 
 - **In-app feedback:** Use the Help & Feedback button in the extension toolbar.
 - **Marketplace review:** Rate the extension on the VS Code Marketplace if it is useful for your workflow.
-- **GitHub:** Submit issues, feature requests, or pull requests at [Mahmadabid/XLSX-CSV-TSV-MARKDOWN-Editor-Vscode-Extension](https://github.com/Mahmadabid/XLSX-CSV-TSV-MARKDOWN-Editor-Vscode-Extension).
+- **GitHub:** Submit issues, feature requests, or pull requests at [nachosdesign/sheetmark-markdown-xlsx-csv-tsv-editor](https://github.com/nachosdesign/sheetmark-markdown-xlsx-csv-tsv-editor).
 
 ## License
 
-This project is licensed under the MIT License.
+This project is licensed under the MIT License. It is a fork of the upstream MIT-licensed [xlsx-viewer](https://github.com/Mahmadabid/XLSX-CSV-TSV-MARKDOWN-Editor-Vscode-Extension) project; the original copyright notice is retained in [LICENSE](LICENSE).
 
 ## Links
 
-- GitHub: [Mahmadabid/XLSX-CSV-TSV-MARKDOWN-Editor-Vscode-Extension](https://github.com/Mahmadabid/XLSX-CSV-TSV-MARKDOWN-Editor-Vscode-Extension)
-- VS Code Marketplace: [Download Extension](https://marketplace.visualstudio.com/items?itemName=muhammad-ahmad.xlsx-viewer)
-- Open VSX: [Open VSX Link](https://open-vsx.org/extension/muhammad-ahmad/xlsx-viewer)
+- GitHub: [nachosdesign/sheetmark-markdown-xlsx-csv-tsv-editor](https://github.com/nachosdesign/sheetmark-markdown-xlsx-csv-tsv-editor)
+- VS Code Marketplace: [Download Extension](https://marketplace.visualstudio.com/items?itemName=nacho-allendesalazar.sheetmark)

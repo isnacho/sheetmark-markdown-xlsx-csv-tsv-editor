@@ -29,7 +29,7 @@ export function createXlsxToolbarButtons(options: CreateXlsxToolbarButtonsOption
             id: 'enableAsDefaultButton',
             icon: Icons.Zap,
             label: 'Set as Default',
-            tooltip: 'Make Spreadsheet Viewer the default editor for XLSX files',
+            tooltip: 'Make Sheetmark the default editor for this file type',
             hidden: true,
             onClick: options.onEnableAsDefault
         },

@@ -14,11 +14,11 @@ undo it and go back to the published `muhammad-ahmad.xlsx-viewer` identity.
 - `package.json` identity was renamed away from the upstream fork's published identity:
   | field | upstream (published) | current (local dev) |
   |---|---|---|
-  | `name` | `xlsx-viewer` | `super-file-viewer` |
+  | `name` | `xlsx-viewer` | `sheetmark` |
   | `publisher` | `muhammad-ahmad` | `nacho-allendesalazar` |
 
   This changes the extension ID from `muhammad-ahmad.xlsx-viewer` to
-  `nacho-allendesalazar.super-file-viewer`. **`displayName`, and all `xlsxViewer.*` viewTypes /
+  `nacho-allendesalazar.sheetmark`. **`displayName`, and all `xlsxViewer.*` viewTypes /
   `xlsx-viewer.*` command IDs were left untouched** — those are protected per [CLAUDE.md](../../CLAUDE.md)
   §3 and are unrelated to the publisher/name identity fields.
 - The marketplace version `muhammad-ahmad.xlsx-viewer` was **uninstalled** from Cursor
@@ -26,7 +26,7 @@ undo it and go back to the published `muhammad-ahmad.xlsx-viewer` identity.
   registering the same `viewType` (e.g. `xlsxViewer.xlsx`) conflict.
 - This repo folder is **symlinked** into Cursor's extensions dir:
   ```
-  ~/.cursor/extensions/nacho-allendesalazar.super-file-viewer-1.9.91 -> <this repo path>
+  ~/.cursor/extensions/nacho-allendesalazar.sheetmark-1.0.0 -> <this repo path>
   ```
 - `npm run watch` runs continuously in this repo, rebuilding `dist/**` on save. Cursor does **not**
   hot-reload extension code — after a rebuild, run **"Developer: Reload Window"** in the target
@@ -59,15 +59,15 @@ same silent-breakage class as the message-protocol rule in CLAUDE.md §2). Any f
 
 1. Confirm editor + extensions dir: `ls ~/.cursor/extensions` (Cursor) or `~/.vscode/extensions`
    (VS Code). Use the matching CLI (`cursor` or `code`) for install/uninstall commands below.
-2. Confirm `package.json` has `name: "super-file-viewer"`, `publisher: "nacho-allendesalazar"`,
-   and that both `getExtension('nacho-allendesalazar.super-file-viewer')` call sites match.
+2. Confirm `package.json` has `name: "sheetmark"`, `publisher: "nacho-allendesalazar"`,
+   and that both `getExtension('nacho-allendesalazar.sheetmark')` call sites match.
 3. Uninstall any conflicting marketplace install of the original fork, if present:
    ```bash
    cursor --uninstall-extension muhammad-ahmad.xlsx-viewer
    ```
 4. Symlink this repo in:
    ```bash
-   ln -s "$(pwd)" ~/.cursor/extensions/nacho-allendesalazar.super-file-viewer-<version>
+   ln -s "$(pwd)" ~/.cursor/extensions/nacho-allendesalazar.sheetmark-<version>
    ```
    (`<version>` is cosmetic — matches `package.json` `version` by convention, not enforced.)
 5. `npm run compile` once to confirm a clean `dist/`, then `npm run watch` and leave it running.
@@ -81,7 +81,7 @@ same silent-breakage class as the message-protocol rule in CLAUDE.md §2). Any f
 1. Stop the `npm run watch` process (if running).
 2. Remove the symlink (this does **not** touch the repo — it only removes the extensions-dir entry):
    ```bash
-   rm ~/.cursor/extensions/nacho-allendesalazar.super-file-viewer-1.9.91
+   rm ~/.cursor/extensions/nacho-allendesalazar.sheetmark-1.0.0
    ```
 3. Revert the identity fields in `package.json`:
    | field | set back to |
@@ -96,9 +96,9 @@ same silent-breakage class as the message-protocol rule in CLAUDE.md §2). Any f
    ```bash
    cursor --install-extension muhammad-ahmad.xlsx-viewer
    ```
-   (from the Marketplace — search "XLSX, CSV, TSV & Markdown Editor" — or a `.vsix` if offline.)
+   (from the Marketplace — search "Sheetmark" — or a `.vsix` if offline.)
 7. Reload window in any open editor to drop the local dev extension and pick up the marketplace one.
 
 **Quick check both states aren't active at once:** `ls ~/.cursor/extensions | grep -i xlsx` /
-`grep -i super-file-viewer` — exactly one of the two extension IDs should be present, never both,
+`grep -i sheetmark` — exactly one of the two extension IDs should be present, never both,
 since they'd fight over the same `xlsxViewer.*` viewTypes.

@@ -97,9 +97,9 @@ let currentSettings = {
     autoSave: false
 };
 
-/** CM6 has no rendered code blocks — honor either line-number setting in the gutter. */
-function wantsLivePreviewLineNumbers(): boolean {
-    return !!(currentSettings.showLineNumbers || currentSettings.livePreviewLineNumbers);
+/** Preview Edit gutter — single user-facing "Line Numbers" toggle (see settings panel). */
+function livePreviewGutterLineNumbersEnabled(): boolean {
+    return !!currentSettings.livePreviewLineNumbers;
 }
 
 let cm6SearchMatches: Cm6Match[] = [];
@@ -431,7 +431,7 @@ function setPreviewEditMode(enabled: boolean) {
                 onScroll: throttledScrollSpy,
                 onModifierClick: handleLivePreviewModifierClick,
                 reveal: currentSettings.livePreviewReveal,
-                showLineNumbers: wantsLivePreviewLineNumbers(),
+                showLineNumbers: livePreviewGutterLineNumbersEnabled(),
                 onSelectionChange: updateStatusInfo,
                 onHistoryChange: updateEditToolbarButtons,
                 columnWidths: currentTableColumnWidths,
@@ -1072,7 +1072,7 @@ function applySettings(settings: any, persist = false) {
     if (isLivePreviewActive()) {
         setLivePreviewReveal(currentSettings.livePreviewReveal);
         setLivePreviewLineWrapping(currentSettings.wordWrap);
-        setLivePreviewLineNumbers(wantsLivePreviewLineNumbers());
+        setLivePreviewLineNumbers(livePreviewGutterLineNumbersEnabled());
     }
 
     document.body.classList.toggle('cm6-word-wrap', isLivePreviewActive() && currentSettings.wordWrap);
@@ -1092,19 +1092,17 @@ function applySettings(settings: any, persist = false) {
     const chkShowOutline = $('chkShowOutline') as HTMLInputElement;
     const chkShowLineNumbers = $('chkShowLineNumbers') as HTMLInputElement;
     const chkLivePreviewReveal = $('chkLivePreviewReveal') as HTMLInputElement;
-    const chkLivePreviewLineNumbers = $('chkLivePreviewLineNumbers') as HTMLInputElement;
     const chkAutoSave = $('chkAutoSave') as HTMLInputElement;
 
     if (chkWordWrap) {chkWordWrap.checked = currentSettings.wordWrap;}
     if (chkStickyToolbar) {chkStickyToolbar.checked = currentSettings.stickyToolbar;}
     if (chkShowOutline) {chkShowOutline.checked = currentSettings.showOutline;}
-    if (chkShowLineNumbers) {chkShowLineNumbers.checked = currentSettings.showLineNumbers;}
+    if (chkShowLineNumbers) {chkShowLineNumbers.checked = livePreviewGutterLineNumbersEnabled();}
     if (chkLivePreviewReveal) {chkLivePreviewReveal.checked = currentSettings.livePreviewReveal;}
-    if (chkLivePreviewLineNumbers) {chkLivePreviewLineNumbers.checked = currentSettings.livePreviewLineNumbers;}
     if (chkAutoSave) {chkAutoSave.checked = currentSettings.autoSave;}
 
     // Line numbers
-    document.body.classList.toggle('show-line-numbers', !!currentSettings.showLineNumbers);
+    document.body.classList.toggle('show-line-numbers', livePreviewGutterLineNumbersEnabled());
 
     const tocPanel = $('tocPanel');
     if (container) {container.classList.toggle('toc-open', !!currentSettings.showOutline);}
@@ -1155,9 +1153,10 @@ function initializeSettings() {
         {
             id: 'chkShowLineNumbers',
             label: 'Line Numbers',
-            tooltip: 'Show line numbers in fenced code block previews.',
-            defaultValue: currentSettings.showLineNumbers,
+            tooltip: 'Show line numbers in the editor gutter. Click a number to select that line.',
+            defaultValue: livePreviewGutterLineNumbersEnabled(),
             onChange: (val: boolean) => {
+                currentSettings.livePreviewLineNumbers = val;
                 currentSettings.showLineNumbers = val;
                 applySettings(currentSettings, true);
             }
@@ -1169,16 +1168,6 @@ function initializeSettings() {
             defaultValue: currentSettings.livePreviewReveal,
             onChange: (val: boolean) => {
                 currentSettings.livePreviewReveal = val;
-                applySettings(currentSettings, true);
-            }
-        },
-        {
-            id: 'chkLivePreviewLineNumbers',
-            label: 'Line Numbers (Preview Edit)',
-            tooltip: 'In Preview Edit mode, show line numbers in the editor gutter. Click a number to select that line.',
-            defaultValue: currentSettings.livePreviewLineNumbers,
-            onChange: (val: boolean) => {
-                currentSettings.livePreviewLineNumbers = val;
                 applySettings(currentSettings, true);
             }
         },

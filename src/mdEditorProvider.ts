@@ -9,6 +9,21 @@ import { MermaidPreviewModeStorageService } from './shared/mermaidPreviewModeSto
 import { CalloutDefaultTypeStorageService } from './shared/calloutDefaultTypeStorageService';
 import { createExternalFileChangeWatcher } from './shared/fileExternalChangeWatcher';
 import { migrateFileUriState } from './shared/migrateFileUriState';
+import { disableOpenByDefault, enableOpenByDefault, getEditorAssociations, isSheetmarkDefaultEditor } from './shared/editorAssociationUtils';
+
+function buildMdWebviewSettings() {
+    const cfg = vscode.workspace.getConfiguration('xlsxViewer');
+    return {
+        stickyToolbar: cfg.get('md.stickyToolbar', true),
+        wordWrap: cfg.get('md.wordWrap', true),
+        showOutline: cfg.get('md.showOutline', true),
+        showLineNumbers: cfg.get('md.showLineNumbers', true),
+        livePreviewReveal: cfg.get('md.livePreviewReveal', true),
+        livePreviewLineNumbers: cfg.get('md.livePreviewLineNumbers', false),
+        autoSave: cfg.get('md.autoSave', false),
+        isDefaultEditor: isSheetmarkDefaultEditor(getEditorAssociations(), 'md'),
+    };
+}
 
 export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
     private readonly tableColumnWidthStorage: TableColumnWidthStorageService;
@@ -166,17 +181,7 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                             webviewPanel.webview.postMessage(buildInitMarkdownPayload(content));
 
                             // Send settings
-                            const cfg = vscode.workspace.getConfiguration('xlsxViewer');
-                            const settings = {
-                                stickyToolbar: cfg.get('md.stickyToolbar', true),
-                                wordWrap: cfg.get('md.wordWrap', true),
-                                showOutline: cfg.get('md.showOutline', true),
-                                showLineNumbers: cfg.get('md.showLineNumbers', true),
-                                livePreviewReveal: cfg.get('md.livePreviewReveal', true),
-                                livePreviewLineNumbers: cfg.get('md.livePreviewLineNumbers', false),
-                                autoSave: cfg.get('md.autoSave', false)
-                            };
-                            webviewPanel.webview.postMessage({ command: 'initSettings', settings });
+                            webviewPanel.webview.postMessage({ command: 'initSettings', settings: buildMdWebviewSettings() });
 
                             // Send theme
                             webviewPanel.webview.postMessage({
@@ -483,6 +488,34 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                         }
                         break;
 
+                    case 'enableDefaultEditor':
+                    case 'enableAsDefault':
+                        try {
+                            await enableOpenByDefault('md');
+                            webviewPanel.webview.postMessage({ command: 'settingsUpdated', settings: buildMdWebviewSettings() });
+                        } catch (err) {
+                            vscode.window.showErrorMessage(`Error enabling default editor: ${err}`);
+                        }
+                        break;
+
+                    case 'disableDefaultEditor': {
+                        try {
+                            const result = await vscode.window.showWarningMessage(
+                                'Are you sure you want to disable Sheetmark for all .md files? You will be prompted to select a new default editor.',
+                                'Yes, Disable',
+                                'Cancel'
+                            );
+                            if (result === 'Yes, Disable') {
+                                await disableOpenByDefault('md');
+                                await vscode.commands.executeCommand('workbench.action.reopenWithEditor');
+                                webviewPanel.webview.postMessage({ command: 'settingsUpdated', settings: buildMdWebviewSettings() });
+                            }
+                        } catch (err) {
+                            vscode.window.showErrorMessage(`Error disabling editor: ${err}`);
+                        }
+                        break;
+                    }
+
                     case 'getSystemDetails': {
                         const ext = vscode.extensions.getExtension('iggyinc.sheetmark');
                         const editorName = vscode.env.appName || 'VS Code';
@@ -525,19 +558,13 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
 
             // Forward settings changes
             const configChangeDisposable = vscode.workspace.onDidChangeConfiguration(e => {
-                if (e.affectsConfiguration('xlsxViewer.md') || e.affectsConfiguration('xlsxViewer')) {
-                    const cfg = vscode.workspace.getConfiguration('xlsxViewer');
-                    const settings = {
-                        stickyToolbar: cfg.get('md.stickyToolbar', true),
-                        wordWrap: cfg.get('md.wordWrap', true),
-                        showOutline: cfg.get('md.showOutline', true),
-                        showLineNumbers: cfg.get('md.showLineNumbers', true),
-                        livePreviewReveal: cfg.get('md.livePreviewReveal', true),
-                        livePreviewLineNumbers: cfg.get('md.livePreviewLineNumbers', false),
-                        autoSave: cfg.get('md.autoSave', false)
-                    };
+                if (
+                    e.affectsConfiguration('xlsxViewer.md') ||
+                    e.affectsConfiguration('xlsxViewer') ||
+                    e.affectsConfiguration('workbench.editorAssociations')
+                ) {
                     try {
-                        webviewPanel.webview.postMessage({ command: 'settingsUpdated', settings });
+                        webviewPanel.webview.postMessage({ command: 'settingsUpdated', settings: buildMdWebviewSettings() });
                     } catch { }
                 }
             });

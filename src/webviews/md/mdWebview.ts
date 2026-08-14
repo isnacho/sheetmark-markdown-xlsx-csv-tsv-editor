@@ -94,7 +94,8 @@ let currentSettings = {
     showLineNumbers: true,
     livePreviewReveal: true,
     livePreviewLineNumbers: false,
-    autoSave: false
+    autoSave: false,
+    isDefaultEditor: false
 };
 
 /** Preview Edit gutter — single user-facing "Line Numbers" toggle (see settings panel). */
@@ -1093,6 +1094,7 @@ function applySettings(settings: any, persist = false) {
     const chkShowLineNumbers = $('chkShowLineNumbers') as HTMLInputElement;
     const chkLivePreviewReveal = $('chkLivePreviewReveal') as HTMLInputElement;
     const chkAutoSave = $('chkAutoSave') as HTMLInputElement;
+    const chkOpenByDefault = $('chkOpenByDefault') as HTMLInputElement;
 
     if (chkWordWrap) {chkWordWrap.checked = currentSettings.wordWrap;}
     if (chkStickyToolbar) {chkStickyToolbar.checked = currentSettings.stickyToolbar;}
@@ -1100,6 +1102,7 @@ function applySettings(settings: any, persist = false) {
     if (chkShowLineNumbers) {chkShowLineNumbers.checked = livePreviewGutterLineNumbersEnabled();}
     if (chkLivePreviewReveal) {chkLivePreviewReveal.checked = currentSettings.livePreviewReveal;}
     if (chkAutoSave) {chkAutoSave.checked = currentSettings.autoSave;}
+    if (chkOpenByDefault) {chkOpenByDefault.checked = !!currentSettings.isDefaultEditor;}
 
     // Line numbers
     document.body.classList.toggle('show-line-numbers', livePreviewGutterLineNumbersEnabled());
@@ -1111,6 +1114,7 @@ function applySettings(settings: any, persist = false) {
     if (toolbarManager) {
         const btn = toolbarManager.getButton('toggleTocButton');
         if (btn) {btn.classList.toggle('active', !!currentSettings.showOutline);}
+        toolbarManager.setButtonVisibility('enableAsDefaultButton', currentSettings.isDefaultEditor === false);
     }
 
     if (persist) {
@@ -1120,6 +1124,15 @@ function applySettings(settings: any, persist = false) {
 
 function initializeSettings() {
     const settingsDefs = [
+        {
+            id: 'chkOpenByDefault',
+            label: 'Open .md files with Sheetmark by default',
+            tooltip: 'When enabled, VS Code opens .md files in Sheetmark automatically.',
+            defaultValue: !!currentSettings.isDefaultEditor,
+            onChange: (val: boolean) => {
+                vscode.postMessage({ command: val ? 'enableAsDefault' : 'disableDefaultEditor' });
+            }
+        },
         {
             id: 'chkWordWrap',
             label: 'Word Wrap',
@@ -1461,6 +1474,16 @@ function copyMarkdownToClipboard() {
 
 function buildToolbarButtons(): ToolbarButton[] {
     return [
+        {
+            id: 'enableAsDefaultButton',
+            icon: Icons.Zap,
+            label: 'Set as Default',
+            tooltip: 'Make Sheetmark the default editor for .md files',
+            hidden: true,
+            onClick: () => {
+                vscode.postMessage({ command: 'enableAsDefault' });
+            }
+        },
         {
             id: 'reloadFromDiskButton',
             icon: Icons.Refresh,

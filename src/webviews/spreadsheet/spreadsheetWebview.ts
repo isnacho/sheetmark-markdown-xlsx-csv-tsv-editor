@@ -215,6 +215,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
     // Plain view mode (removes all XLSX styling)
     let isPlainView = false;
     let isTemporaryStyleFile = false;
+    let currentAssociationFileType = 'xlsx';
     let styleModeRequestPending = false;
     let pendingStyleModeAction: (() => void) | null = null;
 
@@ -7367,6 +7368,12 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
             },
             () => {
                 postSettings();
+            },
+            {
+                fileExtension: currentAssociationFileType,
+                onOpenByDefaultChange: (enabled: boolean) => {
+                    vscode.postMessage({ command: enabled ? 'enableAsDefault' : 'disableDefaultEditor' });
+                }
             }
         );
 
@@ -7648,6 +7655,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
 
             hasVirtualTableInit = true;
             isTemporaryStyleFile = message.fileType === 'csv' || message.fileType === 'tsv';
+            currentAssociationFileType = typeof message.fileType === 'string' ? message.fileType : 'xlsx';
             isPlainView = message.isPlainView !== undefined ? !!message.isPlainView : isTemporaryStyleFile;
             syncPlainViewUiState();
 

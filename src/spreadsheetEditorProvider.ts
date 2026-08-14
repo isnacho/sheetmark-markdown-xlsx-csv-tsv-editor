@@ -10,6 +10,7 @@ import { convertTabularFile, readTabularFile, detectTabularFileType, writeTabula
 import { StyleStorageService } from './shared/styleStorageService';
 import { createExternalFileChangeWatcher } from './shared/fileExternalChangeWatcher';
 import { migrateFileUriState } from './shared/migrateFileUriState';
+import { enableOpenByDefault, disableOpenByDefault, getEditorAssociations, isSheetmarkDefaultEditor } from './shared/editorAssociationUtils';
 
 function borderEditToCssValue(enabled: boolean, style?: string, color?: string): string {
     if (!enabled) {return '';}
@@ -1186,34 +1187,12 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
             settingsScope: SettingsScope;
         };
 
-        const isDefaultEditorAssociationEnabled = (associations: any, fileType: TabularFileType): boolean => {
-            const associationConfig = fileType === 'csv'
-                ? { viewType: 'xlsxViewer.csv', extension: 'csv' }
-                : fileType === 'tsv'
-                    ? { viewType: 'xlsxViewer.tsv', extension: 'tsv' }
-                    : { viewType: 'xlsxViewer.xlsx', extension: 'xlsx' };
-
-            const directPattern = `*.${associationConfig.extension}`;
-            const recursivePattern = `**/*.${associationConfig.extension}`;
-
-            if (!associations) {
-                return false;
-            }
-
-            if (Array.isArray(associations)) {
-                return associations.some((entry: any) =>
-                    entry?.viewType === associationConfig.viewType &&
-                    (entry?.filenamePattern === directPattern || entry?.filenamePattern === recursivePattern)
-                );
-            }
-
-            return associations[directPattern] === associationConfig.viewType || associations[recursivePattern] === associationConfig.viewType;
-        };
+        const getAssociationType = (): 'xlsx' | 'csv' | 'tsv' =>
+            currentFileType === 'csv' || currentFileType === 'tsv' ? currentFileType : 'xlsx';
 
         const getStyledSettings = (): PersistedSpreadsheetSettings => {
             const cfg = vscode.workspace.getConfiguration('xlsxViewer');
-            const globalCfg = vscode.workspace.getConfiguration('workbench');
-            const associations: any = globalCfg.get('editorAssociations');
+            const associations = getEditorAssociations();
             const autoSaveModeSetting = cfg.get<string>('xlsx.autoSaveMode', 'all');
             return {
                 firstRowIsHeader: cfg.get('xlsx.firstRowIsHeader', true),
@@ -1226,15 +1205,14 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                 hyperlinkPreview: cfg.get('xlsx.hyperlinkPreview', true),
                 spaciousCells: cfg.get('xlsx.spaciousCells', false),
                 mergeWarningEnabled: cfg.get('xlsx.mergeWarningEnabled', true),
-                isDefaultEditor: isDefaultEditorAssociationEnabled(associations, 'xlsx'),
+                isDefaultEditor: isSheetmarkDefaultEditor(associations, 'xlsx'),
                 textWrap: cfg.get('xlsx.textWrap', false)
             };
         };
 
         const getPlainSettings = (fileType: TabularFileType): PersistedSpreadsheetSettings => {
             const cfg = vscode.workspace.getConfiguration('xlsxViewer');
-            const globalCfg = vscode.workspace.getConfiguration('workbench');
-            const associations: any = globalCfg.get('editorAssociations');
+            const associations = getEditorAssociations();
 
             if (fileType === 'csv' || fileType === 'tsv') {
                 return {
@@ -1248,7 +1226,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                     hyperlinkPreview: true,
                     spaciousCells: cfg.get(`${fileType}.spaciousCells`, false),
                     mergeWarningEnabled: true,
-                    isDefaultEditor: isDefaultEditorAssociationEnabled(associations, fileType),
+                    isDefaultEditor: isSheetmarkDefaultEditor(associations, fileType),
                     textWrap: cfg.get(`${fileType}.textWrap`, false)
                 };
             }
@@ -1264,7 +1242,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                 hyperlinkPreview: cfg.get('xlsx.hyperlinkPreview', true),
                 spaciousCells: cfg.get('xlsx.spaciousCells', false),
                 mergeWarningEnabled: cfg.get('xlsx.mergeWarningEnabled', true),
-                isDefaultEditor: isDefaultEditorAssociationEnabled(associations, 'xlsx'),
+                isDefaultEditor: isSheetmarkDefaultEditor(associations, 'xlsx'),
                 textWrap: cfg.get('xlsx.textWrap', false)
             };
         };
@@ -1630,15 +1608,15 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
             }
 
             if (message?.command === 'enableDefaultEditor' || message?.command === 'enableAsDefault') {
-                const associationType = currentFileType === 'csv' || currentFileType === 'tsv' ? currentFileType : 'xlsx';
-                await vscode.commands.executeCommand('xlsx-viewer.toggleAssociation', { type: associationType, enable: true });
+                const associationType = getAssociationType();
+                await enableOpenByDefault(associationType);
                 trySendSettings();
                 return;
             }
 
             if (message?.command === 'disableDefaultEditor') {
                 try {
-                    const associationType = currentFileType === 'csv' || currentFileType === 'tsv' ? currentFileType : 'xlsx';
+                    const associationType = getAssociationType();
                     const result = await vscode.window.showWarningMessage(
                         `Are you sure you want to disable Sheetmark for all .${associationType} files? You will be prompted to select a new default editor.`,
                         "Yes, Disable",
@@ -1646,8 +1624,9 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                     );
 
                     if (result === "Yes, Disable") {
-                        await vscode.commands.executeCommand('xlsx-viewer.toggleAssociation', { type: associationType, enable: false });
+                        await disableOpenByDefault(associationType);
                         await vscode.commands.executeCommand('workbench.action.reopenWithEditor');
+                        trySendSettings();
                     }
                 } catch (err) {
                     vscode.window.showErrorMessage(`Error disabling editor: ${err}`);

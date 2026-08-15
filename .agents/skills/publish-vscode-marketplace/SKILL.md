@@ -8,59 +8,96 @@ description: Publish and verify updates for the Sheetmark VS Code extension on t
 Publish the extension ID `iggyinc.sheetmark` from
 `nachosdesign/sheetmark-markdown-xlsx-csv-tsv-editor`.
 
-## Preconditions
+## Standard release flow
 
-- Confirm `package.json` has a new SemVer `version`; the Marketplace rejects a
-  version that is already published.
-- Ensure the intended source is committed and pushed to `main`. Do not publish
-  uncommitted local work.
-- Require the GitHub Actions secret `VSCE_PAT`: an Azure DevOps PAT with the
-  `Marketplace > Manage` scope. Never request or expose its value.
-- Use `.github/workflows/publish-marketplace.yml`, which runs on a published
-  GitHub Release and supports manual dispatch.
+When this skill is invoked to publish or release, own the complete release flow:
+prepare the version and changelog, validate it, commit and push it, publish it,
+then verify it. Do not make the user separately ask for routine steps.
 
-## Publish an update
+### 1. Inspect the release state
 
-1. Inspect the working tree, branch, local version, and published version:
+Inspect the working tree, branch, local version, published version, and commits
+since the last release:
 
-   ```bash
-   git status --short
-   git branch --show-current
-   node -p "require('./package.json').version"
-   npx --yes @vscode/vsce@latest show iggyinc.sheetmark
-   ```
+```bash
+git status --short --branch
+git branch --show-current
+node -p "require('./package.json').version"
+git log --oneline
+npx --yes @vscode/vsce@latest show iggyinc.sheetmark
+```
 
-2. If the local version is newer and `main` is clean and pushed, trigger the
-   workflow. This is a public release action: get explicit user approval when
-   it has not already been given.
+The Marketplace rejects a version that is already published. Never publish
+uncommitted work, and publish only from pushed `main`.
 
-   ```bash
-   gh workflow run "Publish to VS Code Marketplace" \
-     --repo nachosdesign/sheetmark-markdown-xlsx-csv-tsv-editor
-   gh run list \
-     --repo nachosdesign/sheetmark-markdown-xlsx-csv-tsv-editor \
-     --workflow "Publish to VS Code Marketplace" --limit 1
-   ```
+### 2. Confirm release metadata when preparation is needed
 
-   Alternatively, publish a GitHub Release from the update commit; the same
-   workflow runs automatically.
+If the local version is not newer than the Marketplace version, or the
+changelog still has an `Unreleased` section, derive a recommended SemVer bump
+from the changes (patch for fixes, minor for user-facing features, major only
+for breaking changes). Draft the release notes from the commits and propose the
+current date (`YYYY-MM-DD`) as the changelog release date.
 
-3. Watch the resulting run. Treat the version as published only after the job
-   succeeds and its log contains `Published iggyinc.sheetmark v<version>`.
+Before editing release metadata, ask the user to confirm all of the following:
 
-   ```bash
-   gh run watch <run-id> \
-     --repo nachosdesign/sheetmark-markdown-xlsx-csv-tsv-editor \
-     --exit-status
-   ```
+- exact version;
+- changelog release date;
+- release-note summary and scope.
 
-4. Verify with `vsce`, then provide the Marketplace listing:
+Once confirmed, update `package.json` and move the relevant `Unreleased`
+entries under `## v<version> — <date>` in `CHANGELOG.md`. Update the lockfile
+only when its root package metadata intentionally mirrors `package.json`; do
+not make unrelated dependency-lock changes.
 
-   ```bash
-   npx --yes @vscode/vsce@latest show iggyinc.sheetmark
-   ```
+### 3. Validate, commit, and push
 
-   `https://marketplace.visualstudio.com/items?itemName=iggyinc.sheetmark`
+Run the repository validation and review the release diff:
+
+```bash
+git diff --check
+npm run compile
+git diff -- package.json CHANGELOG.md
+```
+
+Commit the release metadata and push it to `main`:
+
+```bash
+git add package.json CHANGELOG.md
+git commit -m "chore: release v<version>"
+git push origin main
+git status --short --branch
+```
+
+### 4. Publish and watch
+
+Require the GitHub Actions secret `VSCE_PAT` (an Azure DevOps PAT with
+`Marketplace > Manage` scope); never request or expose its value. Use
+`.github/workflows/publish-marketplace.yml`, which supports manual dispatch.
+
+Publishing is a public release action. If the user has not explicitly asked to
+publish in this invocation, ask immediately before triggering it. An explicit
+request such as “publish,” “release,” or “trigger it now” is approval; do not
+ask a redundant second time.
+
+```bash
+gh workflow run "Publish to VS Code Marketplace" \
+  --repo nachosdesign/sheetmark-markdown-xlsx-csv-tsv-editor --ref main
+gh run list \
+  --repo nachosdesign/sheetmark-markdown-xlsx-csv-tsv-editor \
+  --workflow "Publish to VS Code Marketplace" --branch main --limit 1
+gh run watch <run-id> \
+  --repo nachosdesign/sheetmark-markdown-xlsx-csv-tsv-editor --exit-status
+```
+
+Treat the version as published only after the run succeeds and its log contains
+`Published iggyinc.sheetmark v<version>`. Then verify with:
+
+```bash
+npx --yes @vscode/vsce@latest show iggyinc.sheetmark
+```
+
+Give the user the Marketplace listing:
+`https://marketplace.visualstudio.com/items?itemName=iggyinc.sheetmark`
 
 ## Troubleshooting
 

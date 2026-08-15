@@ -19,7 +19,7 @@
 // reimplementing it, same reasoning the plan already applied to the slash
 // menu (`@codemirror/autocomplete` over a hand-rolled popup).
 
-import { EditorState, EditorSelection } from '@codemirror/state';
+import { EditorState, EditorSelection, ChangeSet } from '@codemirror/state';
 import type { TransactionSpec } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import type { KeyBinding } from '@codemirror/view';
@@ -61,28 +61,63 @@ export function computeWrapSelection(state: EditorState, before: string, after: 
 
 export function computeToggleLinePrefix(state: EditorState, prefix: string): TransactionSpec {
     const { from, to } = state.selection.main;
-    const firstLine = state.doc.lineAt(from);
-    const lastLine = state.doc.lineAt(to);
-    const lineStart = firstLine.from;
-    const lineEndFix = lastLine.to;
-    const lineContent = state.sliceDoc(lineStart, lineEndFix);
+    const firstLineNum = state.doc.lineAt(from).number;
+    const lastLineNum = state.doc.lineAt(to).number;
 
-    if (lineContent.startsWith(prefix)) {
+    if (firstLineNum === lastLineNum) {
+        const line = state.doc.line(firstLineNum);
+        const lineStart = line.from;
+        const lineEnd = line.to;
+        const lineContent = state.sliceDoc(lineStart, lineEnd);
+
+        if (lineContent.startsWith(prefix)) {
+            return {
+                changes: { from: lineStart, to: lineStart + prefix.length, insert: '' },
+                selection: EditorSelection.range(Math.max(lineStart, from - prefix.length), Math.max(lineStart, to - prefix.length)),
+            };
+        }
+
+        let cleaned = lineContent;
+        if (prefix.startsWith('#')) {
+            cleaned = lineContent.replace(/^#{1,6}\s/, '');
+        }
+        const diff = prefix.length + cleaned.length - lineContent.length;
         return {
-            changes: { from: lineStart, to: lineStart + prefix.length, insert: '' },
-            selection: EditorSelection.range(Math.max(lineStart, from - prefix.length), Math.max(lineStart, to - prefix.length)),
+            changes: { from: lineStart, to: lineEnd, insert: prefix + cleaned },
+            selection: EditorSelection.range(from + diff, to + diff),
         };
     }
 
-    let cleaned = lineContent;
-    if (prefix.startsWith('#')) {
-        cleaned = lineContent.replace(/^#{1,6}\s/, '');
+    const lines: { from: number; to: number; text: string }[] = [];
+    for (let lineNum = firstLineNum; lineNum <= lastLineNum; lineNum++) {
+        const line = state.doc.line(lineNum);
+        lines.push({ from: line.from, to: line.to, text: state.sliceDoc(line.from, line.to) });
     }
-    const diff = prefix.length + cleaned.length - lineContent.length;
-    return {
-        changes: { from: lineStart, to: lineEndFix, insert: prefix + cleaned },
-        selection: EditorSelection.range(from + diff, to + diff),
-    };
+
+    const allHavePrefix = lines.every((line) => line.text.startsWith(prefix));
+    const changes: { from: number; to: number; insert: string }[] = [];
+
+    for (const line of lines) {
+        if (allHavePrefix) {
+            changes.push({ from: line.from, to: line.from + prefix.length, insert: '' });
+            continue;
+        }
+        if (line.text.startsWith(prefix)) {
+            continue;
+        }
+        let cleaned = line.text;
+        if (prefix.startsWith('#')) {
+            cleaned = line.text.replace(/^#{1,6}\s/, '');
+        }
+        changes.push({ from: line.from, to: line.to, insert: prefix + cleaned });
+    }
+
+    if (changes.length === 0) {
+        return { changes: [] };
+    }
+
+    const changeSet = ChangeSet.of(changes, state.doc.length);
+    return { changes, selection: state.selection.map(changeSet) };
 }
 
 export function computeInsertAtCursor(state: EditorState, text: string, cursorOffset?: number): TransactionSpec {
@@ -689,16 +724,112 @@ export function computeTrimTrailingWhitespace(state: EditorState): TransactionSp
     return { changes };
 }
 
-function runJumpToLine(view: EditorView): boolean {
-    const lineCount = view.state.doc.lines;
-    const input = window.prompt(`Go to line (1-${lineCount}):`);
-    if (!input) { return false; }
-    const lineNum = parseInt(input, 10);
-    if (isNaN(lineNum) || lineNum < 1 || lineNum > lineCount) { return false; }
-    const pos = view.state.doc.line(lineNum).from;
-    view.dispatch({
+function promptLineNumber(lineCount: number): Promise<number | null> {
+    return new Promise((resolve) => {
+        const overlay = document.createElement('div');
+        overlay.className = 'feedback-overlay reload-confirm-overlay';
+        const modal = document.createElement('div');
+        modal.className = 'feedback-modal';
+
+        const header = document.createElement('div');
+        header.className = 'feedback-header';
+        const title = document.createElement('h2');
+        title.textContent = 'Go to Line';
+        header.appendChild(title);
+
+        const body = document.createElement('div');
+        body.className = 'feedback-body';
+        body.style.padding = '20px 24px 24px';
+        body.style.display = 'flex';
+        body.style.flexDirection = 'column';
+        body.style.gap = '16px';
+
+        const label = document.createElement('label');
+        label.textContent = `Line number (1–${lineCount})`;
+        label.style.fontSize = '13px';
+        label.style.color = 'var(--text-color)';
+
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.min = '1';
+        input.max = String(lineCount);
+        input.className = 'search-input';
+        input.style.width = '100%';
+        input.style.boxSizing = 'border-box';
+
+        const actions = document.createElement('div');
+        actions.style.display = 'flex';
+        actions.style.justifyContent = 'flex-end';
+        actions.style.gap = '8px';
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.type = 'button';
+        cancelBtn.className = 'reload-confirm-cancel';
+        cancelBtn.textContent = 'Cancel';
+        cancelBtn.style.cssText = 'background:none;border:1px solid var(--border-color);border-radius:6px;color:var(--text-color);font-size:13px;font-weight:500;padding:6px 14px;cursor:pointer;';
+
+        const okBtn = document.createElement('button');
+        okBtn.type = 'button';
+        okBtn.className = 'reload-confirm-ok';
+        okBtn.textContent = 'Go';
+        okBtn.style.cssText = 'background:var(--accent-color);border:none;border-radius:6px;color:var(--contrast-text);font-size:13px;font-weight:600;padding:6px 14px;cursor:pointer;';
+
+        actions.append(cancelBtn, okBtn);
+        body.append(label, input, actions);
+        modal.append(header, body);
+        document.body.append(overlay, modal);
+
+        const finish = (value: number | null) => {
+            overlay.remove();
+            modal.remove();
+            resolve(value);
+        };
+
+        const submit = () => {
+            const lineNum = parseInt(input.value, 10);
+            if (isNaN(lineNum) || lineNum < 1 || lineNum > lineCount) {
+                input.focus();
+                return;
+            }
+            finish(lineNum);
+        };
+
+        overlay.addEventListener('click', () => finish(null));
+        cancelBtn.addEventListener('click', () => finish(null));
+        okBtn.addEventListener('click', submit);
+        input.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                submit();
+            } else if (event.key === 'Escape') {
+                event.preventDefault();
+                finish(null);
+            }
+        });
+
+        requestAnimationFrame(() => {
+            overlay.classList.add('active');
+            modal.classList.add('active');
+            input.focus();
+            input.select();
+        });
+    });
+}
+
+export function computeJumpToLine(state: EditorState, lineNum: number): TransactionSpec {
+    const pos = state.doc.line(lineNum).from;
+    return {
         selection: EditorSelection.cursor(pos),
         effects: EditorView.scrollIntoView(pos, { y: 'center' }),
+    };
+}
+
+function runJumpToLine(view: EditorView): boolean {
+    const lineCount = view.state.doc.lines;
+    void promptLineNumber(lineCount).then((lineNum) => {
+        if (lineNum === null) { return; }
+        view.dispatch(computeJumpToLine(view.state, lineNum));
+        view.focus();
     });
     return true;
 }

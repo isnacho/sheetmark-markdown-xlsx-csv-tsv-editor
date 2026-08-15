@@ -325,6 +325,9 @@ export class BulletMarkerWidget extends WidgetType {
  * [{from:0, to:doc.length}] in tests), returns the decoration set. No EditorView
  * / DOM involved.
  */
+const dimMark = Decoration.mark({ class: 'cm-md-reveal-mark' });
+const hiddenMark = Decoration.replace({});
+
 export function computeRevealDecorations(
     state: EditorState,
     selFrom: number,
@@ -332,8 +335,6 @@ export function computeRevealDecorations(
     visibleRanges: readonly VisibleRange[],
 ): DecorationSet {
     const specs: Spec[] = [];
-    const dimMark = Decoration.mark({ class: 'cm-md-reveal-mark' });
-    const hiddenMark = Decoration.replace({});
 
     const isActive = (from: number, to: number) => {
         // Lezer node ranges are half-open [from, to). A collapsed caret sitting

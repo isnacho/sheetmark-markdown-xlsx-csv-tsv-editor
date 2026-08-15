@@ -14,7 +14,22 @@
 - Markdown: clicking a cell in a second table after editing the first table no longer lands the cursor at stale positions.
 - Markdown: table widget `ResizeObserver`/`MutationObserver` instances are disconnected when the widget is destroyed.
 - Markdown: restoring a version now warns when the file changed on disk externally, instead of silently overwriting.
+- Markdown: initial file read failures show an in-tab error with retry instead of a stuck loading screen.
+- Markdown: Go to Line (Ctrl/Cmd+G) uses an in-webview dialog — `window.prompt` was blocked by the sandbox.
+- Markdown: list/heading/blockquote toggles now apply to every line in a multi-line selection.
+- Markdown: spellcheck context menu and active view are torn down when the live preview unmounts.
 - Markdown tables: fixed bordered outline staying full width after column resize.
+
+### Performance
+
+- Markdown live preview: reduced per-keystroke work (dirty-state checks, debounced search reapply, TOC resize throttling, widget rebuild gating, viewport-scoped spellcheck exclusions).
+- Markdown tables: row/column drag and hover grips are rAF-throttled with cached geometry during drags.
+- Markdown version history: append-only NDJSON snapshots avoid rewriting the full history file on every save.
+
+### Maintenance
+
+- Removed dead markdown scaffolding (redundant edit-mode flags, unused frontmatter render helpers, vestigial KaTeX CDN link).
+- Toolbar icons (`.toggle-button`) use subtler `--text-secondary` at rest and brighten on hover/focus, matching the formatting bar.
 
 ## v1.0.0
 

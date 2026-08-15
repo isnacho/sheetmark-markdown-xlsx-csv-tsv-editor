@@ -53,9 +53,23 @@ function throttleRAF(fn: () => void): () => void {
     };
 }
 
+function throttleRAFEvent(fn: (event: MouseEvent) => void): (event: MouseEvent) => void {
+    let ticking = false;
+    let lastEvent: MouseEvent | null = null;
+    return (event: MouseEvent) => {
+        lastEvent = event;
+        if (!ticking) {
+            ticking = true;
+            requestAnimationFrame(() => {
+                if (lastEvent) { fn(lastEvent); }
+                ticking = false;
+            });
+        }
+    };
+}
+
 // ===== State =====
 let isEditMode = false;
-let isPreviewEditMode = false;
 let isVersionPreviewMode = false;
 let isSaving = false;
 /** Exact text sent with the in-flight `saveMarkdown` — used to stamp `originalContent` on success. */
@@ -156,7 +170,7 @@ function setButtonsEnabled(enabled: boolean) {
 }
 
 function isEditorDirty(): boolean {
-    return getActiveEditorContent() !== originalContent;
+    return currentContent !== originalContent;
 }
 
 function canReloadFromDisk(): boolean {
@@ -379,14 +393,12 @@ function updateVersionPreviewChrome() {
     updateEditToolbarButtons();
 }
 
-function setPreviewEditMode(enabled: boolean) {
-    if (!enabled) { return; }
-    isPreviewEditMode = enabled;
-    isEditMode = enabled;
-    document.body.classList.toggle('edit-mode', enabled);
-    document.body.classList.toggle('preview-edit-mode', enabled);
-    document.body.classList.toggle('cm6-preview-active', enabled);
-    document.body.classList.toggle('cm6-word-wrap', enabled && currentSettings.wordWrap);
+function enterPreviewEditMode() {
+    isEditMode = true;
+    document.body.classList.toggle('edit-mode', true);
+    document.body.classList.toggle('preview-edit-mode', true);
+    document.body.classList.toggle('cm6-preview-active', true);
+    document.body.classList.toggle('cm6-word-wrap', currentSettings.wordWrap);
 
     const saveBtn = $('saveEditsButton');
     const undoBtn = $('undoEditsButton');
@@ -400,64 +412,61 @@ function setPreviewEditMode(enabled: boolean) {
     const redoTarget = (redoBtn?.closest('.tooltip') as HTMLElement | null) || redoBtn;
     const reloadTarget = (reloadBtn?.closest('.tooltip') as HTMLElement | null) || reloadBtn;
 
-    if (saveTarget) {saveTarget.classList.toggle('hidden', !enabled);}
-    if (undoTarget) {undoTarget.classList.toggle('hidden', !enabled);}
-    if (redoTarget) {redoTarget.classList.toggle('hidden', !enabled);}
-    if (reloadTarget) {reloadTarget.classList.toggle('hidden', !enabled);}
+    if (saveTarget) {saveTarget.classList.toggle('hidden', false);}
+    if (undoTarget) {undoTarget.classList.toggle('hidden', false);}
+    if (redoTarget) {redoTarget.classList.toggle('hidden', false);}
+    if (reloadTarget) {reloadTarget.classList.toggle('hidden', false);}
 
     // Show formatting toolbar in preview edit mode
     const fmtToolbar = $('formattingToolbar');
-    if (fmtToolbar) {fmtToolbar.classList.toggle('hidden', !enabled);}
+    if (fmtToolbar) {fmtToolbar.classList.toggle('hidden', false);}
 
-    if (enabled) {
-        originalContent = currentContent;
+    originalContent = currentContent;
 
-        container?.classList.add('preview-edit');
-        container?.classList.remove('preview-left');
+    container?.classList.add('preview-edit');
 
-        if (preview) {
-            preview.contentEditable = 'false';
-            wireImageUriResolver();
-            mountLivePreview({
-                parent: preview,
-                doc: currentContent,
-                lineWrapping: currentSettings.wordWrap,
-                onDocChanged: (doc) => {
-                    if (isVersionPreviewMode) { return; }
-                    currentContent = doc;
-                    updateStatusInfo();
-                    debouncedCm6TocRefresh(doc);
-                    reapplySearch();
-                    scheduleAutosave();
-                    updateEditToolbarButtons();
-                },
-                onScroll: throttledScrollSpy,
-                onModifierClick: handleLivePreviewModifierClick,
-                reveal: currentSettings.livePreviewReveal,
-                showLineNumbers: livePreviewGutterLineNumbersEnabled(),
-                onSelectionChange: updateStatusInfo,
-                onHistoryChange: updateEditToolbarButtons,
-                columnWidths: currentTableColumnWidths,
-                onColumnWidthsChanged: (widths) => {
-                    currentTableColumnWidths = widths;
-                    vscode.postMessage({ command: 'saveTableColumnWidths', widths });
-                },
-                frontmatterCollapsed: frontmatterPanelCollapsed,
-                onFrontmatterCollapsedChanged: (collapsed) => {
-                    persistFrontmatterPanelCollapsed(collapsed);
-                },
-                mermaidPreviewMode,
-                onMermaidPreviewModeChanged: (mode) => {
-                    persistMermaidPreviewMode(mode);
-                },
-                calloutDefaultType,
-                onCalloutDefaultTypeChanged: (type) => {
-                    persistCalloutDefaultType(type);
-                },
-            });
-            refreshCm6Toc(currentContent);
-            focusLivePreview();
-        }
+    if (preview) {
+        preview.contentEditable = 'false';
+        wireImageUriResolver();
+        mountLivePreview({
+            parent: preview,
+            doc: currentContent,
+            lineWrapping: currentSettings.wordWrap,
+            onDocChanged: (doc) => {
+                if (isVersionPreviewMode) { return; }
+                currentContent = doc;
+                updateStatusInfo();
+                debouncedCm6TocRefresh(doc);
+                debouncedReapplySearch();
+                scheduleAutosave();
+                updateEditToolbarButtons();
+            },
+            onScroll: throttledScrollSpy,
+            onModifierClick: handleLivePreviewModifierClick,
+            reveal: currentSettings.livePreviewReveal,
+            showLineNumbers: livePreviewGutterLineNumbersEnabled(),
+            onSelectionChange: updateStatusInfo,
+            onHistoryChange: updateEditToolbarButtons,
+            columnWidths: currentTableColumnWidths,
+            onColumnWidthsChanged: (widths) => {
+                currentTableColumnWidths = widths;
+                vscode.postMessage({ command: 'saveTableColumnWidths', widths });
+            },
+            frontmatterCollapsed: frontmatterPanelCollapsed,
+            onFrontmatterCollapsedChanged: (collapsed) => {
+                persistFrontmatterPanelCollapsed(collapsed);
+            },
+            mermaidPreviewMode,
+            onMermaidPreviewModeChanged: (mode) => {
+                persistMermaidPreviewMode(mode);
+            },
+            calloutDefaultType,
+            onCalloutDefaultTypeChanged: (type) => {
+                persistCalloutDefaultType(type);
+            },
+        });
+        refreshCm6Toc(currentContent);
+        focusLivePreview();
     }
 
     applyToolbarLayout(toolbarManager, {
@@ -523,20 +532,24 @@ function handleLivePreviewModifierClick(pos: number) {
 // ===== Active editor content =====
 // The single reader over the editing surfaces.
 function getActiveEditorContent(): string {
-    if (isPreviewEditMode) {
+    if (isLivePreviewActive()) {
         const cm6 = getLivePreviewContent();
         if (cm6 !== null) {
             return sanitizeMarkdownCopyLinkArtifacts(cm6);
         }
-        return currentContent;
     }
     return currentContent;
 }
 
-function ensurePreviewEditMode() {
-    if (!isPreviewEditMode) {
-        setPreviewEditMode(true);
+function cancelEdit() {
+    currentContent = originalContent;
+    if (isLivePreviewActive()) {
+        setLivePreviewContent(originalContent);
+        refreshCm6Toc(originalContent);
+        reapplySearch();
+        updateStatusInfo();
     }
+    updateEditToolbarButtons();
 }
 
 function ensureVersionPreviewBanner(): HTMLElement {
@@ -633,20 +646,7 @@ function scheduleAutosave() {
     }, 1200);
 }
 
-function cancelEdit() {
-    currentContent = originalContent;
-    if (isPreviewEditMode && isLivePreviewActive()) {
-        setLivePreviewContent(originalContent);
-        refreshCm6Toc(originalContent);
-        reapplySearch();
-        updateStatusInfo();
-    }
-    updateEditToolbarButtons();
-}
-
 // Pushes freshly-read disk content into whichever surface is currently active.
-// isPreviewEditMode implies isEditMode (see setPreviewEditMode), so it must be
-// checked first or Preview Edit gets misrouted into the split-textarea branch below.
 function applyReloadedContent(text: string) {
     currentContent = text;
     originalContent = text;
@@ -723,6 +723,35 @@ function confirmRestoreConflict(): Promise<boolean> {
     );
 }
 
+function showInitialLoadError(message: string): void {
+    const loading = $('loadingIndicator');
+    if (!loading) { return; }
+    loading.style.display = 'flex';
+    loading.style.flexDirection = 'column';
+    loading.style.gap = '12px';
+    loading.replaceChildren();
+
+    const text = document.createElement('p');
+    text.style.margin = '0';
+    text.style.textAlign = 'center';
+    text.style.maxWidth = '420px';
+    text.style.lineHeight = '1.5';
+    text.textContent = message;
+
+    const retryBtn = document.createElement('button');
+    retryBtn.type = 'button';
+    retryBtn.textContent = 'Retry';
+    retryBtn.style.cssText = 'background:var(--accent-color);border:none;border-radius:6px;color:var(--contrast-text);font-size:13px;font-weight:600;padding:6px 14px;cursor:pointer;';
+    retryBtn.addEventListener('click', () => {
+        loading.textContent = 'Loading Markdown...';
+        loading.style.flexDirection = '';
+        loading.style.gap = '';
+        vscode.postMessage({ command: 'webviewReady' });
+    });
+
+    loading.append(text, retryBtn);
+}
+
 // Manual "Reload from disk" toolbar button handler.
 async function requestReloadFromDisk() {
     if (isSaving || isReloadingFromDisk || !isEditMode || !canReloadFromDisk()) {return;}
@@ -737,7 +766,7 @@ async function requestReloadFromDisk() {
 }
 
 function applyFormat(action: string) {
-    if (!isPreviewEditMode || isVersionPreviewMode) {return;}
+    if (!isLivePreviewActive() || isVersionPreviewMode) {return;}
     applyLivePreviewFormat(action);
 }
 
@@ -827,7 +856,7 @@ function showToast(
 
 /** Current cursor position for the active editing surface. null in Reading mode. */
 function getCurrentCursorPosition(): { line: number; col: number } | null {
-    if (isPreviewEditMode) {
+    if (isLivePreviewActive()) {
         return getLivePreviewCursorPosition();
     }
     return null;
@@ -949,6 +978,10 @@ function closeLightbox() {
 // ===== Search in Preview =====
 const debouncedSearch = debounce((query: string) => {
     doSearch(query);
+}, 200);
+
+const debouncedReapplySearch = debounce(() => {
+    reapplySearch();
 }, 200);
 
 function toggleSearchOverlay() {
@@ -1327,7 +1360,7 @@ window.addEventListener('message', (event) => {
             if (typeof m.calloutDefaultType === 'string' && /^[\w-]*$/.test(m.calloutDefaultType)) {
                 calloutDefaultType = m.calloutDefaultType.toLowerCase();
             }
-            if (isPreviewEditMode && isLivePreviewActive()) {
+            if (isLivePreviewActive()) {
                 setLivePreviewMermaidMode(mermaidPreviewMode);
                 setLivePreviewCalloutDefaultType(calloutDefaultType);
             }
@@ -1379,8 +1412,12 @@ window.addEventListener('message', (event) => {
             if (isReloadingFromDisk) {
                 isReloadingFromDisk = false;
                 setButtonsEnabled(true);
+                showToast('Error reloading from disk', undefined, { icon: 'warning' });
+            } else if (!hasEnteredPreviewEdit) {
+                showInitialLoadError(m.message || 'Failed to load Markdown file');
+            } else {
+                showToast(m.message || 'Error reloading from disk', undefined, { icon: 'warning' });
             }
-            showToast('Error reloading from disk', undefined, { icon: 'warning' });
             break;
 
         case 'diskDeletedExternally':
@@ -1405,7 +1442,7 @@ window.addEventListener('message', (event) => {
             applySettings(m.settings, false);
             if (!hasEnteredPreviewEdit) {
                 hasEnteredPreviewEdit = true;
-                setPreviewEditMode(true);
+                enterPreviewEditMode();
             }
             break;
 
@@ -1659,14 +1696,14 @@ function wireResizeHandle(handle: HTMLElement) {
         document.addEventListener('mouseup', onMouseUp);
     }
 
-    function onMouseMove(e: MouseEvent) {
+    const onMouseMove = throttleRAFEvent((e: MouseEvent) => {
         const dx = e.clientX - startX;
         const container = $('markdownContainer');
         if (!container) {return;}
 
         const newWidth = Math.max(120, Math.min(500, startLeftWidth + dx));
         container.style.setProperty('--toc-width', newWidth + 'px');
-    }
+    });
 
     function onMouseUp() {
         document.body.classList.remove('resizing');

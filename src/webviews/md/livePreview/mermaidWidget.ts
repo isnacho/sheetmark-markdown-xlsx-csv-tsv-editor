@@ -213,7 +213,10 @@ function buildFromState(state: EditorState): DecorationSet {
 
 export const mermaidWidgetField = StateField.define<DecorationSet>({
     create: (state) => buildFromState(state),
-    update(_value, tr) {
+    update(value, tr) {
+        if (!tr.docChanged && !tr.effects.some((effect) => effect.is(setMermaidPreviewModeEffect))) {
+            return value;
+        }
         return buildFromState(tr.state);
     },
     provide: (f) => EditorView.decorations.from(f),

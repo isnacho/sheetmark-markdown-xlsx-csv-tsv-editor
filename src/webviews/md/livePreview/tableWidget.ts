@@ -1050,6 +1050,49 @@ function wireTableScrollUI(scroll: HTMLElement): void {
     tableScrollUIByElement.set(scroll, { ro, mo, onScroll });
 }
 
+function throttleRAFEvent(fn: (event: MouseEvent) => void): (event: MouseEvent) => void {
+    let ticking = false;
+    let lastEvent: MouseEvent | null = null;
+    return (event: MouseEvent) => {
+        lastEvent = event;
+        if (!ticking) {
+            ticking = true;
+            requestAnimationFrame(() => {
+                if (lastEvent) { fn(lastEvent); }
+                ticking = false;
+            });
+        }
+    };
+}
+
+interface RowRect {
+    index: number;
+    top: number;
+    bottom: number;
+}
+
+function collectRowRects(wrap: HTMLElement): RowRect[] {
+    const rows = wrap.querySelectorAll('tbody tr');
+    return Array.from(rows).map((tr, index) => {
+        const rect = (tr as HTMLElement).getBoundingClientRect();
+        return { index, top: rect.top, bottom: rect.bottom };
+    });
+}
+
+interface ColRect {
+    index: number;
+    left: number;
+    right: number;
+}
+
+function collectColRects(wrap: HTMLElement): ColRect[] {
+    const ths = wrap.querySelectorAll('thead th');
+    return Array.from(ths).map((th, index) => {
+        const rect = (th as HTMLElement).getBoundingClientRect();
+        return { index, left: rect.left, right: rect.right };
+    });
+}
+
 /** One shared row/column grip pair per table — positioned on wrap mousemove. */
 function wireTableDragUI(
     wrap: HTMLElement,
@@ -1110,7 +1153,7 @@ function wireTableDragUI(
         }
     };
 
-    wrap.addEventListener('mousemove', (event) => {
+    wrap.addEventListener('mousemove', throttleRAFEvent((event) => {
         if (rowDragging || colDragging) { return; }
 
         const row = bodyRowAtY(wrap, event.clientY);
@@ -1130,7 +1173,7 @@ function wireTableDragUI(
         } else {
             hideColHandle();
         }
-    });
+    }));
 
     colHandle.addEventListener('mouseenter', () => {
         if (colTarget) {
@@ -1179,30 +1222,33 @@ function wireTableDragUI(
         wrap.classList.add('cm-md-table-dragging');
         rowHandle.classList.add('cm-md-drag-grip-visible');
         let pendingToBodyIdx = fromBodyIdx;
+        let cachedRowRects = collectRowRects(wrap);
+        const refreshRowRects = () => { cachedRowRects = collectRowRects(wrap); };
+        scrollEl?.addEventListener('scroll', refreshRowRects, { passive: true });
 
-        const onMove = (moveEvent: MouseEvent) => {
+        const onMove = throttleRAFEvent((moveEvent: MouseEvent) => {
             const row = bodyRowAtY(wrap, moveEvent.clientY);
             if (row) { positionRowHandle(row.tr); }
-            const rows = wrap.querySelectorAll('tbody tr');
             const wrapRect = wrap.getBoundingClientRect();
             let targetIdx = fromBodyIdx;
-            for (let i = 0; i < rows.length; i++) {
-                const rect = (rows[i] as HTMLElement).getBoundingClientRect();
-                const mid = (rect.top + rect.bottom) / 2;
-                if (moveEvent.clientY < mid) {
-                    targetIdx = i;
-                    insertionLine.style.top = `${rect.top - wrapRect.top}px`;
+            const clientY = moveEvent.clientY;
+            for (const rowRect of cachedRowRects) {
+                const mid = (rowRect.top + rowRect.bottom) / 2;
+                if (clientY < mid) {
+                    targetIdx = rowRect.index;
+                    insertionLine.style.top = `${rowRect.top - wrapRect.top}px`;
                     break;
                 }
-                targetIdx = i + 1;
-                insertionLine.style.top = `${rect.bottom - wrapRect.top}px`;
+                targetIdx = rowRect.index + 1;
+                insertionLine.style.top = `${rowRect.bottom - wrapRect.top}px`;
             }
             pendingToBodyIdx = targetIdx;
-        };
+        });
 
         const onUp = () => {
             window.removeEventListener('mousemove', onMove);
             window.removeEventListener('mouseup', onUp);
+            scrollEl?.removeEventListener('scroll', refreshRowRects);
             insertionLine.style.display = 'none';
             rowDragging = false;
             wrap.classList.remove('cm-md-table-dragging');
@@ -1236,31 +1282,34 @@ function wireTableDragUI(
         wrap.classList.add('cm-md-table-dragging');
         colHandle.classList.add('cm-md-drag-grip-visible');
         let pendingToCol = col;
+        let cachedColRects = collectColRects(wrap);
+        const refreshColRects = () => { cachedColRects = collectColRects(wrap); };
+        scrollEl?.addEventListener('scroll', refreshColRects, { passive: true });
 
-        const onMove = (moveEvent: MouseEvent) => {
+        const onMove = throttleRAFEvent((moveEvent: MouseEvent) => {
             const headerCol = headerColAtX(wrap, moveEvent.clientX);
             if (headerCol) { positionColHandle(headerCol.th); }
             syncColInsertionLineHeight(insertionLine, wrap);
-            const ths = wrap.querySelectorAll('thead th');
             const wrapRect = wrap.getBoundingClientRect();
             let targetCol = col;
-            for (let i = 0; i < ths.length; i++) {
-                const rect = (ths[i] as HTMLElement).getBoundingClientRect();
-                const mid = (rect.left + rect.right) / 2;
-                if (moveEvent.clientX < mid) {
-                    targetCol = i;
-                    insertionLine.style.left = `${rect.left - wrapRect.left}px`;
+            const clientX = moveEvent.clientX;
+            for (const colRect of cachedColRects) {
+                const mid = (colRect.left + colRect.right) / 2;
+                if (clientX < mid) {
+                    targetCol = colRect.index;
+                    insertionLine.style.left = `${colRect.left - wrapRect.left}px`;
                     break;
                 }
-                targetCol = i + 1;
-                insertionLine.style.left = `${rect.right - wrapRect.left}px`;
+                targetCol = colRect.index + 1;
+                insertionLine.style.left = `${colRect.right - wrapRect.left}px`;
             }
             pendingToCol = targetCol;
-        };
+        });
 
         const onUp = () => {
             window.removeEventListener('mousemove', onMove);
             window.removeEventListener('mouseup', onUp);
+            scrollEl?.removeEventListener('scroll', refreshColRects);
             insertionLine.style.display = 'none';
             colDragging = false;
             wrap.classList.remove('cm-md-table-dragging');

@@ -96,7 +96,7 @@ Provider: [mdEditorProvider.ts](../../src/mdEditorProvider.ts)
 | `saveFrontmatterPanelCollapsed` | `collapsed` (boolean) | :326 | :300 |
 | `saveMermaidPreviewMode` | `mode` (`diagram` \| `code`) | :331 | :308 |
 | `saveCalloutDefaultType` | `type` (slug: `[\w-]+`) | :336 | :317 |
-| `enableAsDefault` | — | md settings `chkOpenByDefault` | `enableDefaultEditor` / `enableAsDefault` case |
+| `enableAsDefault` | — | md settings `chkOpenByDefault` | `enableAsDefault` case |
 | `disableDefaultEditor` | — | md settings `chkOpenByDefault` | `disableDefaultEditor` case |
 | `getSystemDetails` | — | [feedbackModal.ts](../../src/webviews/shared/feedbackModal.ts) | :486 |
 | `submitFeedback` | feedback fields | [feedbackModal.ts](../../src/webviews/shared/feedbackModal.ts) | :499 |
@@ -119,7 +119,7 @@ Provider: [mdEditorProvider.ts](../../src/mdEditorProvider.ts)
 | `diskChangedExternally` | same fields as `initMarkdown` (re-read payload) | watcher `onChange` :601, `requestFreshData` :251 | :1309 |
 | `diskDeletedExternally` | — | watcher `onDelete` :610 | :1374 |
 | `diskMovedExternally` | `fileName`, `documentUri`, `documentDirUri` | `handleMove` :582 | :1380 |
-| `reloadFromDiskError` | `message` | `requestFreshData` catch :255 | :1366 |
+| `reloadFromDiskError` | `message` | `requestFreshData` catch :255, `webviewReady` catch :193 | :1378 |
 | `setTheme` | `kind` | :181, :548 | `ThemeManager`; keyed on `message.type` |
 | `systemDetails` | details | :490 | [feedbackModal.ts](../../src/webviews/shared/feedbackModal.ts) |
 | `feedbackResult` | `ok` | :514, :516 | [feedbackModal.ts](../../src/webviews/shared/feedbackModal.ts) |

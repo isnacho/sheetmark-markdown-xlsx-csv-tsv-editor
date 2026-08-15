@@ -27,6 +27,7 @@
     --text-color: #1d1d1f;
     --text-muted: #86868b;
     --text-faint: #d2d2d7;
+    --toolbar-icon-color: var(--text-muted);
 
     /* Soft, subtle borders */
     --border-color: #d2d2d7;
@@ -511,13 +512,15 @@ body.sticky-toolbar-enabled .toolbar {
     align-items: center;
     gap: 6px;
     background-color: transparent;
-    color: var(--text-color);
-    transition: background-color 0.15s ease;
+    color: var(--toolbar-icon-color);
+    transition: background-color 0.15s ease, color 0.15s ease;
     box-shadow: none;
 }
 
-.toggle-button:hover {
+.toggle-button:hover,
+.toggle-button:focus-visible {
     background-color: var(--hover-bg);
+    color: var(--text-primary);
 }
 
 .toggle-button:active {

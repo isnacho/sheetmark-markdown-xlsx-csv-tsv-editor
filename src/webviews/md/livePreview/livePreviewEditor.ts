@@ -71,7 +71,7 @@ import {
 import { runFormatCommand, livePreviewFormatKeymap, computePasteLink } from './formatCommands';
 import { paragraphNavigationKeymap } from './paragraphNavigation';
 import { applyTableCellInlineFormatAction } from './tableWidget';
-import { spellcheckExtensions, loadSpellDictionary } from './spellcheck';
+import { spellcheckExtensions, loadSpellDictionary, teardownSpellcheck } from './spellcheck';
 
 export interface LivePreviewMountOptions {
     /** Element to mount the editor into (its children are cleared first). */
@@ -273,6 +273,7 @@ export function unmountLivePreview(): void {
         if (parent) { parent.innerHTML = ''; }
         view = null;
     }
+    teardownSpellcheck();
     setFrontmatterCollapsedCallback(undefined);
     setMermaidPreviewModeCallback(undefined);
     setCalloutDefaultTypeCallback(undefined);

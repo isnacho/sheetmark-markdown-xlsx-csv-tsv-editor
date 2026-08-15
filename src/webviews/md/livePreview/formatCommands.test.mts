@@ -32,6 +32,7 @@ import {
     computeTransformCase,
     computeSortSelectedLines,
     computeTrimTrailingWhitespace,
+    computeJumpToLine,
 } from './formatCommands.ts';
 
 function stateFor(doc: string, anchor: number, head = anchor): EditorState {
@@ -70,6 +71,20 @@ test('toggleLinePrefix: removes the prefix when already present', () => {
     const { doc, sel } = apply(state, computeToggleLinePrefix(state, '# '));
     assert.equal(doc, 'Title');
     assert.deepEqual([sel.from, sel.to], [0, 0]);
+});
+
+test('toggleLinePrefix: applies prefix to every line in a multi-line selection', () => {
+    const doc = 'one\ntwo\nthree';
+    const state = stateFor(doc, 0, doc.length);
+    const { doc: next } = apply(state, computeToggleLinePrefix(state, '- '));
+    assert.equal(next, '- one\n- two\n- three');
+});
+
+test('toggleLinePrefix: removes prefix from every line when all selected lines have it', () => {
+    const doc = '> one\n> two';
+    const state = stateFor(doc, 0, doc.length);
+    const { doc: next } = apply(state, computeToggleLinePrefix(state, '> '));
+    assert.equal(next, 'one\ntwo');
 });
 
 test('insertAtCursor: inserts text and places cursor at the given offset', () => {
@@ -515,4 +530,10 @@ test('trimTrailingWhitespace: strips trailing spaces/tabs on every line', () => 
 test('trimTrailingWhitespace: no-op when nothing to trim', () => {
     const state = stateFor('one\ntwo', 0, 0);
     assert.equal(computeTrimTrailingWhitespace(state), null);
+});
+
+test('computeJumpToLine: moves cursor to the requested line', () => {
+    const state = stateFor('one\ntwo\nthree', 0, 0);
+    const { sel } = apply(state, computeJumpToLine(state, 3));
+    assert.equal(sel.from, state.doc.line(3).from);
 });

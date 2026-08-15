@@ -96,10 +96,20 @@ export function setFrontmatterCollapsedCallback(callback: ((collapsed: boolean) 
     onCollapsedChangedCallback = callback;
 }
 
+function frontmatterDocPrefix(state: EditorState): string {
+    const doc = state.doc;
+    for (let n = 2; n <= doc.lines; n++) {
+        if (/^---[ \t]*$/.test(doc.line(n).text)) {
+            return doc.sliceString(0, doc.line(n).to);
+        }
+    }
+    return doc.sliceString(0, Math.min(doc.length, 8192));
+}
+
 function buildFromState(state: EditorState): DecorationSet {
     let data;
     try {
-        data = resolveFrontmatterWidgetData(state.doc.toString());
+        data = resolveFrontmatterWidgetData(frontmatterDocPrefix(state));
     } catch {
         return Decoration.none;
     }
@@ -118,7 +128,13 @@ function buildFromState(state: EditorState): DecorationSet {
 
 export const frontmatterWidgetField = StateField.define<DecorationSet>({
     create: (state) => buildFromState(state),
-    update(_value, tr) {
+    update(value, tr) {
+        const uiToggled = tr.effects.some((effect) =>
+            effect.is(setFrontmatterCollapsedEffect) || effect.is(setFrontmatterEditingEffect),
+        );
+        if (!tr.docChanged && !uiToggled) {
+            return value;
+        }
         return buildFromState(tr.state);
     },
     provide: (f) => EditorView.decorations.from(f),

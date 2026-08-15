@@ -417,9 +417,9 @@ function rowIndexForLine(state: EditorState, grid: readonly CellRange[][], lineN
 }
 
 /** Column-aware cell in a visual grid row (header or body — delimiter excluded). */
-function pickCellInRow(state: EditorState, grid: readonly CellRange[][], rowIndex: number, hintPos: number): CellRange {
+function pickCellInRow(state: EditorState, grid: readonly CellRange[][], rowIndex: number, hintPos: number): CellRange | null {
     const cols = grid[rowIndex];
-    if (!cols || cols.length === 0) { throw new Error('empty table row'); }
+    if (!cols || cols.length === 0) { return null; }
     const hintLine = state.doc.lineAt(hintPos);
     const offsetInHintLine = hintPos - hintLine.from;
     const rowLine = state.doc.lineAt(cols[0].from);
@@ -452,17 +452,20 @@ function computeInsideTableArrow(
     let rowIndex = rowIndexForLine(state, table.grid, line.number);
     if (rowIndex < 0) {
         if (direction === 'down' && table.grid.length > 1) {
-            return selectionSpecForCell(state, pickCellInRow(state, table.grid, 1, pos));
+            const cell = pickCellInRow(state, table.grid, 1, pos);
+            return cell ? selectionSpecForCell(state, cell) : null;
         }
         if (direction === 'up') {
-            return selectionSpecForCell(state, pickCellInRow(state, table.grid, 0, pos));
+            const cell = pickCellInRow(state, table.grid, 0, pos);
+            return cell ? selectionSpecForCell(state, cell) : null;
         }
         return null;
     }
 
     if (direction === 'down') {
         if (rowIndex < table.grid.length - 1) {
-            return selectionSpecForCell(state, pickCellInRow(state, table.grid, rowIndex + 1, pos));
+            const cell = pickCellInRow(state, table.grid, rowIndex + 1, pos);
+            return cell ? selectionSpecForCell(state, cell) : null;
         }
         const nextLineNum = line.number + 1;
         if (nextLineNum > state.doc.lines) { return null; }
@@ -471,7 +474,8 @@ function computeInsideTableArrow(
         return { selection: EditorSelection.cursor(below.from) };
     }
     if (rowIndex > 0) {
-        return selectionSpecForCell(state, pickCellInRow(state, table.grid, rowIndex - 1, pos));
+        const cell = pickCellInRow(state, table.grid, rowIndex - 1, pos);
+        return cell ? selectionSpecForCell(state, cell) : null;
     }
     const prevLineNum = line.number - 1;
     if (prevLineNum < 1) { return null; }
@@ -541,7 +545,7 @@ export function computeTableBoundaryArrowDown(state: EditorState): TransactionSp
     const table = resolveTableAtLine(state, nextLineNum);
     if (!table) { return null; }
     const cell = pickCellInRow(state, table.grid, 0, sel.head);
-    return selectionSpecForCell(state, cell);
+    return cell ? selectionSpecForCell(state, cell) : null;
 }
 
 export function computeTableBoundaryArrowUp(state: EditorState): TransactionSpec | null {
@@ -559,7 +563,7 @@ export function computeTableBoundaryArrowUp(state: EditorState): TransactionSpec
     if (!table) { return null; }
     const lastRow = table.grid.length - 1;
     const cell = pickCellInRow(state, table.grid, lastRow, sel.head);
-    return selectionSpecForCell(state, cell);
+    return cell ? selectionSpecForCell(state, cell) : null;
 }
 
 function buildTableAtomicRanges(state: EditorState): DecorationSet {

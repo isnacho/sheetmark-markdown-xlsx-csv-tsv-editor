@@ -41,7 +41,10 @@ function buildHeadingLineDecorations(state: EditorState): DecorationSet {
 
 export const headingLineDecorationField = StateField.define<DecorationSet>({
     create: (state) => buildHeadingLineDecorations(state),
-    update(_value, tr) {
+    update(value, tr) {
+        if (!tr.docChanged) {
+            return value;
+        }
         return buildHeadingLineDecorations(tr.state);
     },
     provide: (f) => EditorView.decorations.from(f),

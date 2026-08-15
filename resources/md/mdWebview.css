@@ -1477,12 +1477,13 @@ html::-webkit-scrollbar-corner,
     border: none;
     border-radius: 4px;
     background: transparent;
-    color: var(--text-secondary);
+    color: var(--toolbar-icon-color);
     cursor: pointer;
     transition: background 0.15s, color 0.15s;
 }
 
-.fmt-btn:hover {
+.fmt-btn:hover,
+.fmt-btn:focus-visible {
     background: var(--hover-bg);
     color: var(--text-primary);
 }

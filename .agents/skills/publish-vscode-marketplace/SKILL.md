@@ -20,6 +20,7 @@ Inspect the working tree, branch, local version, published version, and commits
 since the last release:
 
 ```bash
+git fetch origin main --tags
 git status --short --branch
 git branch --show-current
 node -p "require('./package.json').version"
@@ -49,26 +50,48 @@ entries under `## v<version> — <date>` in `CHANGELOG.md`. Update the lockfile
 only when its root package metadata intentionally mirrors `package.json`; do
 not make unrelated dependency-lock changes.
 
-### 3. Validate, commit, and push
+### 3. Validate the release and VSIX locally
 
-Run the repository validation and review the release diff:
+Run the repository validation, review the release diff, and package the exact
+VSIX locally before pushing anything:
 
 ```bash
 git diff --check
 npm run compile
 git diff -- package.json CHANGELOG.md
+RELEASE_VSIX_DIR="$(mktemp -d)"
+npx --yes @vscode/vsce@latest package --no-dependencies \
+  --out "$RELEASE_VSIX_DIR/sheetmark.vsix"
+npx --yes @vscode/vsce@latest ls --tree
 ```
 
-Commit the release metadata and push it to `main`:
+Do not push if packaging fails, secret scanning reports a file, or the VSIX
+listing includes development-only directories such as `.agents`, `.codex`,
+`.claude`, `.github`, `.docs`, `src`, or `samples`. Fix `.vscodeignore` and
+repeat the preflight first.
+
+### 4. Commit, push, and tag the exact release source
+
+Commit the release metadata, push it to `main`, then create an annotated tag at
+that same commit. The tag is the permanent record of exactly what shipped:
 
 ```bash
-git add package.json CHANGELOG.md
+git add package.json CHANGELOG.md .vscodeignore
 git commit -m "chore: release v<version>"
 git push origin main
+RELEASE_TAG="v<version>"
+git tag -a "$RELEASE_TAG" -m "Release $RELEASE_TAG"
+git push origin "$RELEASE_TAG"
+RELEASE_SHA="$(git rev-parse "$RELEASE_TAG^{}")"
+test "$RELEASE_SHA" = "$(git rev-parse origin/main)"
 git status --short --branch
 ```
 
-### 4. Publish and watch
+Confirm the tag resolves to the same SHA as `origin/main`. If a release tag
+already exists, never move or recreate it; stop and ask the user how to
+proceed.
+
+### 5. Publish the tag and watch its exact run
 
 Require the GitHub Actions secret `VSCE_PAT` (an Azure DevOps PAT with
 `Marketplace > Manage` scope); never request or expose its value. Use
@@ -81,13 +104,20 @@ ask a redundant second time.
 
 ```bash
 gh workflow run "Publish to VS Code Marketplace" \
-  --repo nachosdesign/sheetmark-markdown-xlsx-csv-tsv-editor --ref main
+  --repo nachosdesign/sheetmark-markdown-xlsx-csv-tsv-editor \
+  --ref "v<version>"
 gh run list \
   --repo nachosdesign/sheetmark-markdown-xlsx-csv-tsv-editor \
-  --workflow "Publish to VS Code Marketplace" --branch main --limit 1
+  --workflow "Publish to VS Code Marketplace" \
+  --event workflow_dispatch --commit "$RELEASE_SHA" --limit 1
 gh run watch <run-id> \
   --repo nachosdesign/sheetmark-markdown-xlsx-csv-tsv-editor --exit-status
 ```
+
+The dispatch response may supply a run URL; otherwise poll the exact
+`workflow_dispatch` + `$RELEASE_SHA` query above until the run appears. Never
+select a run only because it is the most recent one. Verify its `headSha`
+matches `$RELEASE_SHA` before watching it.
 
 Treat the version as published only after the run succeeds and its log contains
 `Published iggyinc.sheetmark v<version>`. Then verify with:
@@ -106,6 +136,9 @@ Give the user the Marketplace listing:
   paste it into chat.
 - **`vsce show` reports the old version:** inspect the successful Actions log
   first. The public Marketplace cache can take several minutes to refresh.
+- **Secret scanner blocks packaging:** run the local VSIX preflight, inspect
+  `vsce ls --tree`, then exclude the flagged development-only files in
+  `.vscodeignore`; do not disable the scanner.
 - **Token setup:** Azure DevOps, not Azure Portal, creates PATs. Use
   `https://dev.azure.com/<organization>/_usersSettings/tokens`, then choose
   Custom scopes and `Marketplace > Manage`.

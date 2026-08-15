@@ -3,6 +3,8 @@
 .git/**
 .github/**
 .claude/**
+.codex/**
+.agents/**
 .docs/**
 samples/**
 src/**

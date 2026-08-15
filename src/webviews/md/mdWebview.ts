@@ -676,12 +676,12 @@ function confirmModal(title: string, message: string, confirmLabel: string): Pro
                 <h2>${escapeHtmlAttr(title)}</h2>
             </div>
             <div class="feedback-body" style="padding: 20px 24px 24px 24px; gap: 20px;">
-                <p style="margin: 0; font-size: 13.5px; color: var(--text-color); line-height: 1.5;">
+                <p style="margin: 0; font-size: 13.5px; color: var(--color-text-primary); line-height: 1.5;">
                     ${escapeHtmlAttr(message)}
                 </p>
                 <div style="display: flex; justify-content: flex-end; gap: 8px;">
-                    <button class="reload-confirm-cancel" type="button" style="background: none; border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-color); font-size: 13px; font-weight: 500; padding: 6px 14px; cursor: pointer;">Cancel</button>
-                    <button class="reload-confirm-ok" type="button" style="background: var(--warning-color); border: none; border-radius: 6px; color: var(--contrast-text); font-size: 13px; font-weight: 600; padding: 6px 14px; cursor: pointer;">${escapeHtmlAttr(confirmLabel)}</button>
+                    <button class="reload-confirm-cancel" type="button" style="background: none; border: 1px solid var(--color-border-default); border-radius: 6px; color: var(--color-text-primary); font-size: 13px; font-weight: 500; padding: 6px 14px; cursor: pointer;">Cancel</button>
+                    <button class="reload-confirm-ok" type="button" style="background: var(--color-status-warning); border: none; border-radius: 6px; color: var(--color-text-on-action); font-size: 13px; font-weight: 600; padding: 6px 14px; cursor: pointer;">${escapeHtmlAttr(confirmLabel)}</button>
                 </div>
             </div>
         `;
@@ -741,7 +741,7 @@ function showInitialLoadError(message: string): void {
     const retryBtn = document.createElement('button');
     retryBtn.type = 'button';
     retryBtn.textContent = 'Retry';
-    retryBtn.style.cssText = 'background:var(--accent-color);border:none;border-radius:6px;color:var(--contrast-text);font-size:13px;font-weight:600;padding:6px 14px;cursor:pointer;';
+    retryBtn.style.cssText = 'background:var(--color-action);border:none;border-radius:6px;color:var(--color-text-on-action);font-size:13px;font-weight:600;padding:6px 14px;cursor:pointer;';
     retryBtn.addEventListener('click', () => {
         loading.textContent = 'Loading Markdown...';
         loading.style.flexDirection = '';
@@ -854,7 +854,7 @@ function showToast(
     }
 }
 
-/** Current cursor position for the active editing surface. null in Reading mode. */
+/** Current cursor position in CM6. null when live preview is not mounted. */
 function getCurrentCursorPosition(): { line: number; col: number } | null {
     if (isLivePreviewActive()) {
         return getLivePreviewCursorPosition();

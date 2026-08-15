@@ -747,7 +747,7 @@ function promptLineNumber(lineCount: number): Promise<number | null> {
         const label = document.createElement('label');
         label.textContent = `Line number (1–${lineCount})`;
         label.style.fontSize = '13px';
-        label.style.color = 'var(--text-color)';
+        label.style.color = 'var(--color-text-primary)';
 
         const input = document.createElement('input');
         input.type = 'number';
@@ -766,13 +766,13 @@ function promptLineNumber(lineCount: number): Promise<number | null> {
         cancelBtn.type = 'button';
         cancelBtn.className = 'reload-confirm-cancel';
         cancelBtn.textContent = 'Cancel';
-        cancelBtn.style.cssText = 'background:none;border:1px solid var(--border-color);border-radius:6px;color:var(--text-color);font-size:13px;font-weight:500;padding:6px 14px;cursor:pointer;';
+        cancelBtn.style.cssText = 'background:none;border:1px solid var(--color-border-default);border-radius:6px;color:var(--color-text-primary);font-size:13px;font-weight:500;padding:6px 14px;cursor:pointer;';
 
         const okBtn = document.createElement('button');
         okBtn.type = 'button';
         okBtn.className = 'reload-confirm-ok';
         okBtn.textContent = 'Go';
-        okBtn.style.cssText = 'background:var(--accent-color);border:none;border-radius:6px;color:var(--contrast-text);font-size:13px;font-weight:600;padding:6px 14px;cursor:pointer;';
+        okBtn.style.cssText = 'background:var(--color-action);border:none;border-radius:6px;color:var(--color-text-on-action);font-size:13px;font-weight:600;padding:6px 14px;cursor:pointer;';
 
         actions.append(cancelBtn, okBtn);
         body.append(label, input, actions);

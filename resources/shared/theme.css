@@ -22,364 +22,320 @@
     /* Gap between toolbar button boxes */
     --toolbar-gap: 2px;
 
-    /* --- Base Colors (Light Mode: Modern & Refined) --- */
-    --bg-color: #fbfbfd;
-    --text-color: #1d1d1f;
-    --text-muted: #86868b;
-    --text-faint: #d2d2d7;
-    --toolbar-icon-color: var(--text-muted);
+    /* === Layer 1 — Primitives (light) === */
+    --palette-white: #ffffff;
+    --palette-black: #000000;
+    --palette-neutral-50: #fbfbfd;
+    --palette-neutral-100: #f5f5f7;
+    --palette-neutral-200: #e8e8ed;
+    --palette-neutral-300: #d2d2d7;
+    --palette-neutral-400: #c1c1c6;
+    --palette-neutral-500: #a1a1a6;
+    --palette-neutral-600: #86868b;
+    --palette-icon-muted: #86868b;
+    --palette-neutral-900: #1d1d1f;
+    --palette-blue-500: #0071e3;
+    --palette-blue-600: #0077ed;
+    --palette-green-500: #24a148;
+    --palette-amber-500: #da8b00;
+    --palette-red-500: #da1e28;
+    --palette-indigo-500: #0043ce;
+    --palette-toast-bg: rgba(30, 30, 32, 0.96);
+    --palette-toast-text: #f5f5f7;
 
-    /* Soft, subtle borders */
-    --border-color: #d2d2d7;
+    /* === Layer 2 — Semantic colors (light) === */
+    --color-text-primary: var(--palette-neutral-900);
+    --color-text-secondary: var(--palette-neutral-600);
+    --color-text-tertiary: var(--palette-neutral-300);
+    --color-text-on-action: var(--palette-white);
+    --color-text-link: var(--palette-blue-500);
+    --color-text-code: var(--palette-blue-500);
+    --color-toolbar-icon: var(--palette-icon-muted);
 
-    /* Surface colors - Glassmorphism ready */
-    --header-bg: #f5f5f7;
-    --toolbar-bg: #f5f5f7;
-    --row-hover-bg: rgba(0, 113, 227, 0.05);
-    --panel-bg: rgba(255, 255, 255, 0.8);
-    --overlay-bg: rgba(255, 255, 255, 0.95);
+    --color-surface-default: var(--palette-neutral-50);
+    --color-surface-raised: var(--palette-neutral-100);
+    --color-surface-sunken: var(--palette-neutral-100);
+    --color-surface-panel: rgba(255, 255, 255, 0.8);
+    --color-surface-overlay: rgba(255, 255, 255, 0.95);
+    --color-surface-glass: rgba(255, 255, 255, 0.7);
+    --color-surface-glass-strong: rgba(255, 255, 255, 0.85);
+    --color-surface-glass-heavy: rgba(255, 255, 255, 0.95);
 
-    /* Accent: Green */
-    --accent-color: #10b981;
-    --accent-rgb: 16, 185, 129;
-    --accent-bg: rgba(16, 185, 129, 0.1);
-    --accent-hover: #059669;
-    --accent-shadow: 0 4px 12px rgba(16, 185, 129, 0.2);
+    --color-border-default: var(--palette-neutral-300);
+    --color-border-subtle: var(--palette-neutral-300);
 
-    /* Selection - Soft green */
-    --selection-border: #10b981;
-    --selection-bg: rgba(16, 185, 129, 0.15);
+    --color-action: var(--palette-blue-500);
+    --color-action-hover: var(--palette-blue-600);
+    --color-action-subtle: rgba(0, 113, 227, 0.1);
 
-    /* Semantic Colors - Refined Palette */
-    --success-color: #24a148;
-    --success-bg: #e5f6ed;
-    --warning-color: #da8b00;
-    --warning-bg: #fff8e6;
-    --error-color: #da1e28;
-    --error-bg: #fff1f1;
-    --info-color: #0043ce;
-    --info-bg: #edf5ff;
+    --color-selection-border: var(--palette-blue-500);
+    --color-selection-bg: rgba(0, 113, 227, 0.15);
 
-    /* Interactive */
-    --button-bg: #0071e3;
-    --button-text: #ffffff;
-    --button-hover: #0077ed;
-    --header-hover-bg: #e8e8ed;
+    --color-interactive-hover: rgba(0, 0, 0, 0.06);
+    --color-interactive-active: rgba(0, 0, 0, 0.1);
+    --color-interactive-row-hover: rgba(0, 113, 227, 0.05);
 
-    /* Tooltip - Refined */
-    --tooltip-bg: #ffffff;
-    --tooltip-text: #1d1d1f;
-    --tooltip-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+    --color-focus-ring: rgba(0, 113, 227, 0.4);
+    --color-focus-outline: rgba(0, 113, 227, 0.2);
 
-    /* Shadows - Restored for depth */
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
-    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
-    --shadow-lg: 0 12px 24px rgba(0, 0, 0, 0.12);
+    --color-status-success: var(--palette-green-500);
+    --color-status-success-subtle: #e5f6ed;
+    --color-status-warning: var(--palette-amber-500);
+    --color-status-warning-subtle: #fff8e6;
+    --color-status-error: var(--palette-red-500);
+    --color-status-error-subtle: #fff1f1;
+    --color-status-info: var(--palette-indigo-500);
+    --color-status-info-subtle: #edf5ff;
 
-    /* Code */
-    --code-bg: #f5f5f7;
-    --code-text: #0071e3;
-    --pre-bg: #f5f5f7;
-    --pre-border: #d2d2d7;
+    --color-tooltip-bg: var(--palette-white);
+    --color-tooltip-text: var(--palette-neutral-900);
+
+    --color-inverted-bg: var(--palette-black);
+    --color-inverted-text: var(--palette-white);
+    --color-inverted-border: var(--palette-black);
+
+    --color-toast-bg: var(--palette-toast-bg);
+    --color-toast-text: var(--palette-toast-text);
+    --color-toast-icon: var(--palette-neutral-500);
+    --color-toast-border: rgba(255, 255, 255, 0.08);
+
+    --color-scrollbar-thumb: var(--palette-neutral-400);
+    --color-scrollbar-thumb-hover: var(--palette-neutral-500);
+    --color-scrollbar-track: transparent;
+
+    --color-spinner-track: var(--palette-neutral-200);
+    --color-spinner: var(--color-action);
+    --color-resize-handle: var(--palette-blue-500);
+    --color-resize-indicator-bg: var(--palette-blue-500);
+    --color-resize-indicator-text: var(--palette-white);
+    --color-feedback-copy-flash: rgba(36, 161, 72, 0.2);
+
+    --color-progress-start: color-mix(in srgb, var(--color-action) 88%, var(--color-text-primary) 12%);
+    --color-progress-end: var(--color-action-hover);
+    --color-progress-glow: color-mix(in srgb, var(--color-action) 42%, transparent);
 
     /* Surfaces — shared corner radius for cards, code blocks, tables, callouts */
     --surface-radius: 8px;
 
-    /* Misc */
-    --focus-ring: rgba(0, 113, 227, 0.4);
-    --contrast-text: #ffffff;
-
-    /* Glass Effects */
-    --glass-bg: rgba(255, 255, 255, 0.7);
-    --glass-bg-strong: rgba(255, 255, 255, 0.85);
-    --glass-bg-heavy: rgba(255, 255, 255, 0.95);
+    /* Shadows (elevation, not palette) */
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+    --shadow-lg: 0 12px 24px rgba(0, 0, 0, 0.12);
+    --shadow-action: 0 1px 3px rgba(0, 113, 227, 0.2);
+    --shadow-action-hover: 0 4px 8px rgba(0, 113, 227, 0.3);
+    --shadow-tooltip: 0 4px 12px rgba(0, 0, 0, 0.12);
+    --shadow-toast: 0 12px 24px rgba(0, 0, 0, 0.35);
     --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
     --glass-shadow-light: 0 4px 16px rgba(0, 0, 0, 0.04);
-    --glass-border: rgba(255, 255, 255, 0.3);
-
-    /* Scrollbar */
-    --scrollbar-thumb: #c1c1c6;
-    --scrollbar-thumb-hover: #a1a1a6;
-    --scrollbar-track: transparent;
-
-    /* XLSX Specifics */
-    --success-rgb: 36, 161, 72;
-    --spinner-track: #e8e8ed;
-    --spinner-color: var(--accent-color);
-    --resize-handle-hover: #0071e3;
-    --resize-indicator-bg: #0071e3;
-    --resize-indicator-text: #ffffff;
-    --copy-flash-bg: rgba(36, 161, 72, 0.2);
-    --link-color: #0071e3;
-    --focus-outline: rgba(0, 113, 227, 0.2);
-
-    /* Reading progress bar */
-    --progress-bar-start: color-mix(in srgb, var(--accent-color) 88%, var(--text-color) 12%);
-    --progress-bar-end: var(--accent-hover);
-    --progress-bar-glow: color-mix(in srgb, var(--accent-color) 42%, transparent);
-
-    /* Button Shadows */
-    --button-shadow: 0 1px 3px rgba(0, 113, 227, 0.2);
-    --button-shadow-hover: 0 4px 8px rgba(0, 113, 227, 0.3);
-
-    /* Interactive states */
-    --hover-bg: rgba(0, 0, 0, 0.06);
-    --active-bg: rgba(0, 0, 0, 0.1);
-    --text-primary: #1d1d1f;
-    --text-secondary: #86868b;
-
-    /* Inverted */
-    --inverted-bg: #000000;
-    --inverted-text: #ffffff;
-    --inverted-border: #000000;
-
-    /* Toast notifications - deliberately fixed dark regardless of theme (unlike
-       --inverted-*, which flips relative to the ambient theme), so the same
-       identical values are repeated in every theme block below. */
-    --toast-bg: rgba(30, 30, 32, 0.96);
-    --toast-text: #f5f5f7;
-    --toast-icon: #a1a1a6;
-    --toast-border: rgba(255, 255, 255, 0.08);
-    --toast-shadow: 0 12px 24px rgba(0, 0, 0, 0.35);
 }
 
 body.dark-mode {
-    /* --- Base Colors (Dark Mode: Deep Slate) --- */
-    --bg-color: #161617;
-    --text-color: #f5f5f7;
-    --text-muted: #86868b;
-    --text-faint: color-mix(in srgb, var(--text-muted) 55%, var(--bg-color));
+    /* === Layer 1 — Primitives (dark) === */
+    --palette-white: #ffffff;
+    --palette-black: #000000;
+    --palette-neutral-50: #f5f5f7;
+    --palette-neutral-100: #1d1d1f;
+    --palette-neutral-200: #2c2c2e;
+    --palette-neutral-300: #424245;
+    --palette-neutral-400: #424245;
+    --palette-neutral-500: #545458;
+    --palette-neutral-600: #86868b;
+    --palette-icon-muted: #86868b;
+    --palette-neutral-700: #525252;
+    --palette-neutral-800: #3e3e3e;
+    --palette-neutral-900: #f5f5f7;
+    --palette-neutral-950: #161617;
+    --palette-blue-400: #2997ff;
+    --palette-blue-500: #2997ff;
+    --palette-blue-600: #3ea1ff;
+    --palette-green-500: #34c759;
+    --palette-amber-500: #ff9f0a;
+    --palette-red-500: #ff453a;
+    --palette-indigo-500: #0a84ff;
+    --palette-toast-bg: rgba(30, 30, 32, 0.96);
+    --palette-toast-text: #f5f5f7;
 
-    /* Borders - Subtle depth */
-    --border-color: #525252;
+    /* === Layer 2 — Semantic colors (dark) === */
+    --color-text-primary: var(--palette-neutral-900);
+    --color-text-secondary: var(--palette-neutral-600);
+    --color-text-tertiary: color-mix(in srgb, var(--color-text-secondary) 55%, var(--color-surface-default));
+    --color-text-on-action: var(--palette-white);
+    --color-text-link: var(--palette-blue-400);
+    --color-text-code: var(--palette-blue-400);
+    --color-toolbar-icon: var(--palette-icon-muted);
 
-    /* Surface colors */
-    --header-bg: #1d1d1f;
-    --toolbar-bg: #1d1d1f;
-    --row-hover-bg: rgba(41, 151, 255, 0.1);
-    --panel-bg: rgba(29, 29, 31, 0.8);
-    --overlay-bg: rgba(22, 22, 23, 0.95);
+    --color-surface-default: var(--palette-neutral-950);
+    --color-surface-raised: var(--palette-neutral-100);
+    --color-surface-sunken: var(--palette-neutral-100);
+    --color-surface-panel: rgba(29, 29, 31, 0.8);
+    --color-surface-overlay: rgba(22, 22, 23, 0.95);
+    --color-surface-glass: rgba(29, 29, 31, 0.7);
+    --color-surface-glass-strong: rgba(29, 29, 31, 0.85);
+    --color-surface-glass-heavy: rgba(29, 29, 31, 0.95);
 
-    /* Accent: Azure Blue (Modern & Vibrant) */
-    --accent-color: #10b981;
-    --accent-rgb: 16, 185, 129;
-    --accent-bg: rgba(16, 185, 129, 0.15);
-    --accent-hover: #34d399;
-    --accent-shadow: 0 4px 15px rgba(16, 185, 129, 0.3);
+    --color-border-default: var(--palette-neutral-700);
+    --color-border-subtle: var(--palette-neutral-300);
 
-    /* Selection */
-    --selection-border: #10b981;
-    --selection-bg: rgba(16, 185, 129, 0.2);
+    --color-action: var(--palette-blue-500);
+    --color-action-hover: var(--palette-blue-600);
+    --color-action-subtle: rgba(41, 151, 255, 0.15);
 
-    /* Semantic Colors - Balanced for Dark Mode */
-    --success-color: #34c759;
-    --success-bg: rgba(52, 199, 89, 0.15);
-    --warning-color: #ff9f0a;
-    --warning-bg: rgba(255, 159, 10, 0.15);
-    --error-color: #ff453a;
-    --error-bg: rgba(255, 69, 58, 0.2);
-    --info-color: #0a84ff;
-    --info-bg: rgba(10, 132, 255, 0.15);
+    --color-selection-border: var(--palette-blue-500);
+    --color-selection-bg: rgba(41, 151, 255, 0.2);
 
-    /* Interactive */
-    --button-bg: #2997ff;
-    --button-text: #ffffff;
-    --button-hover: #3ea1ff;
-    --header-hover-bg: #3e3e3e;
+    --color-interactive-hover: rgba(255, 255, 255, 0.08);
+    --color-interactive-active: rgba(255, 255, 255, 0.12);
+    --color-interactive-row-hover: rgba(41, 151, 255, 0.1);
 
-    /* Tooltip */
-    --tooltip-bg: #2c2c2e;
-    --tooltip-text: #f5f5f7;
-    --tooltip-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    --color-focus-ring: rgba(41, 151, 255, 0.5);
+    --color-focus-outline: rgba(41, 151, 255, 0.3);
 
-    /* Shadows - Subtle depth for dark mode */
+    --color-status-success: var(--palette-green-500);
+    --color-status-success-subtle: rgba(52, 199, 89, 0.15);
+    --color-status-warning: var(--palette-amber-500);
+    --color-status-warning-subtle: rgba(255, 159, 10, 0.15);
+    --color-status-error: var(--palette-red-500);
+    --color-status-error-subtle: rgba(255, 69, 58, 0.2);
+    --color-status-info: var(--palette-indigo-500);
+    --color-status-info-subtle: rgba(10, 132, 255, 0.15);
+
+    --color-tooltip-bg: var(--palette-neutral-200);
+    --color-tooltip-text: var(--palette-neutral-900);
+
+    --color-inverted-bg: var(--palette-neutral-50);
+    --color-inverted-text: var(--palette-neutral-100);
+    --color-inverted-border: var(--palette-neutral-300);
+
+    --color-toast-bg: var(--palette-toast-bg);
+    --color-toast-text: var(--palette-toast-text);
+    --color-toast-icon: var(--palette-neutral-500);
+    --color-toast-border: rgba(255, 255, 255, 0.08);
+
+    --color-scrollbar-thumb: var(--palette-neutral-400);
+    --color-scrollbar-thumb-hover: var(--palette-neutral-500);
+    --color-scrollbar-track: transparent;
+
+    --color-spinner-track: var(--palette-neutral-200);
+    --color-spinner: var(--color-action);
+    --color-resize-handle: var(--palette-blue-400);
+    --color-resize-indicator-bg: var(--palette-blue-400);
+    --color-resize-indicator-text: var(--palette-white);
+    --color-feedback-copy-flash: rgba(52, 199, 89, 0.3);
+
+    --color-progress-start: color-mix(in srgb, var(--color-action) 90%, var(--palette-white) 10%);
+    --color-progress-end: var(--color-action-hover);
+    --color-progress-glow: color-mix(in srgb, var(--color-action) 52%, transparent);
+
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2);
     --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
     --shadow-lg: 0 12px 24px rgba(0, 0, 0, 0.5);
-
-    /* Code */
-    --code-bg: #1d1d1f;
-    --code-text: #2997ff;
-    --pre-bg: #1d1d1f;
-    --pre-border: #424245;
-
-    /* Misc */
-    --focus-ring: rgba(41, 151, 255, 0.5);
-    --contrast-text: #ffffff;
-
-    /* Glass Effects */
-    --glass-bg: rgba(29, 29, 31, 0.7);
-    --glass-bg-strong: rgba(29, 29, 31, 0.85);
-    --glass-bg-heavy: rgba(29, 29, 31, 0.95);
+    --shadow-action: 0 4px 15px rgba(41, 151, 255, 0.3);
+    --shadow-action-hover: 0 4px 8px rgba(0, 0, 0, 0.4);
+    --shadow-tooltip: 0 4px 12px rgba(0, 0, 0, 0.3);
+    --shadow-toast: 0 12px 24px rgba(0, 0, 0, 0.35);
     --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
     --glass-shadow-light: 0 4px 16px rgba(0, 0, 0, 0.2);
-    --glass-border: rgba(255, 255, 255, 0.1);
-
-    /* Scrollbar */
-    --scrollbar-thumb: #424245;
-    --scrollbar-thumb-hover: #545458;
-    --scrollbar-track: transparent;
-
-    /* XLSX Specifics */
-    --success-rgb: 52, 199, 89;
-    --spinner-track: #2c2c2e;
-    --spinner-color: #2997ff;
-
-    --resize-handle-hover: #2997ff;
-    --resize-indicator-bg: #2997ff;
-    --resize-indicator-text: #ffffff;
-
-    --copy-flash-bg: rgba(52, 199, 89, 0.3);
-
-    --link-color: #2997ff;
-
-    --focus-outline: rgba(41, 151, 255, 0.3);
-
-    /* Reading progress bar */
-    --progress-bar-start: color-mix(in srgb, var(--accent-color) 90%, #ffffff 10%);
-    --progress-bar-end: var(--accent-hover);
-    --progress-bar-glow: color-mix(in srgb, var(--accent-color) 52%, transparent);
-
-    /* Interactive states */
-    --hover-bg: rgba(255, 255, 255, 0.08);
-    --active-bg: rgba(255, 255, 255, 0.12);
-    --text-primary: #f5f5f7;
-    --text-secondary: #86868b;
-
-    /* Inverted colors */
-    --inverted-bg: #f5f5f7;
-    --inverted-text: #1d1d1f;
-    --inverted-border: #d2d2d7;
-
-    /* Toast notifications - fixed dark, same values as :root (see comment there) */
-    --toast-bg: rgba(30, 30, 32, 0.96);
-    --toast-text: #f5f5f7;
-    --toast-icon: #a1a1a6;
-    --toast-border: rgba(255, 255, 255, 0.08);
-    --toast-shadow: 0 12px 24px rgba(0, 0, 0, 0.35);
-
-    --button-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-    --button-shadow-hover: 0 4px 8px rgba(0, 0, 0, 0.4);
 }
 
 body.vscode-theme {
-    /* Base surfaces */
-    --bg-color: var(--vscode-editor-background, #ffffff);
-    --text-color: var(--vscode-editor-foreground, #1d1d1f);
-    --text-muted: var(--vscode-descriptionForeground, #86868b);
-    --text-faint: color-mix(in srgb, var(--text-muted) 55%, var(--bg-color));
-    --border-color: var(--vscode-panel-border, #d2d2d7);
+    /* === Layer 1 — Primitives (VS Code host theme) === */
+    --palette-white: #ffffff;
+    --palette-black: #000000;
+    --palette-neutral-50: var(--vscode-editor-background, #ffffff);
+    --palette-neutral-100: var(--vscode-editorWidget-background, #f5f5f7);
+    --palette-neutral-200: var(--vscode-editorWidget-background, #e8e8ed);
+    --palette-neutral-300: var(--vscode-panel-border, #d2d2d7);
+    --palette-neutral-600: var(--vscode-descriptionForeground, #86868b);
+    --palette-neutral-900: var(--vscode-editor-foreground, #1d1d1f);
+    --palette-blue-500: var(--vscode-focusBorder, #007aff);
+    --palette-blue-600: var(--vscode-button-hoverBackground, #0062cc);
+    --palette-green-500: var(--vscode-testing-iconPassed, #34c759);
+    --palette-amber-500: var(--vscode-editorWarning-foreground, #ff9500);
+    --palette-red-500: var(--vscode-errorForeground, #ff3b30);
+    --palette-indigo-500: var(--vscode-editorInfo-foreground, #5856d6);
+    --palette-toast-bg: rgba(30, 30, 32, 0.96);
+    --palette-toast-text: #f5f5f7;
 
-    /* Surface colors */
-    --header-bg: var(--vscode-editorWidget-background, #f5f5f7);
-    --toolbar-bg: var(--vscode-editorWidget-background, var(--vscode-editor-background, #f5f5f7));
-    --row-hover-bg: var(--vscode-list-hoverBackground, rgba(0, 132, 255, 0.076));
-    --panel-bg: var(--vscode-editorWidget-background, rgba(245, 245, 247, 0.9));
-    --overlay-bg: var(--vscode-notifications-background, rgba(255, 255, 255, 0.95));
+    /* === Layer 2 — Semantic colors (VS Code) === */
+    --color-text-primary: var(--palette-neutral-900);
+    --color-text-secondary: var(--palette-neutral-600);
+    --color-text-tertiary: color-mix(in srgb, var(--color-text-secondary) 55%, var(--color-surface-default));
+    --color-text-on-action: var(--vscode-button-foreground, #ffffff);
+    --color-text-link: var(--vscode-textLink-foreground, var(--color-action));
+    --color-text-code: var(--vscode-textPreformat-foreground, var(--color-text-primary));
+    --color-toolbar-icon: var(--palette-icon-muted);
 
-    /* Code surfaces */
-    --code-bg: var(--vscode-textCodeBlock-background, var(--vscode-editorWidget-background, #f5f5f7));
-    --code-text: var(--vscode-textPreformat-foreground, var(--vscode-editor-foreground, #1d1d1f));
-    --pre-bg: var(--vscode-textCodeBlock-background, var(--vscode-editorWidget-background, #f5f5f7));
-    --pre-border: var(--vscode-panel-border, #d2d2d7);
+    --color-surface-default: var(--palette-neutral-50);
+    --color-surface-raised: var(--palette-neutral-100);
+    --color-surface-sunken: var(--vscode-textCodeBlock-background, var(--palette-neutral-100));
+    --color-surface-panel: var(--palette-neutral-100);
+    --color-surface-overlay: var(--vscode-notifications-background, rgba(255, 255, 255, 0.95));
+    --color-surface-glass: color-mix(in srgb, var(--palette-neutral-100) 85%, transparent);
+    --color-surface-glass-strong: color-mix(in srgb, var(--palette-neutral-100) 92%, transparent);
+    --color-surface-glass-heavy: color-mix(in srgb, var(--palette-neutral-100) 98%, transparent);
 
-    /* Accent */
-    --accent-color: var(--vscode-focusBorder, #007aff);
-    --accent-bg: color-mix(in srgb, var(--vscode-focusBorder, #007aff) 15%, transparent);
-    --accent-hover: var(--vscode-button-hoverBackground, #0062cc);
-    --accent-shadow: color-mix(in srgb, var(--vscode-focusBorder, #007aff) 25%, transparent);
+    --color-border-default: var(--palette-neutral-300);
+    --color-border-subtle: var(--palette-neutral-300);
 
-    /* Selection */
-    --selection-border: var(--vscode-focusBorder, #007aff);
-    --selection-bg: color-mix(in srgb, var(--vscode-focusBorder, #007aff) 20%, transparent);
+    --color-action: var(--vscode-button-background, var(--palette-blue-500));
+    --color-action-hover: var(--palette-blue-600);
+    --color-action-subtle: color-mix(in srgb, var(--palette-blue-500) 15%, transparent);
 
-    /* Semantic colors */
-    --success-color: var(--vscode-testing-iconPassed, #34c759);
-    --success-bg: color-mix(in srgb, var(--vscode-testing-iconPassed, #34c759) 15%, transparent);
-    --warning-color: var(--vscode-editorWarning-foreground, #ff9500);
-    --warning-bg: color-mix(in srgb, var(--vscode-editorWarning-foreground, #ff9500) 15%, transparent);
-    --error-color: var(--vscode-errorForeground, #ff3b30);
-    --error-bg: color-mix(in srgb, var(--vscode-errorForeground, #ff3b30) 15%, transparent);
-    --info-color: var(--vscode-editorInfo-foreground, #5856d6);
-    --info-bg: color-mix(in srgb, var(--vscode-editorInfo-foreground, #5856d6) 15%, transparent);
+    --color-selection-border: var(--palette-blue-500);
+    --color-selection-bg: color-mix(in srgb, var(--palette-blue-500) 20%, transparent);
 
-    /* Buttons */
-    --button-bg: var(--vscode-button-background, #007aff);
-    --button-hover: var(--vscode-button-hoverBackground, #0062cc);
-    --button-text: var(--vscode-button-foreground, #ffffff);
-    --header-hover-bg: var(--vscode-list-hoverBackground, #e8e8ed);
+    --color-interactive-hover: var(--vscode-list-hoverBackground, rgba(0, 0, 0, 0.06));
+    --color-interactive-active: color-mix(in srgb, var(--palette-blue-500) 12%, transparent);
+    --color-interactive-row-hover: var(--vscode-list-hoverBackground, rgba(0, 132, 255, 0.076));
 
-    /* Tooltip */
-    --tooltip-bg: var(--vscode-editorHoverWidget-background, #f5f5f7);
-    --tooltip-text: var(--vscode-editorHoverWidget-foreground, #1d1d1f);
-    --tooltip-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    --color-focus-ring: var(--vscode-focusBorder, rgba(0, 122, 255, 0.4));
+    --color-focus-outline: color-mix(in srgb, var(--color-action) 20%, transparent);
 
-    /* Shadows */
+    --color-status-success: var(--palette-green-500);
+    --color-status-success-subtle: color-mix(in srgb, var(--palette-green-500) 15%, transparent);
+    --color-status-warning: var(--palette-amber-500);
+    --color-status-warning-subtle: color-mix(in srgb, var(--palette-amber-500) 15%, transparent);
+    --color-status-error: var(--palette-red-500);
+    --color-status-error-subtle: color-mix(in srgb, var(--palette-red-500) 15%, transparent);
+    --color-status-info: var(--palette-indigo-500);
+    --color-status-info-subtle: color-mix(in srgb, var(--palette-indigo-500) 15%, transparent);
+
+    --color-tooltip-bg: var(--vscode-editorHoverWidget-background, var(--palette-neutral-100));
+    --color-tooltip-text: var(--vscode-editorHoverWidget-foreground, var(--palette-neutral-900));
+
+    --color-inverted-bg: var(--vscode-editor-foreground, var(--palette-black));
+    --color-inverted-text: var(--vscode-editor-background, var(--palette-neutral-50));
+    --color-inverted-border: var(--vscode-editor-foreground, var(--palette-white));
+
+    --color-toast-bg: var(--palette-toast-bg);
+    --color-toast-text: var(--palette-toast-text);
+    --color-toast-icon: #a1a1a6;
+    --color-toast-border: rgba(255, 255, 255, 0.08);
+
+    --color-scrollbar-thumb: var(--vscode-scrollbarSlider-background, var(--palette-neutral-400));
+    --color-scrollbar-thumb-hover: var(--vscode-scrollbarSlider-hoverBackground, var(--palette-neutral-500));
+    --color-scrollbar-track: transparent;
+
+    --color-spinner-track: var(--palette-neutral-200);
+    --color-spinner: var(--color-action);
+    --color-resize-handle: color-mix(in srgb, var(--color-action) 30%, transparent);
+    --color-resize-indicator-bg: color-mix(in srgb, var(--color-action) 85%, transparent);
+    --color-resize-indicator-text: var(--color-text-on-action);
+    --color-feedback-copy-flash: color-mix(in srgb, var(--color-status-success) 30%, transparent);
+
+    --color-progress-start: var(--vscode-progressBar-background, var(--color-action));
+    --color-progress-end: color-mix(in srgb, var(--vscode-progressBar-background, var(--color-action)) 76%, var(--palette-blue-500) 24%);
+    --color-progress-glow: color-mix(in srgb, var(--vscode-progressBar-background, var(--color-action)) 45%, transparent);
+
     --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.1);
     --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.12);
     --shadow-lg: 0 10px 30px rgba(0, 0, 0, 0.1);
-
-    /* Misc */
-    --focus-ring: var(--vscode-focusBorder, rgba(0, 122, 255, 0.4));
-    --contrast-text: var(--vscode-button-foreground, #ffffff);
-
-    /* Scrollbar variables mapped to vscode theme - use button colors */
-    --scrollbar-thumb: var(--button-bg);
-    --scrollbar-thumb-hover: var(--button-hover);
-    --scrollbar-track: transparent;
-
-    /* Spinner/Loading */
-    --spinner-track: var(--vscode-editorWidget-background, #e8e8ed);
-    --spinner-color: var(--accent-color);
-
-    /* Resize handles */
-    --resize-handle-hover: color-mix(in srgb, var(--accent-color) 30%, transparent);
-    --resize-indicator-bg: color-mix(in srgb, var(--accent-color) 85%, transparent);
-    --resize-indicator-text: var(--button-text);
-
-    /* Copy flash */
-    --copy-flash-bg: color-mix(in srgb, var(--success-color) 30%, transparent);
-
-    /* Links */
-    --link-color: var(--vscode-textLink-foreground, var(--accent-color));
-
-    /* Focus */
-    --focus-outline: color-mix(in srgb, var(--accent-color) 20%, transparent);
-
-    /* Reading progress bar */
-    --progress-bar-start: var(--vscode-progressBar-background, var(--accent-color));
-    --progress-bar-end: color-mix(in srgb, var(--vscode-progressBar-background, var(--accent-color)) 76%, var(--vscode-focusBorder, var(--accent-color)) 24%);
-    --progress-bar-glow: color-mix(in srgb, var(--vscode-progressBar-background, var(--accent-color)) 45%, transparent);
-
-    /* Glass Effects for VS Code Theme */
-    --glass-bg: color-mix(in srgb, var(--vscode-editorWidget-background, var(--vscode-editor-background, #ffffff)) 85%, transparent);
-    --glass-bg-strong: color-mix(in srgb, var(--vscode-editorWidget-background, var(--vscode-editor-background, #ffffff)) 92%, transparent);
-    --glass-bg-heavy: color-mix(in srgb, var(--vscode-editorWidget-background, var(--vscode-editor-background, #ffffff)) 98%, transparent);
+    --shadow-action: 0 1px 3px color-mix(in srgb, var(--color-action) 25%, transparent);
+    --shadow-action-hover: 0 3px 6px color-mix(in srgb, var(--color-action) 30%, transparent);
+    --shadow-tooltip: 0 4px 12px rgba(0, 0, 0, 0.15);
+    --shadow-toast: 0 12px 24px rgba(0, 0, 0, 0.35);
     --glass-shadow: var(--shadow-lg);
     --glass-shadow-light: var(--shadow-md);
-    --glass-border: var(--border-color);
-
-    /* Interactive states */
-    --hover-bg: var(--vscode-list-hoverBackground, rgba(0, 0, 0, 0.06));
-    --active-bg: color-mix(in srgb, var(--vscode-focusBorder, #007aff) 12%, transparent);
-    --text-primary: var(--vscode-editor-foreground, #1d1d1f);
-    --text-secondary: var(--vscode-descriptionForeground, #86868b);
-
-    /* Inverted colors */
-    --inverted-bg: var(--vscode-editor-foreground, #000000);
-    --inverted-text: var(--vscode-editor-background, #f5f5f7);
-    --inverted-border: var(--vscode-editor-foreground, #ffffff);
-
-    /* Toast notifications - fixed dark, same values as :root (see comment there) */
-    --toast-bg: rgba(30, 30, 32, 0.96);
-    --toast-text: #f5f5f7;
-    --toast-icon: #a1a1a6;
-    --toast-border: rgba(255, 255, 255, 0.08);
-    --toast-shadow: 0 12px 24px rgba(0, 0, 0, 0.35);
-
-    /* Button shadows */
-    --button-shadow: 0 1px 3px color-mix(in srgb, var(--button-bg) 25%, transparent);
-    --button-shadow-hover: 0 3px 6px color-mix(in srgb, var(--button-bg) 30%, transparent);
 }
 
 /* Tooltip styles */
@@ -398,16 +354,16 @@ body.vscode-theme {
 .global-tooltip {
     width: auto;
     max-width: 300px;
-    background-color: var(--tooltip-bg);
-    color: var(--tooltip-text);
+    background-color: var(--color-tooltip-bg);
+    color: var(--color-tooltip-text);
     text-align: left;
     border-radius: 8px;
     padding: 10px;
     z-index: 2000000 !important;
     white-space: normal;
     line-height: 1.5;
-    box-shadow: var(--tooltip-shadow);
-    border: 1px solid var(--border-color);
+    box-shadow: var(--shadow-tooltip);
+    border: 1px solid var(--color-border-default);
     font-size: 12px;
     pointer-events: none;
 }
@@ -421,19 +377,19 @@ body.vscode-theme {
 }
 
 .global-tooltip span {
-    color: var(--warning-color);
+    color: var(--color-status-warning);
     font-weight: 600;
 }
 
 .global-tooltip .warning {
-    color: var(--error-color);
+    color: var(--color-status-error);
     font-weight: 700;
     display: block;
     margin-bottom: 4px;
 }
 
 .global-tooltip .instruction {
-    color: var(--info-color);
+    color: var(--color-status-info);
     font-weight: normal;
     display: block;
     margin-top: 6px;
@@ -452,11 +408,11 @@ body.vscode-theme {
     left: 0;
     width: 100%;
     height: var(--header-height);
-    background: var(--panel-bg);
+    background: var(--color-surface-panel);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
     z-index: 999;
-    border-bottom: 1px solid var(--border-color);
+    border-bottom: 1px solid var(--color-border-default);
     pointer-events: none;
     display: none;
 }
@@ -479,10 +435,10 @@ body.sticky-toolbar-enabled .header-background {
     width: 100%;
     min-width: 0;
     min-height: var(--header-height);
-    border-bottom: 1px solid var(--border-color);
-    background: var(--bg-color);
+    border-bottom: 1px solid var(--color-border-default);
+    background: var(--color-surface-default);
     scrollbar-width: thin;
-    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+    scrollbar-color: var(--color-scrollbar-thumb) var(--color-scrollbar-track);
 }
 
 body.sticky-toolbar-enabled .toolbar {
@@ -494,7 +450,7 @@ body.sticky-toolbar-enabled .toolbar {
     min-width: 100%;
     padding: 2px 16px;
     z-index: 10000;
-    background-color: var(--toolbar-bg);
+    background-color: var(--color-surface-raised);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
 }
@@ -512,19 +468,23 @@ body.sticky-toolbar-enabled .toolbar {
     align-items: center;
     gap: 6px;
     background-color: transparent;
-    color: var(--toolbar-icon-color);
+    color: var(--color-toolbar-icon);
     transition: background-color 0.15s ease, color 0.15s ease;
     box-shadow: none;
 }
 
 .toggle-button:hover,
 .toggle-button:focus-visible {
-    background-color: var(--hover-bg);
-    color: var(--text-primary);
+    background-color: var(--color-interactive-hover);
+    color: var(--color-text-primary);
 }
 
 .toggle-button:active {
-    background-color: var(--hover-bg);
+    background-color: var(--color-interactive-hover);
+}
+
+.toggle-button svg {
+    stroke: currentColor;
 }
 
 .toggle-button.icon-only {
@@ -591,14 +551,14 @@ body.sticky-toolbar-enabled .toolbar {
     align-items: stretch;
     gap: 0;
     position: relative;
-    background: var(--glass-bg);
+    background: var(--color-surface-glass);
     backdrop-filter: blur(20px) saturate(180%);
     -webkit-backdrop-filter: blur(20px) saturate(180%);
-    color: var(--text-color);
+    color: var(--color-text-primary);
     padding: 12px 16px;
     overflow: visible;
     border-radius: 12px;
-    border: 1px solid var(--border-color);
+    border: 1px solid var(--color-border-default);
     box-shadow: var(--glass-shadow);
 }
 
@@ -629,7 +589,7 @@ body.sticky-toolbar-enabled .toolbar {
     min-height: 28px;
     padding: 2px 0;
     font-size: 13px;
-    color: var(--text-color);
+    color: var(--color-text-primary);
     user-select: none;
     cursor: pointer;
 }
@@ -643,27 +603,27 @@ body.sticky-toolbar-enabled .toolbar {
     min-width: 108px;
     padding: 0 8px;
     font-size: 13px;
-    border: 1px solid var(--border-color);
+    border: 1px solid var(--color-border-default);
     border-radius: 6px;
-    background-color: var(--bg-color);
-    color: var(--text-color);
+    background-color: var(--color-surface-default);
+    color: var(--color-text-primary);
     cursor: pointer;
 }
 
 .theme-select:hover {
-    border-color: var(--accent-hover);
+    border-color: var(--color-action-hover);
 }
 
 .theme-select:focus {
     outline: none;
-    border-color: var(--accent-color);
-    box-shadow: 0 0 0 2px var(--focus-ring);
+    border-color: var(--color-action);
+    box-shadow: 0 0 0 2px var(--color-focus-ring);
 }
 
 .setting-item.setting-dependent {
     margin-left: 24px;
     padding-left: 10px;
-    border-left: 2px solid color-mix(in srgb, var(--accent-color) 32%, var(--border-color));
+    border-left: 2px solid color-mix(in srgb, var(--color-action) 32%, var(--color-border-default));
     min-height: 24px;
 }
 
@@ -676,9 +636,9 @@ body.sticky-toolbar-enabled .toolbar {
     -webkit-appearance: none;
     width: 16px;
     height: 16px;
-    border: 1px solid var(--border-color);
+    border: 1px solid var(--color-border-default);
     border-radius: 3px;
-    background: var(--bg-color);
+    background: var(--color-surface-default);
     cursor: pointer;
     position: relative;
     outline: none;
@@ -692,8 +652,8 @@ body.sticky-toolbar-enabled .toolbar {
 }
 
 .setting-item input[type="checkbox"]:checked {
-    background: var(--accent-color);
-    border-color: var(--accent-color);
+    background: var(--color-action);
+    border-color: var(--color-action);
 }
 
 .setting-item input[type="checkbox"]:checked::after {
@@ -703,20 +663,20 @@ body.sticky-toolbar-enabled .toolbar {
     top: 1px;
     width: 4px;
     height: 8px;
-    border: solid var(--contrast-text);
+    border: solid var(--color-text-on-action);
     border-width: 0 2px 2px 0;
     transform: rotate(45deg);
 }
 
 .setting-item input[type="checkbox"]:focus-visible {
-    box-shadow: 0 0 0 2px var(--focus-ring);
+    box-shadow: 0 0 0 2px var(--color-focus-ring);
 }
 
 .setting-item input[type="checkbox"]:disabled {
     cursor: not-allowed;
     opacity: 0.6;
     background-color: transparent;
-    border-color: var(--border-color);
+    border-color: var(--color-border-default);
     box-shadow: none;
 }
 
@@ -727,7 +687,7 @@ body.sticky-toolbar-enabled .toolbar {
 .setting-item input[type="checkbox"]:disabled+span {
     opacity: 0.65;
     cursor: not-allowed;
-    color: var(--text-color);
+    color: var(--color-text-primary);
 }
 
 /* Settings close button */
@@ -743,12 +703,12 @@ body.sticky-toolbar-enabled .toolbar {
     width: 28px;
     height: 28px;
     padding: 0;
-    border: 1px solid var(--border-color);
+    border: 1px solid var(--color-border-default);
     border-radius: 50%;
-    background: var(--glass-bg);
+    background: var(--color-surface-glass);
     backdrop-filter: blur(20px) saturate(180%);
     -webkit-backdrop-filter: blur(20px) saturate(180%);
-    color: var(--text-color);
+    color: var(--color-text-primary);
     cursor: pointer;
     opacity: 0.9;
     box-shadow: var(--shadow-sm);
@@ -764,19 +724,19 @@ body.sticky-toolbar-enabled .toolbar {
 .settings-close-btn:hover,
 #settingsCancelButton:hover {
     opacity: 1;
-    background-color: color-mix(in srgb, var(--text-color) 10%, transparent);
+    background-color: color-mix(in srgb, var(--color-text-primary) 10%, transparent);
 }
 
 .settings-close-btn:active,
 #settingsCancelButton:active {
     opacity: 1;
-    background-color: color-mix(in srgb, var(--text-color) 16%, transparent);
+    background-color: color-mix(in srgb, var(--color-text-primary) 16%, transparent);
 }
 
 .settings-close-btn:focus-visible,
 #settingsCancelButton:focus-visible {
     outline: none;
-    box-shadow: 0 0 0 2px var(--focus-ring);
+    box-shadow: 0 0 0 2px var(--color-focus-ring);
 }
 
 .toolbar.not-sticky {
@@ -845,8 +805,8 @@ body:not(.sticky-toolbar-enabled) .toolbar {
     position: relative; /* Changed from static */
     width: 100%;
     box-sizing: border-box;
-    background-color: var(--toolbar-bg);
-    border-bottom: 1px solid var(--border-color);
+    background-color: var(--color-surface-raised);
+    border-bottom: 1px solid var(--color-border-default);
 }
 
 .toolbar img {
@@ -882,7 +842,7 @@ body:not(.sticky-toolbar-enabled) .toolbar {
     overflow-x: auto;
     overflow-y: visible;
     scrollbar-width: thin;
-    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+    scrollbar-color: var(--color-scrollbar-thumb) var(--color-scrollbar-track);
 }
 
 .toolbar-group-end {
@@ -896,18 +856,18 @@ body:not(.sticky-toolbar-enabled) .toolbar {
 }
 
 .toolbar-group-start::-webkit-scrollbar-track {
-    background: var(--scrollbar-track);
+    background: var(--color-scrollbar-track);
 }
 
 .toolbar-group-start::-webkit-scrollbar-thumb {
-    background-color: var(--scrollbar-thumb);
+    background-color: var(--color-scrollbar-thumb);
     border: 3px solid transparent;
     background-clip: content-box;
     border-radius: 6px;
 }
 
 .toolbar-group-start::-webkit-scrollbar-thumb:hover {
-    background-color: var(--scrollbar-thumb-hover);
+    background-color: var(--color-scrollbar-thumb-hover);
 }
 
 .toolbar-group-start::-webkit-scrollbar-button,
@@ -922,18 +882,18 @@ body:not(.sticky-toolbar-enabled) .toolbar {
 }
 
 .toolbar::-webkit-scrollbar-track {
-    background: var(--scrollbar-track);
+    background: var(--color-scrollbar-track);
 }
 
 .toolbar::-webkit-scrollbar-thumb {
-    background-color: var(--scrollbar-thumb);
+    background-color: var(--color-scrollbar-thumb);
     border: 3px solid transparent;
     background-clip: content-box;
     border-radius: 6px;
 }
 
 .toolbar::-webkit-scrollbar-thumb:hover {
-    background-color: var(--scrollbar-thumb-hover);
+    background-color: var(--color-scrollbar-thumb-hover);
 }
 
 .toolbar::-webkit-scrollbar-button,
@@ -948,7 +908,7 @@ body:not(.sticky-toolbar-enabled) .toolbar {
 #tableContainer,
 .table-scroll {
     scrollbar-width: thin;
-    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+    scrollbar-color: var(--color-scrollbar-thumb) var(--color-scrollbar-track);
 }
 
 #content::-webkit-scrollbar,
@@ -961,13 +921,13 @@ body:not(.sticky-toolbar-enabled) .toolbar {
 #content::-webkit-scrollbar-track,
 #tableContainer::-webkit-scrollbar-track,
 .table-scroll::-webkit-scrollbar-track {
-    background: var(--scrollbar-track);
+    background: var(--color-scrollbar-track);
 }
 
 #content::-webkit-scrollbar-thumb,
 #tableContainer::-webkit-scrollbar-thumb,
 .table-scroll::-webkit-scrollbar-thumb {
-    background-color: var(--scrollbar-thumb);
+    background-color: var(--color-scrollbar-thumb);
     border: 3px solid transparent;
     background-clip: content-box;
     border-radius: 10px;
@@ -976,7 +936,7 @@ body:not(.sticky-toolbar-enabled) .toolbar {
 #content::-webkit-scrollbar-thumb:hover,
 #tableContainer::-webkit-scrollbar-thumb:hover,
 .table-scroll::-webkit-scrollbar-thumb:hover {
-    background-color: var(--scrollbar-thumb-hover);
+    background-color: var(--color-scrollbar-thumb-hover);
 }
 
 #content::-webkit-scrollbar-button,
@@ -1029,22 +989,22 @@ body:not(.sticky-toolbar-enabled) .sheet-find-overlay {
     display: flex;
     align-items: center;
     gap: 6px;
-    background: color-mix(in srgb, var(--overlay-bg) 92%, var(--bg-color) 8%);
+    background: color-mix(in srgb, var(--color-surface-overlay) 92%, var(--color-surface-default) 8%);
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
-    border: 1px solid color-mix(in srgb, var(--accent-color) 32%, var(--border-color));
+    border: 1px solid color-mix(in srgb, var(--color-action) 32%, var(--color-border-default));
     border-radius: 10px;
     padding: 6px 10px;
-    box-shadow: 0 10px 26px color-mix(in srgb, var(--accent-color) 18%, transparent), var(--shadow-lg);
+    box-shadow: 0 10px 26px color-mix(in srgb, var(--color-action) 18%, transparent), var(--shadow-lg);
 }
 
 .search-input,
 .sheet-find-input {
-    border: 1px solid color-mix(in srgb, var(--border-color) 88%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-border-default) 88%, transparent);
     border-radius: 6px;
     outline: none;
     background: transparent;
-    color: var(--text-color);
+    color: var(--color-text-primary);
     font-size: 13px;
     font-family: var(--font-family);
     width: 220px;
@@ -1053,19 +1013,19 @@ body:not(.sticky-toolbar-enabled) .sheet-find-overlay {
 
 .search-input:focus,
 .sheet-find-input:focus {
-    border-color: var(--accent-color);
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-color) 35%, transparent);
+    border-color: var(--color-action);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-action) 35%, transparent);
 }
 
 .search-input::placeholder,
 .sheet-find-input::placeholder {
-    color: var(--text-muted);
+    color: var(--color-text-secondary);
 }
 
 .search-count,
 .sheet-find-count {
     font-size: 11px;
-    color: var(--text-muted);
+    color: var(--color-text-secondary);
     white-space: nowrap;
     min-width: 65px;
     text-align: center;
@@ -1074,8 +1034,8 @@ body:not(.sticky-toolbar-enabled) .sheet-find-overlay {
 
 .search-nav-btn {
     background: transparent;
-    border: 1px solid var(--border-color);
-    color: var(--text-muted);
+    border: 1px solid var(--color-border-default);
+    color: var(--color-text-secondary);
     width: 26px;
     height: 26px;
     border-radius: 6px;
@@ -1088,15 +1048,15 @@ body:not(.sticky-toolbar-enabled) .sheet-find-overlay {
 }
 
 .search-nav-btn:hover {
-    color: var(--text-color);
-    border-color: var(--accent-color);
-    background: var(--accent-bg);
+    color: var(--color-text-primary);
+    border-color: var(--color-action);
+    background: var(--color-action-subtle);
 }
 
 .search-close-btn {
     background: transparent;
     border: none;
-    color: var(--text-muted);
+    color: var(--color-text-secondary);
     font-size: 18px;
     cursor: pointer;
     padding: 0 4px;
@@ -1105,7 +1065,7 @@ body:not(.sticky-toolbar-enabled) .sheet-find-overlay {
 }
 
 .search-close-btn:hover {
-    color: var(--error-color);
+    color: var(--color-status-error);
 }
 
 body:not(.sticky-toolbar-enabled) #content {

@@ -1,7 +1,7 @@
 ---
 title: Subtler Toolbar Icons
 slug: subtler-toolbar-icons
-status: to-qa
+status: completed
 created: 2026-08-15
 updated: 2026-08-15
 ---
@@ -63,20 +63,19 @@ in `theme.css`).
 
 ## Implementation Log
 
-- **`resources/shared/theme.css`** — added `--toolbar-icon-color` token (muted blended
-  toward background); `.toggle-button` rest color uses it; hover/focus-visible →
-  `--text-primary`; added color to transition.
-- **`resources/md/mdWebview.css`** — `.fmt-btn` now uses `--toolbar-icon-color` at
-  rest (formatting bar was unchanged in v1 and still looked full-strength); added
-  `:focus-visible` hover parity.
-- **QA tweak:** `--toolbar-icon-color` → `var(--text-muted)` (`#86868b`; 82% bg-mix was
-  still too light at `#9b9b9f`).
-
+- **`resources/shared/theme.css`** — `--color-toolbar-icon` via `--palette-icon-muted`
+  (`#86868b`); `.toggle-button` + `.fmt-btn` at rest; hover/focus → `--color-text-primary`;
+  `stroke: currentColor` on toolbar SVGs. Pinned palette primitive so VS Code host
+  `--vscode-icon-foreground` (`#3b3b3b`) does not override muted icons.
+- **`resources/md/mdWebview.css`** — `.fmt-btn` uses `--color-toolbar-icon`; `:focus-visible`
+  hover parity.
+- **QA iterations:** bg-mix and primary-mix rejected; host theme tokens too dark in Cursor.
 
 ## QA
 
 - [x] `npm run compile` — pass
-- [ ] F5 smoke: Markdown main toolbar icons rest at `--text-secondary`, brighten on hover/focus
-- [ ] F5 smoke: Spreadsheet main toolbar — same behavior
-- [ ] F5 smoke: `.toggle-button.active` accent treatment unchanged (search overlay, theme toggle, etc.)
-- [ ] F5 smoke: light / dark / VS Code theme modes
+- [x] F5 smoke: Markdown main + formatting toolbar icons rest at `#86868b`, brighten on hover/focus
+- [x] F5 smoke: Spreadsheet main toolbar — same behavior
+- [x] F5 smoke: `.toggle-button.active` accent treatment unchanged
+- [x] F5 smoke: VS Code theme mode (Cursor) — confirmed fixed after `--palette-icon-muted`
+- **Passed** 2026-08-15 (user sign-off).

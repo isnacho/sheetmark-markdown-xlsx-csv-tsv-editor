@@ -46,6 +46,7 @@ import { tableWidgetField, columnWidthsField, setColumnWidthsEffect } from './ta
 import { tableBoundaryExtensions } from './tableBoundaryEditing';
 import { frontmatterWidgetField, seedFrontmatterCollapsed, seedFrontmatterEditing, setFrontmatterCollapsedCallback } from './frontmatterWidget';
 import { headingLineDecorationField } from './headingGutterSync';
+import { hoverLineGutter, hoverGutterDomEventHandlers } from './hoverLineGutter';
 import {
     mermaidWidgetField,
     mermaidAtomicRanges,
@@ -117,7 +118,7 @@ const wrapCompartment = new Compartment();
 const revealCompartment = new Compartment();
 const gutterCompartment = new Compartment();
 const readOnlyCompartment = new Compartment();
-/** Line-number gutter: clicking a line number selects that line's text. */
+/** Line-number gutter: clicking a line number selects that line's text; hovering shows the muted hover bar (hoverLineGutter.ts — must attach here, not via EditorView.domEventHandlers, since that never sees gutter-only mouse events). */
 function buildLineNumbersGutter() {
     return lineNumbers({
         domEventHandlers: {
@@ -135,6 +136,7 @@ function buildLineNumbersGutter() {
                 v.dispatch({ selection: EditorSelection.range(docLine.from, docLine.to) });
                 return true;
             },
+            ...hoverGutterDomEventHandlers(),
         },
     });
 }
@@ -211,6 +213,7 @@ export function mountLivePreview(opts: LivePreviewMountOptions): EditorView {
             drawSelection(),
             highlightActiveLine(),
             highlightActiveLineGutter(),
+            hoverLineGutter(),
             markdown({ extensions: GFM }),
             // No `syntaxHighlighting(defaultHighlightStyle)` here — it was
             // unused boilerplate, not a real dependency: no `codeLanguages` is

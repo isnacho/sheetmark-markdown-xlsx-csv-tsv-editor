@@ -1035,6 +1035,9 @@ function wireTableScrollUI(scroll: HTMLElement): void {
         const isResized = table.classList.contains('cm-md-table-resized');
         scroll.classList.toggle('cm-md-table-overflow-x', overflows);
         scroll.classList.toggle('cm-md-table-hug-content', isResized && !overflows);
+        const showFade = overflows &&
+            scroll.scrollLeft + scroll.clientWidth < scroll.scrollWidth - 1;
+        scroll.classList.toggle('cm-md-table-scroll-fade', showFade);
     };
 
     update();

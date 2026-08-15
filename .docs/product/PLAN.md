@@ -16,7 +16,7 @@ imported at version **1.9.91**. Repo: [nachosdesign/sheetmark-markdown-xlsx-csv-
 - **Two custom editors**:
   - **Spreadsheet** — one shared webview for `.xlsx` / `.csv` / `.tsv`
     (`src/webviews/spreadsheet/`, provider `src/spreadsheetEditorProvider.ts`).
-  - **Markdown** — split-view preview/editor for `.md`
+  - **Markdown** — CM6 live-preview editor for `.md`
     (`src/webviews/md/`, provider `src/mdEditorProvider.ts`).
 - Entry point: `src/extension.ts` — registers 4 custom-editor providers +
   commands (`convertFile`, `goBackTo*`, association toggles).

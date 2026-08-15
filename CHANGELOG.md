@@ -28,8 +28,9 @@
 
 ### Maintenance
 
+- Design system colors refactored to a two-layer token model (`--palette-*` primitives, `--color-*` semantic roles) in `theme.css`; brand and action unified on blue across light/dark themes.
 - Removed dead markdown scaffolding (redundant edit-mode flags, unused frontmatter render helpers, vestigial KaTeX CDN link).
-- Toolbar icons (`.toggle-button`) use subtler `--text-secondary` at rest and brighten on hover/focus, matching the formatting bar.
+- Toolbar icons use a subtler muted gray at rest (`#86868b`) and brighten on hover/focus; main toolbar and formatting bar aligned.
 
 ## v1.0.0
 

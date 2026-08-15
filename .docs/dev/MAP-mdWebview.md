@@ -5,7 +5,7 @@ Markdown UI spans two layers in the **webview (browser)** runtime:
 | File | Lines (approx.) | Role |
 |---|---|---|
 | [mdWebview.ts](../../src/webviews/md/mdWebview.ts) | ~1,805 | Shell: toolbar, TOC, settings, disk-sync toasts, message handler, bootstrap |
-| [livePreview/](../../src/webviews/md/livePreview/) | ~6,900 | CodeMirror 6 “Preview Edit” engine + widgets (tables, callouts, mermaid, …) |
+| [livePreview/](../../src/webviews/md/livePreview/) | ~6,900 | CodeMirror 6 live-preview engine + widgets (tables, callouts, mermaid, …) |
 | [frontmatter.ts](../../src/webviews/md/frontmatter.ts) | ~289 | YAML frontmatter parse/extract (TOC + CM6 widget seed) |
 | [frontmatterCardUi.ts](../../src/webviews/md/frontmatterCardUi.ts) | ~178 | Frontmatter card DOM helpers |
 
@@ -55,7 +55,7 @@ mount/unmount, read/write doc, scroll metrics, search, format dispatch.
 | livePreviewEditor.ts | ~426 | EditorView mount, compartments, public API used by mdWebview |
 | cm6Theme.ts | ~547 | VS Code–aware CM6 theme |
 | formatCommands.ts | ~770 | Source-level format commands (wrap, lists, indent, line ops, paste-linkify) |
-| tableWidget.ts | ~1,753 | Table widget DOM, resize/drag, context menu, inline cell editing |
+| tableWidget.ts | ~1,753 | Table widget DOM, resize/drag, context menu, inline cell editing — product rules in [MARKDOWN-TABLES.md](../../product/MARKDOWN-TABLES.md) |
 | tableBoundaryEditing.ts | ~560 | Table arrow/backspace boundaries, cell grid math |
 | revealDecorations.ts | ~674 | Live-preview “reveal” syntax decorations |
 | codeStyling.ts + codeStylingPlugin.ts | ~104 | Fenced-code presentation |

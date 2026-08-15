@@ -3,8 +3,8 @@
 // Runtime: WEBVIEW (browser). No Node / no `vscode` module here.
 //
 // The theme deliberately references the semantic CSS variables already defined
-// in resources/shared/theme.css (--text-color, --bg-color, --border-color,
-// --code-bg, --selection-bg, --link-color, --font-family, --font-mono, --font-mono-weight, --font-mono-size,
+// in resources/shared/theme.css (--color-text-primary, --color-surface-default, --color-border-default,
+// --color-surface-sunken, --color-selection-bg, --color-text-link, --font-family, --font-mono, --font-mono-weight, --font-mono-size,
 // --surface-radius). Those
 // vars are remapped to --vscode-* tokens by theme.css itself, so the editor
 // tracks the active VS Code / light / dark theme automatically. Referencing the
@@ -16,8 +16,8 @@ import { EditorView } from '@codemirror/view';
 export function cm6Theme(): ReturnType<typeof EditorView.theme> {
     return EditorView.theme({
         '&': {
-            color: 'var(--text-color)',
-            backgroundColor: 'var(--bg-color)',
+            color: 'var(--color-text-primary)',
+            backgroundColor: 'var(--color-surface-default)',
             height: '100%',
             fontSize: '15px',
         },
@@ -30,7 +30,7 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             position: 'relative',
         },
         '.cm-content': {
-            caretColor: 'var(--text-color)',
+            caretColor: 'var(--color-text-primary)',
             maxWidth: '900px',
             minWidth: '0',
             margin: '0 auto',
@@ -46,17 +46,17 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             outline: 'none',
         },
         '.cm-cursor, .cm-dropCursor': {
-            borderLeftColor: 'var(--text-color)',
+            borderLeftColor: 'var(--color-text-primary)',
         },
         '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': {
-            backgroundColor: 'var(--selection-bg)',
+            backgroundColor: 'var(--color-selection-bg)',
         },
         '.cm-activeLine': {
             backgroundColor: 'transparent',
         },
         '.cm-gutters': {
-            backgroundColor: 'var(--bg-color)',
-            color: 'var(--text-faint)',
+            backgroundColor: 'var(--color-surface-default)',
+            color: 'var(--color-text-tertiary)',
             border: 'none',
             fontSize: '12px',
             lineHeight: '1.7',
@@ -73,12 +73,16 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             alignItems: 'flex-start',
             justifyContent: 'flex-end',
             lineHeight: '1.7',
+            // Positioning context for both the active-line and hover
+            // left-edge bars below, unconditionally (the hover bar's
+            // `::before` exists on every row — see note below).
+            position: 'relative',
         },
         '.cm-activeLineGutter': {
             backgroundColor: 'transparent',
         },
         '&.cm-focused .cm-activeLineGutter': {
-            color: 'var(--text-color)',
+            color: 'var(--color-text-primary)',
             fontWeight: '700',
             position: 'relative',
         },
@@ -89,22 +93,54 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             top: '0',
             bottom: '0',
             width: '2px',
-            backgroundColor: 'var(--text-color)',
+            backgroundColor: 'var(--color-text-primary)',
+        },
+        // Hover sibling to the active-line bar above (hoverLineGutter.ts
+        // toggles the `cm-md-hover-line-gutter` class): same left-edge
+        // geometry, muted color, no bold — and never applied to the active
+        // line itself (suppressed at the data layer in hoverLineGutter.ts).
+        //
+        // The `::before` itself is created unconditionally on every
+        // non-active gutter row (opacity 0 baseline) rather than only when
+        // the hover class is present — a pseudo-element whose very
+        // existence is gated by a class can only ever snap in/out, since
+        // there's nothing for the browser to transition to/from. Keeping it
+        // always-present and only toggling `opacity` lets both the fade-in
+        // and fade-out genuinely animate.
+        //
+        // `:not(.cm-activeLineGutter)` isn't just belt-and-suspenders: this
+        // selector and the active-line `::before` above compile (via CM6's
+        // `&`-theme mechanism) to selectors of EQUAL specificity, so without
+        // it, this rule — being declared later — would win the cascade tie
+        // on the active line's element too and blank out its bar/opacity.
+        '.cm-lineNumbers .cm-gutterElement:not(.cm-activeLineGutter)::before': {
+            content: '""',
+            position: 'absolute',
+            left: '0',
+            top: '0',
+            bottom: '0',
+            width: '2px',
+            backgroundColor: 'var(--color-text-secondary)',
+            opacity: '0',
+            transition: 'opacity 120ms ease',
+        },
+        '.cm-lineNumbers .cm-gutterElement.cm-md-hover-line-gutter:not(.cm-activeLineGutter)::before': {
+            opacity: '1',
         },
         '.cm-md-search-match': {
-            backgroundColor: 'color-mix(in srgb, var(--warning-color) 35%, transparent)',
+            backgroundColor: 'color-mix(in srgb, var(--color-status-warning) 35%, transparent)',
             borderRadius: '2px',
-            boxShadow: '0 0 0 1px color-mix(in srgb, var(--warning-color) 55%, transparent)',
+            boxShadow: '0 0 0 1px color-mix(in srgb, var(--color-status-warning) 55%, transparent)',
         },
         '.cm-md-search-current': {
-            backgroundColor: 'color-mix(in srgb, var(--warning-color) 60%, transparent)',
-            boxShadow: '0 0 0 2px var(--accent-color)',
+            backgroundColor: 'color-mix(in srgb, var(--color-status-warning) 60%, transparent)',
+            boxShadow: '0 0 0 2px var(--color-action)',
         },
         // Reveal engine (Phase 4): dimmed marker shown while the cursor is in the
         // element (ATX headings: anywhere on the heading line); heading-size/bold/
         // italic content styling always on.
         '.cm-md-reveal-mark': {
-            color: 'var(--text-muted)',
+            color: 'var(--color-text-secondary)',
             opacity: '0.7',
         },
         '.cm-md-strong-content': {
@@ -126,31 +162,31 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
         '.cm-content .cm-md-h3': { fontSize: '1.2em' },
         '.cm-content .cm-md-h4': { fontSize: '1.1em' },
         '.cm-content .cm-md-h5': { fontSize: '1em' },
-        '.cm-content .cm-md-h6': { fontSize: '1em', color: 'var(--text-muted)' },
+        '.cm-content .cm-md-h6': { fontSize: '1em', color: 'var(--color-text-secondary)' },
         '.cm-md-inline-code': {
             fontFamily: 'var(--font-mono)',
             fontWeight: 'var(--font-mono-weight)',
             fontSize: 'var(--font-mono-size)',
-            backgroundColor: 'var(--code-bg)',
-            color: 'var(--code-text)',
+            backgroundColor: 'var(--color-surface-sunken)',
+            color: 'var(--color-text-code)',
             borderRadius: 'var(--surface-radius)',
         },
         '.cm-md-fenced-code-line': {
             fontFamily: 'var(--font-mono)',
             fontWeight: 'var(--font-mono-weight)',
             fontSize: 'var(--font-mono-size)',
-            backgroundColor: 'var(--pre-bg)',
-            borderLeft: '1px solid var(--pre-border)',
-            borderRight: '1px solid var(--pre-border)',
+            backgroundColor: 'var(--color-surface-sunken)',
+            borderLeft: '1px solid var(--color-border-subtle)',
+            borderRight: '1px solid var(--color-border-subtle)',
         },
         '.cm-md-fenced-code-line-first': {
-            borderTop: '1px solid var(--pre-border)',
+            borderTop: '1px solid var(--color-border-subtle)',
             borderRadius: 'var(--surface-radius) var(--surface-radius) 0 0',
             paddingTop: '16px',
             marginTop: '16px',
         },
         '.cm-md-fenced-code-line-last': {
-            borderBottom: '1px solid var(--pre-border)',
+            borderBottom: '1px solid var(--color-border-subtle)',
             borderRadius: '0 0 var(--surface-radius) var(--surface-radius)',
             paddingBottom: '16px',
             marginBottom: '16px',
@@ -163,10 +199,10 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             margin: '0',
             paddingTop: '16px',
             paddingBottom: '16px',
-            border: '1px solid var(--pre-border)',
+            border: '1px solid var(--color-border-subtle)',
             borderRadius: 'var(--surface-radius)',
             overflow: 'hidden',
-            background: 'var(--pre-bg)',
+            background: 'var(--color-surface-sunken)',
             maxWidth: '100%',
             boxSizing: 'border-box',
         },
@@ -176,30 +212,30 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             justifyContent: 'space-between',
             gap: '8px',
             padding: '6px 10px',
-            border: '1px solid var(--pre-border)',
-            borderBottom: '1px solid var(--pre-border)',
+            border: '1px solid var(--color-border-subtle)',
+            borderBottom: '1px solid var(--color-border-subtle)',
             borderRadius: 'var(--surface-radius) var(--surface-radius) 0 0',
             marginTop: '0',
-            background: 'color-mix(in srgb, var(--pre-bg) 85%, var(--header-bg) 15%)',
+            background: 'color-mix(in srgb, var(--color-surface-sunken) 85%, var(--color-surface-raised) 15%)',
         },
         '.cm-md-mermaid-block .cm-md-mermaid-toolbar': {
             marginTop: '0',
             borderRadius: '0',
             border: 'none',
-            borderBottom: '1px solid var(--pre-border)',
+            borderBottom: '1px solid var(--color-border-subtle)',
         },
         '.cm-md-mermaid-lang': {
             fontSize: '11px',
             fontFamily: 'var(--font-mono)',
             fontWeight: 'var(--font-mono-weight)',
-            color: 'var(--text-secondary)',
+            color: 'var(--color-text-secondary)',
         },
         '.cm-md-mermaid-mode-select': {
             fontSize: '11px',
             fontFamily: 'var(--font-family)',
-            color: 'var(--text-color)',
-            background: 'var(--bg-color)',
-            border: '1px solid var(--border-color)',
+            color: 'var(--color-text-primary)',
+            background: 'var(--color-surface-default)',
+            border: '1px solid var(--color-border-default)',
             borderRadius: 'var(--surface-radius)',
             padding: '2px 6px',
             cursor: 'pointer',
@@ -222,7 +258,7 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
         },
         '.cm-md-mermaid-error': {
             fontSize: '13px',
-            color: 'var(--text-muted)',
+            color: 'var(--color-text-secondary)',
             padding: '8px 0',
         },
         '.cm-md-table-widget': {
@@ -239,28 +275,26 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             boxSizing: 'border-box',
             overflowX: 'hidden',
             overflowY: 'hidden',
-            border: '1px solid var(--border-color)',
+            border: '1px solid var(--color-border-default)',
             borderRadius: 'var(--surface-radius)',
             lineHeight: '0',
         },
         '.cm-md-table-scroll.cm-md-table-overflow-x': {
             overflowX: 'auto',
+            position: 'relative',
+        },
+        '.cm-md-table-scroll.cm-md-table-overflow-x table.md-table.cm-md-table-resized th, .cm-md-table-scroll.cm-md-table-overflow-x table.md-table.cm-md-table-resized td:not(.cm-md-table-cell-editing)': {
+            whiteSpace: 'nowrap',
         },
         '.cm-md-table-scroll.cm-md-table-hug-content': {
             width: 'fit-content',
             maxWidth: '100%',
         },
-        // Undoes the shared .markdown-preview table.md-table rule's
-        // display:block/overflow:auto on the <table> itself (resources/md/
-        // mdWebview.css) — that combo forces the browser to synthesize
-        // anonymous table wrapper boxes around <thead>/<tbody> since the
-        // table's own display is no longer `table`, which breaks
-        // border-collapse and visibly splits the header row-group from the
-        // body row-group. Reading mode doesn't hit this (same shared CSS,
-        // but no visible symptom there), so scoped to the Live Preview
-        // widget only rather than touching the shared CSS Reading mode
-        // relies on. Horizontal scroll lives on `.cm-md-table-scroll` so row
-        // grips can sit left of the table without being clipped.
+        // Undoes shared `.markdown-preview table.md-table` rules in
+        // resources/md/mdWebview.css (`display: block` / `overflow: auto` on
+        // the <table>) — that combo breaks border-collapse in the widget.
+        // Horizontal scroll lives on `.cm-md-table-scroll` so row grips can sit
+        // left of the table without being clipped.
         '.cm-md-table-widget table.md-table': {
             display: 'table',
             overflow: 'visible',
@@ -296,11 +330,11 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             textDecoration: 'line-through',
         },
         '.cm-md-link-content': {
-            color: 'var(--link-color)',
+            color: 'var(--color-text-link)',
             textDecoration: 'underline',
         },
         '.cm-md-image-alt-content': {
-            color: 'var(--text-muted)',
+            color: 'var(--color-text-secondary)',
         },
         '.cm-md-image-block': {
             display: 'block',
@@ -322,21 +356,21 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             display: 'block',
             padding: '12px 16px',
             borderRadius: 'var(--surface-radius)',
-            background: 'color-mix(in srgb, var(--text-color) 6%, transparent)',
-            color: 'var(--text-muted)',
+            background: 'color-mix(in srgb, var(--color-text-primary) 6%, transparent)',
+            color: 'var(--color-text-secondary)',
             fontSize: '13px',
             lineHeight: '1.4',
         },
         '.cm-md-image-placeholder.cm-md-image-error': {
-            color: 'var(--error-color)',
-            background: 'color-mix(in srgb, var(--error-color) 8%, transparent)',
+            color: 'var(--color-status-error)',
+            background: 'color-mix(in srgb, var(--color-status-error) 8%, transparent)',
         },
         '.cm-md-blockquote-line': {
             backgroundColor: 'transparent',
             marginLeft: '4px',
-            borderLeft: '2px solid var(--text-color)',
+            borderLeft: '2px solid var(--color-text-primary)',
             paddingLeft: '8px',
-            color: 'var(--text-muted)',
+            color: 'var(--color-text-secondary)',
         },
         '.cm-md-callout-line': {
             margin: '0',
@@ -364,19 +398,19 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             minHeight: '0.75em',
         },
         '.cm-md-callout-info': {
-            backgroundColor: 'color-mix(in srgb, var(--info-bg) 45%, var(--bg-color))',
+            backgroundColor: 'color-mix(in srgb, var(--color-status-info-subtle) 45%, var(--color-surface-default))',
         },
         '.cm-md-callout-warning': {
-            backgroundColor: 'color-mix(in srgb, var(--warning-bg) 45%, var(--bg-color))',
+            backgroundColor: 'color-mix(in srgb, var(--color-status-warning-subtle) 45%, var(--color-surface-default))',
         },
         '.cm-md-callout-error': {
-            backgroundColor: 'color-mix(in srgb, var(--error-bg) 45%, var(--bg-color))',
+            backgroundColor: 'color-mix(in srgb, var(--color-status-error-subtle) 45%, var(--color-surface-default))',
         },
         '.cm-md-callout-success': {
-            backgroundColor: 'color-mix(in srgb, var(--success-bg) 45%, var(--bg-color))',
+            backgroundColor: 'color-mix(in srgb, var(--color-status-success-subtle) 45%, var(--color-surface-default))',
         },
         '.cm-md-callout-neutral': {
-            backgroundColor: 'color-mix(in srgb, var(--panel-bg) 70%, var(--bg-color))',
+            backgroundColor: 'color-mix(in srgb, var(--color-surface-panel) 70%, var(--color-surface-default))',
         },
         '.cm-md-callout-content-first.cm-md-callout-warning::before': {
             content: '"\\26A0"',
@@ -395,7 +429,7 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             transform: 'translateY(-50%)',
             fontSize: '15px',
             lineHeight: '1',
-            color: 'var(--info-color)',
+            color: 'var(--color-status-info)',
         },
         '.cm-md-callout-content-first.cm-md-callout-error::before': {
             content: '"\\2717"',
@@ -405,7 +439,7 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             transform: 'translateY(-50%)',
             fontSize: '15px',
             lineHeight: '1',
-            color: 'var(--error-color)',
+            color: 'var(--color-status-error)',
             fontWeight: '700',
         },
         '.cm-md-callout-content-first.cm-md-callout-success::before': {
@@ -416,7 +450,7 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             transform: 'translateY(-50%)',
             fontSize: '15px',
             lineHeight: '1',
-            color: 'var(--success-color)',
+            color: 'var(--color-status-success)',
             fontWeight: '700',
         },
         '.cm-md-callout-type-toolbar': {
@@ -431,9 +465,9 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
         '.cm-md-callout-type-select': {
             fontSize: '11px',
             fontFamily: 'var(--font-family)',
-            color: 'var(--text-color)',
-            background: 'var(--bg-color)',
-            border: '1px solid var(--border-color)',
+            color: 'var(--color-text-primary)',
+            background: 'var(--color-surface-default)',
+            border: '1px solid var(--color-border-default)',
             borderRadius: 'var(--surface-radius)',
             padding: '2px 6px',
             cursor: 'pointer',
@@ -450,15 +484,15 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             height: '6px',
             marginRight: '4px',
             borderRadius: '50%',
-            backgroundColor: 'var(--text-color)',
+            backgroundColor: 'var(--color-text-primary)',
             verticalAlign: 'middle',
         },
         '.cm-md-bullet-marker-nested': {
             backgroundColor: 'transparent',
-            border: '1.5px solid var(--text-color)',
+            border: '1.5px solid var(--color-text-primary)',
         },
         '.cm-md-ordered-marker': {
-            color: 'var(--text-color)',
+            color: 'var(--color-text-primary)',
             fontWeight: '600',
         },
         '.cm-md-checkbox-bullet-hidden': {
@@ -468,11 +502,11 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             marginRight: '8px',
             verticalAlign: 'middle',
             cursor: 'pointer',
-            accentColor: 'var(--accent-color)',
+            accentColor: 'var(--color-action)',
         },
         '.cm-md-task-done-content': {
             textDecoration: 'line-through',
-            color: 'var(--text-muted)',
+            color: 'var(--color-text-secondary)',
         },
         '.cm-md-hr-widget': {
             display: 'inline-block',
@@ -481,7 +515,7 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             boxSizing: 'content-box',
             padding: '6px 0',
             border: 'none',
-            borderTop: '1px solid var(--text-muted)',
+            borderTop: '1px solid var(--color-text-secondary)',
             opacity: '0.6',
             cursor: 'text',
             verticalAlign: 'middle',
@@ -490,8 +524,8 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
         // Notion-style: tight container, no inter-item gap — each row's own padding
         // creates separation; highlight fills the full row including that inset.
         '.cm-tooltip.cm-tooltip-autocomplete.cm-slash-menu-tooltip': {
-            background: 'var(--glass-bg-strong)',
-            border: '1px solid var(--border-color)',
+            background: 'var(--color-surface-glass-strong)',
+            border: '1px solid var(--color-border-default)',
             borderRadius: '10px',
             boxShadow: 'var(--shadow-lg)',
             backdropFilter: 'blur(12px) saturate(160%)',
@@ -515,13 +549,13 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             gap: '10px',
             margin: '0',
             padding: '7px 10px',
-            color: 'var(--text-color)',
+            color: 'var(--color-text-primary)',
             borderRadius: 'var(--surface-radius)',
             cursor: 'pointer',
         },
         '.cm-tooltip-autocomplete.cm-slash-menu-tooltip ul li.cm-slash-menu-option[aria-selected]': {
-            backgroundColor: 'color-mix(in srgb, var(--text-color) 8%, transparent)',
-            color: 'var(--text-color)',
+            backgroundColor: 'color-mix(in srgb, var(--color-text-primary) 8%, transparent)',
+            color: 'var(--color-text-primary)',
         },
         '.cm-slash-menu-icon': {
             display: 'inline-flex',
@@ -530,14 +564,14 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             flexShrink: '0',
             width: '20px',
             height: '20px',
-            color: 'var(--text-muted)',
+            color: 'var(--color-text-secondary)',
         },
         '.cm-slash-menu-icon svg': {
             width: '18px',
             height: '18px',
         },
         'li[aria-selected] .cm-slash-menu-icon': {
-            color: 'var(--text-color)',
+            color: 'var(--color-text-primary)',
         },
         '.cm-tooltip-autocomplete.cm-slash-menu-tooltip .cm-completionLabel': {
             flex: '1',
@@ -546,7 +580,7 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
         '.cm-tooltip-autocomplete.cm-slash-menu-tooltip .cm-completionDetail': {
             marginLeft: 'auto',
             paddingLeft: '10px',
-            color: 'var(--text-muted)',
+            color: 'var(--color-text-secondary)',
             fontStyle: 'normal',
             fontFamily: 'var(--font-mono)',
             fontWeight: 'var(--font-mono-weight)',
@@ -566,8 +600,8 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             zIndex: '1000',
             minWidth: '120px',
             padding: '4px 0',
-            backgroundColor: 'var(--bg-color)',
-            border: '1px solid var(--border-color)',
+            backgroundColor: 'var(--color-surface-default)',
+            border: '1px solid var(--color-border-default)',
             borderRadius: '4px',
             boxShadow: '0 4px 16px rgba(0, 0, 0, 0.2)',
         },
@@ -577,13 +611,13 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             padding: '6px 12px',
             border: 'none',
             background: 'transparent',
-            color: 'var(--text-color)',
+            color: 'var(--color-text-primary)',
             textAlign: 'left',
             cursor: 'pointer',
             font: 'inherit',
         },
         '.cm-spell-context-item:hover': {
-            backgroundColor: 'var(--selection-bg)',
+            backgroundColor: 'var(--color-selection-bg)',
         },
     });
 }

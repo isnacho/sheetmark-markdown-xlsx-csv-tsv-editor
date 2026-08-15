@@ -2,6 +2,7 @@ import { EditorState, EditorSelection, StateField } from '@codemirror/state';
 import { EditorView, Decoration, WidgetType } from '@codemirror/view';
 import type { DecorationSet } from '@codemirror/view';
 import { syntaxTree } from '@codemirror/language';
+import type { Transaction } from '@codemirror/state';
 import mermaid from 'mermaid';
 import {
     findMermaidFenceRanges,
@@ -173,6 +174,13 @@ class MermaidDiagramWidget extends WidgetType {
     }
 }
 
+/** CM6 parses large docs incrementally; widget fields must rebuild when the tree extends. */
+function shouldRebuildMermaidWidgets(tr: Transaction): boolean {
+    return tr.docChanged
+        || tr.effects.some((effect) => effect.is(setMermaidPreviewModeEffect))
+        || syntaxTree(tr.state).length > syntaxTree(tr.startState).length;
+}
+
 function buildFromState(state: EditorState): DecorationSet {
     const mode = state.field(mermaidPreviewModeField);
     const theme = getMermaidTheme();
@@ -214,7 +222,7 @@ function buildFromState(state: EditorState): DecorationSet {
 export const mermaidWidgetField = StateField.define<DecorationSet>({
     create: (state) => buildFromState(state),
     update(value, tr) {
-        if (!tr.docChanged && !tr.effects.some((effect) => effect.is(setMermaidPreviewModeEffect))) {
+        if (!shouldRebuildMermaidWidgets(tr)) {
             return value;
         }
         return buildFromState(tr.state);

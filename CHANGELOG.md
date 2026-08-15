@@ -5,9 +5,13 @@
 ### Improvements
 
 - Code-style text (inline code, fenced blocks, and other mono surfaces) now uses bundled **JetBrains Mono Regular** for consistent rendering across macOS and Windows, with centralized `--font-mono-size` (13.5px) and `--font-mono-weight` tokens.
+- Markdown: the Preview Edit line-number gutter now highlights whichever row your mouse is hovering, alongside the existing active-line (cursor) indicator.
 
 ### Bug fixes
 
+- Markdown tables: clicking a cell now places the caret at the click position on the first click instead of always jumping to the end of the cell.
+- Markdown: local images in Preview Edit now render after fixing URI resolver wiring order on editor mount.
+- Markdown: Mermaid diagrams in longer documents now render once background parsing finishes (widget decorations previously only rebuilt on edits).
 - Markdown: fixed silent data loss when typing during an in-flight save/autosave (`originalContent` now tracks the text actually written).
 - Markdown: circular YAML frontmatter no longer crashes live preview.
 - Markdown: pipe-table and callout syntax inside fenced code blocks is no longer misinterpreted as real tables/callouts.
@@ -18,7 +22,7 @@
 - Markdown: Go to Line (Ctrl/Cmd+G) uses an in-webview dialog — `window.prompt` was blocked by the sandbox.
 - Markdown: list/heading/blockquote toggles now apply to every line in a multi-line selection.
 - Markdown: spellcheck context menu and active view are torn down when the live preview unmounts.
-- Markdown tables: fixed bordered outline staying full width after column resize.
+- Markdown fenced code blocks: ↑↓ arrow keys now move one line at a time without skipping or jumping out of the block; clicks land on the intended line instead of the row below.
 
 ### Performance
 

@@ -97,8 +97,12 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
         },
         // Hover sibling to the active-line bar above (hoverLineGutter.ts
         // toggles the `cm-md-hover-line-gutter` class): same left-edge
-        // geometry, muted color, no bold — and never applied to the active
-        // line itself (suppressed at the data layer in hoverLineGutter.ts).
+        // geometry as the active line, but the bar color matches the
+        // inactive line number's own color (`.cm-gutters` color above)
+        // rather than the active line's `--color-text-primary` — and never
+        // applied to the active line itself (suppressed at the data layer
+        // in hoverLineGutter.ts). The fade-in/out transition is what keeps
+        // it reading as the secondary, mouse-driven cue.
         //
         // The `::before` itself is created unconditionally on every
         // non-active gutter row (opacity 0 baseline) rather than only when
@@ -120,12 +124,15 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             top: '0',
             bottom: '0',
             width: '2px',
-            backgroundColor: 'var(--color-text-secondary)',
+            backgroundColor: 'var(--color-text-tertiary)',
             opacity: '0',
             transition: 'opacity 120ms ease',
         },
         '.cm-lineNumbers .cm-gutterElement.cm-md-hover-line-gutter:not(.cm-activeLineGutter)::before': {
             opacity: '1',
+        },
+        '.cm-lineNumbers .cm-gutterElement.cm-md-hover-line-gutter:not(.cm-activeLineGutter)': {
+            fontWeight: '700',
         },
         '.cm-md-search-match': {
             backgroundColor: 'color-mix(in srgb, var(--color-status-warning) 35%, transparent)',
@@ -183,13 +190,18 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             borderTop: '1px solid var(--color-border-subtle)',
             borderRadius: 'var(--surface-radius) var(--surface-radius) 0 0',
             paddingTop: '16px',
-            marginTop: '16px',
+        },
+        '.cm-md-fenced-code-line-first.cm-md-fenced-code-line-gap-before': {
+            // External gap above a fence — padding only (margins desync CM6 clicks).
+            paddingTop: '32px',
         },
         '.cm-md-fenced-code-line-last': {
             borderBottom: '1px solid var(--color-border-subtle)',
             borderRadius: '0 0 var(--surface-radius) var(--surface-radius)',
             paddingBottom: '16px',
-            marginBottom: '16px',
+        },
+        '.cm-md-fenced-code-line-last.cm-md-fenced-code-line-gap-after': {
+            paddingBottom: '32px',
         },
         '.cm-md-fenced-code-line-first.cm-md-fenced-code-line-last': {
             borderRadius: 'var(--surface-radius)',

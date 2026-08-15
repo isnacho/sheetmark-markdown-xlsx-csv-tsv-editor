@@ -1,7 +1,7 @@
 ---
 title: Hover line highlight
 slug: hover-line-highlight
-status: to-qa
+status: completed
 created: 2026-08-15
 updated: 2026-08-15
 ---
@@ -60,6 +60,19 @@ Webview-internal only (`src/webviews/md/livePreview/**`) — no host-side, messa
 - **Active-line bar disappeared entirely.** CM6's `EditorView.theme()` compiles a plain selector (no `&`) as `<generatedClass> <selector>` (descendant) and an `&`-prefixed selector as `<generatedClass>.<rest>` (compound) — both forms contribute exactly one class to specificity, so `&.cm-focused .cm-activeLineGutter::before` (3 classes) and the new `.cm-lineNumbers .cm-gutterElement::before` (3 classes) ended up at *equal* specificity. With a tie, the later-declared rule (the hover baseline) won the cascade on the active line's own element too, zeroing its opacity and swapping its color to `--text-muted`. Fixed by scoping the hover baseline rule to `.cm-lineNumbers .cm-gutterElement:not(.cm-activeLineGutter)::before` so it structurally never matches the active line's gutter cell, removing the ambiguity instead of trying to out-rank it on specificity/order. Reverted the now-unnecessary explicit `opacity`/`transition` overrides on the active-line rule.
 - `npm run compile` — clean after the fix.
 
+**Scope widening round (found during second smoke test — see `## QA`):**
+
+- After the bug-fix round above, live testing confirmed (via a temporary high-contrast red/6px debug style) that the hover mechanism itself — dispatch, state, `gutterLineClass` compute, CSS — was fully correct, but it only activated when the mouse was directly over the gutter's line-number digits, never when hovering a row's text. This matched the plan's literal "gutter only" scope (§Scope), but didn't match the original ask ("highlights which row I'm hovering on") or the symmetry with the active-line indicator, which responds to the cursor regardless of where in the row it was placed.
+- **Decision (user-confirmed):** widen hover *detection* to the whole row (gutter + text), while keeping the rendered effect gutter-only (no tint in the content column) — i.e. only the event source changes, not the visual design from the Brainstorm section.
+- **`src/webviews/md/livePreview/hoverLineGutter.ts`** — added an `EditorView.domEventHandlers({ mousemove, mouseleave })` extension (attaches to `view.contentDOM`) inside `hoverLineGutter()`, alongside the existing gutter-only `hoverGutterDomEventHandlers()` (attaches to the gutter's own DOM via `lineNumbers({ domEventHandlers })`, unchanged). The two handler sets share `updateHoveredLine()`/`clearHoveredLine()` helpers to avoid duplicating the dispatch-on-change logic. The content-side handler resolves the line via `view.posAtCoords({ x: event.clientX, y: event.clientY })` directly (no left-edge-of-content compensation needed here, unlike the gutter handler — the event already originates inside the content column, so the coordinates are unambiguous).
+- Reverted the temporary debug styling in `cm6Theme.ts` back to the intended 2px muted `var(--color-text-secondary)` bar with the 120ms opacity fade.
+- `npm run compile` and `npm run test:unit` (hoverLineGutter.test.mts, 6/6) — clean.
+
+**Styling round (post-QA-round-2 feedback):** once the hover cue was confirmed working end-to-end, live feedback was that the "muted, no bold" treatment from the Brainstorm read as too weak in practice. **Deviation from Brainstorm (user-directed):** hover now bolds the hovered number (`fontWeight: 700`, previously reserved for the active line only) and its `::before` bar color was intended to match the active line's `var(--color-text-primary)` — but live feedback was this read as "too dark" versus an inactive line number. Corrected to `var(--color-text-tertiary)`, the actual color `.cm-gutters` already applies to every non-active line number, so the bar now matches the real (unbolded) number color exactly rather than jumping to the active line's darker tone. The two indicators are still visually distinguishable: the active line is a persistent, immediate presence on the cursor's line, while the hover cue fades in/out (120ms) and only ever tracks one non-active row at a time. `npm run compile` — clean after each change.
+
 ## QA
 
-- **Round 1 (failed):** hover bar never appeared on mouse movement over the gutter, and the active-line bar (previously visible on the cursor's line) had disappeared. Root-caused and fixed — see the bug-fix round in `## Implementation Log`. Not yet re-verified live.
+- **Round 1 (failed):** hover bar never appeared on mouse movement over the gutter, and the active-line bar (previously visible on the cursor's line) had disappeared. Root-caused and fixed — see the bug-fix round in `## Implementation Log`.
+- **Round 2 (partially working):** active-line bar confirmed restored. Hover bar confirmed rendering correctly (verified via temporary high-contrast debug styling) but only over the gutter's number digits, not over row text — narrower hit area than intended. Root-caused and fixed by widening detection to the whole row — see the scope-widening round in `## Implementation Log`.
+- **Round 3 (confirmed working):** hover now activates over the whole row (gutter + text), per user confirmation ("looks good now"). Follow-up styling requests applied and iterated live: bold hovered number, and bar color corrected to `var(--color-text-tertiary)` (matches the actual inactive line-number color) after an initial attempt at `var(--color-text-primary)` read as "too dark." User confirmed complete.
+- **Result: passed.** Hover cue activates on the whole row, bolds the hovered number, uses a bar color matching the inactive line number, fades in/out, and yields to the active-line indicator on the cursor's own line with no regression to click-to-select-line.

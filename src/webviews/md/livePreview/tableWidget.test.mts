@@ -110,6 +110,19 @@ test('findActiveCell resolves the cell containing the selection', () => {
     assert.equal(findActiveCell(state, grid, alignmentRowPos, alignmentRowPos), null);
 });
 
+test('findActiveCell activates in-cell editing only when the range fits one cell', () => {
+    const doc = '| a | b |\n| - | - |\n| 1 | 2 |';
+    const state = stateFor(doc);
+    const grid = buildCellGrid(state, tableNode(state));
+    const cell1 = grid[1][0];
+    assert.deepEqual(
+        findActiveCell(state, grid, cell1.from, cell1.to),
+        { row: 1, col: 0, ...cell1 },
+    );
+    assert.equal(findActiveCell(state, grid, 0, doc.length), null);
+    assert.equal(findActiveCell(state, grid, grid[0][0].from, grid[0][1].to), null);
+});
+
 test('neighbor lookups wrap across row/column boundaries', () => {
     const grid: CellRange[][] = [
         [{ from: 0, to: 1 }, { from: 2, to: 3 }],

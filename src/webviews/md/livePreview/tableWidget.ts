@@ -386,6 +386,22 @@ export interface TableMenuItem {
     disabledReason?: string;
 }
 
+const TABLE_MENU_ICONS: Record<TableMenuActionId, string> = {
+    clearCell: Icons.TableClearCell,
+    clearRow: Icons.TableClearRow,
+    clearColumn: Icons.TableClearColumn,
+    insertRowAbove: Icons.TableInsertRowAbove,
+    insertRowBelow: Icons.TableAddRowBelow,
+    moveRowUp: Icons.MoveUp,
+    moveRowDown: Icons.MoveDown,
+    deleteRow: Icons.TableRemoveRow,
+    insertColumnLeft: Icons.TableInsertColumnLeft,
+    insertColumnRight: Icons.TableAddColumnRight,
+    moveColumnLeft: Icons.MoveLeft,
+    moveColumnRight: Icons.MoveRight,
+    deleteColumn: Icons.TableRemoveColumn,
+};
+
 /**
  * What the right-click menu offers for the cell at (row, col) — a pure
  * function of the grid's shape, computed at menu-open time straight off the
@@ -540,6 +556,8 @@ const BR_TAG_RE = /<br\s*\/?>/gi;
 
 let activeTableEditingCell: HTMLElement | null = null;
 const tableCellCommitHandlers = new WeakMap<HTMLElement, () => void>();
+/** Set on mousedown of an inactive cell; consumed by `wireActiveCell` to land the caret at the click. */
+let pendingCellClickPoint: { x: number; y: number } | null = null;
 
 export function applyTableCellInlineFormatAction(action: string): boolean {
     const cell = activeTableEditingCell;
@@ -548,6 +566,11 @@ export function applyTableCellInlineFormatAction(action: string): boolean {
     tableCellCommitHandlers.get(cell)?.();
     cell.focus();
     return true;
+}
+
+/** Leave in-cell contentEditable so CM6 can own keyboard focus (e.g. Cmd+A). */
+export function blurActiveTableEditingCell(): void {
+    activeTableEditingCell?.blur();
 }
 
 function serializeCellContent(el: HTMLElement): string {
@@ -799,6 +822,27 @@ function caretOffsetIn(el: HTMLElement): number | null {
     if (!sel || sel.rangeCount === 0 || !sel.isCollapsed) { return null; }
     const range = sel.getRangeAt(0);
     if (!el.contains(range.commonAncestorContainer)) { return null; }
+    return measureSerializedOffset(el, range.startContainer, range.startOffset);
+}
+
+/** Map a viewport click to a serialized offset inside `el` (after raw cell content is loaded). */
+function caretOffsetFromClientPoint(el: HTMLElement, x: number, y: number): number | null {
+    const doc = document as Document & {
+        caretRangeFromPoint?(x: number, y: number): Range | null;
+        caretPositionFromPoint?(x: number, y: number): { offsetNode: Node; offset: number } | null;
+    };
+    let range: Range | null = null;
+    if (doc.caretRangeFromPoint) {
+        range = doc.caretRangeFromPoint(x, y);
+    } else if (doc.caretPositionFromPoint) {
+        const pos = doc.caretPositionFromPoint(x, y);
+        if (pos) {
+            range = document.createRange();
+            range.setStart(pos.offsetNode, pos.offset);
+            range.collapse(true);
+        }
+    }
+    if (!range || !el.contains(range.commonAncestorContainer)) { return null; }
     return measureSerializedOffset(el, range.startContainer, range.startOffset);
 }
 
@@ -1469,6 +1513,14 @@ function wireActiveCell(td: HTMLElement, view: EditorView, active: ActiveCell, g
                 commit();
                 return;
             }
+            if (key === 'a' && !event.shiftKey) {
+                event.preventDefault();
+                commit();
+                blurActiveTableEditingCell();
+                view.dispatch({ selection: EditorSelection.range(0, view.state.doc.length) });
+                view.focus();
+                return;
+            }
         }
 
         if (event.key === 'Tab') {
@@ -1508,16 +1560,33 @@ function wireActiveCell(td: HTMLElement, view: EditorView, active: ActiveCell, g
     // Land the caret/selection to match how this cell became active: a range
     // selection (Tab/Enter nav landed here) selects the whole cell, ready to
     // overwrite; a collapsed selection (click, or Arrow nav) places the caret
-    // at that exact character offset. Click doesn't map pixel->offset (v1
-    // scope cut, see file header) so mousedown below always lands collapsed
-    // at the cell's end.
-    const sel = view.state.selection.main;
+    // at that exact character offset. Clicks on an inactive cell stash viewport
+    // coords in `pendingCellClickPoint` so we can map pixel → offset once the
+    // raw editable DOM is in place.
     queueMicrotask(() => {
+        const currentSel = view.state.selection.main;
+        const lo = Math.min(currentSel.from, currentSel.to);
+        const hi = Math.max(currentSel.from, currentSel.to);
+        const rangeFitsCell = !currentSel.empty && lo >= active.from && hi <= active.to;
+        if (!currentSel.empty && !rangeFitsCell) {
+            view.focus();
+            return;
+        }
         td.focus();
-        if (sel.from !== sel.to) {
+        if (rangeFitsCell) {
             selectAllTextIn(td);
         } else {
-            placeCaretAtOffset(td, sel.from - active.from);
+            let caretOffset = currentSel.from - active.from;
+            if (pendingCellClickPoint) {
+                const clicked = caretOffsetFromClientPoint(td, pendingCellClickPoint.x, pendingCellClickPoint.y);
+                pendingCellClickPoint = null;
+                if (clicked !== null) { caretOffset = clicked; }
+            }
+            placeCaretAtOffset(td, caretOffset);
+            const docPos = active.from + caretOffset;
+            if (docPos !== currentSel.from) {
+                view.dispatch({ selection: { anchor: docPos } });
+            }
         }
         scheduleEditingRowHeightSync(td);
     });
@@ -1573,7 +1642,8 @@ function showTableContextMenu(event: MouseEvent, view: EditorView, tableIndex: n
             const btn = document.createElement('button');
             btn.type = 'button';
             btn.className = 'cm-md-table-context-item';
-            btn.textContent = item.label;
+            btn.dataset.action = item.id;
+            btn.innerHTML = `<span class="cm-md-table-context-icon" aria-hidden="true">${TABLE_MENU_ICONS[item.id]}</span><span class="cm-md-table-context-label">${item.label}</span>`;
             btn.disabled = !item.enabled;
             if (item.disabledReason) { btn.title = item.disabledReason; }
             btn.addEventListener('click', () => {
@@ -1665,6 +1735,8 @@ export class TableWidget extends WidgetType {
                 const target = pos && gridAtClick ? gridAtClick[pos.row]?.[pos.col] : undefined;
                 if (!target) { return; }
                 event.preventDefault();
+                const mouse = event as MouseEvent;
+                pendingCellClickPoint = { x: mouse.clientX, y: mouse.clientY };
                 placeCollapsed(view, collapsedClickPosForCell(view.state, target));
             });
         });

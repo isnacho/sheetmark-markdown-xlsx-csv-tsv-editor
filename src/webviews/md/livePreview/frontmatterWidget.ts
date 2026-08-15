@@ -1,4 +1,4 @@
-import { EditorState, StateField, StateEffect } from '@codemirror/state';
+import { EditorState, StateField, StateEffect, EditorSelection } from '@codemirror/state';
 import { EditorView, Decoration, WidgetType } from '@codemirror/view';
 import type { DecorationSet } from '@codemirror/view';
 import { resolveFrontmatterWidgetData } from '../frontmatter';
@@ -62,7 +62,7 @@ class FrontmatterWidget extends WidgetType {
     }
 
     toDOM(view: EditorView): HTMLElement {
-        return createFrontmatterCardElement({
+        const dom = createFrontmatterCardElement({
             yamlText: this.data.yamlText,
             rows: this.data.rows,
             collapsed: this.collapsed,
@@ -81,6 +81,25 @@ class FrontmatterWidget extends WidgetType {
                 });
             },
         });
+
+        // The card is a block replace widget (`ignoreEvent` below), so CM6 never
+        // sees clicks on it — place the cursor after the frontmatter block and
+        // return focus to the editor (same idea as table cell click wiring).
+        dom.addEventListener('mousedown', (event) => {
+            if (view.state.readOnly) { return; }
+            const target = event.target;
+            if (!(target instanceof HTMLElement)) { return; }
+            if (target.closest('button, textarea, select, a, input')) { return; }
+            event.preventDefault();
+            view.dispatch({
+                selection: EditorSelection.cursor(this.data.range.to),
+                effects: setFrontmatterEditingEffect.of(false),
+                scrollIntoView: true,
+            });
+            view.focus();
+        });
+
+        return dom;
     }
 
     updateDOM(dom: HTMLElement, view: EditorView): boolean {
@@ -146,4 +165,12 @@ export function seedFrontmatterCollapsed(collapsed: boolean): ReturnType<typeof 
 
 export function seedFrontmatterEditing(editing: boolean): ReturnType<typeof frontmatterEditingField.init> {
     return frontmatterEditingField.init(() => editing);
+}
+
+/** Leave the YAML card textarea so CM6 can own keyboard focus (e.g. Cmd+A). */
+export function blurActiveFrontmatterEditing(): void {
+    const textarea = document.querySelector('.yaml-frontmatter-textarea');
+    if (textarea instanceof HTMLTextAreaElement) {
+        textarea.blur();
+    }
 }

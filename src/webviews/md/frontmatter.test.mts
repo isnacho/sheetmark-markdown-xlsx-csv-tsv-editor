@@ -8,6 +8,7 @@ import {
     markdownBodyWithoutFrontmatter,
     resolveFrontmatterWidgetData,
     formatFrontmatterBlock,
+    cursorPosAfterFrontmatter,
 } from './frontmatter.ts';
 
 test('extractFrontmatter: valid block at doc start', () => {
@@ -17,6 +18,11 @@ test('extractFrontmatter: valid block at doc start', () => {
     assert.equal(extracted.yamlText, 'title: Hello\nstatus: draft');
     assert.equal(extracted.body, '\n# Body\n');
     assert.deepEqual(extracted.range, { from: 0, to: '---\ntitle: Hello\nstatus: draft\n---\n'.length });
+    assert.equal(cursorPosAfterFrontmatter(raw), extracted.range.to);
+});
+
+test('cursorPosAfterFrontmatter: no block returns 0', () => {
+    assert.equal(cursorPosAfterFrontmatter('# Hello\n'), 0);
 });
 
 test('extractFrontmatter: ignores mid-document hr block', () => {

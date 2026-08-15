@@ -51,10 +51,6 @@ export interface ActiveCell extends CellRange {
     col: number;
 }
 
-function rangesIntersect(aFrom: number, aTo: number, bFrom: number, bTo: number): boolean {
-    return aFrom <= bTo && aTo >= bFrom;
-}
-
 export function splitTableRowCells(text: string): string[] {
     let trimmed = text.trim();
     if (trimmed.startsWith('|')) { trimmed = trimmed.slice(1); }
@@ -139,11 +135,17 @@ function isEmptyTableCellContent(state: EditorState, cell: CellRange): boolean {
 
 export function findActiveCell(state: EditorState, grid: readonly CellRange[][], selFrom: number, selTo: number): ActiveCell | null {
     if (selFrom !== selTo) {
+        const lo = Math.min(selFrom, selTo);
+        const hi = Math.max(selFrom, selTo);
         for (let row = 0; row < grid.length; row++) {
             const cols = grid[row];
             for (let col = 0; col < cols.length; col++) {
                 const cell = cols[col];
-                if (rangesIntersect(selFrom, selTo, cell.from, cell.to)) {
+                // Only enter in-cell editing when the selection is scoped to
+                // this cell (Tab/Enter nav). Broader ranges — Cmd+A, shift-
+                // extend across cells, whole-table select — must not hijack
+                // focus into a contentEditable cell.
+                if (lo >= cell.from && hi <= cell.to) {
                     return { row, col, from: cell.from, to: cell.to };
                 }
             }

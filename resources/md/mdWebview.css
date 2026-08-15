@@ -1074,7 +1074,9 @@ body.preview-edit-mode .markdown-preview .cm-md-table-widget table.md-table td:e
 }
 
 .cm-md-table-context-item {
-    display: block;
+    display: flex;
+    align-items: center;
+    gap: 8px;
     width: 100%;
     text-align: left;
     border: none;
@@ -1086,13 +1088,49 @@ body.preview-edit-mode .markdown-preview .cm-md-table-widget table.md-table td:e
     cursor: pointer;
 }
 
+.cm-md-table-context-icon {
+    display: inline-flex;
+    flex-shrink: 0;
+    width: 14px;
+    height: 14px;
+    color: var(--color-text-secondary);
+}
+
+.cm-md-table-context-icon svg {
+    width: 14px;
+    height: 14px;
+}
+
+.cm-md-table-context-label {
+    flex: 1;
+    min-width: 0;
+}
+
 .cm-md-table-context-item:hover:not(:disabled) {
     background: var(--color-interactive-row-hover);
+}
+
+.cm-md-table-context-item:hover:not(:disabled) .cm-md-table-context-icon {
+    color: var(--color-text-primary);
 }
 
 .cm-md-table-context-item:disabled {
     color: var(--color-text-secondary);
     cursor: not-allowed;
+}
+
+.cm-md-table-context-item:disabled .cm-md-table-context-icon {
+    color: inherit;
+}
+
+.cm-md-table-context-item[data-action="deleteRow"]:hover:not(:disabled),
+.cm-md-table-context-item[data-action="deleteColumn"]:hover:not(:disabled) {
+    color: var(--color-status-error);
+}
+
+.cm-md-table-context-item[data-action="deleteRow"]:hover:not(:disabled) .cm-md-table-context-icon,
+.cm-md-table-context-item[data-action="deleteColumn"]:hover:not(:disabled) .cm-md-table-context-icon {
+    color: var(--color-status-error);
 }
 
 .cm-md-table-context-separator {

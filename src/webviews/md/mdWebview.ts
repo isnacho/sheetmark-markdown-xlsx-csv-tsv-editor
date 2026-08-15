@@ -34,6 +34,7 @@ import {
     canLivePreviewUndo,
     canLivePreviewRedo,
     refreshLivePreviewImages,
+    selectAllLivePreview,
 } from './livePreview/livePreviewEditor';
 import { setImageUriResolver } from './livePreview/imageWidget';
 import { markdownBodyWithoutFrontmatter, extractFrontmatter } from './frontmatter';
@@ -427,7 +428,6 @@ function enterPreviewEditMode() {
 
     if (preview) {
         preview.contentEditable = 'false';
-        wireImageUriResolver();
         mountLivePreview({
             parent: preview,
             doc: currentContent,
@@ -465,6 +465,9 @@ function enterPreviewEditMode() {
                 persistCalloutDefaultType(type);
             },
         });
+        // mountLivePreview unmounts first and clears the resolver — wire after mount.
+        wireImageUriResolver();
+        refreshLivePreviewImages();
         refreshCm6Toc(currentContent);
         focusLivePreview();
     }
@@ -654,6 +657,7 @@ function applyReloadedContent(text: string) {
 
     if (isLivePreviewActive()) {
         setLivePreviewContent(text);
+        refreshLivePreviewImages();
         refreshCm6Toc(text);
         reapplySearch();
     }
@@ -1643,6 +1647,16 @@ document.addEventListener('keydown', (e) => {
         return;
     }
 
+    if (isCmdOrCtrl && e.key.toLowerCase() === 'a' && isEditMode && isLivePreviewActive()) {
+        const target = e.target;
+        if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
+            return;
+        }
+        e.preventDefault();
+        selectAllLivePreview();
+        return;
+    }
+
     if (e.key === 'Escape') {
         // Close lightbox first, then search, then edit mode
         const lightbox = $('lightboxOverlay');
@@ -1663,7 +1677,7 @@ document.addEventListener('keydown', (e) => {
             return;
         }
     }
-});
+}, true);
 
 // ===== Resizable Panels =====
 function initResizeHandles() {
@@ -1809,10 +1823,10 @@ const formatIconMap: Record<string, string> = {
     link: Icons.Link,
     image: Icons.Image,
     table: Icons.TableInsert,
-    tableAddRowBelow: '<span class="fmt-text-icon">+R</span>',
-    tableRemoveRow: '<span class="fmt-text-icon">-R</span>',
-    tableAddColumnRight: '<span class="fmt-text-icon">+C</span>',
-    tableRemoveColumn: '<span class="fmt-text-icon">-C</span>',
+    tableAddRowBelow: Icons.TableAddRowBelow,
+    tableRemoveRow: Icons.TableRemoveRow,
+    tableAddColumnRight: Icons.TableAddColumnRight,
+    tableRemoveColumn: Icons.TableRemoveColumn,
     codeBlock: Icons.CodeBlock,
     hr: Icons.HorizontalRule,
     duplicateLine: Icons.DuplicateLine,

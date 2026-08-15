@@ -142,6 +142,11 @@ export function wrapFrontmatterYaml(yamlBody: string): string {
     return `---\n${trimmed}\n---\n`;
 }
 
+/** First doc position after a valid frontmatter block — where the body starts. */
+export function cursorPosAfterFrontmatter(content: string): number {
+    return extractFrontmatter(content)?.range.to ?? 0;
+}
+
 export function markdownBodyWithoutFrontmatter(content: string): string {
     const extracted = extractFrontmatter(content);
     if (!extracted) {

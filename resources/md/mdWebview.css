@@ -425,6 +425,18 @@ body.cm6-preview-active.cm6-word-wrap .cm-md-inline-code {
     overflow-wrap: anywhere;
 }
 
+/* CM6 code surfaces — mirror --font-mono token (cm6Theme.ts also sets these). */
+.cm-md-inline-code,
+.cm-md-fenced-code-line {
+    font-family: var(--font-mono);
+    font-weight: var(--font-mono-weight);
+    font-size: var(--font-mono-size);
+}
+
+.cm-md-mermaid-lang {
+    font-family: var(--font-mono);
+    font-weight: var(--font-mono-weight);
+}
 
 body.preview-edit-mode .markdown-preview {
     cursor: text;
@@ -546,6 +558,7 @@ body.resizing * {
 /* Inline code */
 .markdown-preview .inline-code {
     font-family: var(--font-mono);
+    font-weight: var(--font-mono-weight);
     font-size: 90%;
     background: var(--code-bg);
     padding: 0.2em 0.4em;
@@ -558,6 +571,7 @@ body.resizing * {
     display: inline-block;
     padding: 3px 6px;
     font-family: var(--font-mono);
+    font-weight: var(--font-mono-weight);
     font-size: 11px;
     line-height: 1;
     color: var(--text-color);
@@ -765,6 +779,7 @@ body.cm6-preview-active .markdown-preview .yaml-frontmatter-card {
     resize: none;
     overflow: hidden;
     font-family: var(--font-mono);
+    font-weight: var(--font-mono-weight);
     font-size: 85%;
     line-height: 1.45;
     color: var(--text-color);
@@ -804,6 +819,12 @@ body.cm6-preview-active .markdown-preview .yaml-frontmatter-card {
 
 .cm-md-table-scroll.cm-md-table-overflow-x {
     overflow-x: auto;
+}
+
+/* Resized tables narrower than the pane: shrink the bordered wrapper to the table. */
+.cm-md-table-scroll.cm-md-table-hug-content {
+    width: fit-content;
+    max-width: 100%;
 }
 
 .cm-md-table-scroll table.md-table {

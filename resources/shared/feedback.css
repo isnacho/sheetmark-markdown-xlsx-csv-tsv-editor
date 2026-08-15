@@ -280,6 +280,7 @@
     cursor: not-allowed;
     font-size: 12px;
     font-family: var(--font-mono);
+    font-weight: var(--font-mono-weight);
     line-height: 1.6;
 }
 

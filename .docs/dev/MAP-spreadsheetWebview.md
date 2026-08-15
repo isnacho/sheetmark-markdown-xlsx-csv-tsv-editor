@@ -5,7 +5,7 @@ runs in the **webview (browser)**. It's too large to read end-to-end — use thi
 the section you need with `Read(offset, limit)`, then read only that range.
 
 One big IIFE. Runtime context, hard rules, and the message protocol are in
-[CLAUDE.md](../../CLAUDE.md) and [MESSAGE-PROTOCOL.md](MESSAGE-PROTOCOL.md). Line ranges are
+[AGENTS.md](../../AGENTS.md) and [MESSAGE-PROTOCOL.md](MESSAGE-PROTOCOL.md). Line ranges are
 approximate — confirm by reading the boundary.
 
 | Lines | Section | Responsibility |

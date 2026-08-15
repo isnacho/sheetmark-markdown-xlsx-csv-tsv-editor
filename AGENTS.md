@@ -1,4 +1,4 @@
-# CLAUDE.md — agent working guide
+# AGENTS.md — agent working guide
 
 VS Code extension: custom editors for spreadsheets (`.xlsx`/`.csv`/`.tsv`) and Markdown (`.md`).
 Fork of upstream `xlsx-viewer` v1.9.91, ~20k lines TypeScript. Read this file fully before editing.

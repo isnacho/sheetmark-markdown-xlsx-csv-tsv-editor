@@ -105,3 +105,19 @@ test('resolveFrontmatterWidgetData returns range and yaml text', () => {
     assert.ok(data.range.to > data.range.from);
     assert.equal(data.yamlText, 'title: Widget');
 });
+
+test('buildFieldRows: circular YAML anchor/alias does not throw', () => {
+    const yamlText = 'a: &x\n  b: *x';
+    const parsed = parseFrontmatter(yamlText);
+    assert.ok(parsed);
+    assert.doesNotThrow(() => buildFieldRows(parsed!, yamlText));
+    const rows = buildFieldRows(parsed!, yamlText);
+    assert.ok(rows.some((row) => row.key === 'a'));
+});
+
+test('resolveFrontmatterWidgetData: circular YAML does not throw', () => {
+    const raw = '---\na: &x\n  b: *x\n---\nbody';
+    let data: ReturnType<typeof resolveFrontmatterWidgetData>;
+    assert.doesNotThrow(() => { data = resolveFrontmatterWidgetData(raw); });
+    assert.ok(data);
+});

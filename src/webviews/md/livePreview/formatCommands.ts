@@ -1,7 +1,7 @@
 // Phase 5 — formatting commands for CM6 Preview Edit mode.
 //
 // Runtime: WEBVIEW (browser). Ports the Split-mode formatting helpers
-// (mdWebview.ts wrapSelection/toggleLinePrefix/... — see CLAUDE.md's
+// (mdWebview.ts wrapSelection/toggleLinePrefix/... — see AGENTS.md's
 // "formatting commands" note in the plan doc) from an imperative
 // mutate-`editor.value`-then-read model to CM6's compute-a-TransactionSpec-
 // then-dispatch model. Each `computeXxx` function is a pure function of
@@ -155,7 +155,7 @@ export function computeInsertImage(state: EditorState): TransactionSpec {
 }
 
 export function computeInsertTable(state: EditorState): TransactionSpec {
-    const table = '\n| Header 1 | Header 2 | Header 3 |\n| -------- | -------- | -------- |\n| Cell 1   | Cell 2   | Cell 3   |\n';
+    const table = '\n|  |  |  |\n| --- | --- | --- |\n|  |  |  |\n';
     return computeInsertAtCursor(state, table);
 }
 

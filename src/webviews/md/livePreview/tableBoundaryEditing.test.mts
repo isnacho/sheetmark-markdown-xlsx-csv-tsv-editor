@@ -247,3 +247,12 @@ test('arrow down from blank line above table enters header row', () => {
     const tr = state.update(computeTableArrow(state, 'down')!);
     assert.equal(tr.state.doc.lineAt(tr.state.selection.main.head).number, 3);
 });
+
+test('pipe-shaped lines inside fenced code are not treated as tables', () => {
+    const doc = '```markdown\n| a | b |\n| - | - |\n| 1 | 2 |\n```\n\nBelow';
+    const pipePos = doc.indexOf('| a');
+    const state = stateFor(doc, pipePos);
+    assert.equal(computeTableArrow(state, 'right'), null);
+    assert.equal(computeTableBoundaryBackspace(state), null);
+    assert.equal(tableBlockRangeForLine(state, state.doc.lineAt(pipePos).number), null);
+});

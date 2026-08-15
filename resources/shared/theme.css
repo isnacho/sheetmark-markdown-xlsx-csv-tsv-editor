@@ -1,8 +1,19 @@
+@font-face {
+    font-family: 'JetBrains Mono';
+    src: url('../fonts/JetBrainsMono-Regular.woff2') format('woff2');
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+
 :root {
     /* --- Typography --- */
     /* System fonts only - cleanest look */
     --font-family: system-ui, -apple-system, sans-serif;
-    --font-mono: Consolas, 'Courier New', monospace;
+    /* Bundled JetBrains Mono Regular; system mono fallbacks if load fails */
+    --font-mono: 'JetBrains Mono', ui-monospace, Menlo, Monaco, Consolas, 'Courier New', monospace;
+    --font-mono-weight: 400;
+    --font-mono-size: 13.5px;
     --header-height: 40px;
     --main-toolbar-height: 40px;
     --header-height-max: 96px;

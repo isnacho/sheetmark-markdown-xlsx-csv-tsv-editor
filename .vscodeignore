@@ -6,7 +6,7 @@
 .docs/**
 samples/**
 src/**
-CLAUDE.md
+AGENTS.md
 **/*.ts
 **/*.mts
 **/*.map

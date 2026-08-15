@@ -10,7 +10,7 @@ import { convertTabularFile, readTabularFile, detectTabularFileType, writeTabula
 import { StyleStorageService } from './shared/styleStorageService';
 import { createExternalFileChangeWatcher } from './shared/fileExternalChangeWatcher';
 import { migrateFileUriState } from './shared/migrateFileUriState';
-import { enableOpenByDefault, disableOpenByDefault, getEditorAssociations, isSheetmarkDefaultEditor } from './shared/editorAssociationUtils';
+import { enableOpenByDefault, disableOpenByDefault, isSheetmarkConfiguredAsDefault } from './shared/editorAssociationUtils';
 
 function borderEditToCssValue(enabled: boolean, style?: string, color?: string): string {
     if (!enabled) {return '';}
@@ -1192,7 +1192,6 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
 
         const getStyledSettings = (): PersistedSpreadsheetSettings => {
             const cfg = vscode.workspace.getConfiguration('xlsxViewer');
-            const associations = getEditorAssociations();
             const autoSaveModeSetting = cfg.get<string>('xlsx.autoSaveMode', 'all');
             return {
                 firstRowIsHeader: cfg.get('xlsx.firstRowIsHeader', true),
@@ -1205,14 +1204,13 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                 hyperlinkPreview: cfg.get('xlsx.hyperlinkPreview', true),
                 spaciousCells: cfg.get('xlsx.spaciousCells', false),
                 mergeWarningEnabled: cfg.get('xlsx.mergeWarningEnabled', true),
-                isDefaultEditor: isSheetmarkDefaultEditor(associations, 'xlsx'),
+                isDefaultEditor: isSheetmarkConfiguredAsDefault('xlsx'),
                 textWrap: cfg.get('xlsx.textWrap', false)
             };
         };
 
         const getPlainSettings = (fileType: TabularFileType): PersistedSpreadsheetSettings => {
             const cfg = vscode.workspace.getConfiguration('xlsxViewer');
-            const associations = getEditorAssociations();
 
             if (fileType === 'csv' || fileType === 'tsv') {
                 return {
@@ -1226,7 +1224,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                     hyperlinkPreview: true,
                     spaciousCells: cfg.get(`${fileType}.spaciousCells`, false),
                     mergeWarningEnabled: true,
-                    isDefaultEditor: isSheetmarkDefaultEditor(associations, fileType),
+                    isDefaultEditor: isSheetmarkConfiguredAsDefault(fileType),
                     textWrap: cfg.get(`${fileType}.textWrap`, false)
                 };
             }
@@ -1242,7 +1240,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                 hyperlinkPreview: cfg.get('xlsx.hyperlinkPreview', true),
                 spaciousCells: cfg.get('xlsx.spaciousCells', false),
                 mergeWarningEnabled: cfg.get('xlsx.mergeWarningEnabled', true),
-                isDefaultEditor: isSheetmarkDefaultEditor(associations, 'xlsx'),
+                isDefaultEditor: isSheetmarkConfiguredAsDefault('xlsx'),
                 textWrap: cfg.get('xlsx.textWrap', false)
             };
         };

@@ -58,6 +58,8 @@ let isEditMode = false;
 let isPreviewEditMode = false;
 let isVersionPreviewMode = false;
 let isSaving = false;
+/** Exact text sent with the in-flight `saveMarkdown` — used to stamp `originalContent` on success. */
+let pendingSaveContent: string | null = null;
 let isReloadingFromDisk = false;
 let pendingDiskContent: string | null = null;
 // Set when the watcher reports the file was deleted externally; cleared by a
@@ -95,7 +97,7 @@ let currentSettings = {
     livePreviewReveal: true,
     livePreviewLineNumbers: false,
     autoSave: false,
-    isDefaultEditor: false
+    isDefaultEditor: true
 };
 
 /** Preview Edit gutter — single user-facing "Line Numbers" toggle (see settings panel). */
@@ -614,6 +616,7 @@ function doSave(force = false, isAutosave = false) {
     lastSaveWasAutosave = isAutosave;
     setButtonsEnabled(false);
     currentContent = getActiveEditorContent();
+    pendingSaveContent = currentContent;
     vscode.postMessage({ command: 'saveMarkdown', text: currentContent, force, isAutosave });
 }
 
@@ -709,6 +712,14 @@ function confirmOverwriteConflict(): Promise<boolean> {
         'File Changed on Disk',
         'This file changed on disk since you opened it. Overwrite it with your local changes anyway?',
         'Overwrite'
+    );
+}
+
+function confirmRestoreConflict(): Promise<boolean> {
+    return confirmModal(
+        'File Changed on Disk',
+        'This file changed on disk since you opened it. Restore the selected version anyway? Your disk changes will be lost.',
+        'Restore Anyway'
     );
 }
 
@@ -1114,7 +1125,6 @@ function applySettings(settings: any, persist = false) {
     if (toolbarManager) {
         const btn = toolbarManager.getButton('toggleTocButton');
         if (btn) {btn.classList.toggle('active', !!currentSettings.showOutline);}
-        toolbarManager.setButtonVisibility('enableAsDefaultButton', currentSettings.isDefaultEditor === false);
     }
 
     if (persist) {
@@ -1408,16 +1418,22 @@ window.addEventListener('message', (event) => {
             setButtonsEnabled(true);
             if (m.ok) {
                 showToast(m.isAutosave ? 'Autosaved' : 'Saved');
-                originalContent = currentContent;
+                if (pendingSaveContent !== null) {
+                    originalContent = pendingSaveContent;
+                }
+                pendingSaveContent = null;
                 // A successful save recreates the file if it had been deleted externally.
                 pendingDiskDeleted = false;
             } else {
+                pendingSaveContent = null;
                 showToast(m.isAutosave ? 'Autosave failed' : 'Error saving', undefined, { icon: 'warning' });
             }
+            updateEditToolbarButtons();
             break;
 
         case 'saveConflict':
             isSaving = false;
+            pendingSaveContent = null;
             setButtonsEnabled(true);
             if (lastSaveWasAutosave) {
                 // Autosave never interrupts with a dialog; the file watcher will
@@ -1441,6 +1457,14 @@ window.addEventListener('message', (event) => {
         case 'versionPreviewCancelledMd':
             setVersionPreviewMode(false);
             showToast('Preview canceled');
+            break;
+
+        case 'restoreConflict':
+            confirmRestoreConflict().then((confirmed) => {
+                if (confirmed) {
+                    vscode.postMessage({ command: 'restoreVersion', versionId: m.versionId, force: true });
+                }
+            });
             break;
 
         case 'versionRestoredMd':
@@ -1474,16 +1498,6 @@ function copyMarkdownToClipboard() {
 
 function buildToolbarButtons(): ToolbarButton[] {
     return [
-        {
-            id: 'enableAsDefaultButton',
-            icon: Icons.Zap,
-            label: 'Set as Default',
-            tooltip: 'Make Sheetmark the default editor for .md files',
-            hidden: true,
-            onClick: () => {
-                vscode.postMessage({ command: 'enableAsDefault' });
-            }
-        },
         {
             id: 'reloadFromDiskButton',
             icon: Icons.Refresh,

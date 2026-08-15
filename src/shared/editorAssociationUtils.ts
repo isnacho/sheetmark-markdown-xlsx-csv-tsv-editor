@@ -39,6 +39,12 @@ export function isOpenByDefaultSettingEnabled(type: SheetmarkAssociationType): b
     return vscode.workspace.getConfiguration('xlsxViewer').get<boolean>(`${type}.openByDefault`, false);
 }
 
+/** True when Sheetmark is the default editor for a file type (association or openByDefault setting). */
+export function isSheetmarkConfiguredAsDefault(type: SheetmarkAssociationType): boolean {
+    return isSheetmarkDefaultEditor(getEditorAssociations(), type)
+        || isOpenByDefaultSettingEnabled(type);
+}
+
 export async function setOpenByDefaultSetting(type: SheetmarkAssociationType, enabled: boolean): Promise<void> {
     const cfg = vscode.workspace.getConfiguration('xlsxViewer');
     const current = cfg.get<boolean>(`${type}.openByDefault`, false);

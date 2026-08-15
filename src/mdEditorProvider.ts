@@ -9,7 +9,7 @@ import { MermaidPreviewModeStorageService } from './shared/mermaidPreviewModeSto
 import { CalloutDefaultTypeStorageService } from './shared/calloutDefaultTypeStorageService';
 import { createExternalFileChangeWatcher } from './shared/fileExternalChangeWatcher';
 import { migrateFileUriState } from './shared/migrateFileUriState';
-import { disableOpenByDefault, enableOpenByDefault, getEditorAssociations, isSheetmarkDefaultEditor } from './shared/editorAssociationUtils';
+import { disableOpenByDefault, enableOpenByDefault, isSheetmarkConfiguredAsDefault } from './shared/editorAssociationUtils';
 
 function buildMdWebviewSettings() {
     const cfg = vscode.workspace.getConfiguration('xlsxViewer');
@@ -21,7 +21,7 @@ function buildMdWebviewSettings() {
         livePreviewReveal: cfg.get('md.livePreviewReveal', true),
         livePreviewLineNumbers: cfg.get('md.livePreviewLineNumbers', false),
         autoSave: cfg.get('md.autoSave', false),
-        isDefaultEditor: isSheetmarkDefaultEditor(getEditorAssociations(), 'md'),
+        isDefaultEditor: isSheetmarkConfiguredAsDefault('md'),
     };
 }
 
@@ -409,7 +409,6 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
 
                             case 'restoreVersion':
                                 try {
-                                    isSaving = true;
                                     const versionId = typeof message.versionId === 'string' ? message.versionId : previewVersionId || '';
                                     if (!versionId) {
                                         break;
@@ -425,6 +424,15 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                                         break;
                                     }
 
+                                    if (!message.force) {
+                                        const freshDisk = await fs.promises.readFile(filePath, 'utf-8').catch(() => null);
+                                        if (freshDisk !== null && freshDisk !== currentContent) {
+                                            webviewPanel.webview.postMessage({ command: 'restoreConflict', versionId });
+                                            break;
+                                        }
+                                    }
+
+                                    isSaving = true;
                                     await vscode.workspace.fs.writeFile(currentUri, Buffer.from(entry.content, 'utf8'));
                                     currentContent = entry.content;
                                     lastSaveTime = Date.now();

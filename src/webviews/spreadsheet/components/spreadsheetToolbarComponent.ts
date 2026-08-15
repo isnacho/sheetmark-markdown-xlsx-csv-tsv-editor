@@ -19,20 +19,11 @@ export interface CreateXlsxToolbarButtonsOptions {
     onOpenSettings: () => void;
     onHelp: () => void;
     onConvertFile: () => void;
-    onEnableAsDefault: () => void;
     onRefresh: () => void;
 }
 
 export function createXlsxToolbarButtons(options: CreateXlsxToolbarButtonsOptions): ToolbarButton[] {
     return [
-        {
-            id: 'enableAsDefaultButton',
-            icon: Icons.Zap,
-            label: 'Set as Default',
-            tooltip: 'Make Sheetmark the default editor for this file type',
-            hidden: true,
-            onClick: options.onEnableAsDefault
-        },
         {
             id: 'refreshButton',
             icon: Icons.Refresh,

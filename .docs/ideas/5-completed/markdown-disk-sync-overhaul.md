@@ -217,7 +217,7 @@ and Implement this round).
   `toggleView` (dead) and `initMarkdown` (`content` not `text`) drift noted
   during brainstorming.
 - Verification: `npm run compile` (type-check + lint + bundle) passes with 0
-  errors. No automated test suite exists for this repo per `CLAUDE.md` — QA
+  errors. No automated test suite exists for this repo per `AGENTS.md` — QA
   phase will need a manual smoke test.
 
 ## QA

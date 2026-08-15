@@ -28,7 +28,7 @@ Hard structural constraint that will not change regardless of architecture chose
 this is a **VS Code webview**. Two runtimes — Node.js extension host and a sandboxed
 browser webview — talking only via `postMessage`. The webview has no `fs`, no
 `require`, no arbitrary network access; assets must be enumerated in a CSP and
-`localResourceRoots`. Full rules: root [CLAUDE.md](../../../CLAUDE.md). Any proposed engine
+`localResourceRoots`. Full rules: root [AGENTS.md](../../../AGENTS.md). Any proposed engine
 must run as a bundled, CSP-compliant, offline, browser-sandboxed JS bundle — same
 constraints Obsidian's own Electron-based live preview does NOT have (Obsidian is not
 sandboxed the same way; that matters for what's actually portable from its approach).
@@ -122,7 +122,7 @@ the table bug go away." Worth asking honestly:
     (row/cell-level for tables; anything else that surfaces the same "whole-block
     flips" problem) — the path consistent with "same engine class as Obsidian."
 - Bundle size, CSP/asset constraints, and the two-runtime message-protocol
-  discipline (see CLAUDE.md rule 2 — every host↔webview message must be wired on
+  discipline (see AGENTS.md rule 2 — every host↔webview message must be wired on
   both ends by hand, untyped string matching, no compiler check) apply to *any*
   engine choice, not just CM6. Factor that into how expensive a framework swap
   really is here versus in a plain web app.

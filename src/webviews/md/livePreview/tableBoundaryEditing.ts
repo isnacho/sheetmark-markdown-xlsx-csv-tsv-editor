@@ -19,6 +19,21 @@ import type { DecorationSet } from '@codemirror/view';
 import { syntaxTree } from '@codemirror/language';
 import type { SyntaxNode } from '@lezer/common';
 
+function lineIsInsideFencedCode(state: EditorState, lineNumber: number): boolean {
+    const line = state.doc.line(lineNumber);
+    let inside = false;
+    syntaxTree(state).iterate({
+        from: line.from,
+        to: line.to,
+        enter(node) {
+            if (node.name === 'FencedCode') {
+                inside = true;
+            }
+        },
+    });
+    return inside;
+}
+
 export interface TableRange {
     from: number;
     to: number;
@@ -202,6 +217,9 @@ export function isTableRowLine(text: string): boolean {
 
 /** Contiguous pipe-row block containing `lineNumber`, if that line is a table row. */
 export function tableBlockRangeForLine(state: EditorState, lineNumber: number): TableRange | null {
+    if (lineIsInsideFencedCode(state, lineNumber)) {
+        return null;
+    }
     const line = state.doc.line(lineNumber);
     if (!isTableRowLine(line.text)) { return null; }
 
@@ -250,12 +268,17 @@ export function isTableDeleteBoundary(state: EditorState): boolean {
     const line = state.doc.lineAt(pos);
     if (pos !== line.from) { return false; }
     if (line.number === 1) { return false; }
+    if (lineIsInsideFencedCode(state, line.number)) { return false; }
 
     const prevLine = state.doc.line(line.number - 1);
     if (prevLine.text.trim() === '') {
-        return line.number >= 3 && isTableRowLine(state.doc.line(line.number - 2).text);
+        if (line.number >= 3 && isTableRowLine(state.doc.line(line.number - 2).text)) {
+            return !lineIsInsideFencedCode(state, line.number - 2);
+        }
+        return false;
     }
-    return isTableRowLine(prevLine.text);
+    if (!isTableRowLine(prevLine.text)) { return false; }
+    return !lineIsInsideFencedCode(state, prevLine.number);
 }
 
 export const tableDeleteArmedField = StateField.define<TableRange | null>({
@@ -298,12 +321,13 @@ export function computeTableBoundaryBackspace(state: EditorState): TransactionSp
     }
 
     if (line.number === 1) { return null; }
+    if (lineIsInsideFencedCode(state, line.number)) { return null; }
     const prevLine = state.doc.line(line.number - 1);
 
     if (prevLine.text.trim() === '') {
         if (line.number >= 3) {
             const beforeBlank = state.doc.line(line.number - 2);
-            if (isTableRowLine(beforeBlank.text)) {
+            if (isTableRowLine(beforeBlank.text) && !lineIsInsideFencedCode(state, beforeBlank.number)) {
                 return {
                     changes: { from: prevLine.from, to: line.from, insert: '' },
                     selection: EditorSelection.cursor(prevLine.from),
@@ -313,7 +337,7 @@ export function computeTableBoundaryBackspace(state: EditorState): TransactionSp
         return null;
     }
 
-    if (!isTableRowLine(prevLine.text)) { return null; }
+    if (!isTableRowLine(prevLine.text) || lineIsInsideFencedCode(state, prevLine.number)) { return null; }
     const tableRange = tableBlockRangeForLine(state, prevLine.number);
     if (!tableRange) { return null; }
 
@@ -343,6 +367,9 @@ interface ResolvedTable {
 }
 
 function resolveTableAtLine(state: EditorState, lineNumber: number): ResolvedTable | null {
+    if (lineIsInsideFencedCode(state, lineNumber)) {
+        return null;
+    }
     const line = state.doc.line(lineNumber);
     if (!isTableRowLine(line.text)) { return null; }
     const range = tableBlockRangeForLine(state, lineNumber);
@@ -359,6 +386,9 @@ function resolveTableAtLine(state: EditorState, lineNumber: number): ResolvedTab
 /** True when `pos` sits inside any GFM table pipe-row block. */
 export function isPosInsideTable(state: EditorState, pos: number): boolean {
     const line = state.doc.lineAt(pos);
+    if (lineIsInsideFencedCode(state, line.number)) {
+        return false;
+    }
     if (isTableRowLine(line.text)) {
         const block = tableBlockRangeForLine(state, line.number);
         if (block && pos >= block.from && pos <= block.to) { return true; }

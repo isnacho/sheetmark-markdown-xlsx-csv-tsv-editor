@@ -1,6 +1,6 @@
 # Architecture
 
-The "why" behind the layout. For hard rules and the change-map see [CLAUDE.md](../../CLAUDE.md);
+The "why" behind the layout. For hard rules and the change-map see [AGENTS.md](../../AGENTS.md);
 for the message inventory see [MESSAGE-PROTOCOL.md](MESSAGE-PROTOCOL.md).
 
 ---
@@ -148,7 +148,7 @@ Handled in `src/webviews/shared/**` and reused by both editors:
 mermaid, highlight.js, CodeMirror 6, exceljs etc. are bundled in. `npm run compile` = `tsc --noEmit`
 (type-check only; esbuild does the actual transpile) + eslint + esbuild. `tsconfig.json` is `strict`.
 
-There is **no test suite** for the extension host — see [CLAUDE.md §5](../../CLAUDE.md) for the
+There is **no test suite** for the extension host — see [AGENTS.md §5](../../AGENTS.md) for the
 manual verify loop. CM6 live-preview modules have co-located `*.test.mts` unit tests.
 
 ---

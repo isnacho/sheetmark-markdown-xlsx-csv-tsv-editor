@@ -6834,11 +6834,6 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
             manualSaveReminderUntil = 0;
         }
 
-        // Show/hide enable button based on whether this is the default editor
-        if (toolbarManager) {
-            toolbarManager.setButtonVisibility('enableAsDefaultButton', currentSettings.isDefaultEditor === false);
-        }
-
         resetStyledOnlySettingsVisibility();
         syncSettingsCheckboxes(currentSettings);
         if (scope === 'plain') {
@@ -7487,9 +7482,6 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
             onConvertFile: () => {
                 if (isEditMode) {return;}
                 vscode.postMessage({ command: 'convertFile' });
-            },
-            onEnableAsDefault: () => {
-                vscode.postMessage({ command: 'enableAsDefault' });
             },
             onRefresh: () => {
                 if (isEditMode) {return;}

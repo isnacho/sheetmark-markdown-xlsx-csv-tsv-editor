@@ -5,7 +5,7 @@
 // headlessly in tableWidget.test.mts. Only TableWidget's DOM wiring
 // (toDOM/updateDOM and the editable-cell event handlers) needs a real
 // browser and is verified by manual F5 testing, per this project's test
-// infrastructure (see CLAUDE.md and .docs/product/completed/PLAN-obsidian-live-preview.md).
+// infrastructure (see AGENTS.md and .docs/product/completed/PLAN-obsidian-live-preview.md).
 //
 // CM6 has no built-in table grid — unlike headings/bold/italic (inline
 // Decoration.mark/replace), a table needs an actual rendered <table> element,
@@ -1003,13 +1003,38 @@ const ROW_GRIP_WIDTH_PX = 14;
 const ROW_GRIP_GUTTER_PX = 20;
 
 /** Enable horizontal scroll on the table wrapper only when the table exceeds it. */
+interface TableScrollUIHandles {
+    ro: ResizeObserver;
+    mo: MutationObserver;
+    onScroll: () => void;
+}
+
+const tableScrollUIByElement = new WeakMap<HTMLElement, TableScrollUIHandles>();
+
+function disconnectTableScrollUI(scroll: HTMLElement): void {
+    const existing = tableScrollUIByElement.get(scroll);
+    if (!existing) { return; }
+    existing.ro.disconnect();
+    existing.mo.disconnect();
+    scroll.removeEventListener('scroll', existing.onScroll);
+    tableScrollUIByElement.delete(scroll);
+}
+
 function wireTableScrollUI(scroll: HTMLElement): void {
+    disconnectTableScrollUI(scroll);
     const table = scroll.querySelector('table');
     if (!table) { return; }
 
     const update = () => {
-        const overflows = table.getBoundingClientRect().width > scroll.clientWidth + 1;
+        const tableWidth = table.getBoundingClientRect().width;
+        // Compare against the widget's allotted width, not scroll.clientWidth —
+        // when the scroll wrapper hugs content (fit-content), clientWidth tracks
+        // the table and would never register overflow.
+        const maxScrollWidth = scroll.parentElement?.clientWidth ?? scroll.clientWidth;
+        const overflows = tableWidth > maxScrollWidth + 1;
+        const isResized = table.classList.contains('cm-md-table-resized');
         scroll.classList.toggle('cm-md-table-overflow-x', overflows);
+        scroll.classList.toggle('cm-md-table-hug-content', isResized && !overflows);
     };
 
     update();
@@ -1017,7 +1042,12 @@ function wireTableScrollUI(scroll: HTMLElement): void {
     const ro = new ResizeObserver(update);
     ro.observe(scroll);
     ro.observe(table);
-    scroll.addEventListener('scroll', update, { passive: true });
+    if (scroll.parentElement) { ro.observe(scroll.parentElement); }
+    const onScroll = update;
+    scroll.addEventListener('scroll', onScroll, { passive: true });
+    const mo = new MutationObserver(update);
+    mo.observe(table, { attributes: true, attributeFilter: ['class'] });
+    tableScrollUIByElement.set(scroll, { ro, mo, onScroll });
 }
 
 /** One shared row/column grip pair per table — positioned on wrap mousemove. */
@@ -1177,7 +1207,10 @@ function wireTableDragUI(
             rowDragging = false;
             wrap.classList.remove('cm-md-table-dragging');
             const toBodyIdx = normalizeRowDropIndex(pendingToBodyIdx, body.length);
-            const spec = computeMoveRowTo(view.state, tableNode, grid, gridRow, toBodyIdx);
+            const freshNode = findTableNodeByIndex(view.state, tableIndex);
+            if (!freshNode) { return; }
+            const freshGrid = buildCellGrid(view.state, freshNode);
+            const spec = computeMoveRowTo(view.state, freshNode, freshGrid, gridRow, toBodyIdx);
             if (spec) { view.dispatch(spec); }
         };
 
@@ -1231,7 +1264,10 @@ function wireTableDragUI(
             insertionLine.style.display = 'none';
             colDragging = false;
             wrap.classList.remove('cm-md-table-dragging');
-            const spec = computeMoveColumnTo(view.state, tableNode, grid, col, pendingToCol);
+            const freshNode = findTableNodeByIndex(view.state, tableIndex);
+            if (!freshNode) { return; }
+            const freshGrid = buildCellGrid(view.state, freshNode);
+            const spec = computeMoveColumnTo(view.state, freshNode, freshGrid, col, pendingToCol);
             if (!spec) { return; }
             const widthsMap = view.state.field(columnWidthsField);
             const widths = widthsMap[tableIndex];
@@ -1559,6 +1595,9 @@ export class TableWidget extends WidgetType {
         const table = scroll.querySelector('table.md-table') as HTMLTableElement | null;
         if (table && this.widths && hasExplicitColumnWidths(this.widths)) { table.classList.add('cm-md-table-resized'); }
 
+        const tableNodeAtClick = findTableNodeByIndex(view.state, this.tableIndex);
+        const gridAtClick = tableNodeAtClick ? buildCellGrid(view.state, tableNodeAtClick) : null;
+
         wrap.querySelectorAll('th, td').forEach((cellEl) => {
             cellEl.addEventListener('mousedown', (event) => {
                 if (view.state.readOnly) { return; }
@@ -1571,7 +1610,7 @@ export class TableWidget extends WidgetType {
                 // which cell was active when toDOM ran).
                 if (cellEl.classList.contains('cm-md-table-cell-editing')) { return; }
                 const pos = resolveCellPosition(wrap, cellEl as HTMLElement);
-                const target = pos ? this.grid[pos.row]?.[pos.col] : undefined;
+                const target = pos && gridAtClick ? gridAtClick[pos.row]?.[pos.col] : undefined;
                 if (!target) { return; }
                 event.preventDefault();
                 placeCollapsed(view, collapsedClickPosForCell(view.state, target));
@@ -1582,9 +1621,9 @@ export class TableWidget extends WidgetType {
             const cellEl = (event.target as HTMLElement).closest('th, td') as HTMLElement | null;
             if (!cellEl) { return; }
             const pos = resolveCellPosition(wrap, cellEl);
-            if (!pos || !this.grid[pos.row]?.[pos.col]) { return; }
+            if (!pos || !gridAtClick?.[pos.row]?.[pos.col]) { return; }
             event.preventDefault();
-            showTableContextMenu(event, view, this.tableIndex, pos.row, pos.col, computeTableContextMenu(this.grid, pos.row, pos.col));
+            showTableContextMenu(event, view, this.tableIndex, pos.row, pos.col, computeTableContextMenu(gridAtClick, pos.row, pos.col));
         });
 
         if (this.activeCell) {
@@ -1641,6 +1680,13 @@ export class TableWidget extends WidgetType {
      */
     ignoreEvent(): boolean {
         return true;
+    }
+
+    destroy(dom: HTMLElement): void {
+        const scroll = dom.querySelector('.cm-md-table-scroll');
+        if (scroll instanceof HTMLElement) {
+            disconnectTableScrollUI(scroll);
+        }
     }
 }
 

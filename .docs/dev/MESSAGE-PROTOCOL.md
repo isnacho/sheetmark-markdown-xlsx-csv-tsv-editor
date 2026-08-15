@@ -36,7 +36,7 @@ Provider: [spreadsheetEditorProvider.ts](../../src/spreadsheetEditorProvider.ts)
 | `restoreVersion` | `versionId` | :5182 | :1548 |
 | `cancelVersionPreview` | — | :5185, :6403 | :1536 |
 | `convertFile` | — | :7482 | :1735 |
-| `enableAsDefault` | — | :7485, spreadsheet settings `chkOpenByDefault` | :1629 (`enableAsDefault`\|`enableDefaultEditor`) |
+| `enableAsDefault` | — | spreadsheet settings `chkOpenByDefault` | :1629 (`enableAsDefault`\|`enableDefaultEditor`) |
 | `openExternal` | `url` | :6645 | :1685 |
 | `disableDefaultEditor` | — | spreadsheet settings `chkOpenByDefault` | :1636 |
 | `getSystemDetails` | — | [feedbackModal.ts](../../src/webviews/shared/feedbackModal.ts) | :1697 |
@@ -90,13 +90,13 @@ Provider: [mdEditorProvider.ts](../../src/mdEditorProvider.ts)
 | `openExternal` | `url` | :483 | :448 |
 | `openRelativeFile` | `href`, `documentUri` | :485 | :459 |
 | `showVersionHistory` | — | :1541 | :326 |
-| `restoreVersion` | optional `versionId` (webview usually omits — host uses preview id) | :559 | :405 |
+| `restoreVersion` | optional `versionId` (webview usually omits — host uses preview id), optional `force` (bypass host disk-conflict check after explicit restore confirm) | :559, :1460 | :405 |
 | `cancelVersionPreview` | — | :562 | :382 |
 | `saveTableColumnWidths` | `widths` (table order-index → px per column) | :440 | :291 |
 | `saveFrontmatterPanelCollapsed` | `collapsed` (boolean) | :326 | :300 |
 | `saveMermaidPreviewMode` | `mode` (`diagram` \| `code`) | :331 | :308 |
 | `saveCalloutDefaultType` | `type` (slug: `[\w-]+`) | :336 | :317 |
-| `enableAsDefault` | — | md toolbar `:enableAsDefaultButton`, md settings `chkOpenByDefault` | `enableDefaultEditor` / `enableAsDefault` case |
+| `enableAsDefault` | — | md settings `chkOpenByDefault` | `enableDefaultEditor` / `enableAsDefault` case |
 | `disableDefaultEditor` | — | md settings `chkOpenByDefault` | `disableDefaultEditor` case |
 | `getSystemDetails` | — | [feedbackModal.ts](../../src/webviews/shared/feedbackModal.ts) | :486 |
 | `submitFeedback` | feedback fields | [feedbackModal.ts](../../src/webviews/shared/feedbackModal.ts) | :499 |
@@ -109,7 +109,8 @@ Provider: [mdEditorProvider.ts](../../src/mdEditorProvider.ts)
 | `initSettings` | `settings` (includes `autoSave`, live-preview flags, `isDefaultEditor`) | :178 | :1392 |
 | `settingsUpdated` | `settings` (includes `isDefaultEditor`) | config listener | :1400 |
 | `saveResult` | `ok`, `isAutosave`, `error` (on failure) | :283, :285 | :1404 |
-| `saveConflict` | — | `saveMarkdown` handler fresh-read mismatch :273 | :1417 |
+| `saveConflict` | — | `saveMarkdown` handler fresh-read mismatch :273 | :1435 |
+| `restoreConflict` | `versionId` | `restoreVersion` handler fresh-read mismatch | :1457 |
 | `resolvedImageUris` | `resolved` | :212 | :1449 |
 | `versionPreviewMd` | `versionId`, `timestamp` | :369 | :1434 |
 | `versionPreviewCancelledMd` | — | :396 | :1439 |

@@ -157,10 +157,10 @@ test('insertImage: uses the selection as alt text and selects "image-url"', () =
     assert.deepEqual([sel.from, sel.to], [10, 19]);
 });
 
-test('insertTable: inserts the fixed table snippet at cursor', () => {
+test('insertTable: inserts an empty 3x2 table snippet at cursor', () => {
     const state = stateFor('', 0, 0);
     const { doc } = apply(state, computeInsertTable(state));
-    assert.ok(doc.includes('| Header 1 | Header 2 | Header 3 |'));
+    assert.ok(doc.includes('|  |  |  |\n| --- | --- | --- |\n|  |  |  |'));
 });
 
 test('insertHorizontalRule: no leading newline at doc start', () => {

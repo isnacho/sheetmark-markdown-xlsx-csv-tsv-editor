@@ -35,7 +35,7 @@ interface SlashOption {
     hint?: string;
 }
 
-const TABLE_SNIPPET = '| Header 1 | Header 2 | Header 3 |\n| -------- | -------- | -------- |\n| Cell 1   | Cell 2   | Cell 3   |\n';
+const TABLE_SNIPPET = '|  |  |  |\n| --- | --- | --- |\n|  |  |  |\n';
 
 /** Exported for headless testing of computeSlashApply against the real snippets. */
 export const SLASH_OPTIONS: SlashOption[] = [

@@ -562,3 +562,23 @@ test('insertTableCellLink wraps the selection or inserts a placeholder', () => {
     assert.equal(selected.selectFrom, 7);
     assert.equal(selected.selectTo, 10);
 });
+
+test('second table cell positions stay valid after editing the first table', () => {
+    const doc1 = '| a |\n| - |\n| 1 |\n\n| b |\n| - |\n| 2 |';
+    const state1 = stateFor(doc1);
+    const node2a = findTableNodeByIndex(state1, 1);
+    assert.ok(node2a);
+    const grid1 = buildCellGrid(state1, node2a!);
+    const stalePos = grid1[1][0].from;
+
+    const doc2 = '| a |\n| - |\n| LONG |\n\n| b |\n| - |\n| 2 |';
+    const state2 = stateFor(doc2);
+    const node2b = findTableNodeByIndex(state2, 1);
+    assert.ok(node2b);
+    const grid2 = buildCellGrid(state2, node2b!);
+    const freshPos = grid2[1][0].from;
+
+    assert.notEqual(stalePos, freshPos);
+    assert.equal(state2.sliceDoc(freshPos, grid2[1][0].to), '2');
+    assert.notEqual(state2.sliceDoc(stalePos, stalePos + 1), '2');
+});

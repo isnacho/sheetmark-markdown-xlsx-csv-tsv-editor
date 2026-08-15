@@ -190,7 +190,7 @@ is `... style-src ${cspSource} https: 'unsafe-inline'; script-src ${cspSource}
 `'unsafe-inline'` in `style-src` permits — so **no CSP change is required.**
 Confirm during the spike that CM6 uses no `eval`/`new Function` and makes no
 network fetch (it does not), then leave the CSP untouched. Called out
-explicitly per CLAUDE.md rule 3.
+explicitly per AGENTS.md rule 3.
 
 ### New files (don't grow `mdWebview.ts` further — already ~3.7k lines, flagged debt)
 
@@ -286,7 +286,7 @@ before the reveal engine so reveal ships with tests.
 ## Verification
 
 - `npm run compile` after every phase (0 type + 0 lint errors; repo has no
-  legacy automated suite per CLAUDE.md §5).
+  legacy automated suite per AGENTS.md §5).
 - `npm run test:unit` from Phase 3 on — reveal + format-command cases, growing
   each phase. This is what catches reveal regressions that manual smoke cannot
   (reveal correctness is combinatorial across mark types × cursor positions ×

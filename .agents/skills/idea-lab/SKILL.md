@@ -181,13 +181,13 @@ Goal: a concrete, codebase-grounded implementation plan.
    quick targeted lookup, delegate to the `Explore` agent rather than
    grepping manually in this conversation. This repo has two runtimes
    (extension host vs. webview) and an untyped string message protocol
-   between them — both are explained in `CLAUDE.md`, which is already loaded;
+   between them — both are explained in `AGENTS.md`, which is already loaded;
    apply its rules (don't rename `xlsxViewer.*`/`xlsx-viewer.*` IDs, wire both
    sides of any new message, watch CSP/`localResourceRoots` for new assets,
    don't touch esbuild output paths).
 3. Enter plan mode (`EnterPlanMode`) and draft the plan: files to touch, in
    what order, message-protocol changes needed on both ends, and anything
-   from the hard DO-NOTs in `CLAUDE.md` that's at risk. Present it via
+   from the hard DO-NOTs in `AGENTS.md` that's at risk. Present it via
    `ExitPlanMode` for real user approval before writing any code.
 4. Once approved, write the plan into `## Plan` (steps + files, not the whole
    plan-mode transcript). Set `status: to-implement`, bump `updated`, and `git mv`
@@ -202,7 +202,7 @@ Goal: build exactly what's in `## Plan`, nothing more.
    (no speculative abstraction, no unrequested refactors, wire both sides of
    any message-protocol change).
 2. Run `npm run compile` (type-check + lint + bundle) and fix anything it
-   flags — this is the repo's baseline verification, per `CLAUDE.md`.
+   flags — this is the repo's baseline verification, per `AGENTS.md`.
 3. Append to `## Implementation Log`: files changed, and any deviation from
    the plan with why. Set `status: to-qa`, bump `updated`, and `git mv`
    the file into `4-to-qa/`.
@@ -210,7 +210,7 @@ Goal: build exactly what's in `## Plan`, nothing more.
 
 ## Phase 5 — QA
 
-Goal: confirm it actually works. `CLAUDE.md` is explicit that there's no
+Goal: confirm it actually works. `AGENTS.md` is explicit that there's no
 automated test suite here — `npm run compile` checks types/lint/bundle, not
 behavior. Don't claim "tests pass"; a manual smoke test is required.
 
@@ -229,7 +229,36 @@ behavior. Don't claim "tests pass"; a manual smoke test is required.
    erase the failed attempt.
 5. **If it passes:** set `status: completed`, bump `updated`, and `git mv`
    the file from `4-to-qa/<slug>.md` to `5-completed/<slug>.md` (plain `mv`
-   if `.docs/ideas/` isn't tracked by git). Confirm the new path to the user.
+   if `.docs/ideas/` isn't tracked by git). **Append a changelog entry** (see
+   **Changelog**, below). Confirm the new path to the user.
+
+## Changelog
+
+When an idea **passes QA** (Phase 5, step 5), append a user-facing line to
+`CHANGELOG.md` at the repo root in the **same turn** as moving the file to
+`5-completed/`.
+
+1. **Read `CHANGELOG.md` first** — match its existing structure and tone; never
+   replace or rewrite prior entries.
+2. **One concise bullet** per completed idea: what changed for the user, not
+   files or implementation detail. Derive from the idea `title` and `##
+   Brainstorm` UX goal (one short sentence; lead with the surface if scope is
+   narrow, e.g. "Markdown tables: …").
+3. **Placement:** under `## Unreleased` if that heading already exists;
+   otherwise insert a new `## Unreleased` section immediately after
+   `# Changelog` (before any `## v…` version section).
+4. **Dedup:** if a bullet for this idea is already present (same title or
+   obvious paraphrase), skip — don't add twice.
+5. **Do not** bump `package.json` version — version headings are the
+   release/publish workflow, not idea completion.
+
+Example shape (tone only — adapt to the idea):
+
+```markdown
+## Unreleased
+
+- Markdown tables: bordered outline shrinks to column width after resize.
+```
 
 ## Archiving
 

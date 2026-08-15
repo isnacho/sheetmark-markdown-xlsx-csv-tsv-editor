@@ -19,7 +19,7 @@ undo it and go back to the published `muhammad-ahmad.xlsx-viewer` identity.
 
   This changes the extension ID from `muhammad-ahmad.xlsx-viewer` to
   `iggyinc.sheetmark`. **`displayName`, and all `xlsxViewer.*` viewTypes /
-  `xlsx-viewer.*` command IDs were left untouched** — those are protected per [CLAUDE.md](../../CLAUDE.md)
+  `xlsx-viewer.*` command IDs were left untouched** — those are protected per [AGENTS.md](../../AGENTS.md)
   §3 and are unrelated to the publisher/name identity fields.
 - The marketplace version `muhammad-ahmad.xlsx-viewer` was **uninstalled** from Cursor
   (`cursor --uninstall-extension muhammad-ahmad.xlsx-viewer`) — required because two extensions
@@ -50,7 +50,7 @@ Two self-lookups in the source read the extension by ID to report its own versio
 
 These **must match `publisher.name` from `package.json` exactly**, or they silently return
 `undefined` and the diagnostics panel shows `extensionVersion: 'unknown'` (no crash, no error —
-same silent-breakage class as the message-protocol rule in CLAUDE.md §2). Any future rename of
+same silent-breakage class as the message-protocol rule in AGENTS.md §2). Any future rename of
 `name`/`publisher` must update both call sites in the same commit.
 
 ---

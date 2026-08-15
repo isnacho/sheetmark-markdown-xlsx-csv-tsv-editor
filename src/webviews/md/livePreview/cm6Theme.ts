@@ -4,7 +4,7 @@
 //
 // The theme deliberately references the semantic CSS variables already defined
 // in resources/shared/theme.css (--text-color, --bg-color, --border-color,
-// --code-bg, --selection-bg, --link-color, --font-family, --font-mono,
+// --code-bg, --selection-bg, --link-color, --font-family, --font-mono, --font-mono-weight, --font-mono-size,
 // --surface-radius). Those
 // vars are remapped to --vscode-* tokens by theme.css itself, so the editor
 // tracks the active VS Code / light / dark theme automatically. Referencing the
@@ -129,13 +129,16 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
         '.cm-content .cm-md-h6': { fontSize: '1em', color: 'var(--text-muted)' },
         '.cm-md-inline-code': {
             fontFamily: 'var(--font-mono)',
-            fontSize: '100%',
+            fontWeight: 'var(--font-mono-weight)',
+            fontSize: 'var(--font-mono-size)',
             backgroundColor: 'var(--code-bg)',
             color: 'var(--code-text)',
             borderRadius: 'var(--surface-radius)',
         },
         '.cm-md-fenced-code-line': {
             fontFamily: 'var(--font-mono)',
+            fontWeight: 'var(--font-mono-weight)',
+            fontSize: 'var(--font-mono-size)',
             backgroundColor: 'var(--pre-bg)',
             borderLeft: '1px solid var(--pre-border)',
             borderRight: '1px solid var(--pre-border)',
@@ -188,6 +191,7 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
         '.cm-md-mermaid-lang': {
             fontSize: '11px',
             fontFamily: 'var(--font-mono)',
+            fontWeight: 'var(--font-mono-weight)',
             color: 'var(--text-secondary)',
         },
         '.cm-md-mermaid-mode-select': {
@@ -241,6 +245,10 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
         },
         '.cm-md-table-scroll.cm-md-table-overflow-x': {
             overflowX: 'auto',
+        },
+        '.cm-md-table-scroll.cm-md-table-hug-content': {
+            width: 'fit-content',
+            maxWidth: '100%',
         },
         // Undoes the shared .markdown-preview table.md-table rule's
         // display:block/overflow:auto on the <table> itself (resources/md/
@@ -541,6 +549,7 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             color: 'var(--text-muted)',
             fontStyle: 'normal',
             fontFamily: 'var(--font-mono)',
+            fontWeight: 'var(--font-mono-weight)',
             fontSize: '12px',
             letterSpacing: '0.02em',
             opacity: '0.9',

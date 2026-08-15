@@ -11,7 +11,7 @@ Markdown UI spans two layers in the **webview (browser)** runtime:
 
 Bundled together into `dist/md/mdWebview.js`. Too large to read whole — jump with `Read(offset, limit)` using the indexes below.
 
-Runtime context, hard rules, and the message protocol are in [CLAUDE.md](../../CLAUDE.md) and
+Runtime context, hard rules, and the message protocol are in [AGENTS.md](../../AGENTS.md) and
 [MESSAGE-PROTOCOL.md](MESSAGE-PROTOCOL.md). Line ranges are approximate.
 
 ---

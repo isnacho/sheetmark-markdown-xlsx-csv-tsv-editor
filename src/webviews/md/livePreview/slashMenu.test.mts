@@ -73,11 +73,11 @@ test('computeSlashApply: "Callout" inserts the container fence with the cursor o
     assert.equal(tr.state.selection.main.from, 8);
 });
 
-test('computeSlashApply: "Table" inserts the fixed snippet with the cursor at its end', () => {
+test('computeSlashApply: "Table" inserts an empty table snippet with the cursor at its end', () => {
     const state = stateFor('/table');
     const opt = option('Table');
     const tr = state.update(computeSlashApply(opt, 1, 6));
-    assert.ok(tr.state.doc.toString().includes('| Header 1 | Header 2 | Header 3 |'));
+    assert.ok(tr.state.doc.toString().includes('|  |  |  |\n| --- | --- | --- |\n|  |  |  |'));
     assert.equal(tr.state.selection.main.from, opt.insert.length);
 });
 

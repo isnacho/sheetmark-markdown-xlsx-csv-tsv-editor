@@ -111,7 +111,13 @@ function flattenFieldRows(
     yamlText: string,
     depth: number,
     rows: FrontmatterFieldRow[],
+    visited: WeakSet<object> = new WeakSet(),
+    maxDepth = 32,
 ): void {
+    if (depth > maxDepth) {
+        return;
+    }
+
     const yamlLine = yamlLineIndexForKey(yamlText, key, depth);
     const sourceLine = docLineForYamlLine(yamlLine);
 
@@ -130,6 +136,10 @@ function flattenFieldRows(
     }
 
     if (value !== null && typeof value === 'object') {
+        if (visited.has(value)) {
+            return;
+        }
+        visited.add(value);
         rows.push({
             key,
             keyPath,
@@ -139,7 +149,7 @@ function flattenFieldRows(
             sourceLine,
         });
         for (const [childKey, childValue] of Object.entries(value as Record<string, unknown>)) {
-            flattenFieldRows(childValue, childKey, [...keyPath, childKey], yamlText, depth + 1, rows);
+            flattenFieldRows(childValue, childKey, [...keyPath, childKey], yamlText, depth + 1, rows, visited, maxDepth);
         }
         return;
     }
@@ -272,18 +282,22 @@ export interface FrontmatterWidgetData {
 }
 
 export function resolveFrontmatterWidgetData(doc: string): FrontmatterWidgetData | null {
-    const extracted = extractFrontmatter(doc);
-    if (!extracted || isEmptyFrontmatter(extracted.yamlText)) {
+    try {
+        const extracted = extractFrontmatter(doc);
+        if (!extracted || isEmptyFrontmatter(extracted.yamlText)) {
+            return null;
+        }
+        const parsed = parseFrontmatter(extracted.yamlText);
+        if (!parsed || Object.keys(parsed).length === 0) {
+            return null;
+        }
+        return {
+            range: extracted.range,
+            yamlText: extracted.yamlText,
+            rows: buildFieldRows(parsed, extracted.yamlText),
+            parsed,
+        };
+    } catch {
         return null;
     }
-    const parsed = parseFrontmatter(extracted.yamlText);
-    if (!parsed || Object.keys(parsed).length === 0) {
-        return null;
-    }
-    return {
-        range: extracted.range,
-        yamlText: extracted.yamlText,
-        rows: buildFieldRows(parsed, extracted.yamlText),
-        parsed,
-    };
 }

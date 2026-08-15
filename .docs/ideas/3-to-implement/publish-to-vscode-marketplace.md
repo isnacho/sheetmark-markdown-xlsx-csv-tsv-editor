@@ -105,7 +105,7 @@ File: [package.json](../../../package.json)
 - [x] Review `description` — mention "Sheetmark" brand if desired (optional polish)
 - [x] Review `keywords` — add `markdown` if missing; keep format-search terms
 - [x] Confirm `categories` (`Other` is fine for v1.0.0)
-- [x] **Do not rename** `xlsxViewer.*` viewTypes or `xlsx-viewer.*` command IDs (load-bearing per CLAUDE.md)
+- [x] **Do not rename** `xlsxViewer.*` viewTypes or `xlsx-viewer.*` command IDs (load-bearing per AGENTS.md)
 
 #### C — README (Marketplace landing page)
 

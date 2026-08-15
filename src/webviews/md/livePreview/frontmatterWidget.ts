@@ -97,7 +97,12 @@ export function setFrontmatterCollapsedCallback(callback: ((collapsed: boolean) 
 }
 
 function buildFromState(state: EditorState): DecorationSet {
-    const data = resolveFrontmatterWidgetData(state.doc.toString());
+    let data;
+    try {
+        data = resolveFrontmatterWidgetData(state.doc.toString());
+    } catch {
+        return Decoration.none;
+    }
     if (!data) {
         return Decoration.none;
     }

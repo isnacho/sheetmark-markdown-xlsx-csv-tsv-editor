@@ -15,7 +15,7 @@ the codebase — not product roadmap or feature ideas.
 | [MAP-mdWebview.md](dev/MAP-mdWebview.md) | Line-range map for `mdWebview.ts` + `livePreview/` |
 | [CHANGELOG.md](../CHANGELOG.md) | Release notes (upstream history + fork **Unreleased**) |
 
-Entry point for agents: [CLAUDE.md](../CLAUDE.md) at the repo root.
+Entry point for agents: [AGENTS.md](../AGENTS.md) at the repo root.
 
 ## `product/` — Product documentation
 

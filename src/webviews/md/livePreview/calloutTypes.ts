@@ -2,6 +2,22 @@
 
 import type { Text } from '@codemirror/state';
 import type { EditorState } from '@codemirror/state';
+import { syntaxTree } from '@codemirror/language';
+
+function lineIsInsideFencedCode(state: EditorState, lineNumber: number): boolean {
+    const line = state.doc.line(lineNumber);
+    let inside = false;
+    syntaxTree(state).iterate({
+        from: line.from,
+        to: line.to,
+        enter(node) {
+            if (node.name === 'FencedCode') {
+                inside = true;
+            }
+        },
+    });
+    return inside;
+}
 
 export const BUILTIN_CALLOUT_TYPES = ['info', 'warning', 'error', 'success'] as const;
 export type BuiltinCalloutType = typeof BUILTIN_CALLOUT_TYPES[number];
@@ -79,13 +95,17 @@ export interface CalloutBlock {
     contentEndLine: number;
 }
 
-export function findCalloutBlocks(doc: Text): CalloutBlock[] {
+export function findCalloutBlocks(doc: Text, state?: EditorState): CalloutBlock[] {
     const blocks: CalloutBlock[] = [];
     let lineNum = 1;
     while (lineNum <= doc.lines) {
         const line = doc.line(lineNum);
         const openMatch = line.text.match(OPEN_FENCE_RE);
         if (!openMatch) {
+            lineNum++;
+            continue;
+        }
+        if (state && lineIsInsideFencedCode(state, lineNum)) {
             lineNum++;
             continue;
         }
@@ -124,7 +144,7 @@ function rangesIntersect(aFrom: number, aTo: number, bFrom: number, bTo: number)
 /** Callout block containing the primary selection, if any. */
 export function findActiveCalloutBlock(state: EditorState): CalloutBlock | null {
     const { from, to } = state.selection.main;
-    for (const block of findCalloutBlocks(state.doc)) {
+    for (const block of findCalloutBlocks(state.doc, state)) {
         const blockTo = block.closeTo ?? state.doc.length;
         if (from === to) {
             if (block.openFrom <= from && from < blockTo) {

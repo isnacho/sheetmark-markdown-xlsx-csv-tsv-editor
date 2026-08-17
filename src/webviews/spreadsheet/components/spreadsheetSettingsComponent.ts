@@ -55,6 +55,7 @@ export function normalizeXlsxSettings(next: any, previous: XlsxViewSettings): Xl
 
 export function syncSettingsCheckboxes(settings: XlsxViewSettings): void {
     const chkHeader = document.getElementById('chkHeaderRow') as HTMLInputElement | null;
+    const chkOpenByDefault = document.getElementById('chkOpenByDefault') as HTMLInputElement | null;
     const chkSticky = document.getElementById('chkStickyHeader') as HTMLInputElement | null;
     const chkToolbar = document.getElementById('chkStickyToolbar') as HTMLInputElement | null;
     const chkAutoSave = document.getElementById('chkAutoSave') as HTMLInputElement | null;
@@ -68,6 +69,7 @@ export function syncSettingsCheckboxes(settings: XlsxViewSettings): void {
     const chkMergeWarning = document.getElementById('chkMergeWarningEnabled') as HTMLInputElement | null;
 
     if (chkHeader) {chkHeader.checked = !!settings.firstRowIsHeader;}
+    if (chkOpenByDefault) {chkOpenByDefault.checked = !!settings.isDefaultEditor;}
     if (chkSticky) {
         chkSticky.checked = !!settings.stickyHeader;
         chkSticky.disabled = !settings.firstRowIsHeader;
@@ -106,7 +108,11 @@ export function syncSettingsCheckboxes(settings: XlsxViewSettings): void {
 export function createXlsxSettingsDefinitions(
     getSettings: () => XlsxViewSettings,
     onApply: (next: XlsxViewSettings) => void,
-    onPersist: () => void
+    onPersist: () => void,
+    options?: {
+        fileExtension?: string;
+        onOpenByDefaultChange?: (enabled: boolean) => void;
+    }
 ): SettingDefinition[] {
     const applyAndPersist = (patch: Partial<XlsxViewSettings>) => {
         const settings = getSettings();
@@ -123,7 +129,18 @@ export function createXlsxSettingsDefinitions(
         onPersist();
     };
 
+    const fileExtension = options?.fileExtension || 'xlsx';
+
     return [
+        {
+            id: 'chkOpenByDefault',
+            label: `Open .${fileExtension} files with Sheetmark by default`,
+            tooltip: `When enabled, VS Code opens .${fileExtension} files in Sheetmark automatically.`,
+            defaultValue: !!getSettings().isDefaultEditor,
+            onChange: (val: boolean) => {
+                options?.onOpenByDefaultChange?.(val);
+            }
+        },
         {
             id: 'chkHeaderRow',
             label: 'Header Row',

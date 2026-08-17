@@ -38,7 +38,7 @@ export function collectSpellcheckExclusionRanges(
     return ranges;
 }
 
-function overlaps(pos: number, end: number, ranges: readonly TextRange[]): boolean {
+export function rangesOverlap(pos: number, end: number, ranges: readonly TextRange[]): boolean {
     for (const r of ranges) {
         if (pos < r.to && end > r.from) { return true; }
     }
@@ -57,7 +57,7 @@ export function isSpellcheckExcluded(
         [{ from: 0, to: docLen }],
         frontmatterRange,
     );
-    return overlaps(from, to, exclusions);
+    return rangesOverlap(from, to, exclusions);
 }
 
 export function computeSpellcheckExclusions(

@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.2.0 — 2026-08-17
+
+### Improvements
+
+- Major Markdown editing improvements, including list navigation, selection behavior, gutters, live preview, and reliability fixes.
+- Spreadsheet and file-handling polish, including editor defaults and external file synchronization.
+- Sheetmark is now distributed through Open VSX for Cursor, with a GitHub Release VSIX fallback.
+
 ## v1.1.0 — 2026-08-15
 
 ### Improvements

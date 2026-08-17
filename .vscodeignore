@@ -9,6 +9,8 @@
 samples/**
 src/**
 AGENTS.md
+CLAUDE.md
+**/*-mii-air.*
 **/*.ts
 **/*.mts
 **/*.map

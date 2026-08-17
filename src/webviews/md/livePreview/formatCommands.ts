@@ -1,7 +1,7 @@
 // Phase 5 — formatting commands for CM6 Preview Edit mode.
 //
 // Runtime: WEBVIEW (browser). Ports the Split-mode formatting helpers
-// (mdWebview.ts wrapSelection/toggleLinePrefix/... — see CLAUDE.md's
+// (mdWebview.ts wrapSelection/toggleLinePrefix/... — see AGENTS.md's
 // "formatting commands" note in the plan doc) from an imperative
 // mutate-`editor.value`-then-read model to CM6's compute-a-TransactionSpec-
 // then-dispatch model. Each `computeXxx` function is a pure function of
@@ -19,9 +19,9 @@
 // reimplementing it, same reasoning the plan already applied to the slash
 // menu (`@codemirror/autocomplete` over a hand-rolled popup).
 
-import { EditorState, EditorSelection } from '@codemirror/state';
+import { EditorState, EditorSelection, ChangeSet, Prec } from '@codemirror/state';
 import type { TransactionSpec } from '@codemirror/state';
-import { EditorView } from '@codemirror/view';
+import { EditorView, keymap } from '@codemirror/view';
 import type { KeyBinding } from '@codemirror/view';
 import { syntaxTree } from '@codemirror/language';
 import type { SyntaxNode } from '@lezer/common';
@@ -31,6 +31,23 @@ function safeSlice(state: EditorState, from: number, to: number): string {
     const f = Math.max(0, Math.min(from, len));
     const t = Math.max(f, Math.min(to, len));
     return state.sliceDoc(f, t);
+}
+
+// Mirrored from listSetextAmbiguity.ts — kept local so formatCommands.test.mts
+// can load this file under Node's ESM resolver (no extensionless relative imports).
+function setextListMarkerLineAt(state: EditorState, pos: number): boolean {
+    let found = false;
+    syntaxTree(state).iterate({
+        enter(node) {
+            if (node.name !== 'SetextHeading1' && node.name !== 'SetextHeading2') { return; }
+            const underline = state.doc.lineAt(node.to - 1);
+            const text = state.sliceDoc(underline.from, underline.to);
+            if (/^={3,}\s*$/.test(text) || /^-{3,}\s*$/.test(text)) { return; }
+            if (!/^[-*+]\s*$/.test(text) && !/^--\s?$/.test(text)) { return; }
+            if (pos >= underline.from && pos <= underline.to && /^[-*+]/.test(text)) { found = true; }
+        },
+    });
+    return found;
 }
 
 function dispatchSpec(view: EditorView, spec: TransactionSpec | null): boolean {
@@ -61,28 +78,63 @@ export function computeWrapSelection(state: EditorState, before: string, after: 
 
 export function computeToggleLinePrefix(state: EditorState, prefix: string): TransactionSpec {
     const { from, to } = state.selection.main;
-    const firstLine = state.doc.lineAt(from);
-    const lastLine = state.doc.lineAt(to);
-    const lineStart = firstLine.from;
-    const lineEndFix = lastLine.to;
-    const lineContent = state.sliceDoc(lineStart, lineEndFix);
+    const firstLineNum = state.doc.lineAt(from).number;
+    const lastLineNum = state.doc.lineAt(to).number;
 
-    if (lineContent.startsWith(prefix)) {
+    if (firstLineNum === lastLineNum) {
+        const line = state.doc.line(firstLineNum);
+        const lineStart = line.from;
+        const lineEnd = line.to;
+        const lineContent = state.sliceDoc(lineStart, lineEnd);
+
+        if (lineContent.startsWith(prefix)) {
+            return {
+                changes: { from: lineStart, to: lineStart + prefix.length, insert: '' },
+                selection: EditorSelection.range(Math.max(lineStart, from - prefix.length), Math.max(lineStart, to - prefix.length)),
+            };
+        }
+
+        let cleaned = lineContent;
+        if (prefix.startsWith('#')) {
+            cleaned = lineContent.replace(/^#{1,6}\s/, '');
+        }
+        const diff = prefix.length + cleaned.length - lineContent.length;
         return {
-            changes: { from: lineStart, to: lineStart + prefix.length, insert: '' },
-            selection: EditorSelection.range(Math.max(lineStart, from - prefix.length), Math.max(lineStart, to - prefix.length)),
+            changes: { from: lineStart, to: lineEnd, insert: prefix + cleaned },
+            selection: EditorSelection.range(from + diff, to + diff),
         };
     }
 
-    let cleaned = lineContent;
-    if (prefix.startsWith('#')) {
-        cleaned = lineContent.replace(/^#{1,6}\s/, '');
+    const lines: { from: number; to: number; text: string }[] = [];
+    for (let lineNum = firstLineNum; lineNum <= lastLineNum; lineNum++) {
+        const line = state.doc.line(lineNum);
+        lines.push({ from: line.from, to: line.to, text: state.sliceDoc(line.from, line.to) });
     }
-    const diff = prefix.length + cleaned.length - lineContent.length;
-    return {
-        changes: { from: lineStart, to: lineEndFix, insert: prefix + cleaned },
-        selection: EditorSelection.range(from + diff, to + diff),
-    };
+
+    const allHavePrefix = lines.every((line) => line.text.startsWith(prefix));
+    const changes: { from: number; to: number; insert: string }[] = [];
+
+    for (const line of lines) {
+        if (allHavePrefix) {
+            changes.push({ from: line.from, to: line.from + prefix.length, insert: '' });
+            continue;
+        }
+        if (line.text.startsWith(prefix)) {
+            continue;
+        }
+        let cleaned = line.text;
+        if (prefix.startsWith('#')) {
+            cleaned = line.text.replace(/^#{1,6}\s/, '');
+        }
+        changes.push({ from: line.from, to: line.to, insert: prefix + cleaned });
+    }
+
+    if (changes.length === 0) {
+        return { changes: [] };
+    }
+
+    const changeSet = ChangeSet.of(changes, state.doc.length);
+    return { changes, selection: state.selection.map(changeSet) };
 }
 
 export function computeInsertAtCursor(state: EditorState, text: string, cursorOffset?: number): TransactionSpec {
@@ -155,7 +207,7 @@ export function computeInsertImage(state: EditorState): TransactionSpec {
 }
 
 export function computeInsertTable(state: EditorState): TransactionSpec {
-    const table = '\n| Header 1 | Header 2 | Header 3 |\n| -------- | -------- | -------- |\n| Cell 1   | Cell 2   | Cell 3   |\n';
+    const table = '\n|  |  |  |\n| --- | --- | --- |\n|  |  |  |\n';
     return computeInsertAtCursor(state, table);
 }
 
@@ -533,7 +585,13 @@ export function computeTabIndent(state: EditorState, shiftKey: boolean): Transac
         if (isMarkerLine) {
             if (!shiftKey) {
                 prevSibling = previousSiblingListItem(item);
-                if (!prevSibling) { return null; } // nothing to nest under
+                if (!prevSibling) {
+                    // No sibling to nest under — top-level only/first items get a
+                    // safe flat indent at line start (own marker width, not 4
+                    // spaces at cursor). Nested only-children stay a no-op.
+                    if (listItemDepth(state, from) > 1) { return null; }
+                    return computeSingleLineIndentBy(state, line, false, markerPrefixWidth(state, item), from);
+                }
                 step = markerPrefixWidth(state, prevSibling);
             } else {
                 const parent = parentListItem(item);
@@ -570,6 +628,14 @@ export function computeTabIndent(state: EditorState, shiftKey: boolean): Transac
             }
         }
         return spec;
+    }
+
+    // Setext-vs-bullet ambiguity: `paragraph\n- ` is parsed as Setext, not a list,
+    // so `enclosingListItem` returns null even though the reveal layer shows a
+    // bullet. Fall through to flat 4-space Tab here and the marker line gets
+    // mangled; treat it as a lone list marker (no sibling to nest under) instead.
+    if (setextListMarkerLineAt(state, from)) {
+        return null;
     }
 
     const beforeCursor = state.sliceDoc(line.from, from);
@@ -689,16 +755,112 @@ export function computeTrimTrailingWhitespace(state: EditorState): TransactionSp
     return { changes };
 }
 
-function runJumpToLine(view: EditorView): boolean {
-    const lineCount = view.state.doc.lines;
-    const input = window.prompt(`Go to line (1-${lineCount}):`);
-    if (!input) { return false; }
-    const lineNum = parseInt(input, 10);
-    if (isNaN(lineNum) || lineNum < 1 || lineNum > lineCount) { return false; }
-    const pos = view.state.doc.line(lineNum).from;
-    view.dispatch({
+function promptLineNumber(lineCount: number): Promise<number | null> {
+    return new Promise((resolve) => {
+        const overlay = document.createElement('div');
+        overlay.className = 'feedback-overlay reload-confirm-overlay';
+        const modal = document.createElement('div');
+        modal.className = 'feedback-modal';
+
+        const header = document.createElement('div');
+        header.className = 'feedback-header';
+        const title = document.createElement('h2');
+        title.textContent = 'Go to Line';
+        header.appendChild(title);
+
+        const body = document.createElement('div');
+        body.className = 'feedback-body';
+        body.style.padding = '20px 24px 24px';
+        body.style.display = 'flex';
+        body.style.flexDirection = 'column';
+        body.style.gap = '16px';
+
+        const label = document.createElement('label');
+        label.textContent = `Line number (1–${lineCount})`;
+        label.style.fontSize = '13px';
+        label.style.color = 'var(--color-text-primary)';
+
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.min = '1';
+        input.max = String(lineCount);
+        input.className = 'search-input';
+        input.style.width = '100%';
+        input.style.boxSizing = 'border-box';
+
+        const actions = document.createElement('div');
+        actions.style.display = 'flex';
+        actions.style.justifyContent = 'flex-end';
+        actions.style.gap = '8px';
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.type = 'button';
+        cancelBtn.className = 'reload-confirm-cancel';
+        cancelBtn.textContent = 'Cancel';
+        cancelBtn.style.cssText = 'background:none;border:1px solid var(--color-border-default);border-radius:6px;color:var(--color-text-primary);font-size:13px;font-weight:500;padding:6px 14px;cursor:pointer;';
+
+        const okBtn = document.createElement('button');
+        okBtn.type = 'button';
+        okBtn.className = 'reload-confirm-ok';
+        okBtn.textContent = 'Go';
+        okBtn.style.cssText = 'background:var(--color-action);border:none;border-radius:6px;color:var(--color-text-on-action);font-size:13px;font-weight:600;padding:6px 14px;cursor:pointer;';
+
+        actions.append(cancelBtn, okBtn);
+        body.append(label, input, actions);
+        modal.append(header, body);
+        document.body.append(overlay, modal);
+
+        const finish = (value: number | null) => {
+            overlay.remove();
+            modal.remove();
+            resolve(value);
+        };
+
+        const submit = () => {
+            const lineNum = parseInt(input.value, 10);
+            if (isNaN(lineNum) || lineNum < 1 || lineNum > lineCount) {
+                input.focus();
+                return;
+            }
+            finish(lineNum);
+        };
+
+        overlay.addEventListener('click', () => finish(null));
+        cancelBtn.addEventListener('click', () => finish(null));
+        okBtn.addEventListener('click', submit);
+        input.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                submit();
+            } else if (event.key === 'Escape') {
+                event.preventDefault();
+                finish(null);
+            }
+        });
+
+        requestAnimationFrame(() => {
+            overlay.classList.add('active');
+            modal.classList.add('active');
+            input.focus();
+            input.select();
+        });
+    });
+}
+
+export function computeJumpToLine(state: EditorState, lineNum: number): TransactionSpec {
+    const pos = state.doc.line(lineNum).from;
+    return {
         selection: EditorSelection.cursor(pos),
         effects: EditorView.scrollIntoView(pos, { y: 'center' }),
+    };
+}
+
+function runJumpToLine(view: EditorView): boolean {
+    const lineCount = view.state.doc.lines;
+    void promptLineNumber(lineCount).then((lineNum) => {
+        if (lineNum === null) { return; }
+        view.dispatch(computeJumpToLine(view.state, lineNum));
+        view.focus();
     });
     return true;
 }
@@ -745,9 +907,12 @@ export function runFormatCommand(view: EditorView, action: string): boolean {
 // livePreviewEditor.ts) so these win over any colliding default binding
 // (e.g. defaultKeymap's own "Mod-i" -> selectParentSyntax).
 
+export const livePreviewTabKeymap = Prec.highest(keymap.of([
+    { key: 'Tab', run: (view) => dispatchSpec(view, computeTabIndent(view.state, false)) },
+    { key: 'Shift-Tab', run: (view) => dispatchSpec(view, computeTabIndent(view.state, true)) },
+]));
+
 export const livePreviewFormatKeymap: KeyBinding[] = [
-    { key: 'Tab', run: (view) => { dispatchSpec(view, computeTabIndent(view.state, false)); return true; } },
-    { key: 'Shift-Tab', run: (view) => { dispatchSpec(view, computeTabIndent(view.state, true)); return true; } },
     { key: 'Mod-b', run: (view) => runFormatCommand(view, 'bold') },
     { key: 'Mod-i', run: (view) => runFormatCommand(view, 'italic') },
     { key: 'Mod-k', run: (view) => runFormatCommand(view, 'link') },

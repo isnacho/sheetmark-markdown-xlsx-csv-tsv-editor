@@ -1,4 +1,4 @@
-import { EditorState, StateField, StateEffect } from '@codemirror/state';
+import { EditorState, StateField, StateEffect, EditorSelection } from '@codemirror/state';
 import { EditorView, Decoration, WidgetType } from '@codemirror/view';
 import type { DecorationSet } from '@codemirror/view';
 import { resolveFrontmatterWidgetData } from '../frontmatter';
@@ -62,7 +62,7 @@ class FrontmatterWidget extends WidgetType {
     }
 
     toDOM(view: EditorView): HTMLElement {
-        return createFrontmatterCardElement({
+        const dom = createFrontmatterCardElement({
             yamlText: this.data.yamlText,
             rows: this.data.rows,
             collapsed: this.collapsed,
@@ -81,6 +81,25 @@ class FrontmatterWidget extends WidgetType {
                 });
             },
         });
+
+        // The card is a block replace widget (`ignoreEvent` below), so CM6 never
+        // sees clicks on it — place the cursor after the frontmatter block and
+        // return focus to the editor (same idea as table cell click wiring).
+        dom.addEventListener('mousedown', (event) => {
+            if (view.state.readOnly) { return; }
+            const target = event.target;
+            if (!(target instanceof HTMLElement)) { return; }
+            if (target.closest('button, textarea, select, a, input')) { return; }
+            event.preventDefault();
+            view.dispatch({
+                selection: EditorSelection.cursor(this.data.range.to),
+                effects: setFrontmatterEditingEffect.of(false),
+                scrollIntoView: true,
+            });
+            view.focus();
+        });
+
+        return dom;
     }
 
     updateDOM(dom: HTMLElement, view: EditorView): boolean {
@@ -96,8 +115,23 @@ export function setFrontmatterCollapsedCallback(callback: ((collapsed: boolean) 
     onCollapsedChangedCallback = callback;
 }
 
+function frontmatterDocPrefix(state: EditorState): string {
+    const doc = state.doc;
+    for (let n = 2; n <= doc.lines; n++) {
+        if (/^---[ \t]*$/.test(doc.line(n).text)) {
+            return doc.sliceString(0, doc.line(n).to);
+        }
+    }
+    return doc.sliceString(0, Math.min(doc.length, 8192));
+}
+
 function buildFromState(state: EditorState): DecorationSet {
-    const data = resolveFrontmatterWidgetData(state.doc.toString());
+    let data;
+    try {
+        data = resolveFrontmatterWidgetData(frontmatterDocPrefix(state));
+    } catch {
+        return Decoration.none;
+    }
     if (!data) {
         return Decoration.none;
     }
@@ -113,7 +147,13 @@ function buildFromState(state: EditorState): DecorationSet {
 
 export const frontmatterWidgetField = StateField.define<DecorationSet>({
     create: (state) => buildFromState(state),
-    update(_value, tr) {
+    update(value, tr) {
+        const uiToggled = tr.effects.some((effect) =>
+            effect.is(setFrontmatterCollapsedEffect) || effect.is(setFrontmatterEditingEffect),
+        );
+        if (!tr.docChanged && !uiToggled) {
+            return value;
+        }
         return buildFromState(tr.state);
     },
     provide: (f) => EditorView.decorations.from(f),
@@ -125,4 +165,12 @@ export function seedFrontmatterCollapsed(collapsed: boolean): ReturnType<typeof 
 
 export function seedFrontmatterEditing(editing: boolean): ReturnType<typeof frontmatterEditingField.init> {
     return frontmatterEditingField.init(() => editing);
+}
+
+/** Leave the YAML card textarea so CM6 can own keyboard focus (e.g. Cmd+A). */
+export function blurActiveFrontmatterEditing(): void {
+    const textarea = document.querySelector('.yaml-frontmatter-textarea');
+    if (textarea instanceof HTMLTextAreaElement) {
+        textarea.blur();
+    }
 }

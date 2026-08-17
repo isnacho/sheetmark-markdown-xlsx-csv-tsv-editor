@@ -13,6 +13,7 @@ import { extractFrontmatter } from '../frontmatter';
 import {
     collectSpellcheckExclusionRanges,
     isSpellcheckExcluded,
+    rangesOverlap,
     type TextRange,
 } from './spellcheckExclusions';
 
@@ -58,20 +59,14 @@ export function getSpellChecker(): Typo | null {
     return typo;
 }
 
-function overlaps(pos: number, end: number, ranges: readonly TextRange[]): boolean {
-    for (const r of ranges) {
-        if (pos < r.to && end > r.from) { return true; }
-    }
-    return false;
-}
-
 function buildDiagnostics(view: EditorView): Diagnostic[] {
     if (!typo) { return []; }
     const doc = view.state.doc.toString();
-    const frontmatter = extractFrontmatter(doc);
+    const frontmatterPrefix = doc.slice(0, Math.min(doc.length, 16384));
+    const frontmatter = extractFrontmatter(frontmatterPrefix);
     const exclusions = collectSpellcheckExclusionRanges(
         view.state,
-        [{ from: 0, to: doc.length }],
+        view.visibleRanges,
         frontmatter?.range ?? null,
     );
     const diags: Diagnostic[] = [];
@@ -84,7 +79,7 @@ function buildDiagnostics(view: EditorView): Diagnostic[] {
             if (word.length < MIN_WORD_LEN) { continue; }
             const wordFrom = from + match.index;
             const wordTo = wordFrom + word.length;
-            if (overlaps(wordFrom, wordTo, exclusions)) { continue; }
+            if (rangesOverlap(wordFrom, wordTo, exclusions)) { continue; }
             if (typo.check(word)) { continue; }
             const suggestions = typo.suggest(word).slice(0, MAX_SUGGESTIONS);
             diags.push({
@@ -198,6 +193,11 @@ export function spellcheckContextMenu(): Extension {
             return true;
         },
     });
+}
+
+export function teardownSpellcheck(): void {
+    hideContextMenu();
+    activeView = null;
 }
 
 export const spellcheckExtensions: Extension[] = [

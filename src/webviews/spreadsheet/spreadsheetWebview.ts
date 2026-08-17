@@ -215,6 +215,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
     // Plain view mode (removes all XLSX styling)
     let isPlainView = false;
     let isTemporaryStyleFile = false;
+    let currentAssociationFileType = 'xlsx';
     let styleModeRequestPending = false;
     let pendingStyleModeAction: (() => void) | null = null;
 
@@ -6833,11 +6834,6 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
             manualSaveReminderUntil = 0;
         }
 
-        // Show/hide enable button based on whether this is the default editor
-        if (toolbarManager) {
-            toolbarManager.setButtonVisibility('enableAsDefaultButton', currentSettings.isDefaultEditor === false);
-        }
-
         resetStyledOnlySettingsVisibility();
         syncSettingsCheckboxes(currentSettings);
         if (scope === 'plain') {
@@ -7367,6 +7363,12 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
             },
             () => {
                 postSettings();
+            },
+            {
+                fileExtension: currentAssociationFileType,
+                onOpenByDefaultChange: (enabled: boolean) => {
+                    vscode.postMessage({ command: enabled ? 'enableAsDefault' : 'disableDefaultEditor' });
+                }
             }
         );
 
@@ -7480,9 +7482,6 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
             onConvertFile: () => {
                 if (isEditMode) {return;}
                 vscode.postMessage({ command: 'convertFile' });
-            },
-            onEnableAsDefault: () => {
-                vscode.postMessage({ command: 'enableAsDefault' });
             },
             onRefresh: () => {
                 if (isEditMode) {return;}
@@ -7623,6 +7622,16 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
             return;
         }
 
+        if (message.command === 'diskMovedExternally') {
+            showToast(`File moved to ${message.fileName || 'new location'}`, false, 10000);
+            return;
+        }
+
+        if (message.command === 'diskDeletedExternally') {
+            showToast('File deleted from disk', false, 10000);
+            return;
+        }
+
         // Handle rowsData response for virtual scrolling
         if (message.command === 'rowsData') {
             virtualLoader.resolveRequest(message.requestId, message.rows || []);
@@ -7638,6 +7647,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
 
             hasVirtualTableInit = true;
             isTemporaryStyleFile = message.fileType === 'csv' || message.fileType === 'tsv';
+            currentAssociationFileType = typeof message.fileType === 'string' ? message.fileType : 'xlsx';
             isPlainView = message.isPlainView !== undefined ? !!message.isPlainView : isTemporaryStyleFile;
             syncPlainViewUiState();
 

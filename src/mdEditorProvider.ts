@@ -7,6 +7,23 @@ import { TableColumnWidthStorageService } from './shared/tableColumnWidthStorage
 import { FrontmatterPanelStorageService } from './shared/frontmatterPanelStorageService';
 import { MermaidPreviewModeStorageService } from './shared/mermaidPreviewModeStorageService';
 import { CalloutDefaultTypeStorageService } from './shared/calloutDefaultTypeStorageService';
+import { createExternalFileChangeWatcher } from './shared/fileExternalChangeWatcher';
+import { migrateFileUriState } from './shared/migrateFileUriState';
+import { disableOpenByDefault, enableOpenByDefault, isSheetmarkConfiguredAsDefault } from './shared/editorAssociationUtils';
+
+function buildMdWebviewSettings() {
+    const cfg = vscode.workspace.getConfiguration('xlsxViewer');
+    return {
+        stickyToolbar: cfg.get('md.stickyToolbar', true),
+        wordWrap: cfg.get('md.wordWrap', true),
+        showOutline: cfg.get('md.showOutline', true),
+        showLineNumbers: cfg.get('md.showLineNumbers', true),
+        livePreviewReveal: cfg.get('md.livePreviewReveal', true),
+        livePreviewLineNumbers: cfg.get('md.livePreviewLineNumbers', false),
+        autoSave: cfg.get('md.autoSave', false),
+        isDefaultEditor: isSheetmarkConfiguredAsDefault('md'),
+    };
+}
 
 export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
     private readonly tableColumnWidthStorage: TableColumnWidthStorageService;
@@ -35,15 +52,28 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
         token: vscode.CancellationToken
     ): Promise<void> {
         try {
-            const filePath = document.uri.fsPath;
-            const documentDirUri = vscode.Uri.file(path.dirname(filePath));
-            const workspaceFolders = vscode.workspace.workspaceFolders?.map(f => f.uri) ?? [];
-            const workspaceFolderUri = vscode.workspace.getWorkspaceFolder(document.uri)?.uri.toString() || null;
-            const markdownLocalResourceRoots = this.buildMarkdownLocalResourceRoots(
+            let filePath = document.uri.fsPath;
+            let currentUri = document.uri;
+            let documentDirUri = vscode.Uri.file(path.dirname(filePath));
+            let workspaceFolders = vscode.workspace.workspaceFolders?.map(f => f.uri) ?? [];
+            const workspaceFolderUri = () => vscode.workspace.getWorkspaceFolder(currentUri)?.uri.toString() || null;
+            let markdownLocalResourceRoots = this.buildMarkdownLocalResourceRoots(
                 filePath,
                 documentDirUri,
                 workspaceFolders,
             );
+
+            const refreshMarkdownLocalResourceRoots = () => {
+                markdownLocalResourceRoots = this.buildMarkdownLocalResourceRoots(
+                    filePath,
+                    documentDirUri,
+                    workspaceFolders,
+                );
+                webviewPanel.webview.options = {
+                    enableScripts: true,
+                    localResourceRoots: markdownLocalResourceRoots,
+                };
+            };
 
             type VersionHistoryEntry = {
                 id: string;
@@ -55,8 +85,6 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
             let versionSnapshotDebounceTimer: NodeJS.Timeout | null = null;
             let currentContent = '';
             let previewVersionId: string | null = null;
-            let previewVersionTimestamp: number | null = null;
-            let previewVersionContent: string | null = null;
             let restoredVersionId: string | null = null;
             let isSaving = false;
             let lastSaveTime = 0;
@@ -69,14 +97,25 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                 await fs.promises.mkdir(path.dirname(getHistoryFilePath()), { recursive: true });
             };
 
+            const parseHistoryFile = (raw: string): VersionHistoryEntry[] => {
+                const trimmed = raw.trim();
+                if (!trimmed) {
+                    return [];
+                }
+                if (trimmed.startsWith('[')) {
+                    const parsed = JSON.parse(trimmed);
+                    return Array.isArray(parsed) ? parsed as VersionHistoryEntry[] : [];
+                }
+                return trimmed.split('\n')
+                    .map(line => line.trim())
+                    .filter(Boolean)
+                    .map(line => JSON.parse(line) as VersionHistoryEntry);
+            };
+
             const loadHistory = async (): Promise<VersionHistoryEntry[]> => {
                 try {
                     const raw = await fs.promises.readFile(getHistoryFilePath(), 'utf8');
-                    const parsed = JSON.parse(raw);
-                    if (!Array.isArray(parsed)) {
-                        return [];
-                    }
-                    return parsed as VersionHistoryEntry[];
+                    return parseHistoryFile(raw);
                 } catch {
                     return [];
                 }
@@ -84,7 +123,28 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
 
             const saveHistory = async (entries: VersionHistoryEntry[]) => {
                 await ensureHistoryDir();
-                await fs.promises.writeFile(getHistoryFilePath(), JSON.stringify(entries), 'utf8');
+                const content = entries.length > 0
+                    ? `${entries.map(entry => JSON.stringify(entry)).join('\n')}\n`
+                    : '';
+                await fs.promises.writeFile(getHistoryFilePath(), content, 'utf8');
+            };
+
+            const appendHistoryEntry = async (entry: VersionHistoryEntry) => {
+                await ensureHistoryDir();
+                const historyPath = getHistoryFilePath();
+                let existing = '';
+                try {
+                    existing = await fs.promises.readFile(historyPath, 'utf8');
+                } catch {
+                    // New history file.
+                }
+                if (existing.trimStart().startsWith('[')) {
+                    const history = parseHistoryFile(existing);
+                    history.push(entry);
+                    await saveHistory(history);
+                    return;
+                }
+                await fs.promises.appendFile(historyPath, `${JSON.stringify(entry)}\n`, 'utf8');
             };
 
             const pruneHistory = async (entries?: VersionHistoryEntry[]) => {
@@ -108,13 +168,13 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                 }
 
                 const now = Date.now();
-                history.push({
+                const entry: VersionHistoryEntry = {
                     id: `${now}-${Math.random().toString(36).slice(2, 8)}`,
                     timestamp: now,
                     charCount: content.length,
-                    content
-                });
-                await saveHistory(history);
+                    content,
+                };
+                await appendHistoryEntry(entry);
             };
 
             const saveVersionSnapshot = (contentOverride?: string) => {
@@ -131,12 +191,12 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
             const buildInitMarkdownPayload = (content: string) => ({
                 command: 'initMarkdown',
                 content,
-                fileName: vscode.workspace.asRelativePath(document.uri),
-                documentUri: document.uri.toString(),
+                fileName: vscode.workspace.asRelativePath(currentUri),
+                documentUri: currentUri.toString(),
                 documentDirUri: documentDirUri.toString(),
-                workspaceFolderUri,
-                tableColumnWidths: this.tableColumnWidthStorage.getWidths(document.uri),
-                frontmatterPanelCollapsed: this.frontmatterPanelStorage.getCollapsed(document.uri),
+                workspaceFolderUri: workspaceFolderUri(),
+                tableColumnWidths: this.tableColumnWidthStorage.getWidths(currentUri),
+                frontmatterPanelCollapsed: this.frontmatterPanelStorage.getCollapsed(currentUri),
                 mermaidPreviewMode: this.mermaidPreviewModeStorage.getMode(),
                 calloutDefaultType: this.calloutDefaultTypeStorage.getType(),
             });
@@ -163,17 +223,7 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                             webviewPanel.webview.postMessage(buildInitMarkdownPayload(content));
 
                             // Send settings
-                            const cfg = vscode.workspace.getConfiguration('xlsxViewer');
-                            const settings = {
-                                stickyToolbar: cfg.get('md.stickyToolbar', true),
-                                wordWrap: cfg.get('md.wordWrap', true),
-                                showOutline: cfg.get('md.showOutline', true),
-                                showLineNumbers: cfg.get('md.showLineNumbers', true),
-                                livePreviewReveal: cfg.get('md.livePreviewReveal', true),
-                                livePreviewLineNumbers: cfg.get('md.livePreviewLineNumbers', false),
-                                autoSave: cfg.get('md.autoSave', false)
-                            };
-                            webviewPanel.webview.postMessage({ command: 'initSettings', settings });
+                            webviewPanel.webview.postMessage({ command: 'initSettings', settings: buildMdWebviewSettings() });
 
                             // Send theme
                             webviewPanel.webview.postMessage({
@@ -182,6 +232,9 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                             });
                         } catch (err) {
                             vscode.window.showErrorMessage(`Error reading Markdown file: ${err}`);
+                            try {
+                                webviewPanel.webview.postMessage({ command: 'reloadFromDiskError', message: String(err) });
+                            } catch { /* panel disposed mid-flight */ }
                         }
                         break;
 
@@ -200,7 +253,7 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                                     continue;
                                 }
 
-                                const resolvedUri = this.resolveMarkdownImageUri(trimmed, document.uri, webviewPanel.webview);
+                                const resolvedUri = this.resolveMarkdownImageUri(trimmed, currentUri, webviewPanel.webview);
                                 if (resolvedUri) {
                                     resolved[trimmed] = resolvedUri;
                                 }
@@ -245,6 +298,7 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                         try {
                             const content = await fs.promises.readFile(filePath, 'utf-8');
                             currentContent = content;
+                            lastSaveTime = Date.now();
                             webviewPanel.webview.postMessage({ ...buildInitMarkdownPayload(content), command: 'diskChangedExternally' });
                         } catch (err) {
                             vscode.window.showErrorMessage(`Error reading Markdown file: ${err}`);
@@ -273,7 +327,7 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                             }
 
                             isSaving = true;
-                            await vscode.workspace.fs.writeFile(document.uri, Buffer.from(text, 'utf8'));
+                            await vscode.workspace.fs.writeFile(currentUri, Buffer.from(text, 'utf8'));
                             currentContent = text;
                             lastSaveTime = Date.now();
                             saveVersionSnapshot(text);
@@ -288,7 +342,7 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                     case 'saveTableColumnWidths':
                         try {
                             const widths = message.widths && typeof message.widths === 'object' ? message.widths : {};
-                            await this.tableColumnWidthStorage.saveWidths(document.uri, widths);
+                            await this.tableColumnWidthStorage.saveWidths(currentUri, widths);
                         } catch (err) {
                             vscode.window.showErrorMessage(`Error saving table column widths: ${err}`);
                         }
@@ -296,7 +350,7 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
 
                     case 'saveFrontmatterPanelCollapsed':
                         try {
-                            await this.frontmatterPanelStorage.saveCollapsed(document.uri, !!message.collapsed);
+                            await this.frontmatterPanelStorage.saveCollapsed(currentUri, !!message.collapsed);
                         } catch (err) {
                             vscode.window.showErrorMessage(`Error saving frontmatter panel state: ${err}`);
                         }
@@ -322,6 +376,14 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
 
                     case 'showVersionHistory':
                         try {
+                            if (isSaving) {
+                                webviewPanel.webview.postMessage({
+                                    command: 'versionHistoryError',
+                                    message: 'Wait for the current save to finish before opening version history',
+                                });
+                                break;
+                            }
+
                             const history = await pruneHistory();
                             if (!history.length) {
                                 webviewPanel.webview.postMessage({
@@ -358,8 +420,6 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                             }
 
                             previewVersionId = picked.entry.id;
-                            previewVersionTimestamp = picked.entry.timestamp;
-                            previewVersionContent = picked.entry.content;
                             currentContent = picked.entry.content;
 
                             webviewPanel.webview.postMessage(buildInitMarkdownPayload(currentContent));
@@ -385,8 +445,6 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                                     const content = await fs.promises.readFile(filePath, 'utf8');
                                     currentContent = content;
                                     previewVersionId = null;
-                                    previewVersionTimestamp = null;
-                                    previewVersionContent = null;
                                     restoredVersionId = null;
 
                                     webviewPanel.webview.postMessage(buildInitMarkdownPayload(currentContent));
@@ -401,7 +459,6 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
 
                             case 'restoreVersion':
                                 try {
-                                    isSaving = true;
                                     const versionId = typeof message.versionId === 'string' ? message.versionId : previewVersionId || '';
                                     if (!versionId) {
                                         break;
@@ -417,12 +474,19 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                                         break;
                                     }
 
-                                    await vscode.workspace.fs.writeFile(document.uri, Buffer.from(entry.content, 'utf8'));
+                                    if (!message.force) {
+                                        const freshDisk = await fs.promises.readFile(filePath, 'utf-8').catch(() => null);
+                                        if (freshDisk !== null && freshDisk !== currentContent) {
+                                            webviewPanel.webview.postMessage({ command: 'restoreConflict', versionId });
+                                            break;
+                                        }
+                                    }
+
+                                    isSaving = true;
+                                    await vscode.workspace.fs.writeFile(currentUri, Buffer.from(entry.content, 'utf8'));
                                     currentContent = entry.content;
                                     lastSaveTime = Date.now();
                                     previewVersionId = null;
-                                    previewVersionTimestamp = null;
-                                    previewVersionContent = null;
                                     restoredVersionId = entry.id;
                                     await persistVersionSnapshot(currentContent);
 
@@ -480,8 +544,35 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                         }
                         break;
 
+                    case 'enableAsDefault':
+                        try {
+                            await enableOpenByDefault('md');
+                            webviewPanel.webview.postMessage({ command: 'settingsUpdated', settings: buildMdWebviewSettings() });
+                        } catch (err) {
+                            vscode.window.showErrorMessage(`Error enabling default editor: ${err}`);
+                        }
+                        break;
+
+                    case 'disableDefaultEditor': {
+                        try {
+                            const result = await vscode.window.showWarningMessage(
+                                'Are you sure you want to disable Sheetmark for all .md files? You will be prompted to select a new default editor.',
+                                'Yes, Disable',
+                                'Cancel'
+                            );
+                            if (result === 'Yes, Disable') {
+                                await disableOpenByDefault('md');
+                                await vscode.commands.executeCommand('workbench.action.reopenWithEditor');
+                                webviewPanel.webview.postMessage({ command: 'settingsUpdated', settings: buildMdWebviewSettings() });
+                            }
+                        } catch (err) {
+                            vscode.window.showErrorMessage(`Error disabling editor: ${err}`);
+                        }
+                        break;
+                    }
+
                     case 'getSystemDetails': {
-                        const ext = vscode.extensions.getExtension('nacho-allendesalazar.super-file-viewer');
+                        const ext = vscode.extensions.getExtension('iggyinc.sheetmark');
                         const editorName = vscode.env.appName || 'VS Code';
                         webviewPanel.webview.postMessage({
                             command: 'systemDetails',
@@ -503,7 +594,7 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                             const result = await new Promise<boolean>((resolve) => {
                                 const req = https.request({
                                     hostname: 'docs.google.com',
-                                    path: '/forms/d/e/1FAIpQLSe5AqE_f1-WqUlQmvuPn1as3Mkn4oLjA0EDhNssetzt63ONzA/formResponse',
+                                    path: '/forms/d/e/1FAIpQLSc0rQ232X2rAI-gyLeACwaFsgN_UKf5LMt3ENd8WYtNVCCp7w/formResponse',
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(body) }
                                 }, (res: IncomingMessage) => resolve((res.statusCode ?? 0) < 400));
@@ -522,19 +613,13 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
 
             // Forward settings changes
             const configChangeDisposable = vscode.workspace.onDidChangeConfiguration(e => {
-                if (e.affectsConfiguration('xlsxViewer.md') || e.affectsConfiguration('xlsxViewer')) {
-                    const cfg = vscode.workspace.getConfiguration('xlsxViewer');
-                    const settings = {
-                        stickyToolbar: cfg.get('md.stickyToolbar', true),
-                        wordWrap: cfg.get('md.wordWrap', true),
-                        showOutline: cfg.get('md.showOutline', true),
-                        showLineNumbers: cfg.get('md.showLineNumbers', true),
-                        livePreviewReveal: cfg.get('md.livePreviewReveal', true),
-                        livePreviewLineNumbers: cfg.get('md.livePreviewLineNumbers', false),
-                        autoSave: cfg.get('md.autoSave', false)
-                    };
+                if (
+                    e.affectsConfiguration('xlsxViewer.md') ||
+                    e.affectsConfiguration('xlsxViewer') ||
+                    e.affectsConfiguration('workbench.editorAssociations')
+                ) {
                     try {
-                        webviewPanel.webview.postMessage({ command: 'settingsUpdated', settings });
+                        webviewPanel.webview.postMessage({ command: 'settingsUpdated', settings: buildMdWebviewSettings() });
                     } catch { }
                 }
             });
@@ -549,34 +634,72 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                 } catch { }
             });
 
-            const watcher = vscode.workspace.createFileSystemWatcher(
-                new vscode.RelativePattern(vscode.Uri.file(path.dirname(filePath)), path.basename(filePath))
-            );
-            const watcherDisposable = watcher.onDidChange(async () => {
-                if (isSaving || Date.now() - lastSaveTime < 1000) {
-                    return;
-                }
-                try {
-                    const content = await fs.promises.readFile(filePath, 'utf-8');
-                    currentContent = content;
-                    webviewPanel.webview.postMessage({ ...buildInitMarkdownPayload(content), command: 'diskChangedExternally' });
-                } catch {
-                    // ignore reload errors
-                }
-            });
-            const deleteWatcherDisposable = watcher.onDidDelete(() => {
+            const handleMove = async (newUri: vscode.Uri) => {
                 if (isSaving) {
                     return;
                 }
-                webviewPanel.webview.postMessage({ command: 'diskDeletedExternally' });
+                const oldUri = currentUri;
+                currentUri = newUri;
+                filePath = newUri.fsPath;
+                documentDirUri = vscode.Uri.file(path.dirname(filePath));
+
+                await migrateFileUriState(this.context, oldUri, newUri, {
+                    kind: 'md',
+                    isSpreadsheet: false,
+                    tableColumnWidthStorage: this.tableColumnWidthStorage,
+                    frontmatterPanelStorage: this.frontmatterPanelStorage,
+                });
+
+                externalFileWatcher.repoint(filePath, currentUri);
+                webviewPanel.webview.options = {
+                    enableScripts: true,
+                    localResourceRoots: markdownLocalResourceRoots,
+                };
+
+                try {
+                    webviewPanel.webview.postMessage({
+                        command: 'diskMovedExternally',
+                        fileName: vscode.workspace.asRelativePath(newUri),
+                        documentUri: newUri.toString(),
+                        documentDirUri: documentDirUri.toString(),
+                    });
+                } catch { }
+            };
+
+            const externalFileWatcher = createExternalFileChangeWatcher({
+                filePath,
+                documentUri: currentUri,
+                onChange: async () => {
+                    if (isSaving || Date.now() - lastSaveTime < 1000) {
+                        return;
+                    }
+                    try {
+                        const content = await fs.promises.readFile(filePath, 'utf-8');
+                        currentContent = content;
+                        webviewPanel.webview.postMessage({ ...buildInitMarkdownPayload(content), command: 'diskChangedExternally' });
+                    } catch {
+                        // ignore reload errors
+                    }
+                },
+                onDelete: () => {
+                    if (isSaving) {
+                        return;
+                    }
+                    webviewPanel.webview.postMessage({ command: 'diskDeletedExternally' });
+                },
+                onMove: (newUri) => { void handleMove(newUri); },
+            });
+
+            const workspaceFoldersDisposable = vscode.workspace.onDidChangeWorkspaceFolders(() => {
+                workspaceFolders = vscode.workspace.workspaceFolders?.map(f => f.uri) ?? [];
+                refreshMarkdownLocalResourceRoots();
             });
 
             webviewPanel.onDidDispose(() => {
                 configChangeDisposable.dispose();
                 themeChangeDisposable.dispose();
-                watcherDisposable.dispose();
-                deleteWatcherDisposable.dispose();
-                watcher.dispose();
+                workspaceFoldersDisposable.dispose();
+                externalFileWatcher.dispose();
                 if (versionSnapshotDebounceTimer) {
                     clearTimeout(versionSnapshotDebounceTimer);
                     versionSnapshotDebounceTimer = null;
@@ -606,11 +729,10 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
             <meta charset="UTF-8">
             <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${cspSource} https: data:; style-src ${cspSource} https: 'unsafe-inline'; font-src ${cspSource} https:; script-src ${cspSource} 'unsafe-inline';">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Markdown Viewer</title>
+            <title>Sheetmark</title>
             <link href="${themeUri}" rel="stylesheet" />
             <link href="${styleUri}" rel="stylesheet" />
             <link href="${highlightUri}" rel="stylesheet" />
-            <link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.6.0/katex.min.css" rel="stylesheet" />
             <link href="${feedbackStyleUri}" rel="stylesheet" />
         </head>
         <body>

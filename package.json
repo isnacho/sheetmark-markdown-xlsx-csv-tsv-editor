@@ -1,17 +1,22 @@
 {
-    "name": "super-file-viewer",
-    "displayName": "XLSX, CSV, TSV & Markdown Editor",
-    "description": "View and edit xlsx files with colors, fonts and styles (supporting in-table editing), and view and edit CSV, TSV & Markdown files in VS Code. This is an open-source project.",
-    "version": "1.9.91",
-    "publisher": "nacho-allendesalazar",
+    "name": "sheetmark",
+    "displayName": "Sheetmark: XLSX, CSV, TSV & Markdown",
+    "description": "Sheetmark — view and edit XLSX, CSV, TSV, and Markdown files in VS Code. Rich spreadsheet formatting, live-preview Markdown editing, and a native theme-aware UI.",
+    "version": "1.1.0",
+    "publisher": "iggyinc",
     "engines": {
         "vscode": "^1.60.0"
     },
     "repository": {
         "type": "git",
-        "url": "https://github.com/Mahmadabid/XLSX-CSV-TSV-MARKDOWN-Editor-Vscode-Extension"
+        "url": "https://github.com/nachosdesign/sheetmark-markdown-xlsx-csv-tsv-editor"
     },
+    "bugs": {
+        "url": "https://github.com/nachosdesign/sheetmark-markdown-xlsx-csv-tsv-editor/issues"
+    },
+    "homepage": "https://github.com/nachosdesign/sheetmark-markdown-xlsx-csv-tsv-editor",
     "keywords": [
+        "markdown",
         "xlsx",
         "excel",
         "csv",
@@ -32,13 +37,23 @@
     "categories": [
         "Other"
     ],
-    "activationEvents": [],
+    "activationEvents": [
+        "onLanguage:markdown",
+        "onCommand:xlsx-viewer.goBackToMdPreview",
+        "onCommand:xlsx-viewer.goBackToXlsxView",
+        "onCommand:xlsx-viewer.goBackToTableView",
+        "onCommand:xlsx-viewer.openWithMd",
+        "onCustomEditor:xlsxViewer.xlsx",
+        "onCustomEditor:xlsxViewer.csv",
+        "onCustomEditor:xlsxViewer.tsv",
+        "onCustomEditor:xlsxViewer.md"
+    ],
     "main": "./dist/extension.js",
     "contributes": {
         "customEditors": [
             {
                 "viewType": "xlsxViewer.xlsx",
-                "displayName": "XLSX Viewer & Editor",
+                "displayName": "Sheetmark — XLSX",
                 "selector": [
                     {
                         "filenamePattern": "*.xlsx"
@@ -47,7 +62,7 @@
             },
             {
                 "viewType": "xlsxViewer.csv",
-                "displayName": "CSV Viewer & Editor",
+                "displayName": "Sheetmark — CSV",
                 "selector": [
                     {
                         "filenamePattern": "*.csv"
@@ -56,7 +71,7 @@
             },
             {
                 "viewType": "xlsxViewer.tsv",
-                "displayName": "TSV Viewer & Editor",
+                "displayName": "Sheetmark — TSV",
                 "selector": [
                     {
                         "filenamePattern": "*.tsv"
@@ -65,7 +80,7 @@
             },
             {
                 "viewType": "xlsxViewer.md",
-                "displayName": "Markdown Viewer & Editor",
+                "displayName": "Sheetmark — Markdown",
                 "priority": "option",
                 "selector": [
                     {
@@ -77,42 +92,46 @@
         "commands": [
             {
                 "command": "xlsx-viewer.goBackToMdPreview",
-                "title": "Open in Preview",
-                "category": "Markdown",
-                "icon": "resources/md/logo.svg"
+                "title": "Open with Sheetmark",
+                "category": "Sheetmark",
+                "icon": "$(book)"
             },
             {
                 "command": "xlsx-viewer.goBackToTableView",
-                "title": "Open in Spreadsheet View",
-                "category": "Spreadsheet",
-                "icon": "resources/spreadsheet/spreadsheet.svg"
+                "title": "Open with Sheetmark",
+                "category": "Sheetmark",
+                "icon": "$(table)"
             },
             {
                 "command": "xlsx-viewer.goBackToXlsxView",
-                "title": "Open in Spreadsheet Viewer",
-                "category": "Spreadsheet",
-                "icon": "resources/spreadsheet/spreadsheet.svg"
+                "title": "Open with Sheetmark",
+                "category": "Sheetmark",
+                "icon": "$(table)"
             },
             {
                 "command": "xlsx-viewer.convertFile",
                 "title": "Convert File...",
-                "category": "Spreadsheet/CSV/TSV"
+                "category": "Sheetmark"
             },
             {
                 "command": "xlsx-viewer.openWithXlsx",
-                "title": "XLSX Viewer & Editor"
+                "title": "Open with Sheetmark",
+                "icon": "$(table)"
             },
             {
                 "command": "xlsx-viewer.openWithCsv",
-                "title": "CSV Viewer & Editor"
+                "title": "Open with Sheetmark",
+                "icon": "$(table)"
             },
             {
                 "command": "xlsx-viewer.openWithTsv",
-                "title": "TSV Viewer & Editor"
+                "title": "Open with Sheetmark",
+                "icon": "$(table)"
             },
             {
                 "command": "xlsx-viewer.openWithMd",
-                "title": "Markdown Viewer & Editor"
+                "title": "Open with Sheetmark",
+                "icon": "$(book)"
             }
         ],
         "menus": {
@@ -162,49 +181,29 @@
             ],
             "editor/title": [
                 {
-                    "when": "resourceExtname == '.xlsx' && activeEditor != 'xlsxViewer.xlsx'",
+                    "when": "resourceExtname == '.xlsx' && !(activeCustomEditorId == 'xlsxViewer.xlsx')",
                     "command": "xlsx-viewer.goBackToXlsxView",
-                    "group": "navigation"
+                    "group": "navigation@50"
                 },
                 {
-                    "when": "resourceExtname == '.csv' && activeEditor != 'xlsxViewer.csv'",
+                    "when": "resourceExtname == '.csv' && !(activeCustomEditorId == 'xlsxViewer.csv')",
                     "command": "xlsx-viewer.goBackToTableView",
-                    "group": "navigation"
+                    "group": "navigation@50"
                 },
                 {
-                    "when": "resourceExtname == '.tsv' && activeEditor != 'xlsxViewer.tsv'",
+                    "when": "resourceExtname == '.tsv' && !(activeCustomEditorId == 'xlsxViewer.tsv')",
                     "command": "xlsx-viewer.goBackToTableView",
-                    "group": "navigation"
+                    "group": "navigation@50"
                 },
                 {
-                    "when": "resourceExtname == '.md' && activeEditor != 'xlsxViewer.md'",
+                    "when": "(editorLangId == markdown || resourceExtname == '.md' || activeCustomEditorId == 'vscode.markdown.preview.editor' || activeWebviewPanelId == 'markdown.preview') && !(activeCustomEditorId == 'xlsxViewer.md')",
                     "command": "xlsx-viewer.goBackToMdPreview",
-                    "group": "navigation"
-                },
-                {
-                    "command": "xlsx-viewer.openWithXlsx",
-                    "when": "resourceExtname == '.xlsx' && activeCustomEditorId != 'xlsxViewer.xlsx'",
-                    "group": "3_open@100"
-                },
-                {
-                    "command": "xlsx-viewer.openWithCsv",
-                    "when": "resourceExtname == '.csv' && activeCustomEditorId != 'xlsxViewer.csv'",
-                    "group": "3_open@100"
-                },
-                {
-                    "command": "xlsx-viewer.openWithTsv",
-                    "when": "resourceExtname == '.tsv' && activeCustomEditorId != 'xlsxViewer.tsv'",
-                    "group": "3_open@100"
-                },
-                {
-                    "command": "xlsx-viewer.openWithMd",
-                    "when": "(resourceExtname == '.md' || resourceLangId == markdown) && activeCustomEditorId != 'xlsxViewer.md'",
-                    "group": "3_open@100"
+                    "group": "navigation@1"
                 }
             ]
         },
         "configuration": {
-            "title": "Spreadsheet, CSV & TSV Editor",
+            "title": "Sheetmark",
             "properties": {
                 "xlsxViewer.csv.firstRowIsHeader": {
                     "type": "boolean",
@@ -215,6 +214,11 @@
                     "type": "boolean",
                     "default": false,
                     "description": "Make the first row sticky when 'First row is header' is enabled."
+                },
+                "xlsxViewer.csv.openByDefault": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Open .csv files with Sheetmark by default instead of VS Code's built-in editor."
                 },
                 "xlsxViewer.csv.stickyToolbar": {
                     "type": "boolean",
@@ -246,6 +250,11 @@
                     "default": false,
                     "description": "Make the first row sticky when 'First row is header' is enabled."
                 },
+                "xlsxViewer.tsv.openByDefault": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Open .tsv files with Sheetmark by default instead of VS Code's built-in editor."
+                },
                 "xlsxViewer.tsv.stickyToolbar": {
                     "type": "boolean",
                     "default": true,
@@ -265,6 +274,11 @@
                     "type": "boolean",
                     "default": false,
                     "description": "Enable text wrapping in TSV cells by default."
+                },
+                "xlsxViewer.xlsx.openByDefault": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Open .xlsx files with Sheetmark by default instead of VS Code's built-in editor."
                 },
                 "xlsxViewer.xlsx.stickyToolbar": {
                     "type": "boolean",
@@ -324,6 +338,11 @@
                     "type": "boolean",
                     "default": true,
                     "description": "Show a confirmation popup before merging cells that warns only the top-left cell value is preserved."
+                },
+                "xlsxViewer.md.openByDefault": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Open .md files with Sheetmark by default instead of VS Code's built-in editor."
                 },
                 "xlsxViewer.md.stickyToolbar": {
                     "type": "boolean",
@@ -426,5 +445,8 @@
         "typo-js": "^1.3.2"
     },
     "license": "MIT",
-    "icon": "icon.png"
+    "icon": "icon.png",
+    "allowScripts": {
+        "esbuild@0.25.1": true
+    }
 }

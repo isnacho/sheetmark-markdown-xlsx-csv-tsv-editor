@@ -110,6 +110,19 @@ test('findActiveCell resolves the cell containing the selection', () => {
     assert.equal(findActiveCell(state, grid, alignmentRowPos, alignmentRowPos), null);
 });
 
+test('findActiveCell activates in-cell editing only when the range fits one cell', () => {
+    const doc = '| a | b |\n| - | - |\n| 1 | 2 |';
+    const state = stateFor(doc);
+    const grid = buildCellGrid(state, tableNode(state));
+    const cell1 = grid[1][0];
+    assert.deepEqual(
+        findActiveCell(state, grid, cell1.from, cell1.to),
+        { row: 1, col: 0, ...cell1 },
+    );
+    assert.equal(findActiveCell(state, grid, 0, doc.length), null);
+    assert.equal(findActiveCell(state, grid, grid[0][0].from, grid[0][1].to), null);
+});
+
 test('neighbor lookups wrap across row/column boundaries', () => {
     const grid: CellRange[][] = [
         [{ from: 0, to: 1 }, { from: 2, to: 3 }],
@@ -190,6 +203,13 @@ test('columnWidthsField applies setColumnWidthsEffect per table index without cl
     assert.deepEqual(tr1.state.field(columnWidthsField), { 1: [50, 60] });
     const tr2 = tr1.state.update({ effects: setColumnWidthsEffect.of({ tableIndex: 0, widths: [10] }) });
     assert.deepEqual(tr2.state.field(columnWidthsField), { 0: [10], 1: [50, 60] });
+});
+
+test('columnWidthsField drops a table entry when all committed widths are cleared', () => {
+    const state = EditorState.create({ extensions: [columnWidthsField] });
+    const seeded = state.update({ effects: setColumnWidthsEffect.of({ tableIndex: 1, widths: [50, 60] }) });
+    const cleared = seeded.state.update({ effects: setColumnWidthsEffect.of({ tableIndex: 1, widths: [0, 0] }) });
+    assert.deepEqual(cleared.state.field(columnWidthsField), {});
 });
 
 // ===== Right-click table menu: item availability =====
@@ -554,4 +574,24 @@ test('insertTableCellLink wraps the selection or inserts a placeholder', () => {
     assert.equal(selected.text, '[cell](url)');
     assert.equal(selected.selectFrom, 7);
     assert.equal(selected.selectTo, 10);
+});
+
+test('second table cell positions stay valid after editing the first table', () => {
+    const doc1 = '| a |\n| - |\n| 1 |\n\n| b |\n| - |\n| 2 |';
+    const state1 = stateFor(doc1);
+    const node2a = findTableNodeByIndex(state1, 1);
+    assert.ok(node2a);
+    const grid1 = buildCellGrid(state1, node2a!);
+    const stalePos = grid1[1][0].from;
+
+    const doc2 = '| a |\n| - |\n| LONG |\n\n| b |\n| - |\n| 2 |';
+    const state2 = stateFor(doc2);
+    const node2b = findTableNodeByIndex(state2, 1);
+    assert.ok(node2b);
+    const grid2 = buildCellGrid(state2, node2b!);
+    const freshPos = grid2[1][0].from;
+
+    assert.notEqual(stalePos, freshPos);
+    assert.equal(state2.sliceDoc(freshPos, grid2[1][0].to), '2');
+    assert.notEqual(state2.sliceDoc(stalePos, stalePos + 1), '2');
 });

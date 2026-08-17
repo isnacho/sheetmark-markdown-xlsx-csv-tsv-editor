@@ -19,20 +19,11 @@ export interface CreateXlsxToolbarButtonsOptions {
     onOpenSettings: () => void;
     onHelp: () => void;
     onConvertFile: () => void;
-    onEnableAsDefault: () => void;
     onRefresh: () => void;
 }
 
 export function createXlsxToolbarButtons(options: CreateXlsxToolbarButtonsOptions): ToolbarButton[] {
     return [
-        {
-            id: 'enableAsDefaultButton',
-            icon: Icons.Zap,
-            label: 'Set as Default',
-            tooltip: 'Make Spreadsheet Viewer the default editor for XLSX files',
-            hidden: true,
-            onClick: options.onEnableAsDefault
-        },
         {
             id: 'refreshButton',
             icon: Icons.Refresh,

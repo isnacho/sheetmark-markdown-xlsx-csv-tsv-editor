@@ -5,7 +5,7 @@
 // headlessly in tableWidget.test.mts. Only TableWidget's DOM wiring
 // (toDOM/updateDOM and the editable-cell event handlers) needs a real
 // browser and is verified by manual F5 testing, per this project's test
-// infrastructure (see CLAUDE.md and .docs/PLAN-obsidian-live-preview.md).
+// infrastructure (see AGENTS.md and .docs/product/completed/PLAN-obsidian-live-preview.md).
 //
 // CM6 has no built-in table grid — unlike headings/bold/italic (inline
 // Decoration.mark/replace), a table needs an actual rendered <table> element,
@@ -114,11 +114,11 @@ md.renderer.rules.table_open = (tokens, idx, options, env, self) => {
     const openTag = defaultTableOpen(tokens, idx, options, env, self);
     // Always emit a <colgroup> (even with no explicit widths) so drag code
     // never has to special-case "no colgroup yet" on a table's first-ever
-    // resize — a <col> with no width style is visually inert under the
-    // default table-layout:auto, so untouched tables render exactly as
-    // before. `colCount`/`widths` are threaded through markdown-it's own
-    // per-render `env` param (not widget state — this rule is a shared
-    // singleton across every TableWidget instance).
+    // resize — a <col> with no width style defers to equal column split under
+    // the default page-width `table-layout: fixed` CSS. `colCount`/`widths`
+    // are threaded through markdown-it's own per-render `env` param (not
+    // widget state — this rule is a shared singleton across every TableWidget
+    // instance).
     const colCount: number = (env as { colCount?: number } | undefined)?.colCount ?? 0;
     const widths: readonly number[] | null = (env as { widths?: readonly number[] } | undefined)?.widths ?? null;
     if (colCount === 0) { return openTag; }
@@ -386,6 +386,22 @@ export interface TableMenuItem {
     disabledReason?: string;
 }
 
+const TABLE_MENU_ICONS: Record<TableMenuActionId, string> = {
+    clearCell: Icons.TableClearCell,
+    clearRow: Icons.TableClearRow,
+    clearColumn: Icons.TableClearColumn,
+    insertRowAbove: Icons.TableInsertRowAbove,
+    insertRowBelow: Icons.TableAddRowBelow,
+    moveRowUp: Icons.MoveUp,
+    moveRowDown: Icons.MoveDown,
+    deleteRow: Icons.TableRemoveRow,
+    insertColumnLeft: Icons.TableInsertColumnLeft,
+    insertColumnRight: Icons.TableAddColumnRight,
+    moveColumnLeft: Icons.MoveLeft,
+    moveColumnRight: Icons.MoveRight,
+    deleteColumn: Icons.TableRemoveColumn,
+};
+
 /**
  * What the right-click menu offers for the cell at (row, col) — a pure
  * function of the grid's shape, computed at menu-open time straight off the
@@ -540,6 +556,8 @@ const BR_TAG_RE = /<br\s*\/?>/gi;
 
 let activeTableEditingCell: HTMLElement | null = null;
 const tableCellCommitHandlers = new WeakMap<HTMLElement, () => void>();
+/** Set on mousedown of an inactive cell; consumed by `wireActiveCell` to land the caret at the click. */
+let pendingCellClickPoint: { x: number; y: number } | null = null;
 
 export function applyTableCellInlineFormatAction(action: string): boolean {
     const cell = activeTableEditingCell;
@@ -548,6 +566,11 @@ export function applyTableCellInlineFormatAction(action: string): boolean {
     tableCellCommitHandlers.get(cell)?.();
     cell.focus();
     return true;
+}
+
+/** Leave in-cell contentEditable so CM6 can own keyboard focus (e.g. Cmd+A). */
+export function blurActiveTableEditingCell(): void {
+    activeTableEditingCell?.blur();
 }
 
 function serializeCellContent(el: HTMLElement): string {
@@ -802,6 +825,27 @@ function caretOffsetIn(el: HTMLElement): number | null {
     return measureSerializedOffset(el, range.startContainer, range.startOffset);
 }
 
+/** Map a viewport click to a serialized offset inside `el` (after raw cell content is loaded). */
+function caretOffsetFromClientPoint(el: HTMLElement, x: number, y: number): number | null {
+    const doc = document as Document & {
+        caretRangeFromPoint?(x: number, y: number): Range | null;
+        caretPositionFromPoint?(x: number, y: number): { offsetNode: Node; offset: number } | null;
+    };
+    let range: Range | null = null;
+    if (doc.caretRangeFromPoint) {
+        range = doc.caretRangeFromPoint(x, y);
+    } else if (doc.caretPositionFromPoint) {
+        const pos = doc.caretPositionFromPoint(x, y);
+        if (pos) {
+            range = document.createRange();
+            range.setStart(pos.offsetNode, pos.offset);
+            range.collapse(true);
+        }
+    }
+    if (!range || !el.contains(range.commonAncestorContainer)) { return null; }
+    return measureSerializedOffset(el, range.startContainer, range.startOffset);
+}
+
 /** True when ↑/↓ should move to an adjacent row instead of within the cell. */
 function shouldLeaveCellVertically(td: HTMLElement, direction: 'up' | 'down'): boolean {
     const content = serializeCellContent(td);
@@ -844,6 +888,11 @@ function widthsEqual(a: readonly number[] | null, b: readonly number[] | null): 
     if (a === b) { return true; }
     if (!a || !b) { return false; }
     return a.length === b.length && a.every((v, i) => v === b[i]);
+}
+
+/** True when at least one column has a user-committed pixel width. */
+function hasExplicitColumnWidths(widths: readonly number[]): boolean {
+    return widths.some(w => w > 0);
 }
 
 /**
@@ -902,6 +951,9 @@ function wireResizeHandle(th: HTMLElement, table: HTMLTableElement, view: Editor
             window.removeEventListener('mousemove', onMove);
             window.removeEventListener('mouseup', onUp);
             const widths = cols.map(c => Math.round(parseFloat(c.style.width) || 0));
+            if (!hasExplicitColumnWidths(widths)) {
+                table.classList.remove('cm-md-table-resized');
+            }
             view.dispatch({ effects: setColumnWidthsEffect.of({ tableIndex, widths }) });
         };
         window.addEventListener('mousemove', onMove);
@@ -909,9 +961,8 @@ function wireResizeHandle(th: HTMLElement, table: HTMLTableElement, view: Editor
     });
 
     // Excel/Sheets/Notion convention: double-click a handle clears that
-    // column's manual override. Under table-layout:fixed this means "share
-    // remaining space with other auto columns," not a true content-measuring
-    // autofit — an honest v1 simplification, not real content measurement.
+    // column's manual override. When no explicit widths remain, revert to the
+    // default page-width equal-column layout.
     handle.addEventListener('dblclick', (event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -921,6 +972,9 @@ function wireResizeHandle(th: HTMLElement, table: HTMLTableElement, view: Editor
         if (!targetCol) { return; }
         targetCol.style.width = '';
         const widths = cols.map(c => Math.round(parseFloat(c.style.width) || 0));
+        if (!hasExplicitColumnWidths(widths)) {
+            table.classList.remove('cm-md-table-resized');
+        }
         view.dispatch({ effects: setColumnWidthsEffect.of({ tableIndex, widths }) });
     });
 }
@@ -993,13 +1047,41 @@ const ROW_GRIP_WIDTH_PX = 14;
 const ROW_GRIP_GUTTER_PX = 20;
 
 /** Enable horizontal scroll on the table wrapper only when the table exceeds it. */
+interface TableScrollUIHandles {
+    ro: ResizeObserver;
+    mo: MutationObserver;
+    onScroll: () => void;
+}
+
+const tableScrollUIByElement = new WeakMap<HTMLElement, TableScrollUIHandles>();
+
+function disconnectTableScrollUI(scroll: HTMLElement): void {
+    const existing = tableScrollUIByElement.get(scroll);
+    if (!existing) { return; }
+    existing.ro.disconnect();
+    existing.mo.disconnect();
+    scroll.removeEventListener('scroll', existing.onScroll);
+    tableScrollUIByElement.delete(scroll);
+}
+
 function wireTableScrollUI(scroll: HTMLElement): void {
+    disconnectTableScrollUI(scroll);
     const table = scroll.querySelector('table');
     if (!table) { return; }
 
     const update = () => {
-        const overflows = table.getBoundingClientRect().width > scroll.clientWidth + 1;
+        const tableWidth = table.getBoundingClientRect().width;
+        // Compare against the widget's allotted width, not scroll.clientWidth —
+        // when the scroll wrapper hugs content (fit-content), clientWidth tracks
+        // the table and would never register overflow.
+        const maxScrollWidth = scroll.parentElement?.clientWidth ?? scroll.clientWidth;
+        const overflows = tableWidth > maxScrollWidth + 1;
+        const isResized = table.classList.contains('cm-md-table-resized');
         scroll.classList.toggle('cm-md-table-overflow-x', overflows);
+        scroll.classList.toggle('cm-md-table-hug-content', isResized && !overflows);
+        const showFade = overflows &&
+            scroll.scrollLeft + scroll.clientWidth < scroll.scrollWidth - 1;
+        scroll.classList.toggle('cm-md-table-scroll-fade', showFade);
     };
 
     update();
@@ -1007,7 +1089,55 @@ function wireTableScrollUI(scroll: HTMLElement): void {
     const ro = new ResizeObserver(update);
     ro.observe(scroll);
     ro.observe(table);
-    scroll.addEventListener('scroll', update, { passive: true });
+    if (scroll.parentElement) { ro.observe(scroll.parentElement); }
+    const onScroll = update;
+    scroll.addEventListener('scroll', onScroll, { passive: true });
+    const mo = new MutationObserver(update);
+    mo.observe(table, { attributes: true, attributeFilter: ['class'] });
+    tableScrollUIByElement.set(scroll, { ro, mo, onScroll });
+}
+
+function throttleRAFEvent(fn: (event: MouseEvent) => void): (event: MouseEvent) => void {
+    let ticking = false;
+    let lastEvent: MouseEvent | null = null;
+    return (event: MouseEvent) => {
+        lastEvent = event;
+        if (!ticking) {
+            ticking = true;
+            requestAnimationFrame(() => {
+                if (lastEvent) { fn(lastEvent); }
+                ticking = false;
+            });
+        }
+    };
+}
+
+interface RowRect {
+    index: number;
+    top: number;
+    bottom: number;
+}
+
+function collectRowRects(wrap: HTMLElement): RowRect[] {
+    const rows = wrap.querySelectorAll('tbody tr');
+    return Array.from(rows).map((tr, index) => {
+        const rect = (tr as HTMLElement).getBoundingClientRect();
+        return { index, top: rect.top, bottom: rect.bottom };
+    });
+}
+
+interface ColRect {
+    index: number;
+    left: number;
+    right: number;
+}
+
+function collectColRects(wrap: HTMLElement): ColRect[] {
+    const ths = wrap.querySelectorAll('thead th');
+    return Array.from(ths).map((th, index) => {
+        const rect = (th as HTMLElement).getBoundingClientRect();
+        return { index, left: rect.left, right: rect.right };
+    });
 }
 
 /** One shared row/column grip pair per table — positioned on wrap mousemove. */
@@ -1070,7 +1200,7 @@ function wireTableDragUI(
         }
     };
 
-    wrap.addEventListener('mousemove', (event) => {
+    wrap.addEventListener('mousemove', throttleRAFEvent((event) => {
         if (rowDragging || colDragging) { return; }
 
         const row = bodyRowAtY(wrap, event.clientY);
@@ -1090,7 +1220,7 @@ function wireTableDragUI(
         } else {
             hideColHandle();
         }
-    });
+    }));
 
     colHandle.addEventListener('mouseenter', () => {
         if (colTarget) {
@@ -1139,35 +1269,41 @@ function wireTableDragUI(
         wrap.classList.add('cm-md-table-dragging');
         rowHandle.classList.add('cm-md-drag-grip-visible');
         let pendingToBodyIdx = fromBodyIdx;
+        let cachedRowRects = collectRowRects(wrap);
+        const refreshRowRects = () => { cachedRowRects = collectRowRects(wrap); };
+        scrollEl?.addEventListener('scroll', refreshRowRects, { passive: true });
 
-        const onMove = (moveEvent: MouseEvent) => {
+        const onMove = throttleRAFEvent((moveEvent: MouseEvent) => {
             const row = bodyRowAtY(wrap, moveEvent.clientY);
             if (row) { positionRowHandle(row.tr); }
-            const rows = wrap.querySelectorAll('tbody tr');
             const wrapRect = wrap.getBoundingClientRect();
             let targetIdx = fromBodyIdx;
-            for (let i = 0; i < rows.length; i++) {
-                const rect = (rows[i] as HTMLElement).getBoundingClientRect();
-                const mid = (rect.top + rect.bottom) / 2;
-                if (moveEvent.clientY < mid) {
-                    targetIdx = i;
-                    insertionLine.style.top = `${rect.top - wrapRect.top}px`;
+            const clientY = moveEvent.clientY;
+            for (const rowRect of cachedRowRects) {
+                const mid = (rowRect.top + rowRect.bottom) / 2;
+                if (clientY < mid) {
+                    targetIdx = rowRect.index;
+                    insertionLine.style.top = `${rowRect.top - wrapRect.top}px`;
                     break;
                 }
-                targetIdx = i + 1;
-                insertionLine.style.top = `${rect.bottom - wrapRect.top}px`;
+                targetIdx = rowRect.index + 1;
+                insertionLine.style.top = `${rowRect.bottom - wrapRect.top}px`;
             }
             pendingToBodyIdx = targetIdx;
-        };
+        });
 
         const onUp = () => {
             window.removeEventListener('mousemove', onMove);
             window.removeEventListener('mouseup', onUp);
+            scrollEl?.removeEventListener('scroll', refreshRowRects);
             insertionLine.style.display = 'none';
             rowDragging = false;
             wrap.classList.remove('cm-md-table-dragging');
             const toBodyIdx = normalizeRowDropIndex(pendingToBodyIdx, body.length);
-            const spec = computeMoveRowTo(view.state, tableNode, grid, gridRow, toBodyIdx);
+            const freshNode = findTableNodeByIndex(view.state, tableIndex);
+            if (!freshNode) { return; }
+            const freshGrid = buildCellGrid(view.state, freshNode);
+            const spec = computeMoveRowTo(view.state, freshNode, freshGrid, gridRow, toBodyIdx);
             if (spec) { view.dispatch(spec); }
         };
 
@@ -1193,35 +1329,41 @@ function wireTableDragUI(
         wrap.classList.add('cm-md-table-dragging');
         colHandle.classList.add('cm-md-drag-grip-visible');
         let pendingToCol = col;
+        let cachedColRects = collectColRects(wrap);
+        const refreshColRects = () => { cachedColRects = collectColRects(wrap); };
+        scrollEl?.addEventListener('scroll', refreshColRects, { passive: true });
 
-        const onMove = (moveEvent: MouseEvent) => {
+        const onMove = throttleRAFEvent((moveEvent: MouseEvent) => {
             const headerCol = headerColAtX(wrap, moveEvent.clientX);
             if (headerCol) { positionColHandle(headerCol.th); }
             syncColInsertionLineHeight(insertionLine, wrap);
-            const ths = wrap.querySelectorAll('thead th');
             const wrapRect = wrap.getBoundingClientRect();
             let targetCol = col;
-            for (let i = 0; i < ths.length; i++) {
-                const rect = (ths[i] as HTMLElement).getBoundingClientRect();
-                const mid = (rect.left + rect.right) / 2;
-                if (moveEvent.clientX < mid) {
-                    targetCol = i;
-                    insertionLine.style.left = `${rect.left - wrapRect.left}px`;
+            const clientX = moveEvent.clientX;
+            for (const colRect of cachedColRects) {
+                const mid = (colRect.left + colRect.right) / 2;
+                if (clientX < mid) {
+                    targetCol = colRect.index;
+                    insertionLine.style.left = `${colRect.left - wrapRect.left}px`;
                     break;
                 }
-                targetCol = i + 1;
-                insertionLine.style.left = `${rect.right - wrapRect.left}px`;
+                targetCol = colRect.index + 1;
+                insertionLine.style.left = `${colRect.right - wrapRect.left}px`;
             }
             pendingToCol = targetCol;
-        };
+        });
 
         const onUp = () => {
             window.removeEventListener('mousemove', onMove);
             window.removeEventListener('mouseup', onUp);
+            scrollEl?.removeEventListener('scroll', refreshColRects);
             insertionLine.style.display = 'none';
             colDragging = false;
             wrap.classList.remove('cm-md-table-dragging');
-            const spec = computeMoveColumnTo(view.state, tableNode, grid, col, pendingToCol);
+            const freshNode = findTableNodeByIndex(view.state, tableIndex);
+            if (!freshNode) { return; }
+            const freshGrid = buildCellGrid(view.state, freshNode);
+            const spec = computeMoveColumnTo(view.state, freshNode, freshGrid, col, pendingToCol);
             if (!spec) { return; }
             const widthsMap = view.state.field(columnWidthsField);
             const widths = widthsMap[tableIndex];
@@ -1371,6 +1513,14 @@ function wireActiveCell(td: HTMLElement, view: EditorView, active: ActiveCell, g
                 commit();
                 return;
             }
+            if (key === 'a' && !event.shiftKey) {
+                event.preventDefault();
+                commit();
+                blurActiveTableEditingCell();
+                view.dispatch({ selection: EditorSelection.range(0, view.state.doc.length) });
+                view.focus();
+                return;
+            }
         }
 
         if (event.key === 'Tab') {
@@ -1410,16 +1560,33 @@ function wireActiveCell(td: HTMLElement, view: EditorView, active: ActiveCell, g
     // Land the caret/selection to match how this cell became active: a range
     // selection (Tab/Enter nav landed here) selects the whole cell, ready to
     // overwrite; a collapsed selection (click, or Arrow nav) places the caret
-    // at that exact character offset. Click doesn't map pixel->offset (v1
-    // scope cut, see file header) so mousedown below always lands collapsed
-    // at the cell's end.
-    const sel = view.state.selection.main;
+    // at that exact character offset. Clicks on an inactive cell stash viewport
+    // coords in `pendingCellClickPoint` so we can map pixel → offset once the
+    // raw editable DOM is in place.
     queueMicrotask(() => {
+        const currentSel = view.state.selection.main;
+        const lo = Math.min(currentSel.from, currentSel.to);
+        const hi = Math.max(currentSel.from, currentSel.to);
+        const rangeFitsCell = !currentSel.empty && lo >= active.from && hi <= active.to;
+        if (!currentSel.empty && !rangeFitsCell) {
+            view.focus();
+            return;
+        }
         td.focus();
-        if (sel.from !== sel.to) {
+        if (rangeFitsCell) {
             selectAllTextIn(td);
         } else {
-            placeCaretAtOffset(td, sel.from - active.from);
+            let caretOffset = currentSel.from - active.from;
+            if (pendingCellClickPoint) {
+                const clicked = caretOffsetFromClientPoint(td, pendingCellClickPoint.x, pendingCellClickPoint.y);
+                pendingCellClickPoint = null;
+                if (clicked !== null) { caretOffset = clicked; }
+            }
+            placeCaretAtOffset(td, caretOffset);
+            const docPos = active.from + caretOffset;
+            if (docPos !== currentSel.from) {
+                view.dispatch({ selection: { anchor: docPos } });
+            }
         }
         scheduleEditingRowHeightSync(td);
     });
@@ -1475,7 +1642,8 @@ function showTableContextMenu(event: MouseEvent, view: EditorView, tableIndex: n
             const btn = document.createElement('button');
             btn.type = 'button';
             btn.className = 'cm-md-table-context-item';
-            btn.textContent = item.label;
+            btn.dataset.action = item.id;
+            btn.innerHTML = `<span class="cm-md-table-context-icon" aria-hidden="true">${TABLE_MENU_ICONS[item.id]}</span><span class="cm-md-table-context-label">${item.label}</span>`;
             btn.disabled = !item.enabled;
             if (item.disabledReason) { btn.title = item.disabledReason; }
             btn.addEventListener('click', () => {
@@ -1547,7 +1715,10 @@ export class TableWidget extends WidgetType {
         wrap.appendChild(scroll);
 
         const table = scroll.querySelector('table.md-table') as HTMLTableElement | null;
-        if (table && this.widths?.some(w => w > 0)) { table.classList.add('cm-md-table-resized'); }
+        if (table && this.widths && hasExplicitColumnWidths(this.widths)) { table.classList.add('cm-md-table-resized'); }
+
+        const tableNodeAtClick = findTableNodeByIndex(view.state, this.tableIndex);
+        const gridAtClick = tableNodeAtClick ? buildCellGrid(view.state, tableNodeAtClick) : null;
 
         wrap.querySelectorAll('th, td').forEach((cellEl) => {
             cellEl.addEventListener('mousedown', (event) => {
@@ -1561,9 +1732,11 @@ export class TableWidget extends WidgetType {
                 // which cell was active when toDOM ran).
                 if (cellEl.classList.contains('cm-md-table-cell-editing')) { return; }
                 const pos = resolveCellPosition(wrap, cellEl as HTMLElement);
-                const target = pos ? this.grid[pos.row]?.[pos.col] : undefined;
+                const target = pos && gridAtClick ? gridAtClick[pos.row]?.[pos.col] : undefined;
                 if (!target) { return; }
                 event.preventDefault();
+                const mouse = event as MouseEvent;
+                pendingCellClickPoint = { x: mouse.clientX, y: mouse.clientY };
                 placeCollapsed(view, collapsedClickPosForCell(view.state, target));
             });
         });
@@ -1572,9 +1745,9 @@ export class TableWidget extends WidgetType {
             const cellEl = (event.target as HTMLElement).closest('th, td') as HTMLElement | null;
             if (!cellEl) { return; }
             const pos = resolveCellPosition(wrap, cellEl);
-            if (!pos || !this.grid[pos.row]?.[pos.col]) { return; }
+            if (!pos || !gridAtClick?.[pos.row]?.[pos.col]) { return; }
             event.preventDefault();
-            showTableContextMenu(event, view, this.tableIndex, pos.row, pos.col, computeTableContextMenu(this.grid, pos.row, pos.col));
+            showTableContextMenu(event, view, this.tableIndex, pos.row, pos.col, computeTableContextMenu(gridAtClick, pos.row, pos.col));
         });
 
         if (this.activeCell) {
@@ -1607,7 +1780,7 @@ export class TableWidget extends WidgetType {
      * almost continuously while typing — without this, CM6 would rebuild the
      * whole widget and steal focus on every character. Every real bug in this
      * feature so far was a widget-lifecycle surprise only caught by manual
-     * testing (see file header + .docs/PLAN-obsidian-live-preview.md) — this
+     * testing (see file header + .docs/product/completed/PLAN-obsidian-live-preview.md) — this
      * is exactly that bug class, addressed up front rather than discovered.
      * Only continues the no-op path when the active cell's own input handler
      * is the thing that produced this update (still focused, same row/col);
@@ -1631,6 +1804,13 @@ export class TableWidget extends WidgetType {
      */
     ignoreEvent(): boolean {
         return true;
+    }
+
+    destroy(dom: HTMLElement): void {
+        const scroll = dom.querySelector('.cm-md-table-scroll');
+        if (scroll instanceof HTMLElement) {
+            disconnectTableScrollUI(scroll);
+        }
     }
 }
 
@@ -1705,7 +1885,13 @@ export const columnWidthsField = StateField.define<Record<number, readonly numbe
     update(value, tr) {
         for (const effect of tr.effects) {
             if (effect.is(setColumnWidthsEffect)) {
-                value = { ...value, [effect.value.tableIndex]: effect.value.widths };
+                const { tableIndex, widths } = effect.value;
+                if (hasExplicitColumnWidths(widths)) {
+                    value = { ...value, [tableIndex]: widths };
+                } else {
+                    const { [tableIndex]: _removed, ...rest } = value;
+                    value = rest;
+                }
             }
         }
         return value;

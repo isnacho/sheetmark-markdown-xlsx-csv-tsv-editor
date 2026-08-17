@@ -4,7 +4,7 @@ import * as vscode from 'vscode';
 // appearance in the document (0-indexed) -> px width per column. Raw GFM
 // pipe-table syntax has no field for column width, so this can't live in the
 // .md file itself — mirrors StyleStorageService's approach to the same problem
-// for CSV/TSV cell styles (see CLAUDE.md §6), but simpler: unlike that
+// for CSV/TSV cell styles (see AGENTS.md §6), but simpler: unlike that
 // service's 48h-TTL "styles" family, this is modeled on its `viewMode` family
 // (permanent, no expiry) since a resized column is a deliberate, durable
 // preference, not an ephemeral edit.
@@ -35,5 +35,19 @@ export class TableColumnWidthStorageService {
 
     public async clearWidths(uri: vscode.Uri): Promise<void> {
         await this.context.workspaceState.update(this.getStorageKey(uri), undefined);
+    }
+
+    public async migrateUri(oldUri: vscode.Uri, newUri: vscode.Uri): Promise<void> {
+        const oldKey = this.getStorageKey(oldUri);
+        const newKey = this.getStorageKey(newUri);
+        if (oldKey === newKey) {
+            return;
+        }
+        const value = this.context.workspaceState.get<Record<number, number[]>>(oldKey);
+        if (value === undefined) {
+            return;
+        }
+        await this.context.workspaceState.update(newKey, value);
+        await this.context.workspaceState.update(oldKey, undefined);
     }
 }

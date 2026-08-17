@@ -26,9 +26,9 @@
 //      replaces the onEditorInput() side-effect the old textarea path relied on).
 // ============================================================================
 
-import { EditorState, Compartment, Annotation, EditorSelection } from '@codemirror/state';
-import { EditorView, keymap, drawSelection, highlightActiveLine, lineNumbers } from '@codemirror/view';
-import { history, historyKeymap, defaultKeymap, undo, redo, undoDepth, redoDepth } from '@codemirror/commands';
+import { EditorState, Compartment, Annotation, EditorSelection, Prec } from '@codemirror/state';
+import { EditorView, keymap, drawSelection, highlightActiveLine, highlightActiveLineGutter, lineNumbers } from '@codemirror/view';
+import { history, historyKeymap, defaultKeymap, undo, redo, undoDepth, redoDepth, selectAll } from '@codemirror/commands';
 import { markdown } from '@codemirror/lang-markdown';
 import { GFM } from '@lezer/markdown';
 import { cm6Theme } from './cm6Theme';
@@ -40,12 +40,18 @@ import {
 import type { Cm6Match } from './livePreviewSearch';
 import { detectInteractionAtPos } from './livePreviewInteractions';
 import type { Cm6Interaction } from './livePreviewInteractions';
-import { livePreviewRevealPlugin, orderedListAtomicRanges } from './revealDecorations';
+import { livePreviewRevealPlugin } from './revealDecorations';
+import { listMarkerBoundaryExtensions } from './listMarkerEditing';
 import { codeStylingPlugin } from './codeStylingPlugin';
+import { codeBlockNavigationKeymap } from './codeBlockBoundaryEditing';
+import { contentClickHandlers } from './contentClickPositioning';
 import { tableWidgetField, columnWidthsField, setColumnWidthsEffect } from './tableWidget';
 import { tableBoundaryExtensions } from './tableBoundaryEditing';
-import { frontmatterWidgetField, seedFrontmatterCollapsed, seedFrontmatterEditing, setFrontmatterCollapsedCallback } from './frontmatterWidget';
+import { frontmatterWidgetField, seedFrontmatterCollapsed, seedFrontmatterEditing, setFrontmatterCollapsedCallback, blurActiveFrontmatterEditing, setFrontmatterEditingEffect } from './frontmatterWidget';
+import { cursorPosAfterFrontmatter } from '../frontmatter';
 import { headingLineDecorationField } from './headingGutterSync';
+import { hoverLineGutter, hoverGutterDomEventHandlers } from './hoverLineGutter';
+import { resolveLinePosAtPointer } from './pointerLineResolution';
 import {
     mermaidWidgetField,
     mermaidAtomicRanges,
@@ -68,10 +74,14 @@ import {
     seedCalloutDefaultType,
     setCalloutDefaultTypeEffect,
 } from './calloutDefaultType';
-import { runFormatCommand, livePreviewFormatKeymap, computePasteLink } from './formatCommands';
-import { paragraphNavigationKeymap } from './paragraphNavigation';
-import { applyTableCellInlineFormatAction } from './tableWidget';
-import { spellcheckExtensions, loadSpellDictionary } from './spellcheck';
+import { runFormatCommand, livePreviewFormatKeymap, livePreviewTabKeymap, computePasteLink } from './formatCommands';
+import { paragraphSelectionKeymap } from './paragraphNavigation';
+import { applyTableCellInlineFormatAction, blurActiveTableEditingCell } from './tableWidget';
+import { spellcheckExtensions, loadSpellDictionary, teardownSpellcheck } from './spellcheck';
+
+const selectAllKeymap = Prec.highest(keymap.of([
+    { key: 'Mod-a', run: selectAll },
+]));
 
 export interface LivePreviewMountOptions {
     /** Element to mount the editor into (its children are cleared first). */
@@ -117,7 +127,7 @@ const wrapCompartment = new Compartment();
 const revealCompartment = new Compartment();
 const gutterCompartment = new Compartment();
 const readOnlyCompartment = new Compartment();
-/** Line-number gutter: clicking a line number selects that line's text. */
+/** Line-number gutter: clicking a line number selects that line's text; hovering shows the muted hover bar (hoverLineGutter.ts — must attach here, not via EditorView.domEventHandlers, since that never sees gutter-only mouse events). */
 function buildLineNumbersGutter() {
     return lineNumbers({
         domEventHandlers: {
@@ -125,16 +135,13 @@ function buildLineNumbersGutter() {
             // vertical midpoint when the target is a gutter element — that
             // feels one line off when cells are tall or visually misaligned.
             // Map the actual click Y through the content column instead.
-            click: (v, line, event) => {
+            click: (v, _line, event) => {
                 const mouse = event as MouseEvent;
-                const contentLeft = v.contentDOM.getBoundingClientRect().left;
-                const pos = v.posAtCoords({ x: contentLeft + 4, y: mouse.clientY });
-                const docLine = pos !== null
-                    ? v.state.doc.lineAt(pos)
-                    : v.state.doc.lineAt(line.from);
+                const docLine = v.state.doc.lineAt(resolveLinePosAtPointer(v, mouse.clientY, mouse.target));
                 v.dispatch({ selection: EditorSelection.range(docLine.from, docLine.to) });
                 return true;
             },
+            ...hoverGutterDomEventHandlers(),
         },
     });
 }
@@ -206,10 +213,13 @@ export function mountLivePreview(opts: LivePreviewMountOptions): EditorView {
 
     const state = EditorState.create({
         doc,
+        selection: EditorSelection.cursor(cursorPosAfterFrontmatter(doc)),
         extensions: [
             history(),
             drawSelection(),
             highlightActiveLine(),
+            highlightActiveLineGutter(),
+            hoverLineGutter(),
             markdown({ extensions: GFM }),
             // No `syntaxHighlighting(defaultHighlightStyle)` here — it was
             // unused boilerplate, not a real dependency: no `codeLanguages` is
@@ -227,8 +237,10 @@ export function mountLivePreview(opts: LivePreviewMountOptions): EditorView {
             wrapCompartment.of(lineWrapping ? EditorView.lineWrapping : []),
             gutterCompartment.of(showLineNumbers ? [buildLineNumbersGutter()] : []),
             readOnlyCompartment.of([]),
+            selectAllKeymap,
+            livePreviewTabKeymap,
             keymap.of(livePreviewFormatKeymap),
-            paragraphNavigationKeymap,
+            paragraphSelectionKeymap,
             keymap.of([...defaultKeymap, ...historyKeymap]),
             cm6Theme(),
             livePreviewSearchField(),
@@ -247,8 +259,10 @@ export function mountLivePreview(opts: LivePreviewMountOptions): EditorView {
             calloutDefaultTypeField,
             calloutWidgetField,
             imageWidgetField,
-            revealCompartment.of(reveal ? [livePreviewRevealPlugin, tableWidgetField, ...tableBoundaryExtensions, mermaidWidgetField, mermaidAtomicRanges, orderedListAtomicRanges] : []),
+            revealCompartment.of(reveal ? [livePreviewRevealPlugin, tableWidgetField, ...tableBoundaryExtensions, mermaidWidgetField, mermaidAtomicRanges, ...listMarkerBoundaryExtensions] : []),
             codeStylingPlugin,
+            codeBlockNavigationKeymap,
+            contentClickHandlers,
             ...spellcheckExtensions,
             slashMenuAutocompletion(),
             domHandlers,
@@ -272,6 +286,7 @@ export function unmountLivePreview(): void {
         if (parent) { parent.innerHTML = ''; }
         view = null;
     }
+    teardownSpellcheck();
     setFrontmatterCollapsedCallback(undefined);
     setMermaidPreviewModeCallback(undefined);
     setCalloutDefaultTypeCallback(undefined);
@@ -298,6 +313,18 @@ export function setLivePreviewContent(text: string): void {
 
 export function focusLivePreview(): void {
     view?.focus();
+}
+
+/** Select the whole document — used by the shell keydown handler when focus is in a table cell or CM6 misses Mod-a. */
+export function selectAllLivePreview(): void {
+    if (!view) { return; }
+    blurActiveTableEditingCell();
+    blurActiveFrontmatterEditing();
+    view.dispatch({
+        selection: EditorSelection.range(0, view.state.doc.length),
+        effects: setFrontmatterEditingEffect.of(false),
+    });
+    view.focus();
 }
 
 export function livePreviewUndo(): boolean {
@@ -337,7 +364,7 @@ export function setLivePreviewLineWrapping(on: boolean): void {
 /** Toggle reveal-on-cursor decorations without rebuilding the view. */
 export function setLivePreviewReveal(on: boolean): void {
     view?.dispatch({
-        effects: revealCompartment.reconfigure(on ? [livePreviewRevealPlugin, tableWidgetField, ...tableBoundaryExtensions, mermaidWidgetField, mermaidAtomicRanges, orderedListAtomicRanges] : []),
+        effects: revealCompartment.reconfigure(on ? [livePreviewRevealPlugin, tableWidgetField, ...tableBoundaryExtensions, mermaidWidgetField, mermaidAtomicRanges, ...listMarkerBoundaryExtensions] : []),
     });
 }
 

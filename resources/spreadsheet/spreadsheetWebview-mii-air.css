@@ -1,0 +1,1593 @@
+@import url("../shared/tableStructure.css");
+
+* {
+    box-sizing: border-box;
+}
+
+/* =========================
+   LAYOUT & COMPONENTS
+   ========================= */
+
+body {
+    font-family: var(--font-family);
+    padding: 0;
+    background-color: var(--color-surface-default);
+    color: var(--color-text-primary);
+    margin: 0;
+    overflow: hidden;
+    font-size: 13px;
+    line-height: 1.4;
+    -webkit-font-smoothing: antialiased;
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+body.sticky-toolbar-enabled {
+    padding-top: var(--header-height);
+}
+
+.sheet-selector {
+    height: 32px;
+    padding: 0 10px;
+    font-size: 13px;
+    font-weight: 600;
+    border: 1px solid var(--color-border-default);
+    border-radius: 6px;
+    background-color: var(--color-surface-default);
+    color: var(--color-text-primary);
+    cursor: pointer;
+    max-width: 240px;
+    position: relative;
+    z-index: 10001;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.sheet-selector:focus {
+    outline: none;
+    border-color: var(--color-action) !important;
+}
+
+.sheet-selector:hover {
+    border-color: var(--color-action-hover);
+}
+
+#xlsxTable td.find-hit-cell .find-text-highlight {
+    background: color-mix(in srgb, #ffd54f 58%, transparent);
+    border-radius: 3px;
+    padding: 0 1px;
+}
+
+#xlsxTable td.find-active-cell .find-text-highlight,
+#xlsxTable td.find-hit-cell .find-text-highlight-active {
+    background: #ffd54f;
+    color: #1f1f1f;
+}
+
+#xlsxTable td.find-active-cell {
+    box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--color-action) 62%, transparent);
+}
+
+.xlsx-edit-strip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: 4px;
+    padding: 4px 6px;
+    border: 1px solid var(--color-border-default);
+    border-radius: 10px;
+    background: var(--color-surface-glass-strong);
+}
+
+.xlsx-edit-strip .tooltip {
+    display: inline-flex;
+}
+
+.edit-strip-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding-right: 8px;
+    margin-right: 6px;
+    border-right: 1px solid var(--color-border-default);
+}
+
+.edit-strip-group:last-child {
+    border-right: 0;
+    padding-right: 0;
+    margin-right: 0;
+}
+
+.edit-strip-select {
+    height: 28px;
+    border: 1px solid var(--color-border-default);
+    border-radius: 6px;
+    background: var(--color-surface-default);
+    color: var(--color-text-primary);
+    font-size: 12px;
+    padding: 0 8px;
+    min-width: 110px;
+}
+
+.edit-strip-select.narrow {
+    min-width: 82px;
+}
+
+.xlsx-border-popup {
+    position: fixed;
+    z-index: 200120;
+    min-width: 232px;
+    padding: 8px;
+    border: 1px solid var(--color-border-default);
+    border-radius: 10px;
+    background: var(--color-surface-overlay);
+    box-shadow: var(--shadow-lg);
+}
+
+.border-popup-title {
+    font-size: 11px;
+    color: var(--color-text-secondary);
+    margin-bottom: 6px;
+    font-weight: 600;
+}
+
+.border-popup-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(64px, 1fr));
+    gap: 6px;
+}
+
+.border-mode-btn {
+    height: 30px;
+    border: 1px solid var(--color-border-default);
+    border-radius: 6px;
+    background: var(--color-surface-default);
+    color: var(--color-text-primary);
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 0 6px;
+}
+
+.border-mode-btn:hover {
+    border-color: var(--color-action);
+    background: var(--color-action-subtle);
+}
+
+.border-mode-btn.active {
+    border-color: var(--color-action);
+    background: var(--color-action);
+    color: var(--vscode-button-foreground);
+}
+
+.xlsx-merge-warning-popup {
+    position: fixed;
+    inset: 0;
+    z-index: 200200;
+    background: color-mix(in srgb, var(--vscode-editor-background) 55%, transparent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+}
+
+.xlsx-merge-warning-dialog {
+    width: min(420px, calc(100vw - 32px));
+    border: 1px solid var(--color-border-default);
+    border-radius: 10px;
+    background: var(--color-surface-overlay);
+    box-shadow: var(--shadow-lg);
+    padding: 14px;
+}
+
+.merge-warning-title {
+    font-size: 14px;
+    font-weight: 700;
+    margin-bottom: 8px;
+}
+
+.merge-warning-message {
+    font-size: 13px;
+    color: var(--color-text-primary);
+    margin-bottom: 10px;
+}
+
+.merge-warning-skip {
+    display: inline-flex;
+    gap: 8px;
+    align-items: center;
+    font-size: 12px;
+    color: var(--color-text-secondary);
+    margin-bottom: 12px;
+}
+
+.merge-warning-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.xlsx-style-mode-notice-popup {
+    position: fixed;
+    inset: 0;
+    z-index: 200220;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background: color-mix(in srgb, var(--vscode-editor-background) 58%, transparent);
+}
+
+.xlsx-style-mode-notice-popup.hidden {
+    display: none;
+}
+
+.xlsx-style-mode-notice-dialog {
+    width: min(520px, calc(100vw - 28px));
+    border: 1px solid var(--color-border-default);
+    border-radius: 12px;
+    background: var(--color-surface-overlay);
+    box-shadow: var(--shadow-lg);
+    padding: 14px;
+}
+
+.style-mode-notice-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--color-text-primary);
+    margin-bottom: 8px;
+}
+
+.style-mode-notice-message {
+    font-size: 12.5px;
+    color: var(--color-text-primary);
+    line-height: 1.45;
+    margin-bottom: 8px;
+}
+
+.style-mode-notice-message:last-of-type {
+    color: var(--color-text-secondary);
+    margin-bottom: 12px;
+}
+
+.style-mode-notice-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+body.format-painter-armed #xlsxTable td {
+    cursor: copy;
+}
+
+/* Hyperlink tooltip */
+.link-tooltip {
+    position: fixed;
+    z-index: 10002;
+    max-width: min(560px, calc(100vw - 16px));
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 1px solid var(--color-border-default);
+    background: var(--color-surface-glass-strong);
+    backdrop-filter: blur(18px) saturate(180%);
+    -webkit-backdrop-filter: blur(18px) saturate(180%);
+    box-shadow: var(--glass-shadow);
+}
+
+.link-tooltip-url {
+    font-size: 12px;
+    opacity: 0.95;
+    margin-bottom: 8px;
+    word-break: break-all;
+}
+
+.link-tooltip-actions {
+    display: flex;
+    gap: 8px;
+}
+
+td[data-hyperlink] {
+    cursor: pointer;
+}
+
+/* Toast notification */
+.toast-notification {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) scale(0.9);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 24px;
+    border-radius: 999px;
+    background: var(--color-surface-glass-heavy);
+    border: 1px solid var(--color-border-default);
+    color: var(--color-text-primary);
+    backdrop-filter: blur(18px) saturate(180%);
+    -webkit-backdrop-filter: blur(18px) saturate(180%);
+    box-shadow: var(--glass-shadow);
+    opacity: 0;
+    pointer-events: none;
+    z-index: 10005;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.toast-notification.show {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+}
+
+.toast-notification.autosave-toast {
+    top: auto;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%) scale(0.9);
+}
+
+.toast-notification.autosave-toast.show {
+    transform: translateX(-50%) scale(1);
+}
+
+.toast-notification:not(.autosave-toast).show {
+    transform: translate(-50%, -50%) scale(1);
+}
+
+.version-preview-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 8px 12px;
+    margin: 8px 12px 0;
+    border: 1px solid var(--vscode-widget-border);
+    border-radius: 8px;
+    background: var(--vscode-editorInfo-background);
+    color: var(--vscode-editorInfo-foreground);
+    box-shadow: var(--shadow-sm);
+}
+
+.version-preview-banner.hidden {
+    display: none;
+}
+
+.version-preview-text {
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.version-preview-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: nowrap;
+    margin-left: auto;
+}
+
+.version-preview-actions .toggle-button-primary {
+    border-color: var(--color-action);
+    background: var(--color-action);
+    color: var(--vscode-button-foreground);
+}
+
+.version-preview-actions .toggle-button-primary:hover {
+    filter: brightness(1.05);
+}
+
+body.preview-mode td {
+    cursor: default;
+}
+
+.toast-icon-wrapper {
+    width: 22px;
+    height: 22px;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--color-status-success-subtle);
+    color: var(--color-status-success);
+}
+
+.toast-icon-wrapper svg {
+    width: 14px;
+    height: 14px;
+}
+
+/* Edit mode */
+body.edit-mode table {
+    user-select: text;
+    -webkit-user-select: text;
+}
+
+body.edit-mode #xlsxTable {
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+body.edit-mode #content {
+    outline: 3px solid var(--color-action);
+    outline-offset: -2px;
+    border-radius: 8px;
+    margin: 4px;
+    position: relative;
+    z-index: 1;
+}
+
+body.dark-mode.edit-mode #content {
+    outline-width: 2px;
+}
+
+body.edit-mode td.editable-cell {
+    cursor: text;
+    user-select: text;
+    -webkit-user-select: text;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: nowrap;
+}
+
+body.edit-mode td.editable-cell:focus {
+    outline: 2px solid var(--color-selection-border);
+    outline-offset: -2px;
+}
+
+body.edit-mode #xlsxTable td.editable-cell .cell-content,
+body.edit-mode #xlsxTable td[contenteditable="true"] .cell-content {
+    overflow: visible !important;
+    text-overflow: clip !important;
+    white-space: nowrap !important;
+}
+
+#content {
+    position: relative;
+    z-index: 1;
+    height: calc(100vh - var(--header-height) - 8px);
+    overflow: hidden;
+    border-radius: 8px;
+    border: 1px solid var(--color-border-default);
+    margin: 4px;
+    box-sizing: border-box;
+}
+
+#tableContainer {
+    height: 100%;
+    min-height: 0;
+    overflow-anchor: none;
+}
+
+.table-scroll {
+    height: 100%;
+    width: 100%;
+    overflow: auto;
+    position: relative;
+    -webkit-overflow-scrolling: touch;
+    overflow-anchor: none;
+}
+
+/* Table */
+table {
+    border-collapse: separate;
+    width: max-content;
+    min-width: 0;
+    table-layout: fixed;
+    user-select: none;
+    -webkit-user-select: none;
+    border-spacing: 0;
+    border: none;
+    border-radius: 0;
+    overflow: visible;
+    background-color: var(--color-surface-default);
+    overflow-anchor: none;
+}
+
+body.spacious-cells #xlsxTable td {
+    padding: 2px 6px;
+    height: 28px !important;
+    line-height: 24px;
+    font-size: 12.5px;
+}
+
+body.spacious-cells #xlsxTable th {
+    padding: 2px 6px;
+    height: 28px !important;
+    line-height: 24px;
+    font-size: 12.5px;
+}
+
+body.expanded-mode table {
+    table-layout: auto;
+}
+
+body.expanded-mode #xlsxTable th,
+body.expanded-mode #xlsxTable td,
+body.expanded-mode th.col-header,
+body.expanded-mode td {
+    max-width: none !important;
+}
+
+th {
+    background-color: var(--color-surface-raised);
+    font-weight: 500;
+    color: var(--color-text-secondary);
+    text-align: center;
+}
+
+/* Excel-like headers */
+th.row-header,
+th.col-header {
+    background-color: var(--color-surface-raised);
+    color: var(--color-text-secondary);
+    font-weight: 500;
+    font-size: 12px;
+    text-align: center;
+    user-select: none;
+    cursor: pointer;
+    max-width: 200px;
+}
+
+th.col-header {
+    position: relative;
+    vertical-align: middle;
+}
+
+.col-header-label {
+    display: block;
+    font-weight: 600;
+    line-height: 1.1;
+}
+
+.col-header-indicator {
+    display: block;
+    margin-top: 2px;
+    font-size: 10px;
+    font-weight: 500;
+    line-height: 1.1;
+    color: color-mix(in srgb, var(--color-action) 72%, var(--color-text-secondary));
+    white-space: nowrap;
+}
+
+th.row-header:hover,
+th.col-header:hover {
+    background-color: var(--color-interactive-hover);
+}
+
+/* Resize handles */
+.col-resize-handle {
+    position: absolute;
+    top: 0 !important;
+    right: -2px;
+    width: 4px;
+    height: 100%;
+    cursor: col-resize;
+    background: transparent;
+    z-index: 10;
+}
+
+.col-resize-handle:hover {
+    background: var(--color-resize-handle);
+}
+
+.row-resize-handle {
+    position: absolute;
+    bottom: -2px;
+    left: 0 !important;
+    width: 100%;
+    height: 4px;
+    cursor: row-resize;
+    background: transparent;
+    z-index: 10;
+}
+
+.row-resize-handle:hover {
+    background: var(--color-resize-handle);
+}
+
+/* Cell styles */
+td {
+    background-color: var(--color-surface-default);
+    color: var(--color-text-primary);
+    padding: 2px 6px;
+    vertical-align: top;
+    max-width: 200px;
+}
+
+td[style*="border"] {
+    z-index: 2;
+}
+
+/* Keep shared hover/selection tint under XLSX content so text color stays visually stable. */
+#xlsxTable td::before {
+    z-index: 1 !important;
+}
+
+#xlsxTable td > .cell-content {
+    position: relative;
+    z-index: 2;
+}
+
+/* Dark mode cell overrides */
+/* Only override cells that have default (no explicit) styling */
+body.dark-mode td[data-default-bg="true"] {
+    background-color: var(--color-surface-default) !important;
+}
+
+body.dark-mode td[data-default-color="true"][data-default-bg="true"] {
+    color: var(--color-text-primary) !important;
+}
+
+/* Cells with no explicit border should use theme border */
+body.dark-mode td[data-default-border="true"] {
+    border-color: var(--color-border-default) !important;
+}
+
+/* Cells with explicit white background - invert to dark */
+body.dark-mode td[data-white-bg="true"] {
+    background-color: var(--color-inverted-bg) !important;
+    color: var(--color-inverted-text) !important;
+}
+
+/* White borders in dark mode should use theme default border */
+body.dark-mode td[data-white-border="true"] {
+    border-color: var(--color-border-default) !important;
+}
+
+/* Only invert black borders in dark mode */
+body.dark-mode td[data-black-border="true"] {
+    border-color: var(--color-inverted-border) !important;
+}
+
+/* VS Code theme cell overrides */
+/* Only override cells that have default (no explicit) styling */
+body.vscode-theme td[data-default-bg="true"] {
+    background-color: var(--color-surface-default) !important;
+}
+
+body.vscode-theme td[data-default-color="true"] {
+    color: var(--color-text-primary) !important;
+}
+
+body.vscode-theme #xlsxTable tbody tr:hover td[data-default-color="true"] {
+    color: var(--color-text-primary) !important;
+}
+
+/* Cells with no explicit border should use theme border */
+body.vscode-theme td[data-default-border="true"] {
+    border-color: var(--color-border-default) !important;
+}
+
+/* In vscode theme, white backgrounds adapt to theme */
+body.vscode-theme td[data-white-bg="true"] {
+    background-color: var(--color-surface-default) !important;
+    color: var(--color-text-primary) !important;
+}
+
+/* White borders in vscode mode should use theme default border */
+body.vscode-theme td[data-white-border="true"] {
+    border-color: var(--color-border-default) !important;
+}
+
+/* Black borders adapt to theme border color in vscode mode */
+body.vscode-theme td[data-black-border="true"] {
+    border-color: var(--color-border-default) !important;
+}
+
+
+td[style*="vertical-align: top"] .cell-content {
+    align-items: flex-start;
+}
+
+td[style*="vertical-align: bottom"] .cell-content {
+    align-items: flex-end;
+}
+
+td[style*="vertical-align: middle"] .cell-content {
+    align-items: center;
+}
+
+td[style*="text-align: left"] .cell-content {
+    justify-content: flex-start;
+    text-align: left;
+}
+
+td[style*="text-align: right"] .cell-content {
+    justify-content: flex-end;
+    text-align: right;
+}
+
+td[style*="text-align: center"] .cell-content {
+    justify-content: center;
+    text-align: center;
+}
+
+/* Selection info */
+.selection-info {
+    position: fixed;
+    bottom: 10px;
+    right: 10px;
+    background: var(--color-surface-glass-strong);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    color: var(--color-text-primary);
+    padding: 5px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    display: none;
+    z-index: 1001;
+    box-shadow: var(--glass-shadow-light);
+    border: 1px solid var(--color-border-subtle);
+}
+
+/* Corner cell */
+th.corner-cell {
+    background-color: var(--color-surface-raised);
+    cursor: pointer;
+}
+
+/* Cell content wrapper */
+.cell-content {
+    display: flex;
+    width: 100%;
+    height: 100%;
+    align-items: flex-start;
+    justify-content: flex-start;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    user-select: none;
+    pointer-events: none;
+    position: relative;
+    z-index: 2;
+}
+
+.cell-content.cell-checkbox-content,
+.cell-content.cell-dropdown-content,
+.cell-content.cell-image-content,
+.cell-content.cell-rating-content,
+.cell-content.cell-date-content {
+    pointer-events: auto;
+    align-items: center;
+    gap: 6px;
+}
+
+.cell-content.cell-image-content {
+    justify-content: flex-start;
+}
+
+.xlsx-cell-checkbox {
+    width: 14px;
+    height: 14px;
+    margin: 0;
+    cursor: pointer;
+    accent-color: var(--color-action);
+    pointer-events: auto;
+}
+
+.checkbox-value {
+    font-size: 11px;
+    color: var(--color-text-secondary);
+    letter-spacing: 0.02em;
+}
+
+.xlsx-cell-dropdown {
+    flex: 1 1 auto;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    height: 22px;
+    border: 1px solid var(--color-border-default);
+    border-radius: 4px;
+    background: var(--color-surface-default);
+    color: var(--color-text-primary);
+    font-size: 11px;
+    padding: 0 4px;
+    pointer-events: auto;
+}
+
+.xlsx-cell-dropdown:focus {
+    outline: 1px solid var(--color-action);
+}
+
+.xlsx-dropdown-edit-button {
+    flex: 0 0 auto;
+    height: 22px;
+    padding: 0 6px;
+    border: 1px solid var(--color-border-default);
+    border-radius: 4px;
+    background: var(--color-surface-default);
+    color: var(--color-text-secondary);
+    font-size: 10px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.xlsx-dropdown-edit-button:hover {
+    color: var(--color-text-primary);
+    border-color: var(--color-action);
+    background: var(--color-action-subtle);
+}
+
+.xlsx-dropdown-edit-button:focus {
+    outline: 1px solid var(--color-action);
+}
+
+body:not(.edit-mode) .xlsx-dropdown-edit-button {
+    display: none;
+}
+
+.cell-content.cell-rating-content {
+    gap: 4px;
+}
+
+.xlsx-rating-star {
+    border: none;
+    background: transparent;
+    color: color-mix(in srgb, var(--color-text-secondary) 70%, transparent);
+    font-size: 16px;
+    line-height: 1;
+    padding: 0;
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+}
+
+.xlsx-rating-star.active {
+    color: #f2b200;
+}
+
+.rating-value {
+    font-size: 11px;
+    color: var(--color-text-secondary);
+    min-width: 10px;
+    text-align: left;
+}
+
+.xlsx-cell-date {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    height: 18px;
+    border: 1px solid var(--color-border-default);
+    border-radius: 4px;
+    background: var(--color-surface-default);
+    color: var(--color-text-primary);
+    font-size: 11px;
+    padding: 0 1px;
+}
+
+.xlsx-cell-date:focus {
+    outline: 1px solid var(--color-action);
+}
+
+.xlsx-cell-image {
+    max-width: 100%;
+    max-height: 46px;
+    object-fit: contain;
+    border-radius: 3px;
+    pointer-events: auto;
+    cursor: zoom-in;
+}
+
+.cell-image-label {
+    font-size: 11px;
+    color: var(--color-text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+body:not(.edit-mode):not(.controls-editable-outside-edit-mode) .xlsx-cell-checkbox,
+body:not(.edit-mode):not(.controls-editable-outside-edit-mode) .xlsx-cell-dropdown,
+body:not(.edit-mode):not(.controls-editable-outside-edit-mode) .xlsx-rating-star,
+body:not(.edit-mode):not(.controls-editable-outside-edit-mode) .xlsx-cell-date {
+    pointer-events: none;
+}
+
+body:not(.edit-mode):not(.controls-editable-outside-edit-mode) .xlsx-cell-date,
+body:not(.edit-mode):not(.controls-editable-outside-edit-mode) .xlsx-cell-dropdown {
+    border-color: transparent;
+    background: transparent;
+    padding: 0;
+    appearance: none;
+}
+
+.xlsx-image-preview-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 200220;
+    background: color-mix(in srgb, var(--vscode-editor-background) 24%, rgba(0, 0, 0, 0.76));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 18px;
+}
+
+.xlsx-image-preview-dialog {
+    width: min(1100px, calc(100vw - 36px));
+    max-height: calc(100vh - 36px);
+    border: 1px solid var(--color-border-default);
+    border-radius: 12px;
+    background: var(--color-surface-overlay);
+    box-shadow: var(--shadow-lg);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.xlsx-image-preview-close {
+    align-self: flex-end;
+    margin: 8px 10px 0 0;
+    padding: 5px 10px;
+    border: 1px solid var(--color-border-default);
+    border-radius: 6px;
+    background: var(--color-surface-default);
+    color: var(--color-text-primary);
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.xlsx-image-preview-image {
+    width: 100%;
+    height: auto;
+    max-height: calc(100vh - 96px);
+    object-fit: contain;
+    display: block;
+    padding: 10px 16px 16px;
+}
+
+body.image-preview-open {
+    overflow: hidden;
+}
+
+body:not(.edit-mode) #xlsxTable td .cell-content {
+    display: block;
+    max-width: 100%;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+}
+
+body:not(.edit-mode) #xlsxTable td .cell-content.cell-checkbox-content,
+body:not(.edit-mode) #xlsxTable td .cell-content.cell-dropdown-content,
+body:not(.edit-mode) #xlsxTable td .cell-content.cell-image-content,
+body:not(.edit-mode) #xlsxTable td .cell-content.cell-rating-content,
+body:not(.edit-mode) #xlsxTable td .cell-content.cell-date-content {
+    display: flex;
+}
+
+.xlsx-insert-control-popup {
+    position: fixed;
+    z-index: 10040;
+    min-width: 220px;
+    padding: 8px;
+    border-radius: 12px;
+    border: 1px solid var(--color-border-default);
+    background: var(--color-surface-glass-strong);
+    box-shadow: var(--glass-shadow);
+    backdrop-filter: blur(12px) saturate(160%);
+    -webkit-backdrop-filter: blur(12px) saturate(160%);
+}
+
+.insert-control-title {
+    font-size: 11px;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
+    margin: 2px 6px 8px;
+}
+
+.insert-control-item {
+    width: 100%;
+    text-align: left;
+    border: none;
+    background: transparent;
+    color: var(--color-text-primary);
+    border-radius: 8px;
+    padding: 7px 10px;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.insert-control-item:hover {
+    background: var(--color-interactive-row-hover);
+}
+
+.xlsx-dropdown-options-popup {
+    position: fixed;
+    inset: 0;
+    z-index: 10060;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.28);
+}
+
+.xlsx-dropdown-options-dialog {
+    width: min(420px, calc(100vw - 28px));
+    border-radius: 12px;
+    border: 1px solid var(--color-border-default);
+    background: var(--color-surface-default);
+    box-shadow: var(--shadow-lg);
+    padding: 14px;
+}
+
+.dropdown-options-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-text-primary);
+    margin-bottom: 4px;
+}
+
+.dropdown-options-message {
+    font-size: 12px;
+    color: var(--color-text-secondary);
+    margin-bottom: 10px;
+}
+
+.dropdown-options-input {
+    width: 100%;
+    min-height: 140px;
+    max-height: 240px;
+    resize: vertical;
+    border-radius: 8px;
+    border: 1px solid var(--color-border-default);
+    background: var(--input-bg);
+    color: var(--color-text-primary);
+    padding: 8px 10px;
+    font-family: var(--font-family);
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.dropdown-options-input:focus {
+    outline: none;
+    border-color: var(--color-action);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-action) 44%, transparent);
+}
+
+.dropdown-options-actions {
+    margin-top: 10px;
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+body:not(.edit-mode) #xlsxTable td {
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+}
+
+body.edit-mode #xlsxTable td[style*="white-space: pre-wrap"] .cell-content {
+    white-space: pre-wrap !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+}
+
+body.edit-mode #xlsxTable td[style*="overflow: visible"] .cell-content {
+    overflow: visible !important;
+    text-overflow: clip !important;
+}
+
+::selection {
+    background-color: var(--color-selection-bg);
+}
+
+::-moz-selection {
+    background-color: var(--color-selection-bg);
+}
+
+body.edit-mode td[contenteditable="true"]::selection,
+body.edit-mode td[contenteditable="true"] *::selection {
+    background-color: var(--color-selection-bg);
+    color: inherit;
+}
+
+body.edit-mode td[contenteditable="true"]::-moz-selection,
+body.edit-mode td[contenteditable="true"] *::-moz-selection {
+    background-color: var(--color-selection-bg);
+    color: inherit;
+}
+
+.color-format-button {
+    position: relative;
+    border-color: var(--color-border-default);
+}
+
+.color-format-button::after {
+    content: '';
+    position: absolute;
+    left: 6px;
+    right: 6px;
+    bottom: 3px;
+    height: 3px;
+    border-radius: 999px;
+    background: var(--format-color-preview, var(--color-action));
+}
+
+.color-format-button svg {
+    margin-bottom: 3px;
+}
+
+.sheets-color-palette {
+    position: fixed;
+    z-index: 10030;
+    width: 250px;
+    padding: 16px;
+    border-radius: 12px;
+    border: 1px solid var(--color-border-default);
+    background: var(--color-surface-default);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15), 0 0 1px rgba(0, 0, 0, 0.2);
+}
+
+.sheets-color-title {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+    margin-bottom: 12px;
+    color: var(--color-text-primary);
+    opacity: 0.7;
+}
+
+.sheets-color-grid {
+    display: grid;
+    grid-template-columns: repeat(10, 1fr);
+    gap: 6px;
+}
+
+.sheets-color-swatch {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 1px solid rgba(128, 128, 128, 0.2);
+    cursor: pointer;
+    padding: 0;
+    transition: transform 0.1s ease, box-shadow 0.1s ease;
+    outline: none;
+}
+
+.sheets-color-swatch:hover {
+    transform: scale(1.25);
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+    z-index: 2;
+    border-color: rgba(128, 128, 128, 0.5);
+}
+
+.sheets-color-custom {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--color-border-default);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.sheets-color-custom::before {
+    content: 'Custom';
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--color-text-primary);
+}
+
+#sheetsCustomColorInput {
+    width: 28px;
+    height: 28px;
+    border: none;
+    border-radius: 50%;
+    padding: 0;
+    cursor: pointer;
+    background: transparent;
+    overflow: hidden;
+}
+
+#sheetsCustomColorInput::-webkit-color-swatch-wrapper {
+    padding: 0;
+}
+
+#sheetsCustomColorInput::-webkit-color-swatch {
+    border: 1px solid var(--color-border-default);
+    border-radius: 50%;
+}
+
+.header-context-menu {
+    position: fixed;
+    z-index: 10020;
+    min-width: 220px;
+    background: var(--color-surface-glass-strong);
+    border: 1px solid var(--color-border-default);
+    border-radius: 10px;
+    box-shadow: var(--glass-shadow);
+    backdrop-filter: blur(12px) saturate(160%);
+    -webkit-backdrop-filter: blur(12px) saturate(160%);
+    padding: 6px;
+}
+
+.header-context-item {
+    width: 100%;
+    text-align: left;
+    border: none;
+    background: transparent;
+    color: var(--color-text-primary);
+    border-radius: 6px;
+    padding: 7px 10px;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.header-context-item:hover {
+    background: var(--color-interactive-row-hover);
+}
+
+.header-context-checkbox-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    text-align: left;
+    border: none;
+    background: transparent;
+    color: var(--color-text-primary);
+    border-radius: 6px;
+    padding: 7px 10px;
+    font-size: 12px;
+    cursor: pointer;
+    box-sizing: border-box;
+    user-select: none;
+}
+
+.header-context-checkbox-item:hover {
+    background: var(--color-interactive-row-hover);
+}
+
+.header-context-checkbox {
+    cursor: pointer;
+    margin: 0;
+    width: 14px;
+    height: 14px;
+    accent-color: var(--color-action);
+}
+
+.header-context-separator {
+    height: 1px;
+    margin: 6px 4px;
+    background: var(--color-border-default);
+    opacity: 0.7;
+}
+
+.header-filter-panel {
+    display: grid;
+    gap: 7px;
+    padding: 6px 8px 8px;
+}
+
+.header-filter-title {
+    color: var(--color-text-secondary);
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.header-filter-select,
+.header-filter-input {
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid var(--color-border-default);
+    border-radius: 6px;
+    background: var(--color-surface-panel);
+    color: var(--color-text-primary);
+    font-size: 12px;
+    padding: 6px 8px;
+}
+
+.header-filter-input:disabled {
+    color: var(--color-text-secondary);
+    opacity: 0.75;
+}
+
+.header-filter-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--color-text-primary);
+    font-size: 12px;
+    user-select: none;
+}
+
+.header-filter-actions {
+    display: flex;
+    gap: 6px;
+}
+
+.header-filter-button {
+    flex: 1;
+    border: 1px solid var(--color-border-default);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--color-text-primary);
+    font-size: 12px;
+    padding: 6px 8px;
+    cursor: pointer;
+}
+
+.header-filter-button.primary {
+    background: var(--color-action);
+    border-color: var(--color-action);
+    color: var(--color-text-on-action);
+}
+
+.header-filter-button:hover,
+.header-filter-select:hover,
+.header-filter-input:hover {
+    border-color: var(--color-action);
+}
+
+/* First row as header */
+body.first-row-as-header tbody tr.header-row td {
+    background-color: var(--color-surface-raised);
+    font-weight: 700 !important;
+}
+
+body.first-row-as-header tbody tr.header-row td .cell-content,
+body.first-row-as-header tbody tr.header-row td .cell-content * {
+    font-weight: 700 !important;
+}
+
+/* Sticky header row */
+body.sticky-header-enabled tbody tr.header-row td,
+body.sticky-header-enabled tbody tr.header-row th {
+    position: sticky !important;
+    top: 24px;
+    z-index: 10;
+}
+
+body.spacious-cells.sticky-header-enabled tbody tr.header-row td,
+body.spacious-cells.sticky-header-enabled tbody tr.header-row th {
+    position: sticky !important;
+    top: 28px;
+    z-index: 10;
+}
+
+body.sticky-header-enabled tbody tr.header-row th.row-header {
+    position: sticky !important;
+    top: 24px;
+    left: 0 !important;
+    z-index: 30;
+    background-color: var(--color-surface-raised);
+}
+
+body.spacious-cells.sticky-header-enabled tbody tr.header-row th.row-header {
+    position: sticky !important;
+    top: 28px;
+    left: 0 !important;
+    z-index: 30;
+    background-color: var(--color-surface-raised);
+}
+
+/* Loading overlay */
+.loading-overlay {
+    position: fixed;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100%;
+    height: 100%;
+    background-color: var(--color-surface-glass-strong);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 9999;
+    flex-direction: column;
+}
+
+.loading-overlay.hidden {
+    display: none;
+}
+
+.spinner {
+    border: 4px solid var(--color-spinner-track);
+    border-top: 4px solid var(--color-spinner);
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    animation: spin 1s linear infinite;
+    margin-bottom: 15px;
+}
+
+@keyframes spin {
+    0% {
+        transform: rotate(0deg);
+    }
+
+    100% {
+        transform: rotate(360deg);
+    }
+}
+
+.loading-text {
+    font-size: 16px;
+    color: var(--color-text-primary);
+}
+
+/* Interactive theme tooltip */
+.theme-tooltip {
+    position: fixed;
+    background: var(--color-tooltip-bg);
+    color: var(--color-tooltip-text);
+    border: 1px solid var(--color-border-default);
+    box-shadow: var(--shadow-tooltip);
+    padding: 8px 10px;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    opacity: 0;
+    transform: translateY(-6px);
+    transition: opacity 0.12s ease, transform 0.12s ease;
+    pointer-events: none;
+    z-index: 20000;
+    cursor: pointer;
+}
+
+.theme-tooltip.visible {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+}
+
+.theme-tooltip:focus {
+    outline: 2px solid var(--color-focus-outline);
+}
+
+.theme-tooltip .theme-tooltip-text {
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.theme-tooltip .theme-tooltip-text strong {
+    font-weight: 700;
+}
+
+/* VS Code icon */
+#vscodeIcon {
+    width: 18px !important;
+    height: 18px !important;
+    display: inline-block;
+    vertical-align: middle;
+    object-fit: contain;
+    margin: 0;
+}
+
+/* Resize indicator */
+.resize-indicator {
+    position: fixed;
+    background: var(--color-resize-indicator-bg);
+    color: var(--color-resize-indicator-text);
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 10px;
+    z-index: 1002;
+    pointer-events: none;
+    display: none;
+}
+
+/* =========================
+   PLAIN VIEW MODE
+   Removes all XLSX styling to display like CSV/TSV
+   ========================= */
+body.plain-view table {
+    border-collapse: separate;
+    width: max-content;
+    min-width: 0;
+    table-layout: fixed;
+    user-select: none;
+    -webkit-user-select: none;
+    border-spacing: 0;
+    border: none;
+    border-radius: 0;
+    overflow: visible;
+    background-color: var(--color-surface-default);
+    overflow-anchor: none;
+}
+
+body.plain-view.spacious-cells #xlsxTable th,
+body.plain-view.spacious-cells #xlsxTable td {
+    height: 24px;
+    line-height: 24px;
+    padding: 2px 6px;
+    box-sizing: border-box;
+    font-size: 10.5pt;
+}
+
+body.plain-view th {
+    background-color: var(--color-surface-raised);
+    font-weight: 500;
+    color: var(--color-text-secondary);
+    text-align: center;
+}
+
+body.plain-view td {
+    background-color: var(--color-surface-default);
+    color: var(--color-text-primary);
+    font-weight: normal;
+    font-style: normal;
+    text-decoration: none;
+    text-align: left;
+    vertical-align: top;
+}
+
+body.plain-view td.merged-cell {
+    display: table-cell;
+}
+
+body.plain-view td span.cell-content {
+    display: block;
+    user-select: none;
+    pointer-events: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+body.plain-view.first-row-as-header tbody tr.header-row td {
+    font-weight: 700;
+    background-color: var(--color-surface-raised);
+}
+
+body.plain-view.sticky-header-enabled tbody tr.header-row td,
+body.plain-view.sticky-header-enabled tbody tr.header-row th {
+    position: sticky;
+    top: 24px;
+    z-index: 10;
+    background-color: var(--color-surface-raised);
+}
+
+body.plain-view.spacious-cells.sticky-header-enabled tbody tr.header-row td,
+body.plain-view.spacious-cells.sticky-header-enabled tbody tr.header-row th {
+    position: sticky;
+    top: 28px;
+    z-index: 10;
+    background-color: var(--color-surface-raised);
+}
+
+body.plain-view.sticky-header-enabled tbody tr.header-row th.row-header {
+    position: sticky;
+    top: 24px;
+    left: 0 !important;
+    z-index: 30;
+    background-color: var(--color-surface-raised);
+}
+
+body.plain-view.spacious-cells.sticky-header-enabled tbody tr.header-row th.row-header {
+    position: sticky;
+    top: 28px;
+    left: 0 !important;
+    z-index: 30;
+    background-color: var(--color-surface-raised);
+}
+
+/* Enable explicit wrapping in non-edit mode */
+body:not(.edit-mode) #xlsxTable td[style*="white-space: pre-wrap"] {
+    white-space: pre-wrap !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+}
+body:not(.edit-mode) #xlsxTable td[style*="white-space: pre-wrap"] .cell-content {
+    white-space: pre-wrap !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+}
+
+/* Default wrap settings styles */
+body.text-wrap-enabled #xlsxTable td:not([style*="white-space: nowrap"]) {
+    white-space: pre-wrap !important;
+    word-wrap: break-word !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+}
+body.text-wrap-enabled #xlsxTable td:not([style*="white-space: nowrap"]) .cell-content {
+    white-space: pre-wrap !important;
+    word-wrap: break-word !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+}

@@ -34,6 +34,7 @@ import {
     canLivePreviewUndo,
     canLivePreviewRedo,
     refreshLivePreviewImages,
+    selectAllLivePreview,
 } from './livePreview/livePreviewEditor';
 import { setImageUriResolver } from './livePreview/imageWidget';
 import { markdownBodyWithoutFrontmatter, extractFrontmatter } from './frontmatter';
@@ -53,11 +54,27 @@ function throttleRAF(fn: () => void): () => void {
     };
 }
 
+function throttleRAFEvent(fn: (event: MouseEvent) => void): (event: MouseEvent) => void {
+    let ticking = false;
+    let lastEvent: MouseEvent | null = null;
+    return (event: MouseEvent) => {
+        lastEvent = event;
+        if (!ticking) {
+            ticking = true;
+            requestAnimationFrame(() => {
+                if (lastEvent) { fn(lastEvent); }
+                ticking = false;
+            });
+        }
+    };
+}
+
 // ===== State =====
 let isEditMode = false;
-let isPreviewEditMode = false;
 let isVersionPreviewMode = false;
 let isSaving = false;
+/** Exact text sent with the in-flight `saveMarkdown` — used to stamp `originalContent` on success. */
+let pendingSaveContent: string | null = null;
 let isReloadingFromDisk = false;
 let pendingDiskContent: string | null = null;
 // Set when the watcher reports the file was deleted externally; cleared by a
@@ -94,12 +111,13 @@ let currentSettings = {
     showLineNumbers: true,
     livePreviewReveal: true,
     livePreviewLineNumbers: false,
-    autoSave: false
+    autoSave: false,
+    isDefaultEditor: true
 };
 
-/** CM6 has no rendered code blocks — honor either line-number setting in the gutter. */
-function wantsLivePreviewLineNumbers(): boolean {
-    return !!(currentSettings.showLineNumbers || currentSettings.livePreviewLineNumbers);
+/** Preview Edit gutter — single user-facing "Line Numbers" toggle (see settings panel). */
+function livePreviewGutterLineNumbersEnabled(): boolean {
+    return !!currentSettings.livePreviewLineNumbers;
 }
 
 let cm6SearchMatches: Cm6Match[] = [];
@@ -153,7 +171,7 @@ function setButtonsEnabled(enabled: boolean) {
 }
 
 function isEditorDirty(): boolean {
-    return getActiveEditorContent() !== originalContent;
+    return currentContent !== originalContent;
 }
 
 function canReloadFromDisk(): boolean {
@@ -376,14 +394,12 @@ function updateVersionPreviewChrome() {
     updateEditToolbarButtons();
 }
 
-function setPreviewEditMode(enabled: boolean) {
-    if (!enabled) { return; }
-    isPreviewEditMode = enabled;
-    isEditMode = enabled;
-    document.body.classList.toggle('edit-mode', enabled);
-    document.body.classList.toggle('preview-edit-mode', enabled);
-    document.body.classList.toggle('cm6-preview-active', enabled);
-    document.body.classList.toggle('cm6-word-wrap', enabled && currentSettings.wordWrap);
+function enterPreviewEditMode() {
+    isEditMode = true;
+    document.body.classList.toggle('edit-mode', true);
+    document.body.classList.toggle('preview-edit-mode', true);
+    document.body.classList.toggle('cm6-preview-active', true);
+    document.body.classList.toggle('cm6-word-wrap', currentSettings.wordWrap);
 
     const saveBtn = $('saveEditsButton');
     const undoBtn = $('undoEditsButton');
@@ -397,64 +413,63 @@ function setPreviewEditMode(enabled: boolean) {
     const redoTarget = (redoBtn?.closest('.tooltip') as HTMLElement | null) || redoBtn;
     const reloadTarget = (reloadBtn?.closest('.tooltip') as HTMLElement | null) || reloadBtn;
 
-    if (saveTarget) {saveTarget.classList.toggle('hidden', !enabled);}
-    if (undoTarget) {undoTarget.classList.toggle('hidden', !enabled);}
-    if (redoTarget) {redoTarget.classList.toggle('hidden', !enabled);}
-    if (reloadTarget) {reloadTarget.classList.toggle('hidden', !enabled);}
+    if (saveTarget) {saveTarget.classList.toggle('hidden', false);}
+    if (undoTarget) {undoTarget.classList.toggle('hidden', false);}
+    if (redoTarget) {redoTarget.classList.toggle('hidden', false);}
+    if (reloadTarget) {reloadTarget.classList.toggle('hidden', false);}
 
     // Show formatting toolbar in preview edit mode
     const fmtToolbar = $('formattingToolbar');
-    if (fmtToolbar) {fmtToolbar.classList.toggle('hidden', !enabled);}
+    if (fmtToolbar) {fmtToolbar.classList.toggle('hidden', false);}
 
-    if (enabled) {
-        originalContent = currentContent;
+    originalContent = currentContent;
 
-        container?.classList.add('preview-edit');
-        container?.classList.remove('preview-left');
+    container?.classList.add('preview-edit');
 
-        if (preview) {
-            preview.contentEditable = 'false';
-            wireImageUriResolver();
-            mountLivePreview({
-                parent: preview,
-                doc: currentContent,
-                lineWrapping: currentSettings.wordWrap,
-                onDocChanged: (doc) => {
-                    if (isVersionPreviewMode) { return; }
-                    currentContent = doc;
-                    updateStatusInfo();
-                    debouncedCm6TocRefresh(doc);
-                    reapplySearch();
-                    scheduleAutosave();
-                    updateEditToolbarButtons();
-                },
-                onScroll: throttledScrollSpy,
-                onModifierClick: handleLivePreviewModifierClick,
-                reveal: currentSettings.livePreviewReveal,
-                showLineNumbers: wantsLivePreviewLineNumbers(),
-                onSelectionChange: updateStatusInfo,
-                onHistoryChange: updateEditToolbarButtons,
-                columnWidths: currentTableColumnWidths,
-                onColumnWidthsChanged: (widths) => {
-                    currentTableColumnWidths = widths;
-                    vscode.postMessage({ command: 'saveTableColumnWidths', widths });
-                },
-                frontmatterCollapsed: frontmatterPanelCollapsed,
-                onFrontmatterCollapsedChanged: (collapsed) => {
-                    persistFrontmatterPanelCollapsed(collapsed);
-                },
-                mermaidPreviewMode,
-                onMermaidPreviewModeChanged: (mode) => {
-                    persistMermaidPreviewMode(mode);
-                },
-                calloutDefaultType,
-                onCalloutDefaultTypeChanged: (type) => {
-                    persistCalloutDefaultType(type);
-                },
-            });
-            refreshCm6Toc(currentContent);
-            focusLivePreview();
-        }
+    if (preview) {
+        preview.contentEditable = 'false';
+        mountLivePreview({
+            parent: preview,
+            doc: currentContent,
+            lineWrapping: currentSettings.wordWrap,
+            onDocChanged: (doc) => {
+                if (isVersionPreviewMode) { return; }
+                currentContent = doc;
+                updateStatusInfo();
+                debouncedCm6TocRefresh(doc);
+                debouncedReapplySearch();
+                scheduleAutosave();
+                updateEditToolbarButtons();
+            },
+            onScroll: throttledScrollSpy,
+            onModifierClick: handleLivePreviewModifierClick,
+            reveal: currentSettings.livePreviewReveal,
+            showLineNumbers: livePreviewGutterLineNumbersEnabled(),
+            onSelectionChange: updateStatusInfo,
+            onHistoryChange: updateEditToolbarButtons,
+            columnWidths: currentTableColumnWidths,
+            onColumnWidthsChanged: (widths) => {
+                currentTableColumnWidths = widths;
+                vscode.postMessage({ command: 'saveTableColumnWidths', widths });
+            },
+            frontmatterCollapsed: frontmatterPanelCollapsed,
+            onFrontmatterCollapsedChanged: (collapsed) => {
+                persistFrontmatterPanelCollapsed(collapsed);
+            },
+            mermaidPreviewMode,
+            onMermaidPreviewModeChanged: (mode) => {
+                persistMermaidPreviewMode(mode);
+            },
+            calloutDefaultType,
+            onCalloutDefaultTypeChanged: (type) => {
+                persistCalloutDefaultType(type);
+            },
+        });
+        // mountLivePreview unmounts first and clears the resolver — wire after mount.
+        wireImageUriResolver();
+        refreshLivePreviewImages();
+        refreshCm6Toc(currentContent);
+        focusLivePreview();
     }
 
     applyToolbarLayout(toolbarManager, {
@@ -520,20 +535,24 @@ function handleLivePreviewModifierClick(pos: number) {
 // ===== Active editor content =====
 // The single reader over the editing surfaces.
 function getActiveEditorContent(): string {
-    if (isPreviewEditMode) {
+    if (isLivePreviewActive()) {
         const cm6 = getLivePreviewContent();
         if (cm6 !== null) {
             return sanitizeMarkdownCopyLinkArtifacts(cm6);
         }
-        return currentContent;
     }
     return currentContent;
 }
 
-function ensurePreviewEditMode() {
-    if (!isPreviewEditMode) {
-        setPreviewEditMode(true);
+function cancelEdit() {
+    currentContent = originalContent;
+    if (isLivePreviewActive()) {
+        setLivePreviewContent(originalContent);
+        refreshCm6Toc(originalContent);
+        reapplySearch();
+        updateStatusInfo();
     }
+    updateEditToolbarButtons();
 }
 
 function ensureVersionPreviewBanner(): HTMLElement {
@@ -613,6 +632,7 @@ function doSave(force = false, isAutosave = false) {
     lastSaveWasAutosave = isAutosave;
     setButtonsEnabled(false);
     currentContent = getActiveEditorContent();
+    pendingSaveContent = currentContent;
     vscode.postMessage({ command: 'saveMarkdown', text: currentContent, force, isAutosave });
 }
 
@@ -629,20 +649,7 @@ function scheduleAutosave() {
     }, 1200);
 }
 
-function cancelEdit() {
-    currentContent = originalContent;
-    if (isPreviewEditMode && isLivePreviewActive()) {
-        setLivePreviewContent(originalContent);
-        refreshCm6Toc(originalContent);
-        reapplySearch();
-        updateStatusInfo();
-    }
-    updateEditToolbarButtons();
-}
-
 // Pushes freshly-read disk content into whichever surface is currently active.
-// isPreviewEditMode implies isEditMode (see setPreviewEditMode), so it must be
-// checked first or Preview Edit gets misrouted into the split-textarea branch below.
 function applyReloadedContent(text: string) {
     currentContent = text;
     originalContent = text;
@@ -650,6 +657,7 @@ function applyReloadedContent(text: string) {
 
     if (isLivePreviewActive()) {
         setLivePreviewContent(text);
+        refreshLivePreviewImages();
         refreshCm6Toc(text);
         reapplySearch();
     }
@@ -672,12 +680,12 @@ function confirmModal(title: string, message: string, confirmLabel: string): Pro
                 <h2>${escapeHtmlAttr(title)}</h2>
             </div>
             <div class="feedback-body" style="padding: 20px 24px 24px 24px; gap: 20px;">
-                <p style="margin: 0; font-size: 13.5px; color: var(--text-color); line-height: 1.5;">
+                <p style="margin: 0; font-size: 13.5px; color: var(--color-text-primary); line-height: 1.5;">
                     ${escapeHtmlAttr(message)}
                 </p>
                 <div style="display: flex; justify-content: flex-end; gap: 8px;">
-                    <button class="reload-confirm-cancel" type="button" style="background: none; border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-color); font-size: 13px; font-weight: 500; padding: 6px 14px; cursor: pointer;">Cancel</button>
-                    <button class="reload-confirm-ok" type="button" style="background: var(--warning-color); border: none; border-radius: 6px; color: var(--contrast-text); font-size: 13px; font-weight: 600; padding: 6px 14px; cursor: pointer;">${escapeHtmlAttr(confirmLabel)}</button>
+                    <button class="reload-confirm-cancel" type="button" style="background: none; border: 1px solid var(--color-border-default); border-radius: 6px; color: var(--color-text-primary); font-size: 13px; font-weight: 500; padding: 6px 14px; cursor: pointer;">Cancel</button>
+                    <button class="reload-confirm-ok" type="button" style="background: var(--color-status-warning); border: none; border-radius: 6px; color: var(--color-text-on-action); font-size: 13px; font-weight: 600; padding: 6px 14px; cursor: pointer;">${escapeHtmlAttr(confirmLabel)}</button>
                 </div>
             </div>
         `;
@@ -711,6 +719,43 @@ function confirmOverwriteConflict(): Promise<boolean> {
     );
 }
 
+function confirmRestoreConflict(): Promise<boolean> {
+    return confirmModal(
+        'File Changed on Disk',
+        'This file changed on disk since you opened it. Restore the selected version anyway? Your disk changes will be lost.',
+        'Restore Anyway'
+    );
+}
+
+function showInitialLoadError(message: string): void {
+    const loading = $('loadingIndicator');
+    if (!loading) { return; }
+    loading.style.display = 'flex';
+    loading.style.flexDirection = 'column';
+    loading.style.gap = '12px';
+    loading.replaceChildren();
+
+    const text = document.createElement('p');
+    text.style.margin = '0';
+    text.style.textAlign = 'center';
+    text.style.maxWidth = '420px';
+    text.style.lineHeight = '1.5';
+    text.textContent = message;
+
+    const retryBtn = document.createElement('button');
+    retryBtn.type = 'button';
+    retryBtn.textContent = 'Retry';
+    retryBtn.style.cssText = 'background:var(--color-action);border:none;border-radius:6px;color:var(--color-text-on-action);font-size:13px;font-weight:600;padding:6px 14px;cursor:pointer;';
+    retryBtn.addEventListener('click', () => {
+        loading.textContent = 'Loading Markdown...';
+        loading.style.flexDirection = '';
+        loading.style.gap = '';
+        vscode.postMessage({ command: 'webviewReady' });
+    });
+
+    loading.append(text, retryBtn);
+}
+
 // Manual "Reload from disk" toolbar button handler.
 async function requestReloadFromDisk() {
     if (isSaving || isReloadingFromDisk || !isEditMode || !canReloadFromDisk()) {return;}
@@ -725,7 +770,7 @@ async function requestReloadFromDisk() {
 }
 
 function applyFormat(action: string) {
-    if (!isPreviewEditMode || isVersionPreviewMode) {return;}
+    if (!isLivePreviewActive() || isVersionPreviewMode) {return;}
     applyLivePreviewFormat(action);
 }
 
@@ -813,9 +858,9 @@ function showToast(
     }
 }
 
-/** Current cursor position for the active editing surface. null in Reading mode. */
+/** Current cursor position in CM6. null when live preview is not mounted. */
 function getCurrentCursorPosition(): { line: number; col: number } | null {
-    if (isPreviewEditMode) {
+    if (isLivePreviewActive()) {
         return getLivePreviewCursorPosition();
     }
     return null;
@@ -937,6 +982,10 @@ function closeLightbox() {
 // ===== Search in Preview =====
 const debouncedSearch = debounce((query: string) => {
     doSearch(query);
+}, 200);
+
+const debouncedReapplySearch = debounce(() => {
+    reapplySearch();
 }, 200);
 
 function toggleSearchOverlay() {
@@ -1072,7 +1121,7 @@ function applySettings(settings: any, persist = false) {
     if (isLivePreviewActive()) {
         setLivePreviewReveal(currentSettings.livePreviewReveal);
         setLivePreviewLineWrapping(currentSettings.wordWrap);
-        setLivePreviewLineNumbers(wantsLivePreviewLineNumbers());
+        setLivePreviewLineNumbers(livePreviewGutterLineNumbersEnabled());
     }
 
     document.body.classList.toggle('cm6-word-wrap', isLivePreviewActive() && currentSettings.wordWrap);
@@ -1092,19 +1141,19 @@ function applySettings(settings: any, persist = false) {
     const chkShowOutline = $('chkShowOutline') as HTMLInputElement;
     const chkShowLineNumbers = $('chkShowLineNumbers') as HTMLInputElement;
     const chkLivePreviewReveal = $('chkLivePreviewReveal') as HTMLInputElement;
-    const chkLivePreviewLineNumbers = $('chkLivePreviewLineNumbers') as HTMLInputElement;
     const chkAutoSave = $('chkAutoSave') as HTMLInputElement;
+    const chkOpenByDefault = $('chkOpenByDefault') as HTMLInputElement;
 
     if (chkWordWrap) {chkWordWrap.checked = currentSettings.wordWrap;}
     if (chkStickyToolbar) {chkStickyToolbar.checked = currentSettings.stickyToolbar;}
     if (chkShowOutline) {chkShowOutline.checked = currentSettings.showOutline;}
-    if (chkShowLineNumbers) {chkShowLineNumbers.checked = currentSettings.showLineNumbers;}
+    if (chkShowLineNumbers) {chkShowLineNumbers.checked = livePreviewGutterLineNumbersEnabled();}
     if (chkLivePreviewReveal) {chkLivePreviewReveal.checked = currentSettings.livePreviewReveal;}
-    if (chkLivePreviewLineNumbers) {chkLivePreviewLineNumbers.checked = currentSettings.livePreviewLineNumbers;}
     if (chkAutoSave) {chkAutoSave.checked = currentSettings.autoSave;}
+    if (chkOpenByDefault) {chkOpenByDefault.checked = !!currentSettings.isDefaultEditor;}
 
     // Line numbers
-    document.body.classList.toggle('show-line-numbers', !!currentSettings.showLineNumbers);
+    document.body.classList.toggle('show-line-numbers', livePreviewGutterLineNumbersEnabled());
 
     const tocPanel = $('tocPanel');
     if (container) {container.classList.toggle('toc-open', !!currentSettings.showOutline);}
@@ -1122,6 +1171,15 @@ function applySettings(settings: any, persist = false) {
 
 function initializeSettings() {
     const settingsDefs = [
+        {
+            id: 'chkOpenByDefault',
+            label: 'Open .md files with Sheetmark by default',
+            tooltip: 'When enabled, VS Code opens .md files in Sheetmark automatically.',
+            defaultValue: !!currentSettings.isDefaultEditor,
+            onChange: (val: boolean) => {
+                vscode.postMessage({ command: val ? 'enableAsDefault' : 'disableDefaultEditor' });
+            }
+        },
         {
             id: 'chkWordWrap',
             label: 'Word Wrap',
@@ -1155,9 +1213,10 @@ function initializeSettings() {
         {
             id: 'chkShowLineNumbers',
             label: 'Line Numbers',
-            tooltip: 'Show line numbers in fenced code block previews.',
-            defaultValue: currentSettings.showLineNumbers,
+            tooltip: 'Show line numbers in the editor gutter. Click a number to select that line.',
+            defaultValue: livePreviewGutterLineNumbersEnabled(),
             onChange: (val: boolean) => {
+                currentSettings.livePreviewLineNumbers = val;
                 currentSettings.showLineNumbers = val;
                 applySettings(currentSettings, true);
             }
@@ -1169,16 +1228,6 @@ function initializeSettings() {
             defaultValue: currentSettings.livePreviewReveal,
             onChange: (val: boolean) => {
                 currentSettings.livePreviewReveal = val;
-                applySettings(currentSettings, true);
-            }
-        },
-        {
-            id: 'chkLivePreviewLineNumbers',
-            label: 'Line Numbers (Preview Edit)',
-            tooltip: 'In Preview Edit mode, show line numbers in the editor gutter. Click a number to select that line.',
-            defaultValue: currentSettings.livePreviewLineNumbers,
-            onChange: (val: boolean) => {
-                currentSettings.livePreviewLineNumbers = val;
                 applySettings(currentSettings, true);
             }
         },
@@ -1315,7 +1364,7 @@ window.addEventListener('message', (event) => {
             if (typeof m.calloutDefaultType === 'string' && /^[\w-]*$/.test(m.calloutDefaultType)) {
                 calloutDefaultType = m.calloutDefaultType.toLowerCase();
             }
-            if (isPreviewEditMode && isLivePreviewActive()) {
+            if (isLivePreviewActive()) {
                 setLivePreviewMermaidMode(mermaidPreviewMode);
                 setLivePreviewCalloutDefaultType(calloutDefaultType);
             }
@@ -1367,8 +1416,12 @@ window.addEventListener('message', (event) => {
             if (isReloadingFromDisk) {
                 isReloadingFromDisk = false;
                 setButtonsEnabled(true);
+                showToast('Error reloading from disk', undefined, { icon: 'warning' });
+            } else if (!hasEnteredPreviewEdit) {
+                showInitialLoadError(m.message || 'Failed to load Markdown file');
+            } else {
+                showToast(m.message || 'Error reloading from disk', undefined, { icon: 'warning' });
             }
-            showToast('Error reloading from disk', undefined, { icon: 'warning' });
             break;
 
         case 'diskDeletedExternally':
@@ -1377,11 +1430,23 @@ window.addEventListener('message', (event) => {
             updateEditToolbarButtons();
             break;
 
+        case 'diskMovedExternally':
+            pendingDiskDeleted = false;
+            if (typeof m.documentUri === 'string') {
+                documentUri = m.documentUri;
+            }
+            if (typeof m.documentDirUri === 'string') {
+                documentDirUri = m.documentDirUri;
+            }
+            showToast(`File moved to ${m.fileName || 'new location'}`, undefined, { persistent: true });
+            updateEditToolbarButtons();
+            break;
+
         case 'initSettings':
             applySettings(m.settings, false);
             if (!hasEnteredPreviewEdit) {
                 hasEnteredPreviewEdit = true;
-                setPreviewEditMode(true);
+                enterPreviewEditMode();
             }
             break;
 
@@ -1394,16 +1459,22 @@ window.addEventListener('message', (event) => {
             setButtonsEnabled(true);
             if (m.ok) {
                 showToast(m.isAutosave ? 'Autosaved' : 'Saved');
-                originalContent = currentContent;
+                if (pendingSaveContent !== null) {
+                    originalContent = pendingSaveContent;
+                }
+                pendingSaveContent = null;
                 // A successful save recreates the file if it had been deleted externally.
                 pendingDiskDeleted = false;
             } else {
+                pendingSaveContent = null;
                 showToast(m.isAutosave ? 'Autosave failed' : 'Error saving', undefined, { icon: 'warning' });
             }
+            updateEditToolbarButtons();
             break;
 
         case 'saveConflict':
             isSaving = false;
+            pendingSaveContent = null;
             setButtonsEnabled(true);
             if (lastSaveWasAutosave) {
                 // Autosave never interrupts with a dialog; the file watcher will
@@ -1427,6 +1498,14 @@ window.addEventListener('message', (event) => {
         case 'versionPreviewCancelledMd':
             setVersionPreviewMode(false);
             showToast('Preview canceled');
+            break;
+
+        case 'restoreConflict':
+            confirmRestoreConflict().then((confirmed) => {
+                if (confirmed) {
+                    vscode.postMessage({ command: 'restoreVersion', versionId: m.versionId, force: true });
+                }
+            });
             break;
 
         case 'versionRestoredMd':
@@ -1568,6 +1647,16 @@ document.addEventListener('keydown', (e) => {
         return;
     }
 
+    if (isCmdOrCtrl && e.key.toLowerCase() === 'a' && isEditMode && isLivePreviewActive()) {
+        const target = e.target;
+        if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
+            return;
+        }
+        e.preventDefault();
+        selectAllLivePreview();
+        return;
+    }
+
     if (e.key === 'Escape') {
         // Close lightbox first, then search, then edit mode
         const lightbox = $('lightboxOverlay');
@@ -1588,7 +1677,7 @@ document.addEventListener('keydown', (e) => {
             return;
         }
     }
-});
+}, true);
 
 // ===== Resizable Panels =====
 function initResizeHandles() {
@@ -1621,14 +1710,14 @@ function wireResizeHandle(handle: HTMLElement) {
         document.addEventListener('mouseup', onMouseUp);
     }
 
-    function onMouseMove(e: MouseEvent) {
+    const onMouseMove = throttleRAFEvent((e: MouseEvent) => {
         const dx = e.clientX - startX;
         const container = $('markdownContainer');
         if (!container) {return;}
 
         const newWidth = Math.max(120, Math.min(500, startLeftWidth + dx));
         container.style.setProperty('--toc-width', newWidth + 'px');
-    }
+    });
 
     function onMouseUp() {
         document.body.classList.remove('resizing');
@@ -1734,10 +1823,10 @@ const formatIconMap: Record<string, string> = {
     link: Icons.Link,
     image: Icons.Image,
     table: Icons.TableInsert,
-    tableAddRowBelow: '<span class="fmt-text-icon">+R</span>',
-    tableRemoveRow: '<span class="fmt-text-icon">-R</span>',
-    tableAddColumnRight: '<span class="fmt-text-icon">+C</span>',
-    tableRemoveColumn: '<span class="fmt-text-icon">-C</span>',
+    tableAddRowBelow: Icons.TableAddRowBelow,
+    tableRemoveRow: Icons.TableRemoveRow,
+    tableAddColumnRight: Icons.TableAddColumnRight,
+    tableRemoveColumn: Icons.TableRemoveColumn,
     codeBlock: Icons.CodeBlock,
     hr: Icons.HorizontalRule,
     duplicateLine: Icons.DuplicateLine,

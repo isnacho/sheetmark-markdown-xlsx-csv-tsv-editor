@@ -8,6 +8,9 @@ import { VERSION_HISTORY_RETENTION_MS, buildGroupedVersionHistoryItems as buildS
 import { convertARGBToRGBA, isShadeOfBlack, isShadeOfWhite } from './spreadsheet/spreadsheetUtilities';
 import { convertTabularFile, readTabularFile, detectTabularFileType, writeTabularFile, TabularFileType } from './shared/fileConversionService';
 import { StyleStorageService } from './shared/styleStorageService';
+import { createExternalFileChangeWatcher } from './shared/fileExternalChangeWatcher';
+import { migrateFileUriState } from './shared/migrateFileUriState';
+import { enableOpenByDefault, disableOpenByDefault, isSheetmarkConfiguredAsDefault } from './shared/editorAssociationUtils';
 
 function borderEditToCssValue(enabled: boolean, style?: string, color?: string): string {
     if (!enabled) {return '';}
@@ -242,7 +245,8 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
         // Store parsed worksheet data for virtualization
         let worksheetsData: any[] = [];
         let rowHeaderWidth = 40;
-        const filePath = document.uri.fsPath;
+        let currentUri = document.uri;
+        let filePath = currentUri.fsPath;
         let currentFileType: TabularFileType = detectTabularFileType(filePath) || 'xlsx';
         let hasActiveTemporaryStyles = false;
         let shouldOpenDelimitedInStyledMode = false;
@@ -842,7 +846,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
 
         const saveDelimitedFileAndStyles = async (sourceType: TabularFileType, edits: any[], richEdits: any[], styleEdits: any[], operations: any[], isAutosave: boolean) => {
             const requiresWorkbookRefresh = edits.length > 0 || operations.length > 0 || styleEdits.length > 0 || richEdits.length > 0;
-            const { workbook: tabularData } = await readTabularFile(document.uri.fsPath, sourceType);
+            const { workbook: tabularData } = await readTabularFile(currentUri.fsPath, sourceType);
             const rows = tabularData.sheets[0]?.rows ? tabularData.sheets[0].rows.map(row => [...row]) : [];
 
             for (const op of operations) {
@@ -851,7 +855,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
 
             applyDelimitedEditValues(rows, edits);
 
-            const metadata = (await this.styleStorage.getMetadata(document.uri)) || { cells: {}, merges: [] };
+            const metadata = (await this.styleStorage.getMetadata(currentUri)) || { cells: {}, merges: [] };
             let cells = metadata.cells || {};
             let merges = metadata.merges || [];
 
@@ -981,7 +985,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                 nextStyles[key] = nextStyle;
             }
 
-            await writeTabularFile(document.uri.fsPath, {
+            await writeTabularFile(currentUri.fsPath, {
                 sheets: [{ name: 'Sheet1', rows }]
             }, sourceType);
             lastSaveTime = Date.now();
@@ -1005,7 +1009,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                 }
             }
 
-            await this.styleStorage.saveMetadata(document.uri, {
+            await this.styleStorage.saveMetadata(currentUri, {
                 cells: finalCells,
                 merges
             });
@@ -1024,12 +1028,12 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
         };
 
         const convertCurrentFileToXlsx = async () => {
-            const sourceType = detectTabularFileType(document.uri.fsPath);
+            const sourceType = detectTabularFileType(currentUri.fsPath);
             if (!sourceType || sourceType === 'xlsx') {
                 return;
             }
 
-            const parsedSourcePath = path.parse(document.uri.fsPath);
+            const parsedSourcePath = path.parse(currentUri.fsPath);
             const defaultTargetUri = vscode.Uri.file(path.join(parsedSourcePath.dir, `${parsedSourcePath.name}.xlsx`));
             const targetUri = await vscode.window.showSaveDialog({
                 defaultUri: defaultTargetUri,
@@ -1043,13 +1047,13 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
             const targetPath = targetUri.fsPath.toLowerCase().endsWith('.xlsx') ? targetUri.fsPath : `${targetUri.fsPath}.xlsx`;
 
             await convertTabularFile({
-                sourcePath: document.uri.fsPath,
+                sourcePath: currentUri.fsPath,
                 targetPath,
                 sourceType,
                 targetType: 'xlsx'
             });
 
-            const storedStyles = (await this.styleStorage.getStyles(document.uri)) ?? {};
+            const storedStyles = (await this.styleStorage.getStyles(currentUri)) ?? {};
             if (Object.keys(storedStyles).length > 0) {
                 const workbook = new Excel.Workbook();
                 await workbook.xlsx.readFile(targetPath);
@@ -1060,8 +1064,8 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                 }
             }
 
-            await this.styleStorage.clearStyles(document.uri);
-            await this.styleStorage.clearPreferredViewMode(document.uri);
+            await this.styleStorage.clearStyles(currentUri);
+            await this.styleStorage.clearPreferredViewMode(currentUri);
             hasActiveTemporaryStyles = false;
             shouldOpenDelimitedInStyledMode = false;
 
@@ -1183,34 +1187,11 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
             settingsScope: SettingsScope;
         };
 
-        const isDefaultEditorAssociationEnabled = (associations: any, fileType: TabularFileType): boolean => {
-            const associationConfig = fileType === 'csv'
-                ? { viewType: 'xlsxViewer.csv', extension: 'csv' }
-                : fileType === 'tsv'
-                    ? { viewType: 'xlsxViewer.tsv', extension: 'tsv' }
-                    : { viewType: 'xlsxViewer.xlsx', extension: 'xlsx' };
-
-            const directPattern = `*.${associationConfig.extension}`;
-            const recursivePattern = `**/*.${associationConfig.extension}`;
-
-            if (!associations) {
-                return false;
-            }
-
-            if (Array.isArray(associations)) {
-                return associations.some((entry: any) =>
-                    entry?.viewType === associationConfig.viewType &&
-                    (entry?.filenamePattern === directPattern || entry?.filenamePattern === recursivePattern)
-                );
-            }
-
-            return associations[directPattern] === associationConfig.viewType || associations[recursivePattern] === associationConfig.viewType;
-        };
+        const getAssociationType = (): 'xlsx' | 'csv' | 'tsv' =>
+            currentFileType === 'csv' || currentFileType === 'tsv' ? currentFileType : 'xlsx';
 
         const getStyledSettings = (): PersistedSpreadsheetSettings => {
             const cfg = vscode.workspace.getConfiguration('xlsxViewer');
-            const globalCfg = vscode.workspace.getConfiguration('workbench');
-            const associations: any = globalCfg.get('editorAssociations');
             const autoSaveModeSetting = cfg.get<string>('xlsx.autoSaveMode', 'all');
             return {
                 firstRowIsHeader: cfg.get('xlsx.firstRowIsHeader', true),
@@ -1223,15 +1204,13 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                 hyperlinkPreview: cfg.get('xlsx.hyperlinkPreview', true),
                 spaciousCells: cfg.get('xlsx.spaciousCells', false),
                 mergeWarningEnabled: cfg.get('xlsx.mergeWarningEnabled', true),
-                isDefaultEditor: isDefaultEditorAssociationEnabled(associations, 'xlsx'),
+                isDefaultEditor: isSheetmarkConfiguredAsDefault('xlsx'),
                 textWrap: cfg.get('xlsx.textWrap', false)
             };
         };
 
         const getPlainSettings = (fileType: TabularFileType): PersistedSpreadsheetSettings => {
             const cfg = vscode.workspace.getConfiguration('xlsxViewer');
-            const globalCfg = vscode.workspace.getConfiguration('workbench');
-            const associations: any = globalCfg.get('editorAssociations');
 
             if (fileType === 'csv' || fileType === 'tsv') {
                 return {
@@ -1245,7 +1224,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                     hyperlinkPreview: true,
                     spaciousCells: cfg.get(`${fileType}.spaciousCells`, false),
                     mergeWarningEnabled: true,
-                    isDefaultEditor: isDefaultEditorAssociationEnabled(associations, fileType),
+                    isDefaultEditor: isSheetmarkConfiguredAsDefault(fileType),
                     textWrap: cfg.get(`${fileType}.textWrap`, false)
                 };
             }
@@ -1261,7 +1240,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                 hyperlinkPreview: cfg.get('xlsx.hyperlinkPreview', true),
                 spaciousCells: cfg.get('xlsx.spaciousCells', false),
                 mergeWarningEnabled: cfg.get('xlsx.mergeWarningEnabled', true),
-                isDefaultEditor: isDefaultEditorAssociationEnabled(associations, 'xlsx'),
+                isDefaultEditor: isSheetmarkConfiguredAsDefault('xlsx'),
                 textWrap: cfg.get('xlsx.textWrap', false)
             };
         };
@@ -1354,10 +1333,10 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                     }
                 }
 
-                const preferredViewMode = this.styleStorage.getPreferredViewMode(document.uri);
+                const preferredViewMode = this.styleStorage.getPreferredViewMode(currentUri);
                 shouldOpenDelimitedInStyledMode = preferredViewMode === 'styled';
 
-                const metadata = await this.styleStorage.getMetadata(document.uri);
+                const metadata = await this.styleStorage.getMetadata(currentUri);
                 if (metadata) {
                     if (metadata.merges && metadata.merges.length > 0) {
                         for (const merge of metadata.merges) {
@@ -1564,7 +1543,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                     }
 
                     const snapshotBuffer = await fs.promises.readFile(getSnapshotPath(entry.snapshotFile));
-                    await vscode.workspace.fs.writeFile(document.uri, snapshotBuffer);
+                    await vscode.workspace.fs.writeFile(currentUri, snapshotBuffer);
 
                     previewVersionId = null;
                     previewVersionTimestamp = null;
@@ -1627,24 +1606,25 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
             }
 
             if (message?.command === 'enableDefaultEditor' || message?.command === 'enableAsDefault') {
-                const associationType = currentFileType === 'csv' || currentFileType === 'tsv' ? currentFileType : 'xlsx';
-                await vscode.commands.executeCommand('xlsx-viewer.toggleAssociation', { type: associationType, enable: true });
+                const associationType = getAssociationType();
+                await enableOpenByDefault(associationType);
                 trySendSettings();
                 return;
             }
 
             if (message?.command === 'disableDefaultEditor') {
                 try {
-                    const associationType = currentFileType === 'csv' || currentFileType === 'tsv' ? currentFileType : 'xlsx';
+                    const associationType = getAssociationType();
                     const result = await vscode.window.showWarningMessage(
-                        `Are you sure you want to disable Spreadsheet Viewer for all .${associationType} files? You will be prompted to select a new default editor.`,
+                        `Are you sure you want to disable Sheetmark for all .${associationType} files? You will be prompted to select a new default editor.`,
                         "Yes, Disable",
                         "Cancel"
                     );
 
                     if (result === "Yes, Disable") {
-                        await vscode.commands.executeCommand('xlsx-viewer.toggleAssociation', { type: associationType, enable: false });
+                        await disableOpenByDefault(associationType);
                         await vscode.commands.executeCommand('workbench.action.reopenWithEditor');
+                        trySendSettings();
                     }
                 } catch (err) {
                     vscode.window.showErrorMessage(`Error disabling editor: ${err}`);
@@ -1695,7 +1675,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
             }
 
             if (message?.command === 'getSystemDetails') {
-                const ext = vscode.extensions.getExtension('nacho-allendesalazar.super-file-viewer');
+                const ext = vscode.extensions.getExtension('iggyinc.sheetmark');
                 const editorName = vscode.env.appName || 'VS Code';
                 webview.postMessage({
                     command: 'systemDetails',
@@ -1717,7 +1697,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                     const result = await new Promise<boolean>((resolve) => {
                         const req = https.request({
                             hostname: 'docs.google.com',
-                            path: '/forms/d/e/1FAIpQLSe5AqE_f1-WqUlQmvuPn1as3Mkn4oLjA0EDhNssetzt63ONzA/formResponse',
+                            path: '/forms/d/e/1FAIpQLSc0rQ232X2rAI-gyLeACwaFsgN_UKf5LMt3ENd8WYtNVCCp7w/formResponse',
                             method: 'POST',
                             headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(body) }
                         }, (res: any) => resolve((res.statusCode ?? 500) < 400));
@@ -1734,7 +1714,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
 
             if (message?.command === 'convertFile') {
                 try {
-                    await vscode.commands.executeCommand('xlsx-viewer.convertFile', document.uri);
+                    await vscode.commands.executeCommand('xlsx-viewer.convertFile', currentUri);
                 } catch (err) {
                     vscode.window.showErrorMessage(`Error converting file: ${err}`);
                 }
@@ -1745,7 +1725,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                 try {
                     const mode = message?.mode === 'styled' ? 'styled' : 'plain';
                     if (currentFileType === 'csv' || currentFileType === 'tsv') {
-                        await this.styleStorage.setPreferredViewMode(document.uri, mode);
+                        await this.styleStorage.setPreferredViewMode(currentUri, mode);
                         shouldOpenDelimitedInStyledMode = mode === 'styled';
                     }
                     // Keep provider-side plain-view state in sync with the webview
@@ -1822,14 +1802,14 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                         return;
                     }
 
-                    const sourceType = detectTabularFileType(document.uri.fsPath) || 'xlsx';
+                    const sourceType = detectTabularFileType(currentUri.fsPath) || 'xlsx';
                     if (sourceType === 'csv' || sourceType === 'tsv') {
                         await saveDelimitedFileAndStyles(sourceType, edits, richEdits, styleEdits, operations, isAutosave);
                         return;
                     }
 
                     const workbook = new Excel.Workbook();
-                    await workbook.xlsx.readFile(document.uri.fsPath);
+                    await workbook.xlsx.readFile(currentUri.fsPath);
                     const ws = workbook.worksheets[sheetIndex];
                     if (!ws) {
                         throw new Error('Worksheet not found');
@@ -2275,7 +2255,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                         }
                     }
 
-                    await workbook.xlsx.writeFile(document.uri.fsPath);
+                    await workbook.xlsx.writeFile(currentUri.fsPath);
                     lastSaveTime = Date.now();
                     await persistVersionSnapshot();
                     previewVersionId = null;
@@ -2318,24 +2298,59 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
         });
         webviewPanel.onDidDispose(() => configChangeDisposable.dispose());
 
-        const watcher = vscode.workspace.createFileSystemWatcher(
-            new vscode.RelativePattern(vscode.Uri.file(path.dirname(filePath)), path.basename(filePath))
-        );
-        const watcherDisposable = watcher.onDidChange(async () => {
-            if (isSaving || Date.now() - lastSaveTime < 1000) {
+        const handleMove = async (newUri: vscode.Uri) => {
+            if (isSaving) {
                 return;
             }
-            try {
-                await loadWorkbookPayload();
-                trySendInit();
-            } catch {
-                // ignore reload errors
+            const oldUri = currentUri;
+            currentUri = newUri;
+            filePath = newUri.fsPath;
+            const detectedType = detectTabularFileType(filePath);
+            if (detectedType) {
+                currentFileType = detectedType;
             }
+
+            await migrateFileUriState(this.context, oldUri, newUri, {
+                kind: currentFileType,
+                isSpreadsheet: true,
+                styleStorage: this.styleStorage,
+            });
+
+            externalFileWatcher.repoint(filePath, currentUri);
+
+            try {
+                webview.postMessage({
+                    command: 'diskMovedExternally',
+                    fileName: vscode.workspace.asRelativePath(newUri),
+                });
+            } catch { }
+        };
+
+        const externalFileWatcher = createExternalFileChangeWatcher({
+            filePath,
+            documentUri: currentUri,
+            onChange: async () => {
+                if (isSaving || Date.now() - lastSaveTime < 1000) {
+                    return;
+                }
+                try {
+                    await loadWorkbookPayload();
+                    trySendInit();
+                } catch {
+                    // ignore reload errors
+                }
+            },
+            onDelete: () => {
+                if (isSaving) {
+                    return;
+                }
+                try {
+                    webview.postMessage({ command: 'diskDeletedExternally' });
+                } catch { }
+            },
+            onMove: (newUri) => { void handleMove(newUri); },
         });
-        webviewPanel.onDidDispose(() => {
-            watcherDisposable.dispose();
-            watcher.dispose();
-        });
+        webviewPanel.onDidDispose(() => externalFileWatcher.dispose());
 
         try {
             await loadWorkbookPayload();
@@ -3238,5 +3253,4 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
 
 
 }
-
 

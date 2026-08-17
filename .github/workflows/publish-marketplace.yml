@@ -1,0 +1,96 @@
+name: Publish to VS Code Marketplace
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing release tag to publish (for example, v1.1.1)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: marketplace-publish-${{ github.event.release.tag_name || inputs.release_tag }}
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
+
+jobs:
+  package:
+    name: Package and attach VSIX
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out release source
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.release_tag }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Package release VSIX
+        id: package
+        shell: bash
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          vsix_path="$RUNNER_TEMP/sheetmark-$version.vsix"
+          npx --yes @vscode/vsce@latest package --no-dependencies --out "$vsix_path"
+          echo "path=$vsix_path" >> "$GITHUB_OUTPUT"
+
+      - name: Attach VSIX to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VSIX_PATH: ${{ steps.package.outputs.path }}
+        run: gh release upload "$RELEASE_TAG" "$VSIX_PATH" --clobber
+
+      - name: Share release VSIX with publishing jobs
+        uses: actions/upload-artifact@v4
+        with:
+          name: sheetmark-release-vsix
+          path: ${{ steps.package.outputs.path }}
+          if-no-files-found: error
+
+  publish-marketplace:
+    name: Publish to VS Code Marketplace
+    needs: package
+    runs-on: ubuntu-latest
+    environment: marketplace
+    steps:
+      - name: Download release VSIX
+        uses: actions/download-artifact@v4
+        with:
+          name: sheetmark-release-vsix
+          path: ${{ runner.temp }}/sheetmark-release
+
+      - name: Publish exact release package
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: npx --yes @vscode/vsce@latest publish --no-dependencies --packagePath "$RUNNER_TEMP/sheetmark-release/sheetmark-"*.vsix
+
+  publish-open-vsx:
+    name: Publish to Open VSX
+    needs: package
+    runs-on: ubuntu-latest
+    environment: marketplace
+    steps:
+      - name: Download release VSIX
+        uses: actions/download-artifact@v4
+        with:
+          name: sheetmark-release-vsix
+          path: ${{ runner.temp }}/sheetmark-release
+
+      - name: Publish exact release package
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: npx --yes ovsx publish "$RUNNER_TEMP/sheetmark-release/sheetmark-"*.vsix -p "$OVSX_PAT"

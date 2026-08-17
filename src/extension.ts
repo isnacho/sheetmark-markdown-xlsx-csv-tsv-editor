@@ -11,6 +11,13 @@ import {
     getTargetTabularFileTypes,
     TabularFileType
 } from './shared/fileConversionService';
+import {
+    reconcileAllOpenByDefaultSettings,
+    setEditorAssociation,
+    SHEETMARK_ASSOCIATION_TYPES,
+    SheetmarkAssociationType,
+    syncOpenByDefaultFromSetting,
+} from './shared/editorAssociationUtils';
 
 function resolveDocumentUri(uri?: vscode.Uri): vscode.Uri | undefined {
     if (uri instanceof vscode.Uri) {
@@ -303,6 +310,24 @@ export function activate(context: vscode.ExtensionContext) {
         clearInterval(stylePruneTimer);
     }));
 
+    void reconcileAllOpenByDefaultSettings().catch(() => {
+        // Ignore reconciliation failures so extension activation is never blocked.
+    });
+
+    context.subscriptions.push(
+        vscode.workspace.onDidChangeConfiguration(async (e) => {
+            for (const type of SHEETMARK_ASSOCIATION_TYPES) {
+                if (e.affectsConfiguration(`xlsxViewer.${type}.openByDefault`)) {
+                    try {
+                        await syncOpenByDefaultFromSetting(type);
+                    } catch {
+                        // ignore
+                    }
+                }
+            }
+        })
+    );
+
     context.subscriptions.push(
         vscode.window.registerCustomEditorProvider('xlsxViewer.xlsx', spreadsheetProvider, {
             webviewOptions: {
@@ -425,90 +450,17 @@ export function activate(context: vscode.ExtensionContext) {
 
     context.subscriptions.push(
         vscode.commands.registerCommand('xlsx-viewer.goBackToMdPreview', async (uri?: vscode.Uri) => {
-            if (uri instanceof vscode.Uri) {
-                await reopenWithCustomEditor(uri, 'xlsxViewer.md');
-                return;
-            }
-
-            const activeEditor = vscode.window.activeTextEditor;
-            if (activeEditor) {
-                const docUri = activeEditor.document.uri;
-                await vscode.commands.executeCommand('workbench.action.closeActiveEditor');
-                await vscode.commands.executeCommand('vscode.openWith', docUri, 'xlsxViewer.md');
+            const target = uri instanceof vscode.Uri ? uri : resolveDocumentUri();
+            if (target) {
+                await reopenWithCustomEditor(target, 'xlsxViewer.md');
             }
         })
     );
 
     context.subscriptions.push(
-        vscode.commands.registerCommand('xlsx-viewer.toggleAssociation', async (params: { type: 'xlsx' | 'csv' | 'tsv' | 'md', enable: boolean }) => {
+        vscode.commands.registerCommand('xlsx-viewer.toggleAssociation', async (params: { type: SheetmarkAssociationType, enable: boolean }) => {
             try {
-                const { type, enable } = params;
-                const patternMap = {
-                    'md': '*.md',
-                    'xlsx': '*.xlsx',
-                    'csv': '*.csv',
-                    'tsv': '*.tsv'
-                };
-                const viewTypeMap = {
-                    'md': 'xlsxViewer.md',
-                    'xlsx': 'xlsxViewer.xlsx',
-                    'csv': 'xlsxViewer.csv',
-                    'tsv': 'xlsxViewer.tsv'
-                };
-                const labelMap = {
-                    'md': 'Markdown',
-                    'xlsx': 'XLSX',
-                    'csv': 'CSV',
-                    'tsv': 'TSV'
-                };
-
-                const pattern = patternMap[type];
-                const viewType = viewTypeMap[type];
-                const label = labelMap[type];
-
-                const cfg = vscode.workspace.getConfiguration();
-                const associations: any = cfg.get('workbench.editorAssociations') || {};
-                let newAssociations: any;
-
-                if (enable) {
-                    if (Array.isArray(associations)) {
-                        newAssociations = associations.filter(a => a.filenamePattern !== pattern && a.filenamePattern !== `**/${pattern}`);
-                        newAssociations.push({ viewType: viewType, filenamePattern: pattern });
-                    } else {
-                        newAssociations = { ...associations };
-                        newAssociations[pattern] = viewType;
-                    }
-                    await cfg.update('workbench.editorAssociations', newAssociations, vscode.ConfigurationTarget.Global);
-                    vscode.window.showInformationMessage(`Spreadsheet Viewer is now set as the default editor for ${label} files.`);
-                } else {
-                    const inspect = cfg.inspect('workbench.editorAssociations');
-                    const targets: Array<{ target: vscode.ConfigurationTarget; value: any }> = [
-                        { target: vscode.ConfigurationTarget.Global, value: inspect?.globalValue },
-                        { target: vscode.ConfigurationTarget.Workspace, value: inspect?.workspaceValue },
-                        { target: vscode.ConfigurationTarget.WorkspaceFolder, value: inspect?.workspaceFolderValue }
-                    ];
-
-                    for (const t of targets) {
-                        if (!t.value) {
-                            continue;
-                        }
-
-                        if (Array.isArray(t.value)) {
-                            newAssociations = t.value.filter(a => a.viewType !== viewType); // Remove all associations for this viewer
-                        } else {
-                            newAssociations = { ...t.value };
-                            Object.keys(newAssociations).forEach(key => {
-                                if (newAssociations[key] === viewType) {
-                                    delete newAssociations[key];
-                                }
-                            });
-                        }
-
-                        await cfg.update('workbench.editorAssociations', newAssociations, t.target);
-                    }
-
-                    vscode.window.showInformationMessage(`${label} association has been removed from settings.`);
-                }
+                await setEditorAssociation(params.type, params.enable, { showToast: true });
             } catch (err) {
                 vscode.window.showErrorMessage(`Error updating association: ${err}`);
             }

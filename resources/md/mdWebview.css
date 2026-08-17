@@ -2,27 +2,11 @@
     box-sizing: border-box;
 }
 
-:root {
-    --md-scrollbar-thumb: #e0e0e5;
-    --md-scrollbar-thumb-hover: #c7c7cc;
-    --md-scrollbar-track: transparent;
-}
-
-body.dark-mode {
-    --md-scrollbar-thumb: #48484a;
-    --md-scrollbar-thumb-hover: #636366;
-}
-
-body.vscode-theme {
-    --md-scrollbar-thumb: var(--vscode-scrollbarSlider-background, #e0e0e5);
-    --md-scrollbar-thumb-hover: var(--vscode-scrollbarSlider-hoverBackground, #c7c7cc);
-}
-
 body {
     font-family: var(--font-family);
     padding: 0;
-    background-color: var(--bg-color);
-    color: var(--text-color);
+    background-color: var(--color-surface-default);
+    color: var(--color-text-primary);
     margin: 0;
     overflow: hidden;
     font-size: 14px;
@@ -102,18 +86,18 @@ body.edit-mode #content {
 }
 
 .toggle-button.active {
-    background-color: var(--accent-bg);
-    border: 1px solid var(--accent-color);
-    box-shadow: 0 0 0 1px var(--accent-bg);
-    color: var(--accent-color);
+    background-color: var(--color-action-subtle);
+    border: 1px solid var(--color-action);
+    box-shadow: 0 0 0 1px var(--color-action-subtle);
+    color: var(--color-action);
 }
 
 .toggle-button.active .btn-label {
-    color: var(--accent-color);
+    color: var(--color-action);
 }
 
 .toggle-button.active svg {
-    stroke: var(--accent-color);
+    stroke: var(--color-action);
 }
 
 /* ===== Version Preview Banner ===== */
@@ -125,10 +109,10 @@ body.edit-mode #content {
     flex-wrap: wrap;
     padding: 8px 12px;
     margin: 8px 12px 0;
-    border: 1px solid var(--border-color);
+    border: 1px solid var(--color-border-default);
     border-radius: var(--surface-radius);
-    background: var(--accent-bg);
-    color: var(--text-color);
+    background: var(--color-action-subtle);
+    color: var(--color-text-primary);
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
 }
 
@@ -149,9 +133,9 @@ body.edit-mode #content {
 }
 
 .version-preview-actions .toggle-button-primary {
-    border-color: var(--accent-color);
-    background: var(--accent-color);
-    color: var(--button-foreground);
+    border-color: var(--color-action);
+    background: var(--color-action);
+    color: var(--color-text-on-action);
 }
 
 .version-preview-actions .toggle-button-primary:hover {
@@ -180,16 +164,16 @@ body.version-preview-mode .cm-md-callout-type-toolbar {
     position: fixed;
     width: 300px;
     max-width: calc(100vw - 32px);
-    background: var(--tooltip-bg);
-    color: var(--tooltip-text);
+    background: var(--color-tooltip-bg);
+    color: var(--color-tooltip-text);
     text-align: left;
     border-radius: var(--surface-radius);
     padding: 8px 10px;
     z-index: 20000;
     white-space: normal;
     line-height: 1.5;
-    box-shadow: var(--tooltip-shadow);
-    border: 1px solid var(--border-color);
+    box-shadow: var(--shadow-tooltip);
+    border: 1px solid var(--color-border-default);
     font-size: 12px;
     pointer-events: none;
     opacity: 0;
@@ -213,14 +197,14 @@ body.version-preview-mode .cm-md-callout-type-toolbar {
 }
 
 .hover-tooltip .warning {
-    color: var(--error-color);
+    color: var(--color-status-error);
     font-weight: 700;
     display: block;
     margin-bottom: 4px;
 }
 
 .hover-tooltip .instruction {
-    color: var(--info-color);
+    color: var(--color-status-info);
     font-weight: normal;
     display: block;
     margin-top: 6px;
@@ -273,7 +257,7 @@ body:not(.sticky-toolbar-enabled) .toc-panel {
     justify-content: center;
     height: 100%;
     font-size: 14px;
-    color: var(--text-muted);
+    color: var(--color-text-secondary);
 }
 
 /* ===== Markdown Container ===== */
@@ -305,8 +289,8 @@ body:not(.sticky-toolbar-enabled) .toc-panel {
 .toc-panel {
     display: none;
     flex-direction: column;
-    border-right: 1px solid var(--border-color);
-    background: var(--bg-color);
+    border-right: 1px solid var(--color-border-default);
+    background: var(--color-surface-default);
     height: 100%;
     overflow: hidden;
 }
@@ -320,22 +304,22 @@ body:not(.sticky-toolbar-enabled) .toc-panel {
     align-items: center;
     justify-content: space-between;
     padding: 10px 12px;
-    border-bottom: 1px solid var(--border-color);
+    border-bottom: 1px solid var(--color-border-default);
     font-weight: 600;
-    background: var(--header-bg);
+    background: var(--color-surface-raised);
 }
 
 .toc-title {
     font-size: 12px;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: var(--text-muted);
+    color: var(--color-text-secondary);
 }
 
 .toc-close {
     background: transparent;
     border: 1px solid transparent;
-    color: var(--text-muted);
+    color: var(--color-text-secondary);
     width: 22px;
     height: 22px;
     border-radius: var(--surface-radius);
@@ -343,8 +327,8 @@ body:not(.sticky-toolbar-enabled) .toc-panel {
 }
 
 .toc-close:hover {
-    border-color: var(--border-color);
-    color: var(--text-color);
+    border-color: var(--color-border-default);
+    color: var(--color-text-primary);
 }
 
 .toc-body {
@@ -359,7 +343,7 @@ body:not(.sticky-toolbar-enabled) .toc-panel {
 }
 
 .toc-item a {
-    color: var(--text-color);
+    color: var(--color-text-primary);
     text-decoration: none;
     display: inline-block;
     padding: 2px 6px;
@@ -367,8 +351,8 @@ body:not(.sticky-toolbar-enabled) .toc-panel {
 }
 
 .toc-item a:hover {
-    background: var(--accent-bg);
-    color: var(--accent-color);
+    background: var(--color-action-subtle);
+    color: var(--color-action);
 }
 
 .toc-level-1 { padding-left: 2px; font-weight: 600; }
@@ -379,7 +363,7 @@ body:not(.sticky-toolbar-enabled) .toc-panel {
 .toc-level-6 { padding-left: 52px; }
 
 .toc-empty {
-    color: var(--text-muted);
+    color: var(--color-text-secondary);
     font-size: 12px;
     padding: 8px;
 }
@@ -425,15 +409,27 @@ body.cm6-preview-active.cm6-word-wrap .cm-md-inline-code {
     overflow-wrap: anywhere;
 }
 
+/* CM6 code surfaces — mirror --font-mono token (cm6Theme.ts also sets these). */
+.cm-md-inline-code,
+.cm-md-fenced-code-line {
+    font-family: var(--font-mono);
+    font-weight: var(--font-mono-weight);
+    font-size: var(--font-mono-size);
+}
+
+.cm-md-mermaid-lang {
+    font-family: var(--font-mono);
+    font-weight: var(--font-mono-weight);
+}
 
 body.preview-edit-mode .markdown-preview {
     cursor: text;
-    outline: 2px solid var(--accent-color);
+    outline: 2px solid var(--color-action);
     outline-offset: -2px;
 }
 
 body.preview-edit-mode .markdown-preview:focus {
-    outline: 2px solid var(--accent-color);
+    outline: 2px solid var(--color-action);
     outline-offset: -2px;
 }
 
@@ -446,7 +442,7 @@ body.preview-edit-mode .markdown-preview .heading-anchor {
 .resize-handle {
     width: 5px;
     cursor: col-resize;
-    background: var(--border-color);
+    background: var(--color-border-default);
     position: relative;
     flex-shrink: 0;
     z-index: 10;
@@ -455,7 +451,7 @@ body.preview-edit-mode .markdown-preview .heading-anchor {
 
 .resize-handle:hover,
 body.resizing .resize-handle {
-    background: var(--accent-color);
+    background: var(--color-action);
 }
 
 .resize-handle::after {
@@ -492,8 +488,8 @@ body.resizing * {
     padding: 32px;
     overflow-y: auto;
     max-width: 100%;
-    color: var(--text-color);
-    background: var(--bg-color);
+    color: var(--color-text-primary);
+    background: var(--color-surface-default);
 }
 
 .markdown-preview.hidden {
@@ -506,7 +502,7 @@ body.resizing * {
     font-weight: 600;
     margin: 0 0 16px 0;
     padding-bottom: 0.3em;
-    border-bottom: 1px solid var(--border-color);
+    border-bottom: 1px solid var(--color-border-default);
     line-height: 1.25;
 }
 
@@ -515,7 +511,7 @@ body.resizing * {
     font-weight: 600;
     margin: 24px 0 16px 0;
     padding-bottom: 0.3em;
-    border-bottom: 1px solid var(--border-color);
+    border-bottom: 1px solid var(--color-border-default);
     line-height: 1.25;
 }
 
@@ -528,14 +524,14 @@ body.resizing * {
 
 .markdown-preview h4 { font-size: 1em; font-weight: 600; margin: 24px 0 16px 0; }
 .markdown-preview h5 { font-size: 0.875em; font-weight: 600; margin: 24px 0 16px 0; }
-.markdown-preview h6 { font-size: 0.85em; font-weight: 600; margin: 24px 0 16px 0; color: var(--text-muted); }
+.markdown-preview h6 { font-size: 0.85em; font-weight: 600; margin: 24px 0 16px 0; color: var(--color-text-secondary); }
 
 .markdown-preview p {
     margin: 0 0 16px 0;
 }
 
 .markdown-preview a {
-    color: var(--link-color);
+    color: var(--color-text-link);
     text-decoration: none;
 }
 
@@ -546,11 +542,12 @@ body.resizing * {
 /* Inline code */
 .markdown-preview .inline-code {
     font-family: var(--font-mono);
+    font-weight: var(--font-mono-weight);
     font-size: 90%;
-    background: var(--code-bg);
+    background: var(--color-surface-sunken);
     padding: 0.2em 0.4em;
     border-radius: var(--surface-radius);
-    color: var(--code-text);
+    color: var(--color-text-code);
 }
 
 /* Keyboard shortcuts */
@@ -558,15 +555,16 @@ body.resizing * {
     display: inline-block;
     padding: 3px 6px;
     font-family: var(--font-mono);
+    font-weight: var(--font-mono-weight);
     font-size: 11px;
     line-height: 1;
-    color: var(--text-color);
+    color: var(--color-text-primary);
     vertical-align: middle;
-    background-color: var(--header-bg);
-    border: 1px solid var(--border-color);
+    background-color: var(--color-surface-raised);
+    border: 1px solid var(--color-border-default);
     border-bottom-width: 2px;
     border-radius: var(--surface-radius);
-    box-shadow: inset 0 -1px 0 var(--border-color);
+    box-shadow: inset 0 -1px 0 var(--color-border-default);
 }
 
 /* Lists */
@@ -588,8 +586,8 @@ body.resizing * {
 .markdown-preview blockquote {
     margin: 16px 0 16px 4px;
     padding: 12px 16px;
-    border-left: 2px solid var(--text-color);
-    color: var(--text-color);
+    border-left: 2px solid var(--color-text-primary);
+    color: var(--color-text-primary);
     background: transparent;
     position: relative;
 }
@@ -604,10 +602,10 @@ body.resizing * {
 
 /* YAML frontmatter card */
 .markdown-preview .yaml-frontmatter-card {
-    border: 1px solid var(--border-color);
+    border: 1px solid var(--color-border-default);
     border-radius: var(--surface-radius);
-    background: var(--panel-bg);
-    margin: 0 0 20px 0;
+    background: var(--color-surface-panel);
+    margin: 0 0 32px 0;
     overflow: hidden;
 }
 
@@ -616,15 +614,22 @@ body.cm6-preview-active .markdown-preview .yaml-frontmatter-card {
     margin: 0;
 }
 
+/* Measured as part of the block widget root — reserve space below the card border. */
+.markdown-preview .yaml-frontmatter-tail-spacer {
+    display: block;
+    height: 40px;
+    pointer-events: none;
+}
+
 .markdown-preview .yaml-frontmatter-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 8px;
     padding: 10px 12px;
-    border-bottom: 1px solid var(--border-color);
-    background: var(--header-bg);
-    color: var(--text-color);
+    border-bottom: 1px solid var(--color-border-default);
+    background: var(--color-surface-raised);
+    color: var(--color-text-primary);
     font-weight: 600;
 }
 
@@ -636,9 +641,9 @@ body.cm6-preview-active .markdown-preview .yaml-frontmatter-card {
 
 .markdown-preview .yaml-frontmatter-edit-btn,
 .markdown-preview .yaml-frontmatter-toggle {
-    border: 1px solid var(--border-color);
-    background: var(--panel-bg);
-    color: var(--text-muted);
+    border: 1px solid var(--color-border-default);
+    background: var(--color-surface-panel);
+    color: var(--color-text-secondary);
     border-radius: var(--surface-radius);
     cursor: pointer;
     font-size: 11px;
@@ -657,8 +662,8 @@ body.cm6-preview-active .markdown-preview .yaml-frontmatter-card {
 
 .markdown-preview .yaml-frontmatter-edit-btn:hover,
 .markdown-preview .yaml-frontmatter-toggle:hover {
-    color: var(--text-color);
-    border-color: color-mix(in srgb, var(--accent-color) 45%, var(--border-color));
+    color: var(--color-text-primary);
+    border-color: color-mix(in srgb, var(--color-action) 45%, var(--color-border-default));
 }
 
 .markdown-preview .yaml-frontmatter-editing .yaml-frontmatter-toggle {
@@ -670,12 +675,12 @@ body.cm6-preview-active .markdown-preview .yaml-frontmatter-card {
     font-size: 12px;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: var(--text-muted);
+    color: var(--color-text-secondary);
 }
 
 .markdown-preview .yaml-frontmatter-chevron::before {
     content: '▾';
-    color: var(--text-muted);
+    color: var(--color-text-secondary);
     font-size: 12px;
 }
 
@@ -702,7 +707,7 @@ body.cm6-preview-active .markdown-preview .yaml-frontmatter-card {
     padding: 6px 0;
     font-size: 13px;
     line-height: 1.5;
-    border-bottom: 1px solid color-mix(in srgb, var(--border-color) 55%, transparent);
+    border-bottom: 1px solid color-mix(in srgb, var(--color-border-default) 55%, transparent);
 }
 
 .markdown-preview .yaml-frontmatter-field:last-child {
@@ -711,13 +716,13 @@ body.cm6-preview-active .markdown-preview .yaml-frontmatter-card {
 
 .markdown-preview .yaml-frontmatter-key {
     flex: 0 0 140px;
-    color: var(--text-muted);
+    color: var(--color-text-secondary);
     font-weight: 500;
 }
 
 .markdown-preview .yaml-frontmatter-value {
     flex: 1;
-    color: var(--text-color);
+    color: var(--color-text-primary);
     word-break: break-word;
 }
 
@@ -732,16 +737,16 @@ body.cm6-preview-active .markdown-preview .yaml-frontmatter-card {
     display: inline-block;
     padding: 2px 8px;
     border-radius: 999px;
-    background: color-mix(in srgb, var(--accent-color) 18%, var(--panel-bg));
-    border: 1px solid color-mix(in srgb, var(--accent-color) 35%, var(--border-color));
-    color: var(--text-color);
+    background: color-mix(in srgb, var(--color-action) 18%, var(--color-surface-panel));
+    border: 1px solid color-mix(in srgb, var(--color-action) 35%, var(--color-border-default));
+    color: var(--color-text-primary);
     font-size: 12px;
     line-height: 1.4;
 }
 
 .markdown-preview .yaml-frontmatter-field-object .yaml-frontmatter-key {
     font-weight: 600;
-    color: var(--text-color);
+    color: var(--color-text-primary);
 }
 
 .cm-md-frontmatter-widget .yaml-frontmatter-field {
@@ -758,23 +763,24 @@ body.cm6-preview-active .markdown-preview .yaml-frontmatter-card {
     resize: none;
     overflow: hidden;
     font-family: var(--font-mono);
+    font-weight: var(--font-mono-weight);
     font-size: 85%;
     line-height: 1.45;
-    color: var(--text-color);
-    background: var(--bg-color);
+    color: var(--color-text-primary);
+    background: var(--color-surface-default);
     box-sizing: border-box;
 }
 
 .markdown-preview .yaml-frontmatter-textarea:focus {
     outline: none;
-    box-shadow: inset 0 0 0 1px var(--accent-color);
+    box-shadow: inset 0 0 0 1px var(--color-action);
 }
 
 /* Horizontal Rule */
 .markdown-preview hr {
     border: none;
     height: 1px;
-    background: var(--text-muted);
+    background: var(--color-text-secondary);
     margin: 32px 0;
     opacity: 0.6;
 }
@@ -782,13 +788,13 @@ body.cm6-preview-active .markdown-preview .yaml-frontmatter-card {
 /* Tables — rounded corners need a scroll wrapper to clip cell borders
    (border-collapse: collapse ignores border-radius on cells). */
 .cm-md-table-scroll {
-    width: fit-content;
+    width: 100%;
     max-width: 100%;
     box-sizing: border-box;
     margin: 16px 0;
     overflow-x: hidden;
     overflow-y: hidden;
-    border: 1px solid var(--border-color);
+    border: 1px solid var(--color-border-default);
     border-radius: var(--surface-radius);
     /* markdown-it appends a trailing newline after </table>; collapse the
        stray line box so the bordered wrapper hugs the table height. */
@@ -797,11 +803,37 @@ body.cm6-preview-active .markdown-preview .yaml-frontmatter-card {
 
 .cm-md-table-scroll.cm-md-table-overflow-x {
     overflow-x: auto;
+    position: relative;
+}
+
+/* Wide manual-layout tables: inactive cells stay on one line so width = column sum. */
+.cm-md-table-scroll.cm-md-table-overflow-x table.md-table.cm-md-table-resized th,
+.cm-md-table-scroll.cm-md-table-overflow-x table.md-table.cm-md-table-resized td:not(.cm-md-table-cell-editing) {
+    white-space: nowrap;
+}
+
+/* Right-edge fade when horizontally clipped (tableWidget.ts wireTableScrollUI). */
+.cm-md-table-scroll.cm-md-table-overflow-x.cm-md-table-scroll-fade::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 24px;
+    pointer-events: none;
+    background: linear-gradient(to right, transparent, var(--color-surface-default));
+}
+
+/* Resized tables narrower than the pane: shrink the bordered wrapper to the table. */
+.cm-md-table-scroll.cm-md-table-hug-content {
+    width: fit-content;
+    max-width: 100%;
 }
 
 .cm-md-table-scroll table.md-table {
-    width: max-content;
-    max-width: none;
+    width: 100%;
+    max-width: 100%;
+    table-layout: fixed;
     margin: 0;
     font-size: 13px;
     line-height: 1.5;
@@ -812,11 +844,18 @@ body.cm6-preview-active .markdown-preview .yaml-frontmatter-card {
     overflow: visible;
 }
 
+.cm-md-table-scroll table.md-table:not(.cm-md-table-resized) th,
+.cm-md-table-scroll table.md-table:not(.cm-md-table-resized) td {
+    overflow-wrap: anywhere;
+    word-wrap: break-word;
+    white-space: normal;
+}
+
 .cm-md-table-scroll table.md-table th,
 .cm-md-table-scroll table.md-table td {
     border: none;
-    border-right: 1px solid var(--border-color);
-    border-bottom: 1px solid var(--border-color);
+    border-right: 1px solid var(--color-border-default);
+    border-bottom: 1px solid var(--color-border-default);
 }
 
 .cm-md-table-scroll table.md-table th:last-child,
@@ -844,12 +883,12 @@ body.preview-edit-mode .markdown-preview table.md-table td {
 }
 
 .markdown-preview table.md-table th {
-    background: var(--header-bg);
+    background: var(--color-surface-raised);
     font-weight: 600;
 }
 
 .markdown-preview table.md-table tr:nth-child(2n) {
-    background: var(--header-bg);
+    background: var(--color-surface-raised);
 }
 
 /* CM6 live-preview table widget: enforce table layout so min-height on cells
@@ -861,8 +900,6 @@ body.preview-edit-mode .markdown-preview .cm-md-table-widget .cm-md-table-scroll
 
 body.preview-edit-mode .markdown-preview .cm-md-table-widget table.md-table {
     display: table;
-    width: max-content;
-    max-width: none;
     margin: 0;
 }
 
@@ -884,6 +921,7 @@ body.preview-edit-mode .markdown-preview .cm-md-table-widget table.md-table td:e
     display: table;
     table-layout: fixed;
     width: auto;
+    max-width: none;
 }
 
 .cm-md-col-resize-handle {
@@ -898,7 +936,7 @@ body.preview-edit-mode .markdown-preview .cm-md-table-widget table.md-table td:e
 
 .cm-md-col-resize-handle:hover,
 .cm-md-col-resize-handle:active {
-    background: var(--accent-color);
+    background: var(--color-action);
     opacity: 0.5;
 }
 
@@ -913,7 +951,7 @@ body.preview-edit-mode .markdown-preview .cm-md-table-widget table.md-table td:e
     pointer-events: none;
     z-index: 10;
     cursor: grab;
-    color: var(--text-muted);
+    color: var(--color-text-secondary);
     border-radius: 3px;
     background: transparent;
     transition: opacity 0.12s ease, color 0.12s ease, background-color 0.12s ease;
@@ -948,8 +986,8 @@ body.preview-edit-mode .markdown-preview .cm-md-table-widget table.md-table td:e
 
 .cm-md-row-drag-handle.cm-md-drag-grip-visible:hover,
 .cm-md-col-drag-handle.cm-md-drag-grip-visible:hover {
-    color: var(--text-color);
-    background: color-mix(in srgb, var(--text-muted) 12%, transparent);
+    color: var(--color-text-primary);
+    background: color-mix(in srgb, var(--color-text-secondary) 12%, transparent);
 }
 
 .cm-md-table-drag-insertion-line {
@@ -957,7 +995,7 @@ body.preview-edit-mode .markdown-preview .cm-md-table-widget table.md-table td:e
     left: 0;
     right: 0;
     height: 2px;
-    background: var(--accent-color);
+    background: var(--color-action);
     pointer-events: none;
     z-index: 5;
     display: none;
@@ -1002,16 +1040,16 @@ body.preview-edit-mode .markdown-preview .cm-md-table-widget table.md-table td:e
 }
 
 .cm-md-table-widget.cm-md-table-armed {
-    outline: 2px solid var(--accent-color);
+    outline: 2px solid var(--color-action);
     outline-offset: 2px;
     border-radius: var(--surface-radius);
 }
 
 /* CM6 live-preview table widget: the single active/editable cell (tableWidget.ts) */
 .markdown-preview table.md-table .cm-md-table-cell-editing {
-    outline: 2px solid var(--accent-color);
+    outline: 2px solid var(--color-action);
     outline-offset: -2px;
-    background: var(--bg-color);
+    background: var(--color-surface-default);
     white-space: pre-wrap;
     word-wrap: break-word;
     overflow-wrap: break-word;
@@ -1022,8 +1060,8 @@ body.preview-edit-mode .markdown-preview .cm-md-table-widget table.md-table td:e
     position: fixed;
     z-index: 10020;
     min-width: 200px;
-    background: var(--glass-bg-strong);
-    border: 1px solid var(--border-color);
+    background: var(--color-surface-glass-strong);
+    border: 1px solid var(--color-border-default);
     border-radius: 10px;
     box-shadow: var(--shadow-lg);
     backdrop-filter: blur(12px) saturate(160%);
@@ -1036,31 +1074,69 @@ body.preview-edit-mode .markdown-preview .cm-md-table-widget table.md-table td:e
 }
 
 .cm-md-table-context-item {
-    display: block;
+    display: flex;
+    align-items: center;
+    gap: 8px;
     width: 100%;
     text-align: left;
     border: none;
     background: transparent;
-    color: var(--text-color);
+    color: var(--color-text-primary);
     border-radius: var(--surface-radius);
     padding: 7px 10px;
     font-size: 12px;
     cursor: pointer;
 }
 
+.cm-md-table-context-icon {
+    display: inline-flex;
+    flex-shrink: 0;
+    width: 14px;
+    height: 14px;
+    color: var(--color-text-secondary);
+}
+
+.cm-md-table-context-icon svg {
+    width: 14px;
+    height: 14px;
+}
+
+.cm-md-table-context-label {
+    flex: 1;
+    min-width: 0;
+}
+
 .cm-md-table-context-item:hover:not(:disabled) {
-    background: var(--row-hover-bg);
+    background: var(--color-interactive-row-hover);
+}
+
+.cm-md-table-context-item:hover:not(:disabled) .cm-md-table-context-icon {
+    color: var(--color-text-primary);
 }
 
 .cm-md-table-context-item:disabled {
-    color: var(--text-muted);
+    color: var(--color-text-secondary);
     cursor: not-allowed;
+}
+
+.cm-md-table-context-item:disabled .cm-md-table-context-icon {
+    color: inherit;
+}
+
+.cm-md-table-context-item[data-action="deleteRow"]:hover:not(:disabled),
+.cm-md-table-context-item[data-action="deleteColumn"]:hover:not(:disabled) {
+    color: var(--color-status-error);
+}
+
+.cm-md-table-context-item[data-action="deleteRow"]:hover:not(:disabled) .cm-md-table-context-icon,
+.cm-md-table-context-item[data-action="deleteColumn"]:hover:not(:disabled) .cm-md-table-context-icon {
+    color: var(--color-status-error);
 }
 
 .cm-md-table-context-separator {
     height: 1px;
     margin: 6px 4px;
-    background: var(--border-color);
+    background: var(--color-border-default);
     opacity: 0.7;
 }
 
@@ -1082,9 +1158,9 @@ body.preview-edit-mode .markdown-preview .table-hover-tools {
     gap: 6px;
     margin-top: 6px;
     padding: 6px;
-    border: 1px solid var(--border-color);
+    border: 1px solid var(--color-border-default);
     border-radius: var(--surface-radius);
-    background: var(--toolbar-bg, var(--panel-bg));
+    background: var(--color-surface-raised, var(--color-surface-panel));
     box-shadow: var(--shadow-sm);
     opacity: 0;
     transform: translateY(-3px);
@@ -1108,7 +1184,7 @@ body.preview-edit-mode .markdown-preview .table-tool-btn {
     height: 26px;
     border: 1px solid transparent;
     background: transparent;
-    color: var(--text-secondary);
+    color: var(--color-text-secondary);
     border-radius: var(--surface-radius);
     padding: 0 9px;
     font-size: 11px;
@@ -1119,13 +1195,13 @@ body.preview-edit-mode .markdown-preview .table-tool-btn {
 }
 
 body.preview-edit-mode .markdown-preview .table-tool-btn:hover {
-    background: var(--hover-bg);
-    border-color: var(--border-color);
-    color: var(--text-primary);
+    background: var(--color-interactive-hover);
+    border-color: var(--color-border-default);
+    color: var(--color-text-primary);
 }
 
 body.preview-edit-mode .markdown-preview .table-tool-btn:active {
-    background: var(--active-bg);
+    background: var(--color-interactive-active);
 }
 
 body.preview-edit-mode .markdown-preview .table-tool-btn[data-table-action="tableRemoveRow"],
@@ -1135,8 +1211,8 @@ body.preview-edit-mode .markdown-preview .table-tool-btn[data-table-action="tabl
 
 body.preview-edit-mode .markdown-preview .table-tool-btn[data-table-action="tableRemoveRow"]:hover,
 body.preview-edit-mode .markdown-preview .table-tool-btn[data-table-action="tableRemoveColumn"]:hover {
-    color: var(--error-color);
-    border-color: color-mix(in srgb, var(--error-color) 35%, var(--border-color));
+    color: var(--color-status-error);
+    border-color: color-mix(in srgb, var(--color-status-error) 35%, var(--color-border-default));
 }
 
 /* Images */
@@ -1151,21 +1227,21 @@ body.preview-edit-mode .markdown-preview .table-tool-btn[data-table-action="tabl
 .markdown-preview strong { font-weight: 600; }
 .markdown-preview em { font-style: italic; }
 .markdown-preview del { text-decoration: line-through; }
-.markdown-preview mark { background: var(--warning-bg); padding: 0.1em 0.2em; border-radius: 3px; }
+.markdown-preview mark { background: var(--color-status-warning-subtle); padding: 0.1em 0.2em; border-radius: 3px; }
 
 /* ===== Status Info ===== */
 .status-info {
     position: fixed;
     bottom: 12px;
     right: 16px;
-    background: var(--panel-bg);
+    background: var(--color-surface-panel);
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
-    border: 1px solid var(--border-color);
+    border: 1px solid var(--color-border-default);
     border-radius: var(--surface-radius);
     padding: 4px 10px;
     font-size: 11px;
-    color: var(--text-muted);
+    color: var(--color-text-secondary);
     z-index: 100;
 }
 
@@ -1179,7 +1255,7 @@ body.preview-edit-mode .markdown-preview .table-tool-btn[data-table-action="tabl
 
 /* ===== Toast Notification =====
    Uses the --toast-* tokens from theme.css (fixed dark surface + light text
-   regardless of the ambient theme, unlike --text-color/--overlay-bg or the
+   regardless of the ambient theme, unlike --color-text-primary/--color-surface-overlay or the
    relative --inverted-*) so it stays legible and consistent everywhere — one
    style for every toast variant. */
 .toast-notification {
@@ -1187,8 +1263,8 @@ body.preview-edit-mode .markdown-preview .table-tool-btn[data-table-action="tabl
     bottom: 28px;
     left: 50%;
     transform: translateX(-50%) translateY(8px) scale(0.9);
-    background-color: var(--toast-bg);
-    color: var(--toast-text);
+    background-color: var(--color-toast-bg);
+    color: var(--color-toast-text);
     padding: 9px 16px;
     border-radius: 12px;
     z-index: 2000;
@@ -1202,8 +1278,8 @@ body.preview-edit-mode .markdown-preview .table-tool-btn[data-table-action="tabl
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
     pointer-events: none;
-    box-shadow: var(--toast-shadow);
-    border: 1px solid var(--toast-border);
+    box-shadow: var(--shadow-toast);
+    border: 1px solid var(--color-toast-border);
 }
 
 .toast-notification.show {
@@ -1224,13 +1300,13 @@ body.preview-edit-mode .markdown-preview .table-tool-btn[data-table-action="tabl
 .toast-icon-wrapper svg {
     width: 20px;
     height: 20px;
-    stroke: var(--toast-icon);
+    stroke: var(--color-toast-icon);
 }
 
 .toast-text {
     font-size: 15px;
     font-weight: 500;
-    color: var(--toast-text);
+    color: var(--color-toast-text);
     white-space: nowrap;
 }
 
@@ -1239,7 +1315,7 @@ body.preview-edit-mode .markdown-preview .table-tool-btn[data-table-action="tabl
     background: none;
     border: none;
     border-radius: var(--surface-radius);
-    color: var(--toast-text);
+    color: var(--color-toast-text);
     font-size: 15px;
     font-weight: 600;
     padding: 3px 10px;
@@ -1248,7 +1324,7 @@ body.preview-edit-mode .markdown-preview .table-tool-btn[data-table-action="tabl
 }
 
 .toast-action:hover {
-    background: color-mix(in srgb, var(--toast-text) 10%, transparent);
+    background: color-mix(in srgb, var(--color-toast-text) 10%, transparent);
 }
 
 .toast-action.hidden {
@@ -1268,7 +1344,7 @@ body.preview-edit-mode .markdown-preview .table-tool-btn[data-table-action="tabl
     background: none;
     border: none;
     border-radius: var(--surface-radius);
-    color: color-mix(in srgb, var(--toast-text) 80%, transparent);
+    color: color-mix(in srgb, var(--color-toast-text) 80%, transparent);
     font-size: 18px;
     line-height: 1;
     width: 24px;
@@ -1282,18 +1358,18 @@ body.preview-edit-mode .markdown-preview .table-tool-btn[data-table-action="tabl
 }
 
 .toast-close:hover {
-    background: color-mix(in srgb, var(--toast-text) 16%, transparent);
-    color: var(--toast-text);
+    background: color-mix(in srgb, var(--color-toast-text) 16%, transparent);
+    color: var(--color-toast-text);
 }
 
 
 /* ===== Theme Tooltip (matches tableWebview.css) ===== */
 .theme-tooltip {
     position: fixed;
-    background: var(--tooltip-bg);
-    color: var(--tooltip-text);
-    border: 1px solid var(--border-color);
-    box-shadow: var(--tooltip-shadow);
+    background: var(--color-tooltip-bg);
+    color: var(--color-tooltip-text);
+    border: 1px solid var(--color-border-default);
+    box-shadow: var(--shadow-tooltip);
     padding: 8px 10px;
     border-radius: var(--surface-radius);
     display: inline-flex;
@@ -1315,7 +1391,7 @@ body.preview-edit-mode .markdown-preview .table-tool-btn[data-table-action="tabl
 }
 
 .theme-tooltip:focus {
-    outline: 2px solid var(--focus-ring);
+    outline: 2px solid var(--color-focus-ring);
 }
 
 .theme-tooltip .theme-tooltip-text {
@@ -1343,7 +1419,7 @@ body.preview-edit-mode .markdown-preview .table-tool-btn[data-table-action="tabl
 #content {
     /* Firefox */
     scrollbar-width: thin;
-    scrollbar-color: var(--md-scrollbar-thumb) var(--md-scrollbar-track);
+    scrollbar-color: var(--color-scrollbar-thumb) var(--color-scrollbar-track);
 }
 
 /* WebKit-based browsers (Chrome, Edge, Safari) */
@@ -1359,14 +1435,14 @@ body::-webkit-scrollbar-track,
 html::-webkit-scrollbar-track,
 #content::-webkit-scrollbar-track,
 .markdown-preview::-webkit-scrollbar-track {
-    background: var(--md-scrollbar-track);
+    background: var(--color-scrollbar-track);
 }
 
 body::-webkit-scrollbar-thumb,
 html::-webkit-scrollbar-thumb,
 #content::-webkit-scrollbar-thumb,
 .markdown-preview::-webkit-scrollbar-thumb {
-    background-color: var(--md-scrollbar-thumb);
+    background-color: var(--color-scrollbar-thumb);
     border: 3px solid transparent;
     background-clip: content-box;
     border-radius: 10px;
@@ -1376,7 +1452,7 @@ body::-webkit-scrollbar-thumb:hover,
 html::-webkit-scrollbar-thumb:hover,
 #content::-webkit-scrollbar-thumb:hover,
 .markdown-preview::-webkit-scrollbar-thumb:hover {
-    background-color: var(--md-scrollbar-thumb-hover);
+    background-color: var(--color-scrollbar-thumb-hover);
 }
 
 body::-webkit-scrollbar-button,
@@ -1399,8 +1475,8 @@ html::-webkit-scrollbar-corner,
     align-items: center;
     gap: 2px;
     padding: 4px 12px;
-    background: var(--toolbar-bg);
-    border-bottom: 1px solid var(--border-color);
+    background: var(--color-surface-raised);
+    border-bottom: 1px solid var(--color-border-default);
     overflow-x: auto;
     scrollbar-width: none;
     z-index: 19;
@@ -1428,7 +1504,7 @@ html::-webkit-scrollbar-corner,
     width: 1px;
     height: 20px;
     margin: 0 6px;
-    background: var(--border-color);
+    background: var(--color-border-default);
     opacity: 0.5;
 }
 
@@ -1442,18 +1518,19 @@ html::-webkit-scrollbar-corner,
     border: none;
     border-radius: 4px;
     background: transparent;
-    color: var(--text-secondary);
+    color: var(--color-toolbar-icon);
     cursor: pointer;
     transition: background 0.15s, color 0.15s;
 }
 
-.fmt-btn:hover {
-    background: var(--hover-bg);
-    color: var(--text-primary);
+.fmt-btn:hover,
+.fmt-btn:focus-visible {
+    background: var(--color-interactive-hover);
+    color: var(--color-text-primary);
 }
 
 .fmt-btn:active {
-    background: var(--active-bg);
+    background: var(--color-interactive-active);
     transform: scale(0.95);
 }
 
@@ -1474,7 +1551,7 @@ html::-webkit-scrollbar-corner,
 
 /* ===== Selection ===== */
 ::selection {
-    background: var(--selection-bg);
+    background: var(--color-selection-bg);
 }
 
 /* ===== Markdown Extensions ===== */
@@ -1497,10 +1574,10 @@ html::-webkit-scrollbar-corner,
 /* Footnotes */
 .markdown-preview .footnotes {
     margin-top: 32px;
-    border-top: 1px solid var(--border-color);
+    border-top: 1px solid var(--color-border-default);
     padding-top: 16px;
     font-size: 0.9em;
-    color: var(--text-muted);
+    color: var(--color-text-secondary);
 }
 
 .markdown-preview .footnotes-list {
@@ -1514,13 +1591,13 @@ html::-webkit-scrollbar-corner,
 .markdown-preview .footnote-ref {
     text-decoration: none;
     margin-left: 2px;
-    color: var(--accent-color);
+    color: var(--color-action);
 }
 
 .markdown-preview .footnote-backref {
     text-decoration: none;
     margin-left: 4px;
-    color: var(--accent-color);
+    color: var(--color-action);
 }
 
 /* Subscript / Superscript */
@@ -1535,15 +1612,15 @@ html::-webkit-scrollbar-corner,
 /* Inserted Text */
 .markdown-preview ins {
     text-decoration: none;
-    background-color: var(--success-bg);
-    border-bottom: 1px solid var(--success-color);
+    background-color: var(--color-status-success-subtle);
+    border-bottom: 1px solid var(--color-status-success);
     padding: 0 2px;
     border-radius: 2px;
 }
 
 /* Marked Text */
 .markdown-preview mark {
-    background-color: var(--warning-bg);
+    background-color: var(--color-status-warning-subtle);
     color: inherit;
     padding: 0 2px;
     border-radius: 2px;
@@ -1566,7 +1643,7 @@ html::-webkit-scrollbar-corner,
     left: 0;
     height: 2px;
     width: 0%;
-    background: var(--button-bg);
+    background: var(--color-action);
     z-index: 100001;
     transition: width 0.15s ease-out;
     border-radius: 0 2px 2px 0;
@@ -1575,7 +1652,7 @@ html::-webkit-scrollbar-corner,
 /* ===== Heading Anchor Links ===== */
 .markdown-preview .heading-anchor {
     opacity: 0;
-    color: var(--text-muted);
+    color: var(--color-text-secondary);
     text-decoration: none;
     font-weight: 400;
     margin-left: 8px;
@@ -1596,7 +1673,7 @@ html::-webkit-scrollbar-corner,
 
 .markdown-preview .heading-anchor:hover {
     opacity: 1 !important;
-    color: var(--accent-color);
+    color: var(--color-action);
 }
 
 /* ===== Enhanced Heading Scroll Margin ===== */
@@ -1686,35 +1763,35 @@ body.lightbox-open {
 
 /* ===== Active TOC Scroll Spy ===== */
 .toc-item a.active {
-    background: var(--accent-bg);
-    color: var(--accent-color) !important;
+    background: var(--color-action-subtle);
+    color: var(--color-action) !important;
     font-weight: 600;
-    border-left: 2px solid var(--accent-color);
+    border-left: 2px solid var(--color-action);
     margin-left: -2px;
     transition: all 0.2s ease;
 }
 
 /* Search Highlights */
 .search-highlight {
-    background: color-mix(in srgb, var(--warning-color) 35%, transparent);
+    background: color-mix(in srgb, var(--color-status-warning) 35%, transparent);
     border-radius: 2px;
     padding: 1px 0;
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--warning-color) 55%, transparent);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-status-warning) 55%, transparent);
 }
 
 .search-highlight.current {
-    background: color-mix(in srgb, var(--warning-color) 60%, transparent);
-    box-shadow: 0 0 0 2px var(--accent-color);
+    background: color-mix(in srgb, var(--color-status-warning) 60%, transparent);
+    box-shadow: 0 0 0 2px var(--color-action);
 }
 
 body.dark-mode .search-highlight {
-    background: color-mix(in srgb, var(--warning-color) 25%, transparent);
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--warning-color) 40%, transparent);
+    background: color-mix(in srgb, var(--color-status-warning) 25%, transparent);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-status-warning) 40%, transparent);
 }
 
 body.dark-mode .search-highlight.current {
-    background: color-mix(in srgb, var(--warning-color) 45%, transparent);
-    box-shadow: 0 0 0 2px var(--accent-color);
+    background: color-mix(in srgb, var(--color-status-warning) 45%, transparent);
+    box-shadow: 0 0 0 2px var(--color-action);
 }
 
 /* ===== Code Block Line Numbers ===== */
@@ -1737,8 +1814,8 @@ body.show-line-numbers .markdown-preview .code-line::before {
     padding-left: 5px;
     padding-right: 0px;
     text-align: right;
-    color: var(--text-faint);
-    border-right: 1px solid var(--border-color);
+    color: var(--color-text-tertiary);
+    border-right: 1px solid var(--color-border-default);
     user-select: none;
     font-size: 0.85em;
     font-variant-numeric: tabular-nums;
@@ -1754,7 +1831,7 @@ body:not(.show-line-numbers) .markdown-preview .code-line::before {
 }
 
 .markdown-preview table.md-table tr:hover td {
-    background: var(--row-hover-bg);
+    background: var(--color-interactive-row-hover);
 }
 
 .markdown-preview table.md-table th {

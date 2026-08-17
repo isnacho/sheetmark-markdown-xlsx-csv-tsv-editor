@@ -494,7 +494,8 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             display: 'inline-block',
             width: '6px',
             height: '6px',
-            marginRight: '4px',
+            marginLeft: '4px',
+            marginRight: '6px',
             borderRadius: '50%',
             backgroundColor: 'var(--color-text-primary)',
             verticalAlign: 'middle',
@@ -506,12 +507,15 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
         '.cm-md-ordered-marker': {
             color: 'var(--color-text-primary)',
             fontWeight: '600',
+            marginLeft: '4px',
+            marginRight: '6px',
         },
         '.cm-md-checkbox-bullet-hidden': {
             display: 'none',
         },
         '.cm-md-task-checkbox': {
-            marginRight: '8px',
+            marginLeft: '4px',
+            marginRight: '6px',
             verticalAlign: 'middle',
             cursor: 'pointer',
             accentColor: 'var(--color-action)',

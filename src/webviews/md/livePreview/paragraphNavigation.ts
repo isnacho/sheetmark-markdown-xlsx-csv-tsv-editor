@@ -1,13 +1,15 @@
-// Cmd/Ctrl+Arrow paragraph navigation for CM6 Preview Edit mode.
+// Shift+Option+Arrow paragraph selection for CM6 Preview Edit mode.
 //
 // Runtime: WEBVIEW (browser). Pure compute helpers are headlessly testable;
 // the keymap wires in livePreviewEditor.ts.
 //
-// CM6's defaultKeymap binds macOS Cmd+Arrow to cursorLineBoundaryLeft/Right,
-// which step through soft-wrap visual lines. VS Code (and user expectation for
-// block-style editing) uses line/paragraph boundaries instead — end of the
-// markdown Paragraph node, or the document line when no Paragraph wraps the
-// cursor (headings, etc.).
+// Horizontal Cmd+Arrow is intentionally NOT overridden here — CM6's
+// defaultKeymap already binds macOS Cmd+Arrow to cursorLineBoundaryLeft/Right
+// (and Shift variants), which matches Apple's HIG ("Command" = line-boundary
+// semantic unit). Option+Up/Down is also left alone: it's bound elsewhere
+// (formatCommands.ts) to move the current line up/down. This module only
+// adds Shift+Option+Up/Down, for "select to paragraph start/end" — the one
+// piece of the HIG matrix CM6 doesn't provide out of the box.
 
 import { EditorState, EditorSelection, Prec } from '@codemirror/state';
 import type { TransactionSpec } from '@codemirror/state';
@@ -33,6 +35,7 @@ export function computeParagraphBounds(state: EditorState, pos: number): Paragra
     return { from: line.from, to: line.to };
 }
 
+/** Extends the selection from its anchor to the enclosing paragraph's start/end. */
 export function computeParagraphBoundarySelection(
     state: EditorState,
     toStart: boolean,
@@ -40,26 +43,21 @@ export function computeParagraphBoundarySelection(
     const sel = state.selection.main;
     const { from, to } = computeParagraphBounds(state, sel.head);
     const target = toStart ? from : to;
-    const selection = sel.empty
-        ? EditorSelection.cursor(target, toStart ? 1 : -1)
-        : EditorSelection.range(sel.anchor, target);
     return {
-        selection,
+        selection: EditorSelection.range(sel.anchor, target),
         effects: EditorView.scrollIntoView(target),
     };
 }
 
-function runParagraphBoundary(view: EditorView, toStart: boolean): boolean {
+function runParagraphSelection(view: EditorView, toStart: boolean): boolean {
     view.dispatch(computeParagraphBoundarySelection(view.state, toStart));
     return true;
 }
 
-export const cursorParagraphStart = (view: EditorView) => runParagraphBoundary(view, true);
-export const cursorParagraphEnd = (view: EditorView) => runParagraphBoundary(view, false);
-export const selectParagraphStart = (view: EditorView) => runParagraphBoundary(view, true);
-export const selectParagraphEnd = (view: EditorView) => runParagraphBoundary(view, false);
+export const selectToParagraphStart = (view: EditorView) => runParagraphSelection(view, true);
+export const selectToParagraphEnd = (view: EditorView) => runParagraphSelection(view, false);
 
-export const paragraphNavigationKeymap = Prec.high(keymap.of([
-    { mac: 'Cmd-ArrowLeft', run: cursorParagraphStart, shift: selectParagraphStart, preventDefault: true },
-    { mac: 'Cmd-ArrowRight', run: cursorParagraphEnd, shift: selectParagraphEnd, preventDefault: true },
+export const paragraphSelectionKeymap = Prec.high(keymap.of([
+    { key: 'Alt-Shift-ArrowUp', run: selectToParagraphStart, preventDefault: true },
+    { key: 'Alt-Shift-ArrowDown', run: selectToParagraphEnd, preventDefault: true },
 ]));

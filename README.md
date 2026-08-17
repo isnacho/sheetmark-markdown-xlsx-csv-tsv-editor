@@ -1,6 +1,6 @@
 # Sheetmark for VS Code
 
-**Edit Markdown and spreadsheets without leaving VS Code.** Sheetmark gives `.md`, `.xlsx`, `.csv`, and `.tsv` files a polished, visual editing experience—so your specs, notes, data, and code can live in one workspace.
+**Free and open source, forever.** Sheetmark gives `.md`, `.xlsx`, `.csv`, and `.tsv` files a polished, visual editing experience—so your specs, notes, data, and code can live in one workspace, without leaving VS Code.
 
 [Install from the VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=iggyinc.sheetmark) · [`code --install-extension iggyinc.sheetmark`](#install)
 

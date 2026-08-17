@@ -40,7 +40,8 @@ import {
 import type { Cm6Match } from './livePreviewSearch';
 import { detectInteractionAtPos } from './livePreviewInteractions';
 import type { Cm6Interaction } from './livePreviewInteractions';
-import { livePreviewRevealPlugin, orderedListAtomicRanges } from './revealDecorations';
+import { livePreviewRevealPlugin } from './revealDecorations';
+import { listMarkerBoundaryExtensions } from './listMarkerEditing';
 import { codeStylingPlugin } from './codeStylingPlugin';
 import { codeBlockNavigationKeymap } from './codeBlockBoundaryEditing';
 import { contentClickHandlers } from './contentClickPositioning';
@@ -73,8 +74,8 @@ import {
     seedCalloutDefaultType,
     setCalloutDefaultTypeEffect,
 } from './calloutDefaultType';
-import { runFormatCommand, livePreviewFormatKeymap, computePasteLink } from './formatCommands';
-import { paragraphNavigationKeymap } from './paragraphNavigation';
+import { runFormatCommand, livePreviewFormatKeymap, livePreviewTabKeymap, computePasteLink } from './formatCommands';
+import { paragraphSelectionKeymap } from './paragraphNavigation';
 import { applyTableCellInlineFormatAction, blurActiveTableEditingCell } from './tableWidget';
 import { spellcheckExtensions, loadSpellDictionary, teardownSpellcheck } from './spellcheck';
 
@@ -237,8 +238,9 @@ export function mountLivePreview(opts: LivePreviewMountOptions): EditorView {
             gutterCompartment.of(showLineNumbers ? [buildLineNumbersGutter()] : []),
             readOnlyCompartment.of([]),
             selectAllKeymap,
+            livePreviewTabKeymap,
             keymap.of(livePreviewFormatKeymap),
-            paragraphNavigationKeymap,
+            paragraphSelectionKeymap,
             keymap.of([...defaultKeymap, ...historyKeymap]),
             cm6Theme(),
             livePreviewSearchField(),
@@ -257,7 +259,7 @@ export function mountLivePreview(opts: LivePreviewMountOptions): EditorView {
             calloutDefaultTypeField,
             calloutWidgetField,
             imageWidgetField,
-            revealCompartment.of(reveal ? [livePreviewRevealPlugin, tableWidgetField, ...tableBoundaryExtensions, mermaidWidgetField, mermaidAtomicRanges, orderedListAtomicRanges] : []),
+            revealCompartment.of(reveal ? [livePreviewRevealPlugin, tableWidgetField, ...tableBoundaryExtensions, mermaidWidgetField, mermaidAtomicRanges, ...listMarkerBoundaryExtensions] : []),
             codeStylingPlugin,
             codeBlockNavigationKeymap,
             contentClickHandlers,
@@ -362,7 +364,7 @@ export function setLivePreviewLineWrapping(on: boolean): void {
 /** Toggle reveal-on-cursor decorations without rebuilding the view. */
 export function setLivePreviewReveal(on: boolean): void {
     view?.dispatch({
-        effects: revealCompartment.reconfigure(on ? [livePreviewRevealPlugin, tableWidgetField, ...tableBoundaryExtensions, mermaidWidgetField, mermaidAtomicRanges, orderedListAtomicRanges] : []),
+        effects: revealCompartment.reconfigure(on ? [livePreviewRevealPlugin, tableWidgetField, ...tableBoundaryExtensions, mermaidWidgetField, mermaidAtomicRanges, ...listMarkerBoundaryExtensions] : []),
     });
 }
 

@@ -19,9 +19,9 @@
 // reimplementing it, same reasoning the plan already applied to the slash
 // menu (`@codemirror/autocomplete` over a hand-rolled popup).
 
-import { EditorState, EditorSelection, ChangeSet } from '@codemirror/state';
+import { EditorState, EditorSelection, ChangeSet, Prec } from '@codemirror/state';
 import type { TransactionSpec } from '@codemirror/state';
-import { EditorView } from '@codemirror/view';
+import { EditorView, keymap } from '@codemirror/view';
 import type { KeyBinding } from '@codemirror/view';
 import { syntaxTree } from '@codemirror/language';
 import type { SyntaxNode } from '@lezer/common';
@@ -31,6 +31,23 @@ function safeSlice(state: EditorState, from: number, to: number): string {
     const f = Math.max(0, Math.min(from, len));
     const t = Math.max(f, Math.min(to, len));
     return state.sliceDoc(f, t);
+}
+
+// Mirrored from listSetextAmbiguity.ts — kept local so formatCommands.test.mts
+// can load this file under Node's ESM resolver (no extensionless relative imports).
+function setextListMarkerLineAt(state: EditorState, pos: number): boolean {
+    let found = false;
+    syntaxTree(state).iterate({
+        enter(node) {
+            if (node.name !== 'SetextHeading1' && node.name !== 'SetextHeading2') { return; }
+            const underline = state.doc.lineAt(node.to - 1);
+            const text = state.sliceDoc(underline.from, underline.to);
+            if (/^={3,}\s*$/.test(text) || /^-{3,}\s*$/.test(text)) { return; }
+            if (!/^[-*+]\s*$/.test(text) && !/^--\s?$/.test(text)) { return; }
+            if (pos >= underline.from && pos <= underline.to && /^[-*+]/.test(text)) { found = true; }
+        },
+    });
+    return found;
 }
 
 function dispatchSpec(view: EditorView, spec: TransactionSpec | null): boolean {
@@ -568,7 +585,13 @@ export function computeTabIndent(state: EditorState, shiftKey: boolean): Transac
         if (isMarkerLine) {
             if (!shiftKey) {
                 prevSibling = previousSiblingListItem(item);
-                if (!prevSibling) { return null; } // nothing to nest under
+                if (!prevSibling) {
+                    // No sibling to nest under — top-level only/first items get a
+                    // safe flat indent at line start (own marker width, not 4
+                    // spaces at cursor). Nested only-children stay a no-op.
+                    if (listItemDepth(state, from) > 1) { return null; }
+                    return computeSingleLineIndentBy(state, line, false, markerPrefixWidth(state, item), from);
+                }
                 step = markerPrefixWidth(state, prevSibling);
             } else {
                 const parent = parentListItem(item);
@@ -605,6 +628,14 @@ export function computeTabIndent(state: EditorState, shiftKey: boolean): Transac
             }
         }
         return spec;
+    }
+
+    // Setext-vs-bullet ambiguity: `paragraph\n- ` is parsed as Setext, not a list,
+    // so `enclosingListItem` returns null even though the reveal layer shows a
+    // bullet. Fall through to flat 4-space Tab here and the marker line gets
+    // mangled; treat it as a lone list marker (no sibling to nest under) instead.
+    if (setextListMarkerLineAt(state, from)) {
+        return null;
     }
 
     const beforeCursor = state.sliceDoc(line.from, from);
@@ -876,9 +907,12 @@ export function runFormatCommand(view: EditorView, action: string): boolean {
 // livePreviewEditor.ts) so these win over any colliding default binding
 // (e.g. defaultKeymap's own "Mod-i" -> selectParentSyntax).
 
+export const livePreviewTabKeymap = Prec.highest(keymap.of([
+    { key: 'Tab', run: (view) => dispatchSpec(view, computeTabIndent(view.state, false)) },
+    { key: 'Shift-Tab', run: (view) => dispatchSpec(view, computeTabIndent(view.state, true)) },
+]));
+
 export const livePreviewFormatKeymap: KeyBinding[] = [
-    { key: 'Tab', run: (view) => { dispatchSpec(view, computeTabIndent(view.state, false)); return true; } },
-    { key: 'Shift-Tab', run: (view) => { dispatchSpec(view, computeTabIndent(view.state, true)); return true; } },
     { key: 'Mod-b', run: (view) => runFormatCommand(view, 'bold') },
     { key: 'Mod-i', run: (view) => runFormatCommand(view, 'italic') },
     { key: 'Mod-k', run: (view) => runFormatCommand(view, 'link') },

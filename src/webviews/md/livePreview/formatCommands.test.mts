@@ -292,13 +292,13 @@ test('tabIndent: list-aware — Shift-Tab on an already-flush list line is a tru
     assert.equal(computeTabIndent(state, true), null);
 });
 
-test('tabIndent: list-aware — Tab is disabled (no-op) when there is no preceding sibling to nest under', () => {
-    // Regression: the very first/only item in a list has nothing to nest
-    // under — naively adding 4 spaces turns it into an indented CodeBlock,
-    // silently destroying the list item. Must be a true no-op instead.
+test('tabIndent: list-aware — Tab on the only top-level item indents at line start by marker width (not 4 spaces at cursor)', () => {
     const doc = '- one two\n';
-    const state = stateFor(doc, doc.indexOf('wo'));
-    assert.equal(computeTabIndent(state, false), null);
+    const pos = doc.indexOf('wo');
+    const state = stateFor(doc, pos);
+    const { doc: newDoc, sel } = apply(state, computeTabIndent(state, false));
+    assert.equal(newDoc, '  - one two\n');
+    assert.equal(sel.from, pos + 2);
 });
 
 test('tabIndent: list-aware — an ordered-list item nests correctly under its preceding sibling by exactly the marker width (3 for "1. "), and its own digit resets to 1 since it becomes the first child of a brand-new nested list', () => {
@@ -347,11 +347,19 @@ test('tabIndent: list-aware — a wrapped continuation line indents too, by its 
     assert.equal(sel.from, pos + 2);
 });
 
-test('tabIndent: non-list line is unaffected by the list-aware path', () => {
-    const state = stateFor('plain text', 5);
-    const { doc, sel } = apply(state, computeTabIndent(state, false));
-    assert.equal(doc, 'plain     text');
-    assert.equal(sel.from, 9);
+test('tabIndent: setext-as-list marker line ("para\\n- ") is a no-op, not a flat 4-space insert', () => {
+    const doc = 'para\n- ';
+    const pos = doc.length - 1;
+    const state = stateFor(doc, pos);
+    assert.equal(computeTabIndent(state, false), null);
+});
+
+test('tabIndent: list after a paragraph still nests the second item normally', () => {
+    const doc = 'para\n- one\n- two\n';
+    const pos = doc.indexOf('two');
+    const state = stateFor(doc, pos);
+    const { doc: newDoc } = apply(state, computeTabIndent(state, false));
+    assert.equal(newDoc, 'para\n- one\n  - two\n');
 });
 
 test('multiLineListAwareIndent: selecting two sibling items nests both under the preceding item, together', () => {

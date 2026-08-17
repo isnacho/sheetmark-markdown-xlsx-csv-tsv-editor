@@ -6,6 +6,7 @@
 
 - Code-style text (inline code, fenced blocks, and other mono surfaces) now uses bundled **JetBrains Mono Regular** for consistent rendering across macOS and Windows, with centralized `--font-mono-size` (13.5px) and `--font-mono-weight` tokens.
 - Markdown: the Preview Edit line-number gutter now highlights whichever row your mouse is hovering, alongside the existing active-line (cursor) indicator.
+- Markdown: keyboard selection now follows standard Mac text-editing conventions — Cmd+Left/Right jumps to the line boundary, and Shift+Option+Up/Down selects to the start/end of the current paragraph.
 
 ### Bug fixes
 

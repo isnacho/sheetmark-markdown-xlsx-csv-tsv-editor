@@ -28,7 +28,14 @@ function buildMdWebviewSettings() {
         statsShowChars: cfg.get('md.statsShowChars', true),
         statsShowReadingTime: cfg.get('md.statsShowReadingTime', true),
         showCursorPosition: cfg.get('md.showCursorPosition', true),
+        autoShowDiskDiff: cfg.get('md.autoShowDiskDiff', false),
+        diffLayout: normalizeDiffLayout(cfg.get('md.diffLayout', 'inline')),
     };
+}
+
+/** Only 'sideBySide' and 'inline' are valid; anything else falls back to inline. */
+function normalizeDiffLayout(value: unknown): 'inline' | 'sideBySide' {
+    return value === 'sideBySide' ? 'sideBySide' : 'inline';
 }
 
 export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
@@ -312,6 +319,14 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                             }
                             if (typeof s.showCursorPosition === 'boolean') {
                                 await cfg.update('md.showCursorPosition', !!s.showCursorPosition, vscode.ConfigurationTarget.Global);
+                            }
+                            if (typeof s.autoShowDiskDiff === 'boolean') {
+                                await cfg.update('md.autoShowDiskDiff', !!s.autoShowDiskDiff, vscode.ConfigurationTarget.Global);
+                            }
+                            // Only non-boolean setting here — validate rather than coerce, so a
+                            // stale webview can't write a bogus enum value into user config.
+                            if (s.diffLayout === 'inline' || s.diffLayout === 'sideBySide') {
+                                await cfg.update('md.diffLayout', s.diffLayout, vscode.ConfigurationTarget.Global);
                             }
                         } catch (err) {
                             console.error('Failed to persist settings:', err);
@@ -840,7 +855,10 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                 </div>
             </div>
 
-            <div class="status-info" id="statusInfo"></div>
+            <div class="status-bar" id="statusBar">
+                <div class="diff-badge hidden" id="diffBadge" aria-live="polite"></div>
+                <div class="status-info" id="statusInfo"></div>
+            </div>
 
             <div id="lightboxOverlay" class="lightbox-overlay">
                 <button id="lightboxClose" class="lightbox-close">&times;</button>

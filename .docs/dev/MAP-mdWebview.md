@@ -7,6 +7,7 @@ Markdown UI spans two layers in the **webview (browser)** runtime:
 | [mdWebview.ts](../../src/webviews/md/mdWebview.ts) | ~1,805 | Shell: toolbar, TOC, settings, disk-sync toasts, message handler, bootstrap |
 | [livePreview/](../../src/webviews/md/livePreview/) | ~6,900 | CodeMirror 6 live-preview engine + widgets (tables, callouts, mermaid, …) |
 | [frontmatter.ts](../../src/webviews/md/frontmatter.ts) | ~289 | YAML frontmatter parse/extract (TOC + CM6 widget seed) |
+| [diffStats.ts](../../src/webviews/md/diffStats.ts) | ~92 | Pure line-diff counts for the disk-vs-editor badge and toast (no CM imports, unit-tested) |
 | [frontmatterCardUi.ts](../../src/webviews/md/frontmatterCardUi.ts) | ~178 | Frontmatter card DOM helpers |
 
 Bundled together into `dist/md/mdWebview.js`. Too large to read whole — jump with `Read(offset, limit)` using the indexes below.
@@ -58,6 +59,7 @@ mount/unmount, read/write doc, scroll metrics, search, format dispatch.
 | tableWidget.ts | ~1,753 | Table widget DOM, resize/drag, context menu, inline cell editing — product rules in [MARKDOWN-TABLES.md](../../product/MARKDOWN-TABLES.md) |
 | tableBoundaryEditing.ts | ~560 | Table arrow/backspace boundaries, cell grid math |
 | revealDecorations.ts | ~674 | Live-preview “reveal” syntax decorations |
+| diffView.ts | ~60 | `@codemirror/merge` unified diff overlay (disk vs editor) + chunk accept/reject/navigate |
 | codeStyling.ts + codeStylingPlugin.ts | ~104 | Fenced-code presentation |
 | mermaidWidget.ts | ~232 | Mermaid fence widget + diagram/code toggle |
 | mermaidPreviewMode.ts | ~21 | Mermaid mode state field |

@@ -1,7 +1,7 @@
 ---
 title: Diff view — disk vs editor
 slug: diff-view-disk-vs-editor
-status: to-implement
+status: to-qa
 created: 2026-08-20
 updated: 2026-08-20
 ---
@@ -72,7 +72,7 @@ own merge addon already provides chunked inline/side-by-side views with accept-r
 2. **Persisted setting** (`xlsxViewer.md.*`, default **off**) exposed in the settings
    menu panel: decides whether the overlay comes up automatically when an external
    change is detected.
-3. **Toast action "See changes"** on the external-change notification. In Preview Edit it
+3. **Toast action "Review changes"** on the external-change notification. In Preview Edit it
    turns the overlay on directly. In read mode — where the overlay cannot render — it
    switches into Preview Edit with the overlay on.
 
@@ -94,9 +94,9 @@ All three drive the same single "diff visible" state; the toggle reflects it.
 ### Copy
 
 - Toast (external change, Preview Edit): existing "File changed on disk" text, plus a
-  **See changes** action next to the existing Reload action.
+  **Review changes** action next to the renamed **Load disk changes** action.
 - Toast (external change, read mode): keep today's "Reloaded from disk", extended with
-  the change count and a **See changes** action.
+  the change count and a **Review changes** action.
 - No-baseline toggle tooltip: something to the effect of "No external changes to compare".
 - Diff-active indicator: change count badge; no modal, no blocking state.
 
@@ -139,7 +139,7 @@ Approved 2026-08-20. Full plan file: `~/.claude/plans/recursive-nibbling-quokka.
 
 ### Decisions taken with the user
 
-- **"See changes" = reload + diff.** Disk content is applied to the buffer and diffed against
+- **"Review changes" = reload + diff.** Disk content is applied to the buffer and diffed against
   the retained baseline, so external insertions read as additions. Only direction in which
   accept/reject is meaningful.
 - **Inline (unified) only this pass.** Side-by-side needs a second `EditorView` while
@@ -174,7 +174,7 @@ Approved 2026-08-20. Full plan file: `~/.claude/plans/recursive-nibbling-quokka.
    `buildMdWebviewSettings()` / the `updateSettings` writer (needs a validated string branch
    — it is all-boolean today) / `applySettings` / `SettingsManager`; `showToast`
    (`:810-853`) widened from one action to an array so the disk-change toast can offer
-   **Reload** and **See changes**, the latter going through the existing dirty/discard
+   **Load disk changes** and **Review changes**, the latter going through the existing dirty/discard
    confirm (`:1562`).
 6. **Accept/reject, badge, nav** — merge's own chunk commands mutate the CM6 doc, so changes
    flow through `onDocChanged` (`:447-456`) into `currentContent` and the normal dirty/save
@@ -214,7 +214,102 @@ real verification.
 
 ## Implementation Log
 
-_Not started._
+Implemented 2026-08-20 (inline layout only, per the Plan decision).
+
+### Files changed
+
+| File | Change |
+|---|---|
+| `package.json` | `@codemirror/merge` ^6.12.2; config keys `md.autoShowDiskDiff`, `md.diffLayout` |
+| `src/webviews/md/diffStats.ts` | **new** — pure line-diff counts + `formatDiffLineStats` |
+| `src/webviews/md/diffStats.test.mts` | **new** — 14 unit tests |
+| `src/webviews/md/livePreview/diffView.ts` | **new** — `unifiedMergeView` wrapper, chunk accept/reject/navigate |
+| `src/webviews/md/livePreview/livePreviewEditor.ts` | `diffCompartment` + `setLivePreviewDiff` / `isLivePreviewDiffActive` / `getLivePreviewDiffChunkCount` / next-prev / accept-reject |
+| `src/webviews/md/mdWebview.ts` | baseline lifecycle, `showToast` multi-action, diff chrome, toolbar buttons, F7 nav, settings row |
+| `src/mdEditorProvider.ts` | settings read/write (+ `normalizeDiffLayout`), `#statusBar` / `#diffBadge` markup |
+| `src/webviews/shared/icons.ts` | `Diff`, `DiffNext`, `DiffPrev` |
+| `resources/md/mdWebview.css` | merge-view theming, badge, status-bar wrapper, two-action toast |
+| `.docs/dev/MESSAGE-PROTOCOL.md`, `.docs/dev/MAP-mdWebview.md` | docs |
+
+### Deviations from the plan
+
+1. **Split into two modules.** The plan put the stats helper inside
+   `livePreview/diffView.ts`; it now lives in `src/webviews/md/diffStats.ts` with zero
+   CodeMirror imports. Importing `@codemirror/view` into a `.test.mts` risks DOM-at-import
+   failures under `node --test`, and `markdownStats.ts` already sets the pure-module
+   precedent. Test file is therefore `diffStats.test.mts`, not `diffView.test.mts`.
+2. **No `diffLayout` UI control.** The setting exists in `package.json` and both settings
+   payloads, and the host validates it, but nothing in the panel switches it and only
+   `inline` is honored — side-by-side is a separate idea. Its `enumDescriptions` says so.
+3. **Badge needed a layout change.** `updateStatusInfo` bails out when `showStats` is off,
+   so the badge got its own element inside a new `#statusBar` flex row; `.status-info` gave
+   up its own `position: fixed` to that wrapper. Badge now survives stats being disabled.
+4. **Auto-show is dirty-guarded.** `autoShowDiskDiff` applies the disk content and opens the
+   diff immediately only when there are no unsaved local edits; with a dirty buffer it falls
+   back to the toast so nothing is discarded without a prompt. Not spelled out in the plan.
+5. **`showToast` widened to an action array** (was a single action). Added a CSS rule so the
+   close-button spacing still tightens correctly when only one slot is filled.
+6. **Diff retires on save.** `hideDiskDiff(true)` runs on a successful save, clearing the
+   baseline — the saved document is the new reference point. Note the interaction with
+   autosave: with `md.autoSave` on, typing after an external change clears the comparison.
+7. **Version preview retires the diff** (`setVersionPreviewMode`), and the diff toggle is
+   hidden/disabled during it, so the two content-swapping systems never overlap.
+8. **Toast labels are `Load disk changes` / `Review changes`** (the plain action was `Reload`
+   before this feature). Both actions load the incoming disk content — reviewing requires it
+   in the buffer — so the labels differentiate on the verb, *load* vs *review*, rather than
+   implying one applies and one only looks. The `md.autoShowDiskDiff` description and the
+   settings-panel tooltip use the same wording.
+
+### Post-implementation fixes (same session)
+
+- **Accept-all button** (`diffAcceptAllButton`) resolves every remaining chunk, stopping if a
+  pass fails to shrink the set so it cannot spin.
+- **Bug this exposed:** accepting a chunk produces *no* document change — only an
+  `updateOriginalDoc` effect — so the badge refresh and auto-retire, which hung off
+  `onDocChanged`, never ran for accepts (rejects edit text and did work). Added the
+  `onDiffChunkResolved` mount hook driven by `isDiffChunkResolution`.
+- **Toast overflowed the pane (QA finding).** `.toast-notification` is centered with
+  `left: 50%; translateX(-50%)` and had no `max-width`, while `.toast-text` was `nowrap`.
+  Adding the change count plus two action labels pushed the pill wider than a narrow editor
+  pane, so both ends were clipped — and the leading action button could sit at negative x,
+  visible but unclickable. That single bug explains both reported symptoms ("toast cuts
+  content" and "Load disk changes does not work"). Fixed with
+  `max-width: min(92vw, 620px)`, `flex-wrap: wrap`, and a wrapping `.toast-text`.
+- **No silent dead-end on reload.** If the queued disk content was already consumed (second
+  watcher event, or the review path applying it first), the action now falls back to
+  `requestReloadFromDisk()` instead of returning silently.
+- **Chunk button contrast:** Accept/Reject labels now render white
+  (`--color-text-on-action`) on solid success/error fills at
+  `.cm-deletedChunk .cm-chunkButtons button[name=...]` specificity, which wins regardless of
+  stylesheet injection order. Note the first root cause proposed for the reported invisible
+  text was wrong — `style-mod` inserts its `<style>` at `head.firstChild`, so this stylesheet
+  already won specificity ties; the fix removes the failure mode rather than confirming it,
+  and whether this was the reported symptom is still unverified in QA.
+
+### Bug found and fixed while testing
+
+`diffLineStats` initially treated an empty document as one empty line (`''.split('\n')`
+returns `['']`), reporting a phantom removal on the first write into an empty file. Empty
+input is now zero lines, matching what git reports.
+
+### Verification
+
+- `npm run compile` — clean: 0 type errors, 0 lint errors, 0 warnings.
+- `npm run test:unit` — 225 pass, including all 14 new `diffStats` tests.
+- 3 pre-existing failures remain (`slashMenu`, `revealDecorations`, `tableWidget`): those
+  files fail to *load*, not assert, because Node 25's `--test` strip-only mode rejects TS
+  parameter properties (`slashMenu.ts:137`, `calloutWidget.ts:69`). Neither line is touched
+  by this work and both fail on `HEAD` too. Worth its own fix (a real TS loader, or
+  converting those two constructors to explicit field assignment).
+- Confirmed the merge extension actually reached `dist/md/mdWebview.js` (bundled, not
+  tree-shaken away) rather than trusting a clean compile.
+
+### Not yet verified — the main QA risk
+
+The reveal/widget precedence question from the plan is **untested**: nobody has yet looked at
+the merge decorations rendering over tables, mermaid fences, callouts and list markers. The
+documented fallback (reconfigure `revealCompartment` off while the diff is on) has not been
+needed or implemented. This needs eyes in the Extension Development Host.
 
 ## QA
 

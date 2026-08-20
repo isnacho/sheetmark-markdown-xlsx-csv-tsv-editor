@@ -84,7 +84,7 @@ Provider: [mdEditorProvider.ts](../../src/mdEditorProvider.ts)
 |---|---|---|---|
 | `webviewReady` | — | :1805 | :157 |
 | `saveMarkdown` | `text`, `force` (bypass host disk-conflict check after explicit overwrite confirm), `isAutosave` | :616 | :261 |
-| `updateSettings` | `settings` (includes `autoSave`, Document Stats toggles, current-line toggle) | :1119 | :221 |
+| `updateSettings` | `settings` (includes `autoSave`, Document Stats toggles, current-line toggle, `autoShowDiskDiff`, `diffLayout`) | :1119 | :221 |
 | `requestFreshData` | — | :724 | :247 |
 | `resolveImageUris` | `sources` | :197, :202, :502 | :191 |
 | `openExternal` | `url` | :483 | :448 |
@@ -106,8 +106,8 @@ Provider: [mdEditorProvider.ts](../../src/mdEditorProvider.ts)
 | command | Payload | Sender (provider) | Handler (webview) |
 |---|---|---|---|
 | `initMarkdown` | `content` (not `text`), `fileName`, `documentUri`, `documentDirUri`, `workspaceFolderUri`, `tableColumnWidths`, `frontmatterPanelCollapsed`, `mermaidPreviewMode`, `calloutDefaultType` | `buildInitMarkdownPayload` :134, sent e.g. :165 | :1284 |
-| `initSettings` | `settings` (includes `autoSave`, live-preview flags, `isDefaultEditor`, Document Stats toggles, current-line toggle) | :178 | :1392 |
-| `settingsUpdated` | `settings` (includes `isDefaultEditor`, Document Stats toggles, current-line toggle) | config listener | :1400 |
+| `initSettings` | `settings` (includes `autoSave`, live-preview flags, `isDefaultEditor`, Document Stats toggles, current-line toggle, `autoShowDiskDiff`, `diffLayout`) | :178 | :1392 |
+| `settingsUpdated` | `settings` (includes `isDefaultEditor`, Document Stats toggles, current-line toggle, `autoShowDiskDiff`, `diffLayout`) | config listener | :1400 |
 | `saveResult` | `ok`, `isAutosave`, `error` (on failure) | :283, :285 | :1404 |
 | `saveConflict` | — | `saveMarkdown` handler fresh-read mismatch :273 | :1435 |
 | `restoreConflict` | `versionId` | `restoreVersion` handler fresh-read mismatch | :1457 |
@@ -140,6 +140,11 @@ Provider: [mdEditorProvider.ts](../../src/mdEditorProvider.ts)
   webview edits flow back via `updateSettings`. Shapes are defined in
   [settingsManager.ts](../../src/webviews/shared/settingsManager.ts) and, for the spreadsheet,
   [spreadsheetSettingsComponent.ts](../../src/webviews/spreadsheet/components/spreadsheetSettingsComponent.ts).
+- **Disk-vs-editor diff adds no new commands.** The overlay is entirely webview-side: the
+  baseline is `currentContent` captured in the existing `diskChangedExternally` handler and the
+  new content already arrives in that message's `content` field. Only the settings payloads gained
+  fields (`autoShowDiskDiff`, `diffLayout`). `diffLayout` is the one non-boolean setting, so the
+  host's `updateSettings` writer validates it against `'inline' | 'sideBySide'` instead of coercing.
 - **External file watching.** Both providers use
   [fileExternalChangeWatcher.ts](../../src/shared/fileExternalChangeWatcher.ts) (VS Code watcher +
   `fs.watch` fallback, debounced delete, `onDidRenameFiles` for moves). URI-keyed extension state

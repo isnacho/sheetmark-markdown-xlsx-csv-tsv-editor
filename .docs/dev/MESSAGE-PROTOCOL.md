@@ -84,7 +84,7 @@ Provider: [mdEditorProvider.ts](../../src/mdEditorProvider.ts)
 |---|---|---|---|
 | `webviewReady` | — | :1805 | :157 |
 | `saveMarkdown` | `text`, `force` (bypass host disk-conflict check after explicit overwrite confirm), `isAutosave` | :616 | :261 |
-| `updateSettings` | `settings` (includes `autoSave`) | :1119 | :221 |
+| `updateSettings` | `settings` (includes `autoSave`, Document Stats toggles, current-line toggle) | :1119 | :221 |
 | `requestFreshData` | — | :724 | :247 |
 | `resolveImageUris` | `sources` | :197, :202, :502 | :191 |
 | `openExternal` | `url` | :483 | :448 |
@@ -106,8 +106,8 @@ Provider: [mdEditorProvider.ts](../../src/mdEditorProvider.ts)
 | command | Payload | Sender (provider) | Handler (webview) |
 |---|---|---|---|
 | `initMarkdown` | `content` (not `text`), `fileName`, `documentUri`, `documentDirUri`, `workspaceFolderUri`, `tableColumnWidths`, `frontmatterPanelCollapsed`, `mermaidPreviewMode`, `calloutDefaultType` | `buildInitMarkdownPayload` :134, sent e.g. :165 | :1284 |
-| `initSettings` | `settings` (includes `autoSave`, live-preview flags, `isDefaultEditor`) | :178 | :1392 |
-| `settingsUpdated` | `settings` (includes `isDefaultEditor`) | config listener | :1400 |
+| `initSettings` | `settings` (includes `autoSave`, live-preview flags, `isDefaultEditor`, Document Stats toggles, current-line toggle) | :178 | :1392 |
+| `settingsUpdated` | `settings` (includes `isDefaultEditor`, Document Stats toggles, current-line toggle) | config listener | :1400 |
 | `saveResult` | `ok`, `isAutosave`, `error` (on failure) | :283, :285 | :1404 |
 | `saveConflict` | — | `saveMarkdown` handler fresh-read mismatch :273 | :1435 |
 | `restoreConflict` | `versionId` | `restoreVersion` handler fresh-read mismatch | :1457 |

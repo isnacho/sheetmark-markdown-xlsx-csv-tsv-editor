@@ -5,3 +5,7 @@ out/
 .vscode-test/
 .DS_Store
 *.log
+
+# Local working clone of nachosdesign/mii-ai (not part of this extension)
+.docs/mii-ai/
+.agents/skills/mii-idea-lab

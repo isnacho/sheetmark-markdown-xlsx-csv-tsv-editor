@@ -277,6 +277,46 @@ test('tabIndent: list-aware — mid-line Tab nests the item under its preceding 
     assert.equal(sel.from, pos + 2);
 });
 
+test('tabIndent: list-aware — a single-line word selection on a list item indents the whole line, not 4 spaces at the selection', () => {
+    const doc = '- one\n- two three\n';
+    const from = doc.indexOf('two');
+    const to = from + 3;
+    const state = stateFor(doc, from, to);
+    const { doc: newDoc, sel } = apply(state, computeTabIndent(state, false));
+    assert.equal(newDoc, '- one\n  - two three\n');
+    assert.deepEqual([sel.from, sel.to], [from + 2, to + 2]);
+});
+
+test('tabIndent: list-aware — single-line selection on checkbox and ordered items nest the whole line', () => {
+    const checkboxDoc = '- [ ] one\n- [ ] two\n';
+    const cbFrom = checkboxDoc.indexOf('two');
+    const cbState = stateFor(checkboxDoc, cbFrom, cbFrom + 3);
+    const { doc: cbNext } = apply(cbState, computeTabIndent(cbState, false));
+    assert.equal(cbNext, '- [ ] one\n  - [ ] two\n');
+
+    const orderedDoc = '1. one\n2. two\n';
+    const ordFrom = orderedDoc.indexOf('two');
+    const ordState = stateFor(orderedDoc, ordFrom, ordFrom + 3);
+    const { doc: ordNext } = apply(ordState, computeTabIndent(ordState, false));
+    assert.equal(ordNext, '1. one\n   1. two\n');
+});
+
+test('tabIndent: list-aware — cursor in leading whitespace before marker still nests the line', () => {
+    const doc = '- one\n- two\n';
+    const line2Start = doc.indexOf('- two');
+    const state = stateFor(doc, line2Start, line2Start);
+    const { doc: newDoc } = apply(state, computeTabIndent(state, false));
+    assert.equal(newDoc, '- one\n  - two\n');
+});
+
+test('tabIndent: list-looking line never gets flat spaces inserted at the cursor', () => {
+    const doc = '- two\n';
+    const pos = doc.indexOf('w');
+    const state = stateFor(doc, pos, pos + 1);
+    const { doc: newDoc } = apply(state, computeTabIndent(state, false));
+    assert.equal(newDoc, '  - two\n');
+});
+
 test('tabIndent: list-aware — Shift-Tab outdents a nested item back to a sibling, symmetrically', () => {
     const doc = '- one\n  - two three\n';
     const pos = doc.indexOf('ree');

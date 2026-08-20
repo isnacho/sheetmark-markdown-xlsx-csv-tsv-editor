@@ -32,6 +32,8 @@ import { history, historyKeymap, defaultKeymap, undo, redo, undoDepth, redoDepth
 import { markdown } from '@codemirror/lang-markdown';
 import { GFM } from '@lezer/markdown';
 import { cm6Theme } from './cm6Theme';
+import { stripMarkdownToPlainText, computeTextStats } from '../markdownStats';
+import type { TextStats } from '../markdownStats';
 import { slashMenuAutocompletion } from './slashMenu';
 import {
     livePreviewSearchField, findCm6Matches, setCm6SearchHighlights,
@@ -238,7 +240,6 @@ export function mountLivePreview(opts: LivePreviewMountOptions): EditorView {
             gutterCompartment.of(showLineNumbers ? [buildLineNumbersGutter()] : []),
             readOnlyCompartment.of([]),
             selectAllKeymap,
-            livePreviewTabKeymap,
             keymap.of(livePreviewFormatKeymap),
             paragraphSelectionKeymap,
             keymap.of([...defaultKeymap, ...historyKeymap]),
@@ -265,6 +266,7 @@ export function mountLivePreview(opts: LivePreviewMountOptions): EditorView {
             contentClickHandlers,
             ...spellcheckExtensions,
             slashMenuAutocompletion(),
+            livePreviewTabKeymap,
             domHandlers,
             updateListener,
         ],
@@ -422,6 +424,25 @@ export function getLivePreviewCursorPosition(): { line: number; col: number } | 
     const head = view.state.selection.main.head;
     const line = view.state.doc.lineAt(head);
     return { line: line.number, col: head - line.from + 1 };
+}
+
+/**
+ * Combined stats over all non-empty selection ranges (multi-cursor summed),
+ * using stripped Markdown text — same rules as the whole-document stats.
+ * Returns null when there is no non-trivial selection (nothing selected, or
+ * every selected range is whitespace-only) so the caller falls back to
+ * whole-document stats.
+ */
+export function getLivePreviewSelectionStats(): TextStats | null {
+    if (!view) { return null; }
+    const ranges = view.state.selection.ranges.filter(r => !r.empty);
+    if (ranges.length === 0) { return null; }
+    const rawTexts = ranges.map(r => view!.state.sliceDoc(r.from, r.to));
+    if (!rawTexts.some(t => t.trim().length > 0)) { return null; }
+    return rawTexts.reduce((acc, raw) => {
+        const s = computeTextStats(stripMarkdownToPlainText(raw));
+        return { lines: acc.lines + s.lines, words: acc.words + s.words, chars: acc.chars + s.chars };
+    }, { lines: 0, words: 0, chars: 0 });
 }
 
 /** TOC click target — scroll CM6 so the given 1-indexed line sits at the top. */

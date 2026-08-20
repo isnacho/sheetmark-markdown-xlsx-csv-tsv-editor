@@ -24,8 +24,9 @@ export function collectSpellcheckExclusionRanges(
     if (frontmatterRange) {
         ranges.push(frontmatterRange);
     }
+    const tree = syntaxTree(state);
     for (const { from, to } of visibleRanges) {
-        syntaxTree(state).iterate({
+        tree.iterate({
             from,
             to,
             enter(node) {
@@ -51,12 +52,11 @@ export function isSpellcheckExcluded(
     state: EditorState,
     frontmatterRange?: TextRange | null,
 ): boolean {
-    const docLen = state.doc.length;
-    const exclusions = collectSpellcheckExclusionRanges(
-        state,
-        [{ from: 0, to: docLen }],
-        frontmatterRange,
-    );
+    // Scope the syntax-tree walk to the queried word. Iterating the whole
+    // document here forced the parser through the entire file on every
+    // right-click; `iterate` still enters nodes that merely overlap the range,
+    // so a code span the word sits inside is found either way.
+    const exclusions = collectSpellcheckExclusionRanges(state, [{ from, to }], frontmatterRange);
     return rangesOverlap(from, to, exclusions);
 }
 

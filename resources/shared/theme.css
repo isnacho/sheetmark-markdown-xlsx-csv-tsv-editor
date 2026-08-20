@@ -116,6 +116,29 @@
 
     /* Surfaces — shared corner radius for cards, code blocks, tables, callouts */
     --surface-radius: 8px;
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 20px;
+    --settings-panel-min-width: 360px;
+
+    /* Shared menu panel (settings gear panel, slash / menu, …) */
+    --menu-panel-min-width: var(--settings-panel-min-width);
+    --menu-panel-max-width: 480px;
+    --menu-panel-padding: var(--space-1);
+    --menu-panel-chrome-padding: var(--space-4);
+    --menu-panel-radius: 10px;
+    --menu-panel-bg: var(--color-surface-glass-strong);
+    --menu-panel-blur: blur(12px) saturate(160%);
+    --menu-panel-shadow: var(--shadow-lg);
+    --menu-row-gap: 10px;
+    --menu-row-padding: 7px 10px;
+    --menu-row-radius: var(--surface-radius);
+    --menu-row-font-size: 13px;
+    --menu-row-line-height: 1.35;
+    --menu-row-hover-bg: var(--color-interactive-hover);
+    --menu-leading-size: 20px;
 
     /* Shadows (elevation, not palette) */
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
@@ -544,201 +567,6 @@ body.sticky-toolbar-enabled .toolbar {
     object-fit: contain;
 }
 
-/* Settings Panel */
-.settings-panel {
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    gap: 0;
-    position: relative;
-    background: var(--color-surface-glass);
-    backdrop-filter: blur(20px) saturate(180%);
-    -webkit-backdrop-filter: blur(20px) saturate(180%);
-    color: var(--color-text-primary);
-    padding: 12px 16px;
-    overflow: visible;
-    border-radius: 12px;
-    border: 1px solid var(--color-border-default);
-    box-shadow: var(--glass-shadow);
-}
-
-.settings-panel.hidden {
-    display: none !important;
-}
-
-.settings-panel.floating {
-    position: fixed;
-    left: 12px;
-    right: 12px;
-    z-index: 200001;
-}
-
-.settings-group {
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    gap: 2px;
-    width: 100%;
-}
-
-.setting-item {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    width: 100%;
-    min-height: 28px;
-    padding: 2px 0;
-    font-size: 13px;
-    color: var(--color-text-primary);
-    user-select: none;
-    cursor: pointer;
-}
-
-.setting-item.theme-setting-item {
-    gap: 8px;
-}
-
-.theme-select {
-    height: 28px;
-    min-width: 108px;
-    padding: 0 8px;
-    font-size: 13px;
-    border: 1px solid var(--color-border-default);
-    border-radius: 6px;
-    background-color: var(--color-surface-default);
-    color: var(--color-text-primary);
-    cursor: pointer;
-}
-
-.theme-select:hover {
-    border-color: var(--color-action-hover);
-}
-
-.theme-select:focus {
-    outline: none;
-    border-color: var(--color-action);
-    box-shadow: 0 0 0 2px var(--color-focus-ring);
-}
-
-.setting-item.setting-dependent {
-    margin-left: 24px;
-    padding-left: 10px;
-    border-left: 2px solid color-mix(in srgb, var(--color-action) 32%, var(--color-border-default));
-    min-height: 24px;
-}
-
-.setting-item.setting-autosave-dependent {
-    font-size: 12px;
-}
-
-.setting-item input[type="checkbox"] {
-    appearance: none;
-    -webkit-appearance: none;
-    width: 16px;
-    height: 16px;
-    border: 1px solid var(--color-border-default);
-    border-radius: 3px;
-    background: var(--color-surface-default);
-    cursor: pointer;
-    position: relative;
-    outline: none;
-    transition: all 0.2s ease;
-    margin: 0;
-    flex-shrink: 0;
-}
-
-.setting-item input[type="checkbox"]:hover {
-    cursor: pointer;
-}
-
-.setting-item input[type="checkbox"]:checked {
-    background: var(--color-action);
-    border-color: var(--color-action);
-}
-
-.setting-item input[type="checkbox"]:checked::after {
-    content: '';
-    position: absolute;
-    left: 5px;
-    top: 1px;
-    width: 4px;
-    height: 8px;
-    border: solid var(--color-text-on-action);
-    border-width: 0 2px 2px 0;
-    transform: rotate(45deg);
-}
-
-.setting-item input[type="checkbox"]:focus-visible {
-    box-shadow: 0 0 0 2px var(--color-focus-ring);
-}
-
-.setting-item input[type="checkbox"]:disabled {
-    cursor: not-allowed;
-    opacity: 0.6;
-    background-color: transparent;
-    border-color: var(--color-border-default);
-    box-shadow: none;
-}
-
-.setting-item input[type="checkbox"]:disabled::after {
-    content: none !important;
-}
-
-.setting-item input[type="checkbox"]:disabled+span {
-    opacity: 0.65;
-    cursor: not-allowed;
-    color: var(--color-text-primary);
-}
-
-/* Settings close button */
-.settings-close-btn,
-#settingsCancelButton {
-    position: absolute;
-    top: -10px;
-    right: -10px;
-    z-index: 1;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    padding: 0;
-    border: 1px solid var(--color-border-default);
-    border-radius: 50%;
-    background: var(--color-surface-glass);
-    backdrop-filter: blur(20px) saturate(180%);
-    -webkit-backdrop-filter: blur(20px) saturate(180%);
-    color: var(--color-text-primary);
-    cursor: pointer;
-    opacity: 0.9;
-    box-shadow: var(--shadow-sm);
-    transition: background-color 0.15s ease, opacity 0.15s ease;
-}
-
-.settings-close-btn svg,
-#settingsCancelButton svg {
-    width: 16px;
-    height: 16px;
-}
-
-.settings-close-btn:hover,
-#settingsCancelButton:hover {
-    opacity: 1;
-    background-color: color-mix(in srgb, var(--color-text-primary) 10%, transparent);
-}
-
-.settings-close-btn:active,
-#settingsCancelButton:active {
-    opacity: 1;
-    background-color: color-mix(in srgb, var(--color-text-primary) 16%, transparent);
-}
-
-.settings-close-btn:focus-visible,
-#settingsCancelButton:focus-visible {
-    outline: none;
-    box-shadow: 0 0 0 2px var(--color-focus-ring);
-}
-
 .toolbar.not-sticky {
     position: relative;
 }
@@ -751,11 +579,6 @@ body.sticky-toolbar-enabled .toolbar {
     align-items: center;
     width: 100%;
     min-width: 100%;
-}
-
-.toolbar.expanded-toolbar .settings-panel {
-    width: 100%;
-    position: sticky;
 }
 
 .toolbar.settings-open {

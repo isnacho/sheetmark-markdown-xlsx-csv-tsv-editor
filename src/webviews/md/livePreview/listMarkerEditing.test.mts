@@ -11,6 +11,7 @@ import {
     computeListMarkerDelete,
     computeListMarkerArrowLeft,
     computeListMarkerArrowRight,
+    listItemMarkerIsActivated,
 } from './listMarkerEditing.ts';
 
 function stateFor(doc: string): EditorState {
@@ -32,6 +33,17 @@ function apply(state: EditorState, spec: ReturnType<typeof computeListMarkerBack
     const next = state.update(spec).state;
     return { doc: next.doc.toString(), sel: next.selection.main.head };
 }
+
+test('listItemMarkerIsActivated: requires gap space after marker or task checkbox', () => {
+    for (const doc of ['1.', '-', '- [ ]', '12.']) {
+        const state = stateFor(doc);
+        assert.equal(listItemMarkerIsActivated(state, firstListItem(state)!), false, doc);
+    }
+    for (const doc of ['1. ', '- ', '- [ ] ', '12. item']) {
+        const state = stateFor(doc);
+        assert.equal(listItemMarkerIsActivated(state, firstListItem(state)!), true, doc);
+    }
+});
 
 test('computeListItemPrefixRange: bullet marker + gap space', () => {
     const state = stateFor('- plain\n');

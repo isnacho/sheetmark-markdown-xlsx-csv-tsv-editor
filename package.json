@@ -352,7 +352,7 @@
                 "xlsxViewer.md.wordWrap": {
                     "type": "boolean",
                     "default": true,
-                    "description": "Enable word wrap in the Markdown preview."
+                    "description": "Enable line wrap in the Markdown editor."
                 },
                 "xlsxViewer.md.showOutline": {
                     "type": "boolean",
@@ -378,6 +378,36 @@
                     "type": "boolean",
                     "default": false,
                     "description": "Automatically save Markdown edits after a short debounce."
+                },
+                "xlsxViewer.md.showStats": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Show line/word/character counts and estimated reading time in the Markdown editor status bar."
+                },
+                "xlsxViewer.md.statsShowLines": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Include the line count in Document Stats (only applies when Document Stats is enabled)."
+                },
+                "xlsxViewer.md.statsShowWords": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Include the word count in Document Stats (only applies when Document Stats is enabled)."
+                },
+                "xlsxViewer.md.statsShowChars": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Include the character count in Document Stats (only applies when Document Stats is enabled)."
+                },
+                "xlsxViewer.md.statsShowReadingTime": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Include estimated reading time in Document Stats (only applies when Document Stats is enabled)."
+                },
+                "xlsxViewer.md.showCursorPosition": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Show the current line and column position (Ln X, Col Y) in the Markdown editor status bar."
                 }
             }
         }

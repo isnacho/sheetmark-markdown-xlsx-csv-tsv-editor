@@ -230,14 +230,17 @@ export const mermaidWidgetField = StateField.define<DecorationSet>({
     provide: (f) => EditorView.decorations.from(f),
 });
 
-function buildMermaidAtomicRanges(state: EditorState): DecorationSet {
+function buildMermaidAtomicRanges(view: EditorView): DecorationSet {
+    const state = view.state;
     if (state.field(mermaidPreviewModeField) !== 'diagram') {
         return Decoration.none;
     }
     const marker = Decoration.mark({});
-    return Decoration.set(
-        findMermaidFenceRanges(state).map((range) => marker.range(range.from, range.to)),
-    );
+    const ranges: { from: number; to: number }[] = [];
+    for (const { from, to } of view.visibleRanges) {
+        ranges.push(...findMermaidFenceRanges(state, { from, to }));
+    }
+    return Decoration.set(ranges.map((range) => marker.range(range.from, range.to)));
 }
 
-export const mermaidAtomicRanges = EditorView.atomicRanges.of((view) => buildMermaidAtomicRanges(view.state));
+export const mermaidAtomicRanges = EditorView.atomicRanges.of((view) => buildMermaidAtomicRanges(view));

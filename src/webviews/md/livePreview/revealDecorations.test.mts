@@ -240,6 +240,17 @@ function orderedMarkerWidgets(doc: string): { from: number; to: number; widget: 
     return widgetsOfType(doc, OrderedMarkerWidget);
 }
 
+test('list marker: partial markers stay plain text until the gap space is typed', () => {
+    for (const partial of ['1.', '-', '- [ ]', '12.']) {
+        assert.equal(orderedMarkerWidgets(partial).length, 0, partial);
+        assert.equal(widgetsOfType(partial, BulletMarkerWidget).length, 0, partial);
+        assert.equal(widgetsOfType(partial, TaskCheckboxWidget).length, 0, partial);
+    }
+    assert.equal(orderedMarkerWidgets('1. ').length, 1);
+    assert.equal(widgetsOfType('- ', BulletMarkerWidget).length, 1);
+    assert.equal(widgetsOfType('- [ ] ', TaskCheckboxWidget).length, 1);
+});
+
 test('list marker: bullets get the dot widget regardless of cursor position', () => {
     const doc = '- one\n- two\n';
     for (const pos of [0, doc.indexOf('two')]) {
@@ -286,6 +297,16 @@ test('ordered marker: plain top-level list gets sequential decimal labels via a 
     const widgets = orderedMarkerWidgets(doc);
     assert.deepEqual(widgets.map(w => w.widget.label), ['1.', '2.', '3.']);
     assert.equal(widgetsOfType(doc, BulletMarkerWidget).length, 0);
+});
+
+test('ordered marker: a blank line between items resets numbering for the next segment', () => {
+    const doc = '1. one\n2. two\n\n1. three\n';
+    assert.deepEqual(orderedMarkerWidgets(doc).map(w => w.widget.label), ['1.', '2.', '1.']);
+});
+
+test('ordered marker: a blank line resets numbering even when the next marker digit is wrong', () => {
+    const doc = '1. one\n2. two\n\n3. four\n';
+    assert.deepEqual(orderedMarkerWidgets(doc).map(w => w.widget.label), ['1.', '2.', '1.']);
 });
 
 test('ordered marker: numbering is positional, ignoring mismatched typed digits', () => {
@@ -466,13 +487,19 @@ test('setext-as-list: paragraph + "- " shows bullet widget, not heading styling 
     assert.equal(decos.some(d => d.class === 'cm-md-heading-content cm-md-h2'), false);
 });
 
-test('setext-as-list: paragraph + "--" shows bullet widget and no heading styling', () => {
+test('setext-as-list: paragraph + "--" shows no bullet widget until the gap space is typed', () => {
     const doc = 'some text\n--';
+    const widgets = widgetsOfType(doc, BulletMarkerWidget);
+    assert.equal(widgets.length, 0);
+    const decos = decorate(doc, doc.length);
+    assert.equal(decos.some(d => d.class?.includes('cm-md-h')), false);
+});
+
+test('setext-as-list: paragraph + "-- " shows bullet widget once the gap space is present', () => {
+    const doc = 'some text\n-- ';
     const widgets = widgetsOfType(doc, BulletMarkerWidget);
     assert.equal(widgets.length, 1);
     assert.equal(widgets[0]!.from, doc.indexOf('-'));
-    const decos = decorate(doc, doc.length);
-    assert.equal(decos.some(d => d.class?.includes('cm-md-h')), false);
 });
 
 test('setext-as-list: blank-line "- " also shows bullet widget before any item text', () => {

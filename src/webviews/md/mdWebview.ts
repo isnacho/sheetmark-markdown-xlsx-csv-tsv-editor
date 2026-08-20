@@ -1,6 +1,7 @@
 import MarkdownIt from 'markdown-it';
 
 import { ThemeManager, renderThemeToggleSettingItem } from '../shared/themeManager';
+import { renderMenuActionRow } from '../shared/menuPanel';
 import { SettingsManager } from '../shared/settingsManager';
 import { ToolbarManager, type ToolbarButton } from '../shared/toolbarManager';
 import { applyToolbarLayout } from '../shared/toolbarLayout';
@@ -30,6 +31,7 @@ import {
     setLivePreviewMermaidMode,
     setLivePreviewCalloutDefaultType,
     getLivePreviewCursorPosition,
+    getLivePreviewSelectionStats,
     applyLivePreviewFormat,
     canLivePreviewUndo,
     canLivePreviewRedo,
@@ -38,6 +40,8 @@ import {
 } from './livePreview/livePreviewEditor';
 import { setImageUriResolver } from './livePreview/imageWidget';
 import { markdownBodyWithoutFrontmatter, extractFrontmatter } from './frontmatter';
+import { stripMarkdownToPlainText, computeTextStats } from './markdownStats';
+import type { TextStats } from './markdownStats';
 import type { Cm6Match } from './livePreview/livePreviewSearch';
 
 // ===== Throttle Utility =====
@@ -112,7 +116,13 @@ let currentSettings = {
     livePreviewReveal: true,
     livePreviewLineNumbers: false,
     autoSave: false,
-    isDefaultEditor: true
+    isDefaultEditor: true,
+    showStats: true,
+    statsShowLines: true,
+    statsShowWords: true,
+    statsShowChars: true,
+    statsShowReadingTime: true,
+    showCursorPosition: true
 };
 
 /** Preview Edit gutter — single user-facing "Line Numbers" toggle (see settings panel). */
@@ -162,7 +172,7 @@ const md = new MarkdownIt({
 });
 
 function setButtonsEnabled(enabled: boolean) {
-    const ids = ['openSettingsButton', 'versionHistoryButton'];
+    const ids = ['openSettingsButton'];
     ids.forEach((id) => {
         const el = $(id) as HTMLButtonElement;
         if (el) {el.disabled = !enabled;}
@@ -866,18 +876,53 @@ function getCurrentCursorPosition(): { line: number; col: number } | null {
     return null;
 }
 
+/** Stats for the active non-trivial selection. null when there is none (falls back to whole-doc). */
+function getCurrentSelectionStats() {
+    return isLivePreviewActive() ? getLivePreviewSelectionStats() : null;
+}
+
+// Stripping + counting the whole document is far more expensive than the
+// raw counts this replaced. updateStatusInfo() runs on every cursor move
+// (not just real selections) as well as every keystroke, so without this
+// cache a plain cursor move would re-strip the entire document for no
+// reason — memoize on the exact `currentContent` reference/value so only an
+// actual content change triggers a recompute.
+let cachedWholeDocStatsContent: string | null = null;
+let cachedWholeDocStats: TextStats = { lines: 0, words: 0, chars: 0 };
+function getWholeDocumentStats(): TextStats {
+    if (cachedWholeDocStatsContent !== currentContent) {
+        cachedWholeDocStatsContent = currentContent;
+        cachedWholeDocStats = computeTextStats(stripMarkdownToPlainText(currentContent));
+    }
+    return cachedWholeDocStats;
+}
+
 function updateStatusInfo() {
     const statusInfo = $('statusInfo');
     if (!statusInfo) {return;}
 
-    const lines = currentContent.split('\n').length;
-    const chars = currentContent.length;
-    const words = currentContent.trim().split(/\s+/).filter(w => w).length;
-    const readingTime = Math.max(1, Math.ceil(words / 200));
-    const cursor = getCurrentCursorPosition();
-    const cursorPrefix = cursor ? `Ln ${cursor.line}, Col ${cursor.col} \u00B7 ` : '';
-    statusInfo.textContent = `${cursorPrefix}${lines} lines \u00B7 ${words} words \u00B7 ${chars} chars \u00B7 ~${readingTime} min read`;
-    statusInfo.style.display = 'block';
+    if (!currentSettings.showStats) {
+        statusInfo.textContent = '';
+        statusInfo.style.display = 'none';
+        return;
+    }
+
+    const cursor = currentSettings.showCursorPosition ? getCurrentCursorPosition() : null;
+    const cursorPrefix = cursor ? `Ln ${cursor.line}, Col ${cursor.col}` : '';
+
+    const parts: string[] = [];
+    const stats = getCurrentSelectionStats() ?? getWholeDocumentStats();
+    if (currentSettings.statsShowLines) {parts.push(`${stats.lines} lines`);}
+    if (currentSettings.statsShowWords) {parts.push(`${stats.words} words`);}
+    if (currentSettings.statsShowChars) {parts.push(`${stats.chars} chars`);}
+    if (currentSettings.statsShowReadingTime && stats.words > 0) {
+        const readingTime = Math.max(1, Math.ceil(stats.words / 200));
+        parts.push(`~${readingTime} min read`);
+    }
+
+    const combined = [cursorPrefix, parts.join(' \u00B7 ')].filter(Boolean).join(' \u00B7 ');
+    statusInfo.textContent = combined;
+    statusInfo.style.display = combined ? 'block' : 'none';
 }
 
 // ===== Reading Progress Bar =====
@@ -1143,6 +1188,12 @@ function applySettings(settings: any, persist = false) {
     const chkLivePreviewReveal = $('chkLivePreviewReveal') as HTMLInputElement;
     const chkAutoSave = $('chkAutoSave') as HTMLInputElement;
     const chkOpenByDefault = $('chkOpenByDefault') as HTMLInputElement;
+    const chkShowStats = $('chkShowStats') as HTMLInputElement;
+    const chkShowCursorPosition = $('chkShowCursorPosition') as HTMLInputElement;
+    const chkStatsLines = $('chkStatsLines') as HTMLInputElement;
+    const chkStatsWords = $('chkStatsWords') as HTMLInputElement;
+    const chkStatsChars = $('chkStatsChars') as HTMLInputElement;
+    const chkStatsReadingTime = $('chkStatsReadingTime') as HTMLInputElement;
 
     if (chkWordWrap) {chkWordWrap.checked = currentSettings.wordWrap;}
     if (chkStickyToolbar) {chkStickyToolbar.checked = currentSettings.stickyToolbar;}
@@ -1151,6 +1202,18 @@ function applySettings(settings: any, persist = false) {
     if (chkLivePreviewReveal) {chkLivePreviewReveal.checked = currentSettings.livePreviewReveal;}
     if (chkAutoSave) {chkAutoSave.checked = currentSettings.autoSave;}
     if (chkOpenByDefault) {chkOpenByDefault.checked = !!currentSettings.isDefaultEditor;}
+    if (chkShowStats) {chkShowStats.checked = !!currentSettings.showStats;}
+    if (chkShowCursorPosition) {chkShowCursorPosition.checked = !!currentSettings.showCursorPosition;}
+    if (chkStatsLines) {chkStatsLines.checked = !!currentSettings.statsShowLines;}
+    if (chkStatsWords) {chkStatsWords.checked = !!currentSettings.statsShowWords;}
+    if (chkStatsChars) {chkStatsChars.checked = !!currentSettings.statsShowChars;}
+    if (chkStatsReadingTime) {chkStatsReadingTime.checked = !!currentSettings.statsShowReadingTime;}
+
+    const statsEnabled = !!currentSettings.showStats;
+    [chkShowCursorPosition, chkStatsLines, chkStatsWords, chkStatsChars, chkStatsReadingTime].forEach((el) => {
+        const item = el?.closest('.setting-item') as HTMLElement | null;
+        if (item) {item.style.display = statsEnabled ? 'flex' : 'none';}
+    });
 
     // Line numbers
     document.body.classList.toggle('show-line-numbers', livePreviewGutterLineNumbersEnabled());
@@ -1159,20 +1222,27 @@ function applySettings(settings: any, persist = false) {
     if (container) {container.classList.toggle('toc-open', !!currentSettings.showOutline);}
     if (tocPanel) {tocPanel.classList.toggle('hidden', !currentSettings.showOutline);}
 
-    if (toolbarManager) {
-        const btn = toolbarManager.getButton('toggleTocButton');
-        if (btn) {btn.classList.toggle('active', !!currentSettings.showOutline);}
-    }
-
     if (persist) {
         vscode.postMessage({ command: 'updateSettings', settings: currentSettings });
     }
+
+    updateStatusInfo();
+}
+
+function renderVersionHistorySettingItem(buttonId: string): string {
+    return renderMenuActionRow({
+        id: buttonId,
+        label: 'Open Version History',
+        title: 'Browse and restore previous saved versions of this file',
+        trailingHtml: `<span class="menu-row__trailing setting-action-chevron" aria-hidden="true">${Icons.ChevronRight}</span>`
+    });
 }
 
 function initializeSettings() {
     const settingsDefs = [
         {
             id: 'chkOpenByDefault',
+            section: 'General',
             label: 'Open .md files with Sheetmark by default',
             tooltip: 'When enabled, VS Code opens .md files in Sheetmark automatically.',
             defaultValue: !!currentSettings.isDefaultEditor,
@@ -1181,27 +1251,8 @@ function initializeSettings() {
             }
         },
         {
-            id: 'chkWordWrap',
-            label: 'Word Wrap',
-            tooltip: 'Wrap long lines in the Markdown preview/editor instead of horizontal scrolling.',
-            defaultValue: currentSettings.wordWrap,
-            onChange: (val: boolean) => {
-                currentSettings.wordWrap = val;
-                applySettings(currentSettings, true);
-            }
-        },
-        {
-            id: 'chkStickyToolbar',
-            label: 'Sticky Toolbar',
-            tooltip: 'Keep the Markdown toolbar pinned at the top while you scroll.',
-            defaultValue: currentSettings.stickyToolbar,
-            onChange: (val: boolean) => {
-                currentSettings.stickyToolbar = val;
-                applySettings(currentSettings, true);
-            }
-        },
-        {
             id: 'chkShowOutline',
+            section: 'General',
             label: 'Show Outline',
             tooltip: 'Display the document outline panel for heading navigation.',
             defaultValue: currentSettings.showOutline,
@@ -1211,8 +1262,56 @@ function initializeSettings() {
             }
         },
         {
+            id: 'chkAutoSave',
+            section: 'General',
+            label: 'Enable Autosave',
+            tooltip: 'Automatically save Markdown edits after a short debounce.',
+            defaultValue: currentSettings.autoSave,
+            onChange: (val: boolean) => {
+                currentSettings.autoSave = val;
+                applySettings(currentSettings, true);
+            }
+        },
+        {
+            id: 'openVersionHistorySetting',
+            section: 'General',
+            label: 'Version History',
+            html: renderVersionHistorySettingItem('openVersionHistorySetting'),
+            onChange: () => {}
+        },
+        {
+            id: 'themeSelect',
+            section: 'General',
+            label: 'Theme',
+            html: renderThemeToggleSettingItem('themeSelect'),
+            onChange: () => {}
+        },
+        {
+            id: 'chkStickyToolbar',
+            section: 'Layout',
+            label: 'Enable Sticky Toolbar',
+            tooltip: 'Keep the Markdown toolbar pinned at the top while you scroll.',
+            defaultValue: currentSettings.stickyToolbar,
+            onChange: (val: boolean) => {
+                currentSettings.stickyToolbar = val;
+                applySettings(currentSettings, true);
+            }
+        },
+        {
+            id: 'chkWordWrap',
+            section: 'Layout',
+            label: 'Enable Line Wrap',
+            tooltip: 'Wrap long lines in the editor to the pane width instead of horizontal scrolling.',
+            defaultValue: currentSettings.wordWrap,
+            onChange: (val: boolean) => {
+                currentSettings.wordWrap = val;
+                applySettings(currentSettings, true);
+            }
+        },
+        {
             id: 'chkShowLineNumbers',
-            label: 'Line Numbers',
+            section: 'Layout',
+            label: 'Show Line Numbers',
             tooltip: 'Show line numbers in the editor gutter. Click a number to select that line.',
             defaultValue: livePreviewGutterLineNumbersEnabled(),
             onChange: (val: boolean) => {
@@ -1223,7 +1322,8 @@ function initializeSettings() {
         },
         {
             id: 'chkLivePreviewReveal',
-            label: 'Live Preview Reveal',
+            section: 'Layout',
+            label: 'Enable Live Preview Reveal',
             tooltip: 'In Preview Edit mode, reveal raw markdown syntax (##, **, *) near the cursor and hide it elsewhere.',
             defaultValue: currentSettings.livePreviewReveal,
             onChange: (val: boolean) => {
@@ -1232,27 +1332,88 @@ function initializeSettings() {
             }
         },
         {
-            id: 'chkAutoSave',
-            label: 'Autosave',
-            tooltip: 'Automatically save Markdown edits after a short debounce.',
-            defaultValue: currentSettings.autoSave,
+            id: 'chkShowStats',
+            section: 'Document Stats',
+            label: 'Show Document Stats',
+            tooltip: 'Show document stats and cursor position in the status bar.',
+            defaultValue: currentSettings.showStats,
             onChange: (val: boolean) => {
-                currentSettings.autoSave = val;
+                currentSettings.showStats = val;
+                applySettings(currentSettings, true);
+            }
+        },
+        {
+            id: 'chkShowCursorPosition',
+            section: 'Document Stats',
+            label: 'Show Current Line',
+            tooltip: 'Show the current line and column position (Ln X, Col Y) in the status bar.',
+            className: 'setting-dependent setting-stats-dependent',
+            defaultValue: currentSettings.showCursorPosition,
+            onChange: (val: boolean) => {
+                currentSettings.showCursorPosition = val;
+                applySettings(currentSettings, true);
+            }
+        },
+        {
+            id: 'chkStatsLines',
+            section: 'Document Stats',
+            label: 'Show Lines',
+            tooltip: 'Show the line count in the status bar.',
+            className: 'setting-dependent setting-stats-dependent',
+            defaultValue: currentSettings.statsShowLines,
+            onChange: (val: boolean) => {
+                currentSettings.statsShowLines = val;
+                applySettings(currentSettings, true);
+            }
+        },
+        {
+            id: 'chkStatsWords',
+            section: 'Document Stats',
+            label: 'Show Words',
+            tooltip: 'Show the word count in the status bar.',
+            className: 'setting-dependent setting-stats-dependent',
+            defaultValue: currentSettings.statsShowWords,
+            onChange: (val: boolean) => {
+                currentSettings.statsShowWords = val;
+                applySettings(currentSettings, true);
+            }
+        },
+        {
+            id: 'chkStatsChars',
+            section: 'Document Stats',
+            label: 'Show Characters',
+            tooltip: 'Show the character count in the status bar.',
+            className: 'setting-dependent setting-stats-dependent',
+            defaultValue: currentSettings.statsShowChars,
+            onChange: (val: boolean) => {
+                currentSettings.statsShowChars = val;
+                applySettings(currentSettings, true);
+            }
+        },
+        {
+            id: 'chkStatsReadingTime',
+            section: 'Document Stats',
+            label: 'Show Reading Time',
+            tooltip: 'Show estimated reading time in the status bar.',
+            className: 'setting-dependent setting-stats-dependent',
+            defaultValue: currentSettings.statsShowReadingTime,
+            onChange: (val: boolean) => {
+                currentSettings.statsShowReadingTime = val;
                 applySettings(currentSettings, true);
             }
         }
     ];
 
-    // Render panel
     SettingsManager.renderPanel(document.body, 'settingsPanel', 'settingsCancelButton', settingsDefs);
 
-    const settingsGroup = document.querySelector('#settingsPanel .settings-group');
-    if (settingsGroup) {
-        settingsGroup.insertAdjacentHTML('beforeend', renderThemeToggleSettingItem('themeSelect'));
-    }
-
-    // Initialize manager
     new SettingsManager('openSettingsButton', 'settingsPanel', 'settingsCancelButton', settingsDefs);
+
+    const versionHistoryBtn = $('openVersionHistorySetting');
+    if (versionHistoryBtn) {
+        versionHistoryBtn.addEventListener('click', () => {
+            vscode.postMessage({ command: 'showVersionHistory' });
+        });
+    }
 
     // Theme manager
     new ThemeManager('themeSelect', {
@@ -1572,17 +1733,6 @@ function buildToolbarButtons(): ToolbarButton[] {
             onClick: () => applyFormat('redo')
         },
         {
-            id: 'toggleTocButton',
-            icon: Icons.Outline,
-            tooltip: 'Toggle Outline',
-            cls: 'icon-only',
-            section: 'end',
-            onClick: () => {
-                currentSettings.showOutline = !currentSettings.showOutline;
-                applySettings(currentSettings, true);
-            }
-        },
-        {
             id: 'searchButton',
             icon: Icons.Search,
             tooltip: 'Search in Preview (Ctrl/Cmd+F)',
@@ -1597,16 +1747,6 @@ function buildToolbarButtons(): ToolbarButton[] {
             cls: 'icon-only',
             section: 'end',
             onClick: () => copyMarkdownToClipboard()
-        },
-        {
-            id: 'versionHistoryButton',
-            icon: Icons.VersionHistory,
-            tooltip: 'Version History',
-            cls: 'icon-only',
-            section: 'end',
-            onClick: () => {
-                vscode.postMessage({ command: 'showVersionHistory' });
-            }
         },
         {
             id: 'helpButton',

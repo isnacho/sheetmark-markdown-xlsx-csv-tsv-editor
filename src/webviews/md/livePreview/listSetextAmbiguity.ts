@@ -46,6 +46,7 @@ export function setextListMarkerLineAt(state: EditorState, pos: number): { lineF
             if (pos < underline.from || pos > underline.to) { return; }
             const text = state.sliceDoc(underline.from, underline.to);
             if (!/^[-*+]/.test(text)) { return; }
+            if (!/\s/.test(text)) { return; }
             found = { lineFrom: underline.from, lineTo: underline.to, markFrom: underline.from };
         },
     });

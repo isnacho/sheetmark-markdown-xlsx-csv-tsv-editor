@@ -568,21 +568,26 @@ export function computeTableBoundaryArrowUp(state: EditorState): TransactionSpec
     return cell ? selectionSpecForCell(state, cell) : null;
 }
 
-function buildTableAtomicRanges(state: EditorState): DecorationSet {
+function buildTableAtomicRanges(view: EditorView): DecorationSet {
+    const state = view.state;
     const marker = Decoration.mark({});
     const ranges: ReturnType<typeof marker.range>[] = [];
-    syntaxTree(state).iterate({
-        enter(node) {
-            if (node.name === 'Table') {
-                const range = effectiveTableRange(state, node.node);
-                ranges.push(marker.range(range.from, range.to));
-            }
-        },
-    });
+    for (const { from, to } of view.visibleRanges) {
+        syntaxTree(state).iterate({
+            from,
+            to,
+            enter(node) {
+                if (node.name === 'Table') {
+                    const range = effectiveTableRange(state, node.node);
+                    ranges.push(marker.range(range.from, range.to));
+                }
+            },
+        });
+    }
     return Decoration.set(ranges);
 }
 
-export const tableAtomicRanges = EditorView.atomicRanges.of((view) => buildTableAtomicRanges(view.state));
+export const tableAtomicRanges = EditorView.atomicRanges.of((view) => buildTableAtomicRanges(view));
 
 export const tableBoundaryKeymap = Prec.highest(keymap.of([
     { key: 'Backspace', run: runTableBoundaryBackspace },

@@ -66,6 +66,7 @@ import { syntaxTree } from '@codemirror/language';
 import type { SyntaxNode } from '@lezer/common';
 import { appendCalloutDecorationSpecs } from './calloutDecorations';
 import { isSetextUnderlineListMarker } from './listSetextAmbiguity';
+import { listItemMarkerIsActivated } from './listMarkerEditing';
 
 export interface VisibleRange {
     from: number;
@@ -143,9 +144,43 @@ export function listItemPosition(item: SyntaxNode): number {
     return index;
 }
 
-/** Parses the first item's own typed starting number off its ListMark text (drops the trailing "."/")" ). */
-export function orderedListStartNumber(state: EditorState, list: SyntaxNode): number {
-    const mark = list.firstChild?.getChild('ListMark');
+/** True when a blank line separates two sibling list items in the source. */
+export function listItemsSeparatedByBlankLine(state: EditorState, prev: SyntaxNode, next: SyntaxNode): boolean {
+    if (next.from <= prev.to) { return false; }
+    return /\n(?:[ \t]*\n)/.test(state.sliceDoc(prev.to, next.from));
+}
+
+/** First ListItem in the numbering segment that contains `item` (resets after blank lines). */
+export function numberingSegmentStartItem(state: EditorState, item: SyntaxNode): SyntaxNode {
+    let start = item;
+    for (let sib = item.prevSibling; sib; sib = sib.prevSibling) {
+        if (sib.name !== 'ListItem') { continue; }
+        if (listItemsSeparatedByBlankLine(state, sib, start)) { break; }
+        start = sib;
+    }
+    return start;
+}
+
+/** 0-based index of `item` within its numbering segment (resets after blank lines). */
+export function listItemPositionInSegment(state: EditorState, item: SyntaxNode): number {
+    const segmentStart = numberingSegmentStartItem(state, item);
+    let index = 0;
+    for (let sib: SyntaxNode | null = segmentStart; sib; sib = sib.nextSibling) {
+        if (sib.name !== 'ListItem') { continue; }
+        if (sib.from === item.from) { return index; }
+        index++;
+    }
+    return index;
+}
+
+/** Parses the segment-start item's typed starting number (drops the trailing "."/")" ). */
+export function orderedListStartNumber(state: EditorState, item: SyntaxNode): number {
+    const segmentStart = numberingSegmentStartItem(state, item);
+    const prev = segmentStart.prevSibling;
+    if (prev?.name === 'ListItem' && listItemsSeparatedByBlankLine(state, prev, segmentStart)) {
+        return 1;
+    }
+    const mark = segmentStart.getChild('ListMark');
     if (!mark) { return 1; }
     const n = parseInt(state.sliceDoc(mark.from, mark.to - 1), 10);
     return Number.isFinite(n) ? n : 1;
@@ -164,7 +199,7 @@ export function computeOrderedMarkerLabel(state: EditorState, mark: SyntaxNode):
     const list = item?.parent;
     if (!item || item.name !== 'ListItem' || !list || list.name !== 'OrderedList') { return null; }
     const delimiter = state.sliceDoc(mark.to - 1, mark.to);
-    const value = orderedListStartNumber(state, list) + listItemPosition(item);
+    const value = orderedListStartNumber(state, item) + listItemPositionInSegment(state, item);
     return formatOrderedMarkerLabel(listContainerDepth(list), value, delimiter);
 }
 
@@ -515,13 +550,13 @@ export function computeRevealDecorations(
         const underlineLine = state.doc.lineAt(setextNode.to - 1);
         const text = state.sliceDoc(underlineLine.from, underlineLine.to);
         if (!/^[-*+]/.test(text)) { return; }
+        const spaceIdx = text.search(/\s/);
+        if (spaceIdx < 0) { return; }
         const markerFrom = underlineLine.from;
         const markerTo = markerFrom + 1;
         const nested = false;
         specs.push({ from: markerFrom, to: markerTo, value: Decoration.replace({ widget: new BulletMarkerWidget(nested) }) });
-        if (text.length > 1 && text[1] === ' ') {
-            specs.push({ from: markerTo, to: markerTo + 1, value: hiddenMark });
-        }
+        specs.push({ from: markerTo, to: markerTo + 1, value: hiddenMark });
     }
 
     // Always-on (see the Phase 7 design note above) — no isActive() branch.
@@ -540,6 +575,8 @@ export function computeRevealDecorations(
     }
 
     function handleListMark(node: SyntaxNode) {
+        const item = node.parent;
+        if (!item || item.name !== 'ListItem' || !listItemMarkerIsActivated(state, item)) { return; }
         const orderedLabel = computeOrderedMarkerLabel(state, node);
         if (orderedLabel !== null) {
             specs.push({ from: node.from, to: node.to, value: Decoration.replace({ widget: new OrderedMarkerWidget(orderedLabel) }) });
@@ -561,6 +598,8 @@ export function computeRevealDecorations(
 
     // Always-on (see the Phase 7 design note above) — no isActive() branch.
     function handleTaskMarker(node: SyntaxNode) {
+        const item = node.parent?.parent;
+        if (!item || item.name !== 'ListItem' || !listItemMarkerIsActivated(state, item)) { return; }
         const done = /\[[xX]\]/.test(state.sliceDoc(node.from, node.to));
         specs.push({ from: node.from, to: node.to, value: Decoration.replace({ widget: new TaskCheckboxWidget(done, node.from, node.to) }) });
         // The grammar skips exactly one space after "[ ]"/"[x]" without giving
@@ -677,7 +716,10 @@ export function computeOrderedMarkerRanges(state: EditorState): VisibleRange[] {
     syntaxTree(state).iterate({
         enter(node) {
             if (node.name === 'ListMark' && computeOrderedMarkerLabel(state, node.node) !== null) {
-                ranges.push({ from: node.from, to: node.to });
+                const item = node.node.parent;
+                if (item && listItemMarkerIsActivated(state, item)) {
+                    ranges.push({ from: node.from, to: node.to });
+                }
             }
         },
     });

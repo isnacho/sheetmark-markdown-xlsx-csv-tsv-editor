@@ -1,0 +1,3 @@
+[submodule "mi-ai"]
+	path = .agents/skills/.vendor/mi-ai
+	url = https://github.com/nachosdesign/mi-ai.git

@@ -402,6 +402,15 @@ test('tabIndent: list after a paragraph still nests the second item normally', (
     assert.equal(newDoc, 'para\n- one\n  - two\n');
 });
 
+test('tabIndent: list-aware — cursor at end-of-line (line.to) still nests the item', () => {
+    const doc = '- one\n- two\n';
+    const marker = '- two';
+    const pos = doc.indexOf(marker) + marker.length;
+    const state = stateFor(doc, pos);
+    const { doc: newDoc } = apply(state, computeTabIndent(state, false));
+    assert.equal(newDoc, '- one\n  - two\n');
+});
+
 test('multiLineListAwareIndent: selecting two sibling items nests both under the preceding item, together', () => {
     const doc = '- top\n- one\n- two';
     const state = stateFor(doc, doc.indexOf('- one'), doc.length);

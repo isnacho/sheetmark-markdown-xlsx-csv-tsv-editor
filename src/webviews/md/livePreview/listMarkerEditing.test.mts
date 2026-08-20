@@ -12,10 +12,13 @@ import {
     computeListMarkerArrowLeft,
     computeListMarkerArrowRight,
     listItemMarkerIsActivated,
+    computeManualListContinuation,
+    isEmptyActivatedListItem,
+    runLivePreviewEnter,
 } from './listMarkerEditing.ts';
 
-function stateFor(doc: string): EditorState {
-    return EditorState.create({ doc, extensions: [markdown({ extensions: GFM })] });
+function stateFor(doc: string, pos = 0): EditorState {
+    return EditorState.create({ doc, selection: { anchor: pos, head: pos }, extensions: [markdown({ extensions: GFM, addKeymap: false })] });
 }
 
 function firstListItem(state: EditorState) {
@@ -155,4 +158,27 @@ test('arrow right from line above checkbox line jumps to item text start', () =>
     assert.ok(spec);
     const next = state.update(spec!).state;
     assert.equal(next.selection.main.head, doc.indexOf('todo'));
+});
+
+test('computeManualListContinuation: continues ordered list with the next number', () => {
+    const doc = '1. list';
+    const state = stateFor(doc, doc.length);
+    const result = apply(state, computeManualListContinuation(state));
+    assert.equal(result.doc, '1. list\n2. ');
+});
+
+test('computeManualListContinuation: empty ordered item exits without wiping the document', () => {
+    const doc = '1. ';
+    const state = stateFor(doc, doc.length);
+    const result = apply(state, computeManualListContinuation(state));
+    assert.equal(result.doc, '\n');
+});
+
+test('runLivePreviewEnter: continues ordered list on Enter', () => {
+    const doc = '1. list';
+    const state = stateFor(doc, doc.length);
+    let next = state;
+    const ok = runLivePreviewEnter({ state, dispatch: (tr) => { next = tr.state; } } as import('@codemirror/view').EditorView);
+    assert.equal(ok, true);
+    assert.equal(next.doc.toString(), '1. list\n2. ');
 });

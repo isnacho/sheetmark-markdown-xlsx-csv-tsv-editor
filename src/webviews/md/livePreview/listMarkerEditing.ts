@@ -8,6 +8,7 @@
 
 import { EditorState, EditorSelection, Prec } from '@codemirror/state';
 import type { TransactionSpec } from '@codemirror/state';
+import { insertNewlineContinueMarkupCommand, deleteMarkupBackward } from '@codemirror/lang-markdown';
 import { EditorView, keymap, Decoration } from '@codemirror/view';
 import type { DecorationSet } from '@codemirror/view';
 import { syntaxTree } from '@codemirror/language';
@@ -38,6 +39,108 @@ export function listItemMarkerIsActivated(state: EditorState, item: SyntaxNode):
     if (item.name !== 'ListItem') { return false; }
     if (!item.getChild('ListMark')) { return false; }
     return listMarkerLineIsActivated(state.doc.lineAt(item.from).text);
+}
+
+/** True when a blank line separates two sibling list items in the source. */
+export function listItemsSeparatedByBlankLine(state: EditorState, prev: SyntaxNode, next: SyntaxNode): boolean {
+    if (next.from <= prev.to) { return false; }
+    return /\n(?:[ \t]*\n)/.test(state.sliceDoc(prev.to, next.from));
+}
+
+/** First ListItem in the numbering segment that contains `item` (resets after blank lines). */
+export function numberingSegmentStartItem(state: EditorState, item: SyntaxNode): SyntaxNode {
+    let start = item;
+    for (let sib = item.prevSibling; sib; sib = sib.prevSibling) {
+        if (sib.name !== 'ListItem') { continue; }
+        if (listItemsSeparatedByBlankLine(state, sib, start)) { break; }
+        start = sib;
+    }
+    return start;
+}
+
+/** 0-based index of `item` within its numbering segment (resets after blank lines). */
+export function listItemPositionInSegment(state: EditorState, item: SyntaxNode): number {
+    const segmentStart = numberingSegmentStartItem(state, item);
+    let index = 0;
+    for (let sib: SyntaxNode | null = segmentStart; sib; sib = sib.nextSibling) {
+        if (sib.name !== 'ListItem') { continue; }
+        if (sib.from === item.from) { return index; }
+        index++;
+    }
+    return index;
+}
+
+/** Parses the segment-start item's typed starting number (drops the trailing "."/")" ). */
+export function orderedListStartNumber(state: EditorState, item: SyntaxNode): number {
+    const segmentStart = numberingSegmentStartItem(state, item);
+    const prev = segmentStart.prevSibling;
+    if (prev?.name === 'ListItem' && listItemsSeparatedByBlankLine(state, prev, segmentStart)) {
+        return 1;
+    }
+    const mark = segmentStart.getChild('ListMark');
+    if (!mark) { return 1; }
+    const n = parseInt(state.sliceDoc(mark.from, mark.to - 1), 10);
+    return Number.isFinite(n) ? n : 1;
+}
+
+function enclosingListItem(state: EditorState, pos: number): SyntaxNode | null {
+    const line = state.doc.lineAt(pos);
+    const probe = pos > line.from && pos === line.to ? pos - 1 : pos;
+    for (let node: SyntaxNode | null = syntaxTree(state).resolveInner(probe, 1); node; node = node.parent) {
+        if (node.name === 'ListItem') { return node; }
+    }
+    return null;
+}
+
+/** Activated list line with marker prefix only — no item text yet. */
+export function isEmptyActivatedListItem(lineText: string): boolean {
+    return /^\s*(?:\d+[.)]\s*|[-*+]\s(?:\[[ xX]\]\s)?)$/.test(lineText);
+}
+
+/** Fallback when insertNewlineContinueMarkup returns false on an activated list line. */
+export function computeManualListContinuation(state: EditorState): TransactionSpec | null {
+    const sel = state.selection.main;
+    if (!sel.empty) { return null; }
+
+    const line = state.doc.lineAt(sel.head);
+    if (!listMarkerLineIsActivated(line.text)) { return null; }
+    if (sel.head !== line.to) { return null; }
+
+    const item = enclosingListItem(state, sel.head);
+    if (!item) { return null; }
+
+    const prefix = computeListItemPrefixRange(state, item);
+    if (!prefix) { return null; }
+
+    if (isEmptyActivatedListItem(line.text)) {
+        return {
+            changes: { from: prefix.from, to: line.to, insert: '\n' },
+            selection: EditorSelection.cursor(prefix.from + 1),
+        };
+    }
+
+    const mark = item.getChild('ListMark');
+    if (!mark) { return null; }
+
+    const linePrefix = state.sliceDoc(line.from, mark.from);
+    const task = item.getChild('Task');
+
+    if (item.parent?.name === 'OrderedList') {
+        const nextNum = orderedListStartNumber(state, item) + listItemPositionInSegment(state, item) + 1;
+        const delimiter = state.sliceDoc(mark.to - 1, mark.to);
+        const insert = '\n' + linePrefix + String(nextNum) + delimiter + ' ';
+        return {
+            changes: { from: sel.head, insert },
+            selection: EditorSelection.cursor(sel.head + insert.length),
+        };
+    }
+
+    const bulletMarker = task ? '- [ ] ' : state.sliceDoc(mark.from, mark.to) + ' ';
+    const insert = '\n' + linePrefix + bulletMarker;
+    return {
+        changes: { from: sel.head, insert },
+        selection: EditorSelection.cursor(sel.head + insert.length),
+    };
 }
 
 /** ListItem marker through its trailing gap space (includes Task on checkbox lines). */
@@ -223,3 +326,18 @@ export const listMarkerBoundaryExtensions = [
     listMarkerKeymap,
     listMarkerAtomicRanges,
 ];
+
+const insertNewlineContinueMarkup = insertNewlineContinueMarkupCommand({ nonTightLists: false });
+
+export function runLivePreviewEnter(view: EditorView): boolean {
+    if (insertNewlineContinueMarkup(view)) { return true; }
+    const spec = computeManualListContinuation(view.state);
+    if (!spec) { return false; }
+    view.dispatch(spec);
+    return true;
+}
+
+export const livePreviewMarkdownKeymap = Prec.high(keymap.of([
+    { key: 'Enter', run: runLivePreviewEnter },
+    { key: 'Backspace', run: deleteMarkupBackward },
+]));

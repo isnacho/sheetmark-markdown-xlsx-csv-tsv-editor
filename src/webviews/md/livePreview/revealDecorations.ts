@@ -66,7 +66,7 @@ import { syntaxTree } from '@codemirror/language';
 import type { SyntaxNode } from '@lezer/common';
 import { appendCalloutDecorationSpecs } from './calloutDecorations';
 import { isSetextUnderlineListMarker } from './listSetextAmbiguity';
-import { listItemMarkerIsActivated } from './listMarkerEditing';
+import { listItemMarkerIsActivated, orderedListStartNumber, listItemPositionInSegment } from './listMarkerEditing';
 
 export interface VisibleRange {
     from: number;
@@ -142,48 +142,6 @@ export function listItemPosition(item: SyntaxNode): number {
         if (sib.name === 'ListItem') { index++; }
     }
     return index;
-}
-
-/** True when a blank line separates two sibling list items in the source. */
-export function listItemsSeparatedByBlankLine(state: EditorState, prev: SyntaxNode, next: SyntaxNode): boolean {
-    if (next.from <= prev.to) { return false; }
-    return /\n(?:[ \t]*\n)/.test(state.sliceDoc(prev.to, next.from));
-}
-
-/** First ListItem in the numbering segment that contains `item` (resets after blank lines). */
-export function numberingSegmentStartItem(state: EditorState, item: SyntaxNode): SyntaxNode {
-    let start = item;
-    for (let sib = item.prevSibling; sib; sib = sib.prevSibling) {
-        if (sib.name !== 'ListItem') { continue; }
-        if (listItemsSeparatedByBlankLine(state, sib, start)) { break; }
-        start = sib;
-    }
-    return start;
-}
-
-/** 0-based index of `item` within its numbering segment (resets after blank lines). */
-export function listItemPositionInSegment(state: EditorState, item: SyntaxNode): number {
-    const segmentStart = numberingSegmentStartItem(state, item);
-    let index = 0;
-    for (let sib: SyntaxNode | null = segmentStart; sib; sib = sib.nextSibling) {
-        if (sib.name !== 'ListItem') { continue; }
-        if (sib.from === item.from) { return index; }
-        index++;
-    }
-    return index;
-}
-
-/** Parses the segment-start item's typed starting number (drops the trailing "."/")" ). */
-export function orderedListStartNumber(state: EditorState, item: SyntaxNode): number {
-    const segmentStart = numberingSegmentStartItem(state, item);
-    const prev = segmentStart.prevSibling;
-    if (prev?.name === 'ListItem' && listItemsSeparatedByBlankLine(state, prev, segmentStart)) {
-        return 1;
-    }
-    const mark = segmentStart.getChild('ListMark');
-    if (!mark) { return 1; }
-    const n = parseInt(state.sliceDoc(mark.from, mark.to - 1), 10);
-    return Number.isFinite(n) ? n : 1;
 }
 
 /**

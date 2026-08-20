@@ -10,14 +10,9 @@
 // sites: toolbar clicks (mdWebview.ts `applyFormat`) and CM6-native
 // keybindings (Tab/Shift-Tab, Mod+letter shortcuts).
 //
-// Enter-key list/blockquote continuation and smart Backspace are NOT ported
-// here — `@codemirror/lang-markdown`'s `markdown({..})` already installs its
-// own `markdownKeymap` (Enter -> insertNewlineContinueMarkup, Backspace ->
-// deleteMarkupBackward) with `Prec.high`, which is strictly more capable than
-// the legacy regex (it also continues blockquotes, which the legacy
-// bullet/ordered/checkbox-only regex never did). Reusing it beats
-// reimplementing it, same reasoning the plan already applied to the slash
-// menu (`@codemirror/autocomplete` over a hand-rolled popup).
+// Enter-key list/blockquote continuation uses listEnterContinuation.ts (wraps
+// @codemirror/lang-markdown's insertNewlineContinueMarkup with nonTightLists:false
+// plus a manual fallback). Smart Backspace stays on deleteMarkupBackward there too.
 
 import { EditorState, EditorSelection, ChangeSet, Prec } from '@codemirror/state';
 import type { TransactionSpec } from '@codemirror/state';
@@ -83,13 +78,15 @@ function resolveListItemForIndent(state: EditorState, from: number, to: number):
     const endLine = state.doc.lineAt(to);
     let item = enclosingListItem(state, from)
         ?? (endLine.number === line.number ? enclosingListItem(state, to) : null);
-    let depthPos = from;
+    let depthPos = listSyntaxProbePos(state, from);
     if (!item && looksLikeListMarkerLine(line.text)) {
         const probe = listContentProbePos(line);
         item = enclosingListItem(state, probe);
         if (item) { depthPos = probe; }
     } else if (item && from < listContentProbePos(line)) {
         depthPos = listContentProbePos(line);
+    } else if (item) {
+        depthPos = listSyntaxProbePos(state, from);
     }
     if (item && !listMarkerLineIsActivated(state.doc.lineAt(item.from).text)) {
         item = null;
@@ -330,6 +327,12 @@ export function computeMultiLineIndent(state: EditorState, outdent: boolean): Tr
     };
 }
 
+function listSyntaxProbePos(state: EditorState, pos: number): number {
+    const line = state.doc.lineAt(pos);
+    if (pos > line.from && pos === line.to) { return pos - 1; }
+    return pos;
+}
+
 /**
  * The nearest enclosing ListItem for a position at the start of a physical line — the
  * marker line itself, or a wrapped continuation line within that item's content. Same
@@ -337,7 +340,8 @@ export function computeMultiLineIndent(state: EditorState, outdent: boolean): Tr
  * enclosingBlockquote.
  */
 export function enclosingListItem(state: EditorState, pos: number): SyntaxNode | null {
-    for (let node: SyntaxNode | null = syntaxTree(state).resolveInner(pos, 1); node; node = node.parent) {
+    const probe = listSyntaxProbePos(state, pos);
+    for (let node: SyntaxNode | null = syntaxTree(state).resolveInner(probe, 1); node; node = node.parent) {
         if (node.name === 'ListItem') { return node; }
     }
     return null;
@@ -345,8 +349,9 @@ export function enclosingListItem(state: EditorState, pos: number): SyntaxNode |
 
 /** Count of ListItem ancestors at `pos` — how many list levels deep this position is. */
 export function listItemDepth(state: EditorState, pos: number): number {
+    const probe = listSyntaxProbePos(state, pos);
     let depth = 0;
-    for (let node: SyntaxNode | null = syntaxTree(state).resolveInner(pos, 1); node; node = node.parent) {
+    for (let node: SyntaxNode | null = syntaxTree(state).resolveInner(probe, 1); node; node = node.parent) {
         if (node.name === 'ListItem') { depth++; }
     }
     return depth;

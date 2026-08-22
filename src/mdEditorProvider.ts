@@ -709,11 +709,16 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                 filePath,
                 documentUri: currentUri,
                 onChange: async () => {
-                    if (isSaving || Date.now() - lastSaveTime < 1000) {
+                    if (isSaving || Date.now() - lastSaveTime < 1500) {
                         return;
                     }
                     try {
                         const content = await fs.promises.readFile(filePath, 'utf-8');
+                        // Our own save (or a redundant watcher tick) — disk already matches
+                        // what the host tracks; skip notifying the webview.
+                        if (content === currentContent) {
+                            return;
+                        }
                         currentContent = content;
                         webviewPanel.webview.postMessage({ ...buildInitMarkdownPayload(content), command: 'diskChangedExternally' });
                     } catch {

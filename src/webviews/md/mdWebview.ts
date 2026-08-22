@@ -1749,6 +1749,13 @@ window.addEventListener('message', (event) => {
             pendingDiskDeleted = false;
 
             const incomingContent = m.content || '';
+
+            // Own-save echoes and other redundant watcher ticks — disk matches what
+            // is already in the editor, so there is nothing to reload or diff.
+            if (!wasManualReload && incomingContent === getActiveEditorContent()) {
+                break;
+            }
+
             // Capture what is on screen right now as the diff baseline, but only
             // if no comparison is already pending — a burst of external writes
             // should still diff against what the user last actually saw.

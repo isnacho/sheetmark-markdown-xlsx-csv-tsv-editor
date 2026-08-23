@@ -313,4 +313,92 @@ needed or implemented. This needs eyes in the Extension Development Host.
 
 ## QA
 
-_Not started._
+Branch: `feat/disk-diff-view` (`f1299c5`). Automated state: `npm run compile` clean,
+`npm run test:unit` 225 pass / 3 pre-existing Node-25 load failures. **Nothing below has been
+executed yet** — a clean build is not evidence this works.
+
+### Launch
+
+1. `npm run watch` (or just press **F5**, which uses it) → Extension Development Host opens.
+2. Open `samples/test.md` in Sheetmark.
+3. After any source edit, **Cmd+R** in the host window to pick up the rebuild.
+
+External changes are made from a second process, e.g. from the repo root:
+
+```bash
+printf '\n## Added externally\n\nA new paragraph.\n' >> samples/test.md   # append
+sed -i '' 's/^# Sheetmark/# Sheetmark (edited)/' samples/test.md            # modify a line
+```
+
+### 1. Golden path
+
+- [ ] External append → toast reads `File changed on disk · +N −M` with **Load disk changes**
+      and **Review changes**.
+- [ ] **Review changes** → content loads and the inline diff appears: added lines tinted,
+      deleted text shown in a chunk widget above.
+- [ ] Chunk **Accept** / **Reject** labels are legible (white on green / red).
+- [ ] Accept one chunk → it stops being highlighted, badge count drops.
+- [ ] Reject one chunk → that text reverts to the pre-change version, badge updates.
+- [ ] Accept-all button → overlay retires, toast confirms.
+- [ ] `+N −M` badge sits next to the status pill, bottom-right.
+
+### 2. The two reported bugs (re-test)
+
+- [ ] Narrow the editor pane (split it, or drag the sidebar wide) → toast **wraps** inside the
+      pill; nothing is clipped at either edge; both action buttons fully visible.
+- [ ] **Load disk changes** actually loads: document updates, toast becomes "Reloaded from
+      disk", no diff opens. This is the one that did nothing before.
+- [ ] After that reload, the toolbar diff toggle still opens the diff (baseline is retained).
+
+### 3. The main untested risk — reveal/widget layer
+
+Needs a document containing a table, a mermaid fence, a callout and a task list.
+
+- [ ] External edit **inside a table** → diff renders without corrupting the table widget;
+      the table is still interactive after the diff is dismissed.
+- [ ] External edit **inside a mermaid fence** → diagram/code widget survives; deleted-chunk
+      widget doesn't land inside the rendered diagram.
+- [ ] External edit **inside a callout** and **in a list** → markers and decorations intact.
+- [ ] If any of these break: the documented fallback is reconfiguring `revealCompartment` off
+      while the diff is on (`livePreviewEditor.ts`). Not implemented — only needed if this
+      fails.
+
+### 4. Dirty-buffer safety
+
+- [ ] Type something, then trigger an external change → **Load disk changes** shows the
+      "Discard unsaved changes and reload from disk?" confirm; cancelling keeps your edits.
+- [ ] Same with **Review changes** → same confirm, no silent discard.
+- [ ] Enable `md.autoShowDiskDiff`, keep the buffer **clean**, trigger a change → diff opens
+      by itself.
+- [ ] With the setting on and the buffer **dirty** → does NOT auto-apply; falls back to the toast.
+
+### 5. Interactions
+
+- [ ] Turn **Document Stats off** in settings → the `+N −M` badge still shows (its own element).
+- [ ] With the diff open, **save** (Cmd+S) → overlay retires and the toggle goes inert.
+- [ ] With `md.autoSave` on, typing after an external change clears the comparison — known and
+      accepted, confirm it isn't jarring in practice.
+- [ ] Open **Version History** while the diff is up → diff retires, diff toggle hidden; cancel
+      the preview → editor back to normal, no leftover diff state.
+- [ ] **F7** / **Shift+F7** step forward and back through chunks.
+- [ ] Reject a chunk then **Cmd+Z** → undo behaves sanely (rejection is a normal doc edit).
+
+### 6. Edge cases
+
+- [ ] Empty file → external write adds content → badge reads `+N −0`, no phantom removal
+      (this was the bug found in `diffLineStats`).
+- [ ] Large external rewrite (a few thousand changed lines) → editor stays responsive.
+- [ ] Delete the file externally → existing "File deleted from disk" behaviour unaffected.
+- [ ] Rename/move the file externally → existing move handling unaffected.
+- [ ] A toast with a **single** action (e.g. "Reloaded from disk · +N −M" → Review changes)
+      still has correct close-button spacing.
+
+### 7. Themes
+
+- [ ] Light, dark, and VS Code theme → chunk button labels, changed-line tints and the badge
+      are all readable in each.
+
+### Results
+
+_Pending — record outcomes here, and bounce the status back to `to-plan` / `to-implement` if
+something structural fails._

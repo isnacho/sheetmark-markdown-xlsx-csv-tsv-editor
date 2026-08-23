@@ -1,3 +1,15 @@
 {
-	"npm.autoDetect": "off"
+	"npm.autoDetect": "off",
+
+	// Per-repo accent colors — makes this window easy to spot among other projects.
+	"workbench.colorCustomizations": {
+
+		// Title bar — the top bar showing the window / file name
+		// (hidden on macOS if "Window: Title Bar Style" is native)
+		"titleBar.activeBackground": "#67b6ea",
+		"titleBar.activeForeground": "#1a1a1a",
+		"titleBar.inactiveBackground": "#67b6ea", // when this window is not focused
+		"titleBar.inactiveForeground": "#404040",
+
+	}
 }

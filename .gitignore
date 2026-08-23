@@ -6,6 +6,4 @@ out/
 .DS_Store
 *.log
 
-# Local working clone of nachosdesign/mii-ai (not part of this extension)
-.docs/mii-ai/
-.agents/skills/mii-idea-lab
+# nachosdesign/mii-ai is tracked as a git submodule at .docs/mii-ai (see .gitmodules)

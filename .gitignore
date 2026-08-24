@@ -6,3 +6,5 @@ out/
 .DS_Store
 *.log
 samples/
+
+# nachosdesign/mii-ai is tracked as a git submodule at .docs/mii-ai (see .gitmodules)

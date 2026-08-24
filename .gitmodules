@@ -1,0 +1,3 @@
+[submodule ".docs/mii-ai"]
+	path = .docs/mii-ai
+	url = https://github.com/nachosdesign/mii-ai.git

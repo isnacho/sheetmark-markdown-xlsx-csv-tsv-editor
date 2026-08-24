@@ -2,7 +2,7 @@
 
 **Free and open source, forever.** Sheetmark gives `.md`, `.xlsx`, `.csv`, and `.tsv` files a polished, visual editing experience—so your specs, notes, data, and code can live in one workspace, without leaving VS Code.
 
-[Install from the VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=iggyinc.sheetmark) · [Install from Open VSX / Cursor](https://open-vsx.org/extension/iggyinc/sheetmark) · [`code --install-extension iggyinc.sheetmark`](#install)
+[Install from the VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=iggyinc.sheetmark) · [`code --install-extension iggyinc.sheetmark`](#install)
 
 ## Why Sheetmark?
 
@@ -36,13 +36,11 @@ Sheetmark lets you work with that information without leaving VS Code. Open an X
 
 ## Install
 
-For VS Code, install Sheetmark from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=iggyinc.sheetmark), or run:
+Install Sheetmark from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=iggyinc.sheetmark), or run:
 
 ```bash
 code --install-extension iggyinc.sheetmark
 ```
-
-For Cursor and other Open VSX-compatible editors, install it from [Open VSX](https://open-vsx.org/extension/iggyinc/sheetmark), or search for **Sheetmark** in the Extensions view. If a newly released version has not appeared there yet, download its `.vsix` from [GitHub Releases](https://github.com/nachosdesign/sheetmark-markdown-xlsx-csv-tsv-editor/releases) and run **Extensions: Install from VSIX...**.
 
 Then open an `.xlsx`, `.csv`, `.tsv`, or `.md` file and choose **Open with Sheetmark** if it is not already selected as the editor.
 

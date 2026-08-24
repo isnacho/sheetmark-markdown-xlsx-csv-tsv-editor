@@ -1,8 +1,10 @@
 import { EditorState, EditorSelection, StateField } from '@codemirror/state';
 import { EditorView, Decoration, WidgetType } from '@codemirror/view';
 import type { DecorationSet } from '@codemirror/view';
+import type { Transaction } from '@codemirror/state';
 import { syntaxTree } from '@codemirror/language';
 import mermaid from 'mermaid';
+import { Icons } from '../../shared/icons';
 import {
     findMermaidFenceRanges,
     isMermaidFence,
@@ -90,7 +92,12 @@ function createModeSelect(view: EditorView, mode: MermaidPreviewMode): HTMLSelec
     return select;
 }
 
-function createToolbar(view: EditorView, mode: MermaidPreviewMode, langLabel: string): HTMLElement {
+function createToolbar(
+    view: EditorView,
+    mode: MermaidPreviewMode,
+    langLabel: string,
+    zoomControls?: HTMLElement,
+): HTMLElement {
     const toolbar = document.createElement('div');
     toolbar.className = 'cm-md-mermaid-toolbar';
 
@@ -99,8 +106,170 @@ function createToolbar(view: EditorView, mode: MermaidPreviewMode, langLabel: st
     lang.textContent = langLabel;
 
     toolbar.appendChild(lang);
-    toolbar.appendChild(createModeSelect(view, mode));
+
+    const right = document.createElement('div');
+    right.className = 'cm-md-mermaid-toolbar-right';
+    if (zoomControls) {
+        right.appendChild(zoomControls);
+    }
+    right.appendChild(createModeSelect(view, mode));
+    toolbar.appendChild(right);
+
     return toolbar;
+}
+
+const ZOOM_MIN = 0.5;
+const ZOOM_MAX = 4;
+const ZOOM_STEP = 1.25;
+
+function clampZoom(scale: number): number {
+    return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, scale));
+}
+
+/** Wires Ctrl/Cmd+wheel zoom, drag-to-pan (once zoomed), buttons, and reset onto a rendered diagram. */
+function attachZoomPan(diagramWrap: HTMLElement, mermaidEl: HTMLElement): HTMLElement {
+    let scale = 1;
+    let tx = 0;
+    let ty = 0;
+    let dragging = false;
+    let lastX = 0;
+    let lastY = 0;
+
+    const controls = document.createElement('div');
+    controls.className = 'cm-md-mermaid-zoom-controls';
+
+    const zoomOutBtn = document.createElement('button');
+    zoomOutBtn.type = 'button';
+    zoomOutBtn.className = 'cm-md-mermaid-zoom-btn';
+    zoomOutBtn.title = 'Zoom out';
+    zoomOutBtn.innerHTML = Icons.ZoomOut;
+
+    const pct = document.createElement('span');
+    pct.className = 'cm-md-mermaid-zoom-pct';
+
+    const zoomInBtn = document.createElement('button');
+    zoomInBtn.type = 'button';
+    zoomInBtn.className = 'cm-md-mermaid-zoom-btn';
+    zoomInBtn.title = 'Zoom in';
+    zoomInBtn.innerHTML = Icons.ZoomIn;
+
+    const resetBtn = document.createElement('button');
+    resetBtn.type = 'button';
+    resetBtn.className = 'cm-md-mermaid-zoom-btn';
+    resetBtn.title = 'Reset zoom';
+    resetBtn.innerHTML = Icons.ZoomReset;
+
+    controls.append(zoomOutBtn, pct, zoomInBtn, resetBtn);
+
+    function applyTransform(): void {
+        mermaidEl.style.transform = scale === 1 && tx === 0 && ty === 0
+            ? ''
+            : `translate(${tx}px, ${ty}px) scale(${scale})`;
+    }
+
+    function updateUI(): void {
+        pct.textContent = `${Math.round(scale * 100)}%`;
+        pct.style.display = scale === 1 ? 'none' : '';
+        zoomOutBtn.disabled = scale <= ZOOM_MIN;
+        zoomInBtn.disabled = scale >= ZOOM_MAX;
+        diagramWrap.style.cursor = scale > 1 ? 'grab' : 'default';
+    }
+
+    function zoomAtPoint(clientX: number, clientY: number, targetScale: number): void {
+        const newScale = clampZoom(targetScale);
+        if (newScale === scale) {
+            return;
+        }
+        const rect = mermaidEl.getBoundingClientRect();
+        const ratio = 1 - newScale / scale;
+        tx += (clientX - rect.left) * ratio;
+        ty += (clientY - rect.top) * ratio;
+        scale = newScale;
+        applyTransform();
+        updateUI();
+    }
+
+    function zoomFromCenter(factor: number): void {
+        const rect = diagramWrap.getBoundingClientRect();
+        zoomAtPoint(rect.left + rect.width / 2, rect.top + rect.height / 2, scale * factor);
+    }
+
+    function reset(): void {
+        scale = 1;
+        tx = 0;
+        ty = 0;
+        applyTransform();
+        updateUI();
+    }
+
+    for (const btn of [zoomOutBtn, zoomInBtn, resetBtn]) {
+        btn.addEventListener('mousedown', (event) => event.stopPropagation());
+    }
+    zoomOutBtn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        zoomFromCenter(1 / ZOOM_STEP);
+    });
+    zoomInBtn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        zoomFromCenter(ZOOM_STEP);
+    });
+    resetBtn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        reset();
+    });
+
+    diagramWrap.addEventListener('wheel', (event) => {
+        if (!(event.ctrlKey || event.metaKey)) {
+            return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        const factor = Math.exp(-event.deltaY * 0.0015);
+        zoomAtPoint(event.clientX, event.clientY, scale * factor);
+    }, { passive: false });
+
+    diagramWrap.addEventListener('pointerdown', (event) => {
+        if (scale <= 1) {
+            return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        dragging = true;
+        lastX = event.clientX;
+        lastY = event.clientY;
+        diagramWrap.setPointerCapture(event.pointerId);
+        diagramWrap.style.cursor = 'grabbing';
+    });
+    diagramWrap.addEventListener('pointermove', (event) => {
+        if (!dragging) {
+            return;
+        }
+        tx += event.clientX - lastX;
+        ty += event.clientY - lastY;
+        lastX = event.clientX;
+        lastY = event.clientY;
+        applyTransform();
+    });
+    const endDrag = (event: PointerEvent): void => {
+        if (!dragging) {
+            return;
+        }
+        dragging = false;
+        diagramWrap.style.cursor = scale > 1 ? 'grab' : 'default';
+        if (diagramWrap.hasPointerCapture(event.pointerId)) {
+            diagramWrap.releasePointerCapture(event.pointerId);
+        }
+    };
+    diagramWrap.addEventListener('pointerup', endDrag);
+    diagramWrap.addEventListener('pointercancel', endDrag);
+    diagramWrap.addEventListener('dblclick', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        reset();
+    });
+
+    updateUI();
+    return controls;
 }
 
 class MermaidToolbarWidget extends WidgetType {
@@ -148,7 +317,6 @@ class MermaidDiagramWidget extends WidgetType {
     toDOM(view: EditorView): HTMLElement {
         const block = document.createElement('div');
         block.className = 'cm-md-mermaid-block';
-        block.appendChild(createToolbar(view, this.mode, this.langLabel));
 
         const diagramWrap = document.createElement('div');
         diagramWrap.className = 'cm-md-mermaid-diagram';
@@ -157,6 +325,9 @@ class MermaidDiagramWidget extends WidgetType {
         mermaidEl.className = 'mermaid';
         mermaidEl.textContent = this.source;
         diagramWrap.appendChild(mermaidEl);
+
+        const zoomControls = attachZoomPan(diagramWrap, mermaidEl);
+        block.appendChild(createToolbar(view, this.mode, this.langLabel, zoomControls));
         block.appendChild(diagramWrap);
 
         mermaid.initialize({ startOnLoad: false, theme: this.theme });
@@ -211,22 +382,35 @@ function buildFromState(state: EditorState): DecorationSet {
     return Decoration.set(specs, true);
 }
 
+/** CM6 parses large docs incrementally; widget fields must rebuild when the tree extends. */
+function shouldRebuildMermaidWidgets(tr: Transaction): boolean {
+    return tr.docChanged
+        || tr.effects.some((effect) => effect.is(setMermaidPreviewModeEffect))
+        || syntaxTree(tr.state).length > syntaxTree(tr.startState).length;
+}
+
 export const mermaidWidgetField = StateField.define<DecorationSet>({
     create: (state) => buildFromState(state),
-    update(_value, tr) {
+    update(value, tr) {
+        if (!shouldRebuildMermaidWidgets(tr)) {
+            return value;
+        }
         return buildFromState(tr.state);
     },
     provide: (f) => EditorView.decorations.from(f),
 });
 
-function buildMermaidAtomicRanges(state: EditorState): DecorationSet {
+function buildMermaidAtomicRanges(view: EditorView): DecorationSet {
+    const state = view.state;
     if (state.field(mermaidPreviewModeField) !== 'diagram') {
         return Decoration.none;
     }
     const marker = Decoration.mark({});
-    return Decoration.set(
-        findMermaidFenceRanges(state).map((range) => marker.range(range.from, range.to)),
-    );
+    const ranges: { from: number; to: number }[] = [];
+    for (const { from, to } of view.visibleRanges) {
+        ranges.push(...findMermaidFenceRanges(state, { from, to }));
+    }
+    return Decoration.set(ranges.map((range) => marker.range(range.from, range.to)));
 }
 
-export const mermaidAtomicRanges = EditorView.atomicRanges.of((view) => buildMermaidAtomicRanges(view.state));
+export const mermaidAtomicRanges = EditorView.atomicRanges.of((view) => buildMermaidAtomicRanges(view));

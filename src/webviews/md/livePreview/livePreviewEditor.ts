@@ -32,6 +32,8 @@ import { history, historyKeymap, defaultKeymap, undo, redo, undoDepth, redoDepth
 import { markdown } from '@codemirror/lang-markdown';
 import { GFM } from '@lezer/markdown';
 import { cm6Theme } from './cm6Theme';
+import { stripMarkdownToPlainText, computeTextStats } from '../markdownStats';
+import type { TextStats } from '../markdownStats';
 import { slashMenuAutocompletion } from './slashMenu';
 import {
     livePreviewSearchField, findCm6Matches, setCm6SearchHighlights,
@@ -41,7 +43,17 @@ import type { Cm6Match } from './livePreviewSearch';
 import { detectInteractionAtPos } from './livePreviewInteractions';
 import type { Cm6Interaction } from './livePreviewInteractions';
 import { livePreviewRevealPlugin } from './revealDecorations';
-import { listMarkerBoundaryExtensions } from './listMarkerEditing';
+import {
+    acceptAllDiffChunks,
+    acceptDiffChunkAtCursor,
+    buildDiffExtension,
+    countDiffChunks,
+    isDiffChunkResolution,
+    nextDiffChunk,
+    prevDiffChunk,
+    rejectDiffChunkAtCursor,
+} from './diffView';
+import { listMarkerBoundaryExtensions, livePreviewMarkdownKeymap } from './listMarkerEditing';
 import { codeStylingPlugin } from './codeStylingPlugin';
 import { codeBlockNavigationKeymap } from './codeBlockBoundaryEditing';
 import { contentClickHandlers } from './contentClickPositioning';
@@ -94,6 +106,13 @@ export interface LivePreviewMountOptions {
     lineWrapping?: boolean;
     /** Fired on scroll (viewport change) — drives scroll-spy/TOC/progress-bar re-integration. */
     onScroll?: () => void;
+    /**
+     * Fired when a diff chunk is accepted. Accepting keeps the current text, so
+     * it produces NO document change and onDocChanged never sees it — without
+     * this hook the change count would go stale and the overlay would never
+     * retire once the last chunk was accepted.
+     */
+    onDiffChunkResolved?: () => void;
     /** Fired on Ctrl/Cmd+Click at a doc position — mdWebview.ts resolves the interaction and acts. */
     onModifierClick?: (pos: number) => void;
     /** Whether reveal-on-cursor decorations are on (mirrors the md.livePreviewReveal setting). */
@@ -127,6 +146,10 @@ const wrapCompartment = new Compartment();
 const revealCompartment = new Compartment();
 const gutterCompartment = new Compartment();
 const readOnlyCompartment = new Compartment();
+const diffCompartment = new Compartment();
+
+/** Mirrors whether diffCompartment currently holds the merge extension. */
+let diffActive = false;
 /** Line-number gutter: clicking a line number selects that line's text; hovering shows the muted hover bar (hoverLineGutter.ts — must attach here, not via EditorView.domEventHandlers, since that never sees gutter-only mouse events). */
 function buildLineNumbersGutter() {
     return lineNumbers({
@@ -161,6 +184,7 @@ export function mountLivePreview(opts: LivePreviewMountOptions): EditorView {
 
     const {
         parent, doc, onDocChanged, lineWrapping = true, onScroll, onModifierClick, reveal = true,
+        onDiffChunkResolved,
         showLineNumbers = false, columnWidths, onColumnWidthsChanged, onSelectionChange, onHistoryChange,
         frontmatterCollapsed = false, onFrontmatterCollapsedChanged,
         mermaidPreviewMode = 'diagram', onMermaidPreviewModeChanged,
@@ -184,6 +208,9 @@ export function mountLivePreview(opts: LivePreviewMountOptions): EditorView {
         // tableWidget.ts) with no doc change at all.
         if (update.transactions.some(tr => tr.effects.some(e => e.is(setColumnWidthsEffect)))) {
             onColumnWidthsChanged?.(update.state.field(columnWidthsField));
+        }
+        if (diffActive && isDiffChunkResolution(update)) {
+            onDiffChunkResolved?.();
         }
         if (!update.docChanged) { return; }
         const isProgrammatic = update.transactions.some(tr => tr.annotation(programmatic));
@@ -220,7 +247,7 @@ export function mountLivePreview(opts: LivePreviewMountOptions): EditorView {
             highlightActiveLine(),
             highlightActiveLineGutter(),
             hoverLineGutter(),
-            markdown({ extensions: GFM }),
+            markdown({ extensions: GFM, addKeymap: false }),
             // No `syntaxHighlighting(defaultHighlightStyle)` here — it was
             // unused boilerplate, not a real dependency: no `codeLanguages` is
             // configured for `markdown()`, so its programming-language tags
@@ -237,9 +264,10 @@ export function mountLivePreview(opts: LivePreviewMountOptions): EditorView {
             wrapCompartment.of(lineWrapping ? EditorView.lineWrapping : []),
             gutterCompartment.of(showLineNumbers ? [buildLineNumbersGutter()] : []),
             readOnlyCompartment.of([]),
+            diffCompartment.of([]),
             selectAllKeymap,
-            livePreviewTabKeymap,
             keymap.of(livePreviewFormatKeymap),
+            livePreviewMarkdownKeymap,
             paragraphSelectionKeymap,
             keymap.of([...defaultKeymap, ...historyKeymap]),
             cm6Theme(),
@@ -265,6 +293,7 @@ export function mountLivePreview(opts: LivePreviewMountOptions): EditorView {
             contentClickHandlers,
             ...spellcheckExtensions,
             slashMenuAutocompletion(),
+            livePreviewTabKeymap,
             domHandlers,
             updateListener,
         ],
@@ -286,6 +315,7 @@ export function unmountLivePreview(): void {
         if (parent) { parent.innerHTML = ''; }
         view = null;
     }
+    diffActive = false;
     teardownSpellcheck();
     setFrontmatterCollapsedCallback(undefined);
     setMermaidPreviewModeCallback(undefined);
@@ -397,6 +427,61 @@ export function isLivePreviewReadOnly(): boolean {
     return view?.state.readOnly ?? false;
 }
 
+// ===== Disk-vs-editor diff overlay =====
+// The merge extension lives in its own compartment so turning the diff off
+// disposes its StateField entirely (no stale original doc left behind), the
+// same reconfigure trick setLivePreviewReveal uses.
+
+/**
+ * Show the document diffed against `original` (the content the user was looking
+ * at before an external write), or pass null to take the overlay down.
+ */
+export function setLivePreviewDiff(original: string | null): void {
+    if (!view) {
+        diffActive = false;
+        return;
+    }
+    diffActive = original !== null;
+    view.dispatch({
+        effects: diffCompartment.reconfigure(original === null ? [] : buildDiffExtension(original)),
+    });
+}
+
+export function isLivePreviewDiffActive(): boolean {
+    return diffActive && view !== null;
+}
+
+/** Unresolved changed chunks remaining; 0 when the overlay is down. */
+export function getLivePreviewDiffChunkCount(): number {
+    return view && diffActive ? countDiffChunks(view) : 0;
+}
+
+export function goToNextLivePreviewDiffChunk(): boolean {
+    return view && diffActive ? nextDiffChunk(view) : false;
+}
+
+export function goToPrevLivePreviewDiffChunk(): boolean {
+    return view && diffActive ? prevDiffChunk(view) : false;
+}
+
+/**
+ * Accept/reject the chunk under the cursor. Both edit the document, so the
+ * change reaches currentContent through the normal onDocChanged path and obeys
+ * the usual dirty/save rules — neither writes to disk.
+ */
+export function acceptLivePreviewDiffChunk(): boolean {
+    return view && diffActive ? acceptDiffChunkAtCursor(view) : false;
+}
+
+export function rejectLivePreviewDiffChunk(): boolean {
+    return view && diffActive ? rejectDiffChunkAtCursor(view) : false;
+}
+
+/** Accept every remaining chunk at once. Returns how many were accepted. */
+export function acceptAllLivePreviewDiffChunks(): number {
+    return view && diffActive ? acceptAllDiffChunks(view) : 0;
+}
+
 // ===== Re-integration (Phase 2): scroll metrics, TOC scroll, search, click =====
 // `.cm-scroller` is the actual scrolling element — `view.dom`'s parent
 // (#markdownPreview) does not scroll itself, unlike the old contentEditable.
@@ -422,6 +507,25 @@ export function getLivePreviewCursorPosition(): { line: number; col: number } | 
     const head = view.state.selection.main.head;
     const line = view.state.doc.lineAt(head);
     return { line: line.number, col: head - line.from + 1 };
+}
+
+/**
+ * Combined stats over all non-empty selection ranges (multi-cursor summed),
+ * using stripped Markdown text — same rules as the whole-document stats.
+ * Returns null when there is no non-trivial selection (nothing selected, or
+ * every selected range is whitespace-only) so the caller falls back to
+ * whole-document stats.
+ */
+export function getLivePreviewSelectionStats(): TextStats | null {
+    if (!view) { return null; }
+    const ranges = view.state.selection.ranges.filter(r => !r.empty);
+    if (ranges.length === 0) { return null; }
+    const rawTexts = ranges.map(r => view!.state.sliceDoc(r.from, r.to));
+    if (!rawTexts.some(t => t.trim().length > 0)) { return null; }
+    return rawTexts.reduce((acc, raw) => {
+        const s = computeTextStats(stripMarkdownToPlainText(raw));
+        return { lines: acc.lines + s.lines, words: acc.words + s.words, chars: acc.chars + s.chars };
+    }, { lines: 0, words: 0, chars: 0 });
 }
 
 /** TOC click target — scroll CM6 so the given 1-indexed line sits at the top. */

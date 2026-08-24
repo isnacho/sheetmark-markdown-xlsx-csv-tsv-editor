@@ -65,6 +65,8 @@ import type { DecorationSet, ViewUpdate } from '@codemirror/view';
 import { syntaxTree } from '@codemirror/language';
 import type { SyntaxNode } from '@lezer/common';
 import { appendCalloutDecorationSpecs } from './calloutDecorations';
+import { isSetextUnderlineListMarker } from './listSetextAmbiguity';
+import { listItemMarkerIsActivated, orderedListStartNumber, listItemPositionInSegment } from './listMarkerEditing';
 
 export interface VisibleRange {
     from: number;
@@ -142,14 +144,6 @@ export function listItemPosition(item: SyntaxNode): number {
     return index;
 }
 
-/** Parses the first item's own typed starting number off its ListMark text (drops the trailing "."/")" ). */
-export function orderedListStartNumber(state: EditorState, list: SyntaxNode): number {
-    const mark = list.firstChild?.getChild('ListMark');
-    if (!mark) { return 1; }
-    const n = parseInt(state.sliceDoc(mark.from, mark.to - 1), 10);
-    return Number.isFinite(n) ? n : 1;
-}
-
 /**
  * The computed display label for an ordered-list ListMark node — seeded from the list's
  * first item's own typed digits, then incremented by sibling position (mirrors
@@ -163,7 +157,7 @@ export function computeOrderedMarkerLabel(state: EditorState, mark: SyntaxNode):
     const list = item?.parent;
     if (!item || item.name !== 'ListItem' || !list || list.name !== 'OrderedList') { return null; }
     const delimiter = state.sliceDoc(mark.to - 1, mark.to);
-    const value = orderedListStartNumber(state, list) + listItemPosition(item);
+    const value = orderedListStartNumber(state, item) + listItemPositionInSegment(state, item);
     return formatOrderedMarkerLabel(listContainerDepth(list), value, delimiter);
 }
 
@@ -505,6 +499,23 @@ export function computeRevealDecorations(
         }
     }
 
+    // Setext-vs-bullet ambiguity: `paragraph\n- ` is parsed as Setext h2, not a
+    // list. When the underline line is really a list marker, render the bullet
+    // widget and skip heading treatment (headingGutterSync uses the same check).
+    function handleSetextAsListMarker(setextNode: SyntaxNode) {
+        if (!isSetextUnderlineListMarker(state, setextNode)) { return; }
+        const underlineLine = state.doc.lineAt(setextNode.to - 1);
+        const text = state.sliceDoc(underlineLine.from, underlineLine.to);
+        if (!/^[-*+]/.test(text)) { return; }
+        const spaceIdx = text.search(/\s/);
+        if (spaceIdx < 0) { return; }
+        const markerFrom = underlineLine.from;
+        const markerTo = markerFrom + 1;
+        const nested = false;
+        specs.push({ from: markerFrom, to: markerTo, value: Decoration.replace({ widget: new BulletMarkerWidget(nested) }) });
+        specs.push({ from: markerTo, to: markerTo + 1, value: hiddenMark });
+    }
+
     // Always-on (see the Phase 7 design note above) — no isActive() branch.
     // Three-way split, checked in this order: ordered markers get the
     // depth-cycling/auto-numbering widget (must run first — a numbered
@@ -513,10 +524,20 @@ export function computeRevealDecorations(
     // hidden (the checkbox already signals "list item," the dash is
     // redundant); plain bullet markers get the dot widget (filled/outline by
     // depth — see BulletMarkerWidget).
+    function hideMarkerGapAfter(from: number) {
+        const hasGapSpace = state.sliceDoc(from, from + 1) === ' ';
+        if (hasGapSpace) {
+            specs.push({ from, to: from + 1, value: hiddenMark });
+        }
+    }
+
     function handleListMark(node: SyntaxNode) {
+        const item = node.parent;
+        if (!item || item.name !== 'ListItem' || !listItemMarkerIsActivated(state, item)) { return; }
         const orderedLabel = computeOrderedMarkerLabel(state, node);
         if (orderedLabel !== null) {
             specs.push({ from: node.from, to: node.to, value: Decoration.replace({ widget: new OrderedMarkerWidget(orderedLabel) }) });
+            hideMarkerGapAfter(node.to);
             return;
         }
         const task = node.parent?.getChild('Task');
@@ -529,10 +550,13 @@ export function computeRevealDecorations(
         }
         const nested = listContainerDepth(node) > 1;
         specs.push({ from: node.from, to: node.to, value: Decoration.replace({ widget: new BulletMarkerWidget(nested) }) });
+        hideMarkerGapAfter(node.to);
     }
 
     // Always-on (see the Phase 7 design note above) — no isActive() branch.
     function handleTaskMarker(node: SyntaxNode) {
+        const item = node.parent?.parent;
+        if (!item || item.name !== 'ListItem' || !listItemMarkerIsActivated(state, item)) { return; }
         const done = /\[[xX]\]/.test(state.sliceDoc(node.from, node.to));
         specs.push({ from: node.from, to: node.to, value: Decoration.replace({ widget: new TaskCheckboxWidget(done, node.from, node.to) }) });
         // The grammar skips exactly one space after "[ ]"/"[x]" without giving
@@ -582,7 +606,12 @@ export function computeRevealDecorations(
             enter(node) {
                 const level = HEADING_LEVEL[node.name];
                 if (level) {
-                    handleHeading(node.node, level);
+                    if ((node.name === 'SetextHeading1' || node.name === 'SetextHeading2')
+                        && isSetextUnderlineListMarker(state, node.node)) {
+                        handleSetextAsListMarker(node.node);
+                    } else {
+                        handleHeading(node.node, level);
+                    }
                 } else if (node.name === 'StrongEmphasis') {
                     handlePairedMarks(node.node, 'EmphasisMark', 'cm-md-strong-content');
                 } else if (node.name === 'Emphasis') {
@@ -634,41 +663,20 @@ export const livePreviewRevealPlugin = ViewPlugin.fromClass(class {
     decorations: v => v.decorations,
 });
 
-// ===== Ordered-marker atomicity (list-editing-polish idea) =====
-// The cursor must never rest strictly INSIDE a multi-character ordered-list
-// marker ("12.", "3)") — landing there via click or arrow key should snap to
-// just before or after it. Bullet markers are single-character, so this
-// doesn't apply to them (no "inside" position exists for a 1-char span).
-// First real use of EditorView.atomicRanges in this codebase — the other
-// comment in this file about atomic ranges (near the top) documents a
-// deliberate decision NOT to use the facet for reveal-on-cursor hiding, for an
-// unrelated reason (progressive reveal on approach); it doesn't apply here,
-// since this is about blocking the cursor from landing inside VISIBLE marker
-// text, not un-hiding a hidden one.
-
-/** Pure, headlessly testable: every OrderedList ListMark span in the whole document. */
+// Ordered-marker atomic ranges moved to listMarkerEditing.ts (marker + gap as
+// one unit for all list types). computeOrderedMarkerRanges kept for tests that
+// assert ordered marker text spans only.
 export function computeOrderedMarkerRanges(state: EditorState): VisibleRange[] {
     const ranges: VisibleRange[] = [];
     syntaxTree(state).iterate({
         enter(node) {
             if (node.name === 'ListMark' && computeOrderedMarkerLabel(state, node.node) !== null) {
-                ranges.push({ from: node.from, to: node.to });
+                const item = node.node.parent;
+                if (item && listItemMarkerIsActivated(state, item)) {
+                    ranges.push({ from: node.from, to: node.to });
+                }
             }
         },
     });
     return ranges;
 }
-
-// Deliberately scans the WHOLE document, not just view.visibleRanges: every
-// consumer of this facet (arrow-key motion, click resolution, Mod-g jump-to-
-// line) queries it fresh against the view's current state at the moment a
-// motion is resolved, including jumps to positions that are off-screen at
-// query time — scoping to visibleRanges would let the cursor land inside an
-// off-screen marker uncorrected. Mirrors tableWidgetField's same whole-doc-scan
-// tradeoff (tableWidget.ts), for a related reason.
-function buildOrderedMarkerAtomicRanges(state: EditorState): DecorationSet {
-    const marker = Decoration.mark({});
-    return Decoration.set(computeOrderedMarkerRanges(state).map(r => marker.range(r.from, r.to)));
-}
-
-export const orderedListAtomicRanges = EditorView.atomicRanges.of((view) => buildOrderedMarkerAtomicRanges(view.state));

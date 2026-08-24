@@ -1,9 +1,9 @@
 ---
 name: publish-vscode-marketplace
-description: Publish and verify Sheetmark updates on the Visual Studio Marketplace and Open VSX. Use when asked to release, publish, push an update, check a marketplace version, or troubleshoot the GitHub Actions publishing workflow for iggyinc.sheetmark.
+description: Publish and verify updates for the Sheetmark VS Code extension on the Visual Studio Marketplace. Use when asked to release, publish, push an update, check a Marketplace version, or troubleshoot the GitHub Actions publishing workflow for iggyinc.sheetmark.
 ---
 
-# Publish Sheetmark to VS Code Marketplace and Open VSX
+# Publish Sheetmark to the VS Code Marketplace
 
 Publish the extension ID `iggyinc.sheetmark` from
 `nachosdesign/sheetmark-markdown-xlsx-csv-tsv-editor`.
@@ -11,9 +11,8 @@ Publish the extension ID `iggyinc.sheetmark` from
 ## Standard release flow
 
 When this skill is invoked to publish or release, own the complete release flow:
-prepare the version and changelog, validate it, commit and push it, publish the
-same VSIX to both registries, then verify it. Do not make the user separately
-ask for routine steps.
+prepare the version and changelog, validate it, commit and push it, publish it,
+then verify it. Do not make the user separately ask for routine steps.
 
 ### 1. Inspect the release state
 
@@ -27,10 +26,9 @@ git branch --show-current
 node -p "require('./package.json').version"
 git log --oneline
 npx --yes @vscode/vsce@latest show iggyinc.sheetmark
-curl --fail-with-body --location https://open-vsx.org/api/iggyinc/sheetmark/latest
 ```
 
-Either registry can reject a version that is already published. Never publish
+The Marketplace rejects a version that is already published. Never publish
 uncommitted work, and publish only from pushed `main`.
 
 ### 2. Confirm release metadata when preparation is needed
@@ -96,11 +94,8 @@ proceed.
 ### 5. Publish the tag and watch its exact run
 
 Require the GitHub Actions secret `VSCE_PAT` (an Azure DevOps PAT with
-`Marketplace > Manage` scope) and the Open VSX token `OVSX_PAT`; never request
-or expose either value. `OVSX_PAT` requires the `iggyinc` Open VSX namespace to
-have been created first. Use `.github/workflows/publish-marketplace.yml`, which
-packages one VSIX, attaches it to the GitHub Release, and publishes that exact
-file to both registries.
+`Marketplace > Manage` scope); never request or expose its value. Use
+`.github/workflows/publish-marketplace.yml`, which supports manual dispatch.
 
 Publishing is a public release action. If the user has not explicitly asked to
 publish in this invocation, ask immediately before triggering it. An explicit
@@ -110,8 +105,7 @@ ask a redundant second time.
 ```bash
 gh workflow run "Publish to VS Code Marketplace" \
   --repo nachosdesign/sheetmark-markdown-xlsx-csv-tsv-editor \
-  --ref "v<version>" \
-  -f release_tag="v<version>"
+  --ref "v<version>"
 gh run list \
   --repo nachosdesign/sheetmark-markdown-xlsx-csv-tsv-editor \
   --workflow "Publish to VS Code Marketplace" \
@@ -125,34 +119,23 @@ The dispatch response may supply a run URL; otherwise poll the exact
 select a run only because it is the most recent one. Verify its `headSha`
 matches `$RELEASE_SHA` before watching it.
 
-Treat the version as published only after the run succeeds, its **Publish to VS
-Code Marketplace** and **Publish to Open VSX** jobs both succeed, and the GitHub
-Release contains the versioned `.vsix` asset. Then verify with:
+Treat the version as published only after the run succeeds and its log contains
+`Published iggyinc.sheetmark v<version>`. Then verify with:
 
 ```bash
 npx --yes @vscode/vsce@latest show iggyinc.sheetmark
-curl --fail-with-body --location https://open-vsx.org/api/iggyinc/sheetmark/latest
-gh release view "v<version>" \
-  --repo nachosdesign/sheetmark-markdown-xlsx-csv-tsv-editor \
-  --json assets
 ```
 
-Give the user both listings:
-
-- `https://marketplace.visualstudio.com/items?itemName=iggyinc.sheetmark`
-- `https://open-vsx.org/extension/iggyinc/sheetmark`
+Give the user the Marketplace listing:
+`https://marketplace.visualstudio.com/items?itemName=iggyinc.sheetmark`
 
 ## Troubleshooting
 
 - **Workflow cannot authenticate:** confirm that `VSCE_PAT` exists, has not
-  expired, and has the `Marketplace > Manage` scope; or confirm that `OVSX_PAT`
-  exists in the same protected environment and the `iggyinc` namespace was
-  created. Do not ask the user to paste either token into chat.
+  expired, and has the `Marketplace > Manage` scope. Do not ask the user to
+  paste it into chat.
 - **`vsce show` reports the old version:** inspect the successful Actions log
   first. The public Marketplace cache can take several minutes to refresh.
-- **Open VSX or Cursor reports the old version:** inspect the successful Open
-  VSX job and listing first. Cursor can take additional time to index Open VSX;
-  the release `.vsix` is the user fallback while it catches up.
 - **Secret scanner blocks packaging:** run the local VSIX preflight, inspect
   `vsce ls --tree`, then exclude the flagged development-only files in
   `.vscodeignore`; do not disable the scanner.

@@ -45,9 +45,12 @@ export function isMermaidFence(state: EditorState, node: SyntaxNode): boolean {
     return isMermaidFenceContent(extractMermaidLangName(state, node), extractMermaidSource(state, node));
 }
 
-export function findMermaidFenceRanges(state: EditorState): { from: number; to: number }[] {
+/** Mermaid fence ranges within `bounds` (defaults to the whole document). */
+export function findMermaidFenceRanges(state: EditorState, bounds?: { from: number; to: number }): { from: number; to: number }[] {
     const ranges: { from: number; to: number }[] = [];
     syntaxTree(state).iterate({
+        from: bounds?.from,
+        to: bounds?.to,
         enter(node) {
             if (node.name === 'FencedCode' && isMermaidFence(state, node.node)) {
                 ranges.push({ from: node.from, to: node.to });

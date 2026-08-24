@@ -16,6 +16,7 @@ import type { Extension } from '@codemirror/state';
 import { ViewPlugin } from '@codemirror/view';
 import type { EditorView, ViewUpdate } from '@codemirror/view';
 import { Icons } from '../../shared/icons';
+import { renderMenuIcon } from '../../shared/menuPanel';
 import { calloutDefaultTypeField } from './calloutDefaultType';
 import { buildCalloutSnippet, calloutCursorOffsetForType } from './calloutTypes';
 
@@ -35,7 +36,7 @@ interface SlashOption {
     hint?: string;
 }
 
-const TABLE_SNIPPET = '| Header 1 | Header 2 | Header 3 |\n| -------- | -------- | -------- |\n| Cell 1   | Cell 2   | Cell 3   |\n';
+const TABLE_SNIPPET = '|  |  |  |\n| --- | --- | --- |\n|  |  |  |\n';
 
 /** Exported for headless testing of computeSlashApply against the real snippets. */
 export const SLASH_OPTIONS: SlashOption[] = [
@@ -114,11 +115,8 @@ export const livePreviewSlashSource: CompletionSource = slashMenuSource;
 
 function renderSlashMenuIcon(completion: Completion, _state: EditorState, _view: EditorView): HTMLElement {
     const wrap = document.createElement('span');
-    wrap.className = 'cm-slash-menu-icon';
-    wrap.setAttribute('aria-hidden', 'true');
-    const iconHtml = SLASH_ICON_BY_LABEL[completion.label];
-    if (iconHtml) { wrap.innerHTML = iconHtml; }
-    return wrap;
+    wrap.innerHTML = renderMenuIcon(SLASH_ICON_BY_LABEL[completion.label] ?? '');
+    return wrap.firstElementChild as HTMLElement;
 }
 
 const SLASH_MENU_TOOLTIP_SELECTOR = '.cm-tooltip-autocomplete.cm-slash-menu-tooltip';

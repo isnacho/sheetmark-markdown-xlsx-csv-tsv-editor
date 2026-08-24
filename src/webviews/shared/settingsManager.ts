@@ -1,5 +1,11 @@
  
 import { Icons } from './icons';
+import {
+    groupMenuSections,
+    renderMenuCheckboxRow,
+    renderMenuPanelShell,
+    renderMenuSection
+} from './menuPanel';
 
 export interface SettingDefinition {
     id: string;
@@ -11,6 +17,9 @@ export interface SettingDefinition {
     groupName?: string;
     value?: string;
     className?: string;
+    section?: string;
+    /** When set, renders this HTML instead of a checkbox/radio row (e.g. theme select). */
+    html?: string;
 }
 
 export class SettingsManager {
@@ -22,6 +31,7 @@ export class SettingsManager {
     private panelOriginalParent: Node | null = null;
     private panelOriginalNext: Node | null = null;
     private onReposition?: () => void;
+    private escapeHandler: ((e: KeyboardEvent) => void) | null = null;
 
     constructor(buttonId: string, panelId: string, cancelId: string, settings: SettingDefinition[], onReposition?: () => void) {
         this.openBtn = document.getElementById(buttonId);
@@ -33,41 +43,63 @@ export class SettingsManager {
         this.init();
     }
 
-    private static escapeHtml(input: string): string {
-        return input
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#39;');
+    private static renderSettingItem(s: SettingDefinition): string {
+        if (s.html) {
+            return s.html;
+        }
+
+        return renderMenuCheckboxRow({
+            id: s.id,
+            label: s.label,
+            tooltip: s.tooltip,
+            inputType: s.inputType,
+            groupName: s.groupName,
+            value: s.value,
+            className: s.className
+        });
     }
 
-    static renderPanel(container: HTMLElement, panelId: string, cancelId: string, settings: SettingDefinition[]) {
+    static renderPanel(
+        container: HTMLElement,
+        panelId: string,
+        cancelId: string,
+        settings: SettingDefinition[],
+        options: { title?: string } = {}
+    ) {
         const panel = document.createElement('div');
         panel.id = panelId;
-        panel.className = 'settings-panel hidden';
+        panel.className = 'menu-panel settings-panel hidden';
         panel.setAttribute('role', 'dialog');
         panel.setAttribute('aria-hidden', 'true');
-        
-        let html = `<button id="${cancelId}" class="settings-close-btn" type="button" title="Close" aria-label="Close">${Icons.Cancel}</button>`;
-        html += '<div class="settings-group">';
-        settings.forEach(s => {
-            const safeId = this.escapeHtml(s.id);
-            const safeLabel = this.escapeHtml(s.label);
-            const tooltip = s.tooltip && s.tooltip.trim().length > 0 ? s.tooltip : s.label;
-            const safeTooltip = this.escapeHtml(tooltip);
-            const inputType = s.inputType === 'radio' ? 'radio' : 'checkbox';
-            const safeGroupName = this.escapeHtml(s.groupName || '');
-            const safeValue = this.escapeHtml(s.value || '');
-            const safeClassName = this.escapeHtml((s.className || '').trim());
-            const groupAttr = inputType === 'radio' && safeGroupName ? ` name="${safeGroupName}"` : '';
-            const valueAttr = inputType === 'radio' ? ` value="${safeValue}"` : '';
-            const extraClass = safeClassName ? ` ${safeClassName}` : '';
-            html += `<label class="setting-item tooltip${extraClass}"><input type="${inputType}" id="${safeId}"${groupAttr}${valueAttr}/> <span>${safeLabel}</span><span class="tooltiptext hidden">${safeTooltip}</span></label>`;
-        });
-        html += '</div>';
 
-        panel.innerHTML = html;
+        const title = options.title || 'Settings';
+        const titleId = `${panelId}Title`;
+        panel.setAttribute('aria-labelledby', titleId);
+
+        const sections = groupMenuSections(settings);
+        let bodyHtml = '<div class="settings-group">';
+
+        sections.forEach((section) => {
+            let rowsHtml = '';
+            section.items.forEach((setting) => {
+                rowsHtml += this.renderSettingItem(setting);
+            });
+            if (section.name) {
+                bodyHtml += renderMenuSection(section.name, rowsHtml);
+            } else {
+                bodyHtml += rowsHtml;
+            }
+        });
+
+        bodyHtml += '</div>';
+
+        panel.innerHTML = renderMenuPanelShell({
+            title,
+            titleId,
+            closeId: cancelId,
+            closeIconHtml: Icons.Cancel,
+            bodyHtml
+        });
         container.appendChild(panel);
     }
 
@@ -86,8 +118,18 @@ export class SettingsManager {
             this.cancelBtn.addEventListener('click', () => this.closePanel());
         }
 
+        this.escapeHandler = (e: KeyboardEvent) => {
+            if (e.key !== 'Escape' || this.panel!.classList.contains('hidden')) {return;}
+            e.preventDefault();
+            this.closePanel();
+        };
+        document.addEventListener('keydown', this.escapeHandler);
+
         // Wire up settings
         this.settings.forEach(setting => {
+            if (setting.html) {
+                return;
+            }
             const el = document.getElementById(setting.id) as HTMLInputElement;
             if (el) {
                 if (setting.defaultValue !== undefined) {
@@ -108,7 +150,7 @@ export class SettingsManager {
         // Close on click outside
         document.addEventListener('click', (e) => {
             if (!this.panel!.classList.contains('hidden')) {
-                if (!(e.target as HTMLElement).closest('.settings-panel') && 
+                if (!(e.target as HTMLElement).closest('.settings-panel') &&
                     !(e.target as HTMLElement).closest('#' + this.openBtn!.id)) {
                     this.closePanel();
                 }
@@ -126,15 +168,34 @@ export class SettingsManager {
             top = Math.max(top, fmtToolbar.getBoundingClientRect().bottom);
         }
 
+        const margin = 8;
+        const anchor = this.openBtn?.getBoundingClientRect() ?? rect;
+
         this.panel!.style.position = 'fixed';
-        this.panel!.style.left = Math.max(8, rect.left) + 'px';
+        this.panel!.style.left = 'auto';
         this.panel!.style.top = top + 'px';
-        this.panel!.style.right = 'auto';
-        const maxWidth = Math.min(window.innerWidth - 16, rect.width);
-        this.panel!.style.width = Math.max(280, maxWidth) + 'px';
-        this.panel!.style.maxHeight = Math.max(120, window.innerHeight - top - 16) + 'px';
-        this.panel!.style.overflowY = 'auto';
+        this.panel!.style.width = '';
+        this.panel!.style.minWidth = '';
+        this.panel!.style.maxWidth = '';
+        this.panel!.style.maxHeight = Math.max(120, window.innerHeight - top - margin) + 'px';
+        this.panel!.style.overflow = 'hidden';
         this.panel!.style.zIndex = '200001';
+
+        let right = Math.max(margin, window.innerWidth - anchor.right);
+        this.panel!.style.right = right + 'px';
+
+        const panelRect = this.panel!.getBoundingClientRect();
+        if (panelRect.left < margin) {
+            right = Math.max(margin, window.innerWidth - panelRect.width - margin);
+            this.panel!.style.right = right + 'px';
+        }
+
+        const scroll = this.panel!.querySelector('.menu-panel__body') as HTMLElement | null;
+        if (scroll) {
+            scroll.style.maxHeight = Math.max(80, window.innerHeight - top - margin - 52) + 'px';
+            scroll.style.overflowY = 'auto';
+            scroll.style.overflowX = 'hidden';
+        }
 
         if (this.onReposition) {this.onReposition();}
     }
@@ -193,10 +254,19 @@ export class SettingsManager {
         this.panel!.style.left = '';
         this.panel!.style.top = '';
         this.panel!.style.width = '';
+        this.panel!.style.minWidth = '';
+        this.panel!.style.maxWidth = '';
         this.panel!.style.right = '';
         this.panel!.style.maxHeight = '';
-        this.panel!.style.overflowY = '';
+        this.panel!.style.overflow = '';
         this.panel!.style.zIndex = '';
+
+        const scroll = this.panel!.querySelector('.menu-panel__body') as HTMLElement | null;
+        if (scroll) {
+            scroll.style.maxHeight = '';
+            scroll.style.overflowY = '';
+            scroll.style.overflowX = '';
+        }
 
         // Restore original parent/position
         if (this.panelOriginalParent && this.panelOriginalParent !== this.panel!.parentNode) {

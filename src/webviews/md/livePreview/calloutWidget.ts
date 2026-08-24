@@ -102,7 +102,10 @@ function buildFromState(state: EditorState): DecorationSet {
 
 export const calloutWidgetField = StateField.define<DecorationSet>({
     create: (state) => buildFromState(state),
-    update(_value, tr) {
+    update(value, tr) {
+        if (!tr.docChanged) {
+            return value;
+        }
         return buildFromState(tr.state);
     },
     provide: (f) => EditorView.decorations.from(f),

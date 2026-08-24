@@ -22,7 +22,20 @@ function buildMdWebviewSettings() {
         livePreviewLineNumbers: cfg.get('md.livePreviewLineNumbers', false),
         autoSave: cfg.get('md.autoSave', false),
         isDefaultEditor: isSheetmarkConfiguredAsDefault('md'),
+        showStats: cfg.get('md.showStats', true),
+        statsShowLines: cfg.get('md.statsShowLines', true),
+        statsShowWords: cfg.get('md.statsShowWords', true),
+        statsShowChars: cfg.get('md.statsShowChars', true),
+        statsShowReadingTime: cfg.get('md.statsShowReadingTime', true),
+        showCursorPosition: cfg.get('md.showCursorPosition', true),
+        autoShowDiskDiff: cfg.get('md.autoShowDiskDiff', false),
+        diffLayout: normalizeDiffLayout(cfg.get('md.diffLayout', 'inline')),
     };
+}
+
+/** Only 'sideBySide' and 'inline' are valid; anything else falls back to inline. */
+function normalizeDiffLayout(value: unknown): 'inline' | 'sideBySide' {
+    return value === 'sideBySide' ? 'sideBySide' : 'inline';
 }
 
 export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
@@ -288,6 +301,32 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                             }
                             if (typeof s.autoSave === 'boolean') {
                                 await cfg.update('md.autoSave', !!s.autoSave, vscode.ConfigurationTarget.Global);
+                            }
+                            if (typeof s.showStats === 'boolean') {
+                                await cfg.update('md.showStats', !!s.showStats, vscode.ConfigurationTarget.Global);
+                            }
+                            if (typeof s.statsShowLines === 'boolean') {
+                                await cfg.update('md.statsShowLines', !!s.statsShowLines, vscode.ConfigurationTarget.Global);
+                            }
+                            if (typeof s.statsShowWords === 'boolean') {
+                                await cfg.update('md.statsShowWords', !!s.statsShowWords, vscode.ConfigurationTarget.Global);
+                            }
+                            if (typeof s.statsShowChars === 'boolean') {
+                                await cfg.update('md.statsShowChars', !!s.statsShowChars, vscode.ConfigurationTarget.Global);
+                            }
+                            if (typeof s.statsShowReadingTime === 'boolean') {
+                                await cfg.update('md.statsShowReadingTime', !!s.statsShowReadingTime, vscode.ConfigurationTarget.Global);
+                            }
+                            if (typeof s.showCursorPosition === 'boolean') {
+                                await cfg.update('md.showCursorPosition', !!s.showCursorPosition, vscode.ConfigurationTarget.Global);
+                            }
+                            if (typeof s.autoShowDiskDiff === 'boolean') {
+                                await cfg.update('md.autoShowDiskDiff', !!s.autoShowDiskDiff, vscode.ConfigurationTarget.Global);
+                            }
+                            // Only non-boolean setting here — validate rather than coerce, so a
+                            // stale webview can't write a bogus enum value into user config.
+                            if (s.diffLayout === 'inline' || s.diffLayout === 'sideBySide') {
+                                await cfg.update('md.diffLayout', s.diffLayout, vscode.ConfigurationTarget.Global);
                             }
                         } catch (err) {
                             console.error('Failed to persist settings:', err);
@@ -670,11 +709,16 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                 filePath,
                 documentUri: currentUri,
                 onChange: async () => {
-                    if (isSaving || Date.now() - lastSaveTime < 1000) {
+                    if (isSaving || Date.now() - lastSaveTime < 1500) {
                         return;
                     }
                     try {
                         const content = await fs.promises.readFile(filePath, 'utf-8');
+                        // Our own save (or a redundant watcher tick) — disk already matches
+                        // what the host tracks; skip notifying the webview.
+                        if (content === currentContent) {
+                            return;
+                        }
                         currentContent = content;
                         webviewPanel.webview.postMessage({ ...buildInitMarkdownPayload(content), command: 'diskChangedExternally' });
                     } catch {
@@ -716,6 +760,7 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
         const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'dist', 'md', 'mdWebview.js'));
         const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'md', 'mdWebview.css'));
         const themeUri = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'shared', 'theme.css'));
+        const menuPanelStyleUri = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'shared', 'menuPanel.css'));
         const highlightUri = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'md', 'highlight.css'));
         const feedbackStyleUri = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'shared', 'feedback.css'));
         const spellAffUri = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'spell', 'en_US.aff'));
@@ -727,10 +772,11 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
         <html lang="en">
         <head>
             <meta charset="UTF-8">
-            <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${cspSource} https: data:; style-src ${cspSource} https: 'unsafe-inline'; font-src ${cspSource} https:; script-src ${cspSource} 'unsafe-inline';">
+            <meta http-equiv="Content-Security-Policy" content="default-src 'none'; connect-src ${cspSource}; img-src ${cspSource} https: data:; style-src ${cspSource} https: 'unsafe-inline'; font-src ${cspSource} https:; script-src ${cspSource} 'unsafe-inline';">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <title>Sheetmark</title>
             <link href="${themeUri}" rel="stylesheet" />
+            <link href="${menuPanelStyleUri}" rel="stylesheet" />
             <link href="${styleUri}" rel="stylesheet" />
             <link href="${highlightUri}" rel="stylesheet" />
             <link href="${feedbackStyleUri}" rel="stylesheet" />
@@ -814,7 +860,10 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                 </div>
             </div>
 
-            <div class="status-info" id="statusInfo"></div>
+            <div class="status-bar" id="statusBar">
+                <div class="diff-badge hidden" id="diffBadge" aria-live="polite"></div>
+                <div class="status-info" id="statusInfo"></div>
+            </div>
 
             <div id="lightboxOverlay" class="lightbox-overlay">
                 <button id="lightboxClose" class="lightbox-close">&times;</button>

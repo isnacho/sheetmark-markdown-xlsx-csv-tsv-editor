@@ -5,10 +5,10 @@ import {
     parseFrontmatter,
     isEmptyFrontmatter,
     buildFieldRows,
-    resolveFrontmatterForRender,
     markdownBodyWithoutFrontmatter,
     resolveFrontmatterWidgetData,
     formatFrontmatterBlock,
+    cursorPosAfterFrontmatter,
 } from './frontmatter.ts';
 
 test('extractFrontmatter: valid block at doc start', () => {
@@ -18,6 +18,11 @@ test('extractFrontmatter: valid block at doc start', () => {
     assert.equal(extracted.yamlText, 'title: Hello\nstatus: draft');
     assert.equal(extracted.body, '\n# Body\n');
     assert.deepEqual(extracted.range, { from: 0, to: '---\ntitle: Hello\nstatus: draft\n---\n'.length });
+    assert.equal(cursorPosAfterFrontmatter(raw), extracted.range.to);
+});
+
+test('cursorPosAfterFrontmatter: no block returns 0', () => {
+    assert.equal(cursorPosAfterFrontmatter('# Hello\n'), 0);
 });
 
 test('extractFrontmatter: ignores mid-document hr block', () => {
@@ -50,7 +55,7 @@ test('buildFieldRows: nested object and array chips', () => {
     const yamlText = 'title: Doc\ntags:\n  - a\n  - b\nmeta:\n  depth: 2';
     const parsed = parseFrontmatter(yamlText);
     assert.ok(parsed);
-    const rows = buildFieldRows(parsed, yamlText);
+    const rows = buildFieldRows(parsed);
     assert.ok(rows.some((row) => row.key === 'title' && row.kind === 'scalar'));
     const tags = rows.find((row) => row.key === 'tags');
     assert.ok(tags);
@@ -60,27 +65,24 @@ test('buildFieldRows: nested object and array chips', () => {
     assert.ok(rows.some((row) => row.key === 'depth' && row.depth === 1));
 });
 
-test('resolveFrontmatterForRender: empty frontmatter hides card and strips body', () => {
+test('resolveFrontmatterWidgetData: empty frontmatter returns null', () => {
     const raw = '---\n---\n# Heading\n';
-    const result = resolveFrontmatterForRender(raw, false);
-    assert.equal(result.card, null);
-    assert.equal(result.body, '# Heading\n');
-    assert.equal(result.stripped, true);
+    assert.equal(resolveFrontmatterWidgetData(raw), null);
+    assert.equal(markdownBodyWithoutFrontmatter(raw), '# Heading\n');
 });
 
-test('resolveFrontmatterForRender: invalid yaml falls back to full content', () => {
+test('resolveFrontmatterWidgetData: invalid yaml returns null', () => {
     const raw = '---\ntitle: [\n---\n# Heading\n';
-    const result = resolveFrontmatterForRender(raw, false);
-    assert.equal(result.card, null);
-    assert.equal(result.body, raw);
+    assert.equal(resolveFrontmatterWidgetData(raw), null);
+    assert.equal(markdownBodyWithoutFrontmatter(raw), raw);
 });
 
-test('resolveFrontmatterForRender: returns card data when valid', () => {
+test('resolveFrontmatterWidgetData: returns card data when valid', () => {
     const raw = '---\ntitle: Hello\n---\n# Heading\n';
-    const result = resolveFrontmatterForRender(raw, false);
-    assert.ok(result.card);
-    assert.equal(result.card.yamlText, 'title: Hello');
-    assert.equal(result.body, '# Heading\n');
+    const data = resolveFrontmatterWidgetData(raw);
+    assert.ok(data);
+    assert.equal(data.yamlText, 'title: Hello');
+    assert.equal(markdownBodyWithoutFrontmatter(raw), '# Heading\n');
 });
 
 test('formatFrontmatterBlock round-trips simple yaml', () => {
@@ -104,4 +106,20 @@ test('resolveFrontmatterWidgetData returns range and yaml text', () => {
     assert.ok(data);
     assert.ok(data.range.to > data.range.from);
     assert.equal(data.yamlText, 'title: Widget');
+});
+
+test('buildFieldRows: circular YAML anchor/alias does not throw', () => {
+    const yamlText = 'a: &x\n  b: *x';
+    const parsed = parseFrontmatter(yamlText);
+    assert.ok(parsed);
+    assert.doesNotThrow(() => buildFieldRows(parsed!));
+    const rows = buildFieldRows(parsed!);
+    assert.ok(rows.some((row) => row.key === 'a'));
+});
+
+test('resolveFrontmatterWidgetData: circular YAML does not throw', () => {
+    const raw = '---\na: &x\n  b: *x\n---\nbody';
+    let data: ReturnType<typeof resolveFrontmatterWidgetData>;
+    assert.doesNotThrow(() => { data = resolveFrontmatterWidgetData(raw); });
+    assert.ok(data);
 });

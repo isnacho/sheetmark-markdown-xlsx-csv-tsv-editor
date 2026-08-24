@@ -36,10 +36,10 @@ test('fenced code gets a line decoration on every line, fences included', () => 
     // Lines: 1 "before", 2 "", 3 ```js, 4 const a, 5 const b, 6 ```, 7 "", 8 after
     const lines = decos.map(d => d.from);
     assert.deepEqual(lines, [8, 14, 27, 40]); // line starts for lines 3-6
-    assert.equal(decos[0]?.class, 'cm-md-fenced-code-line cm-md-fenced-code-line-first');
+    assert.equal(decos[0]?.class, 'cm-md-fenced-code-line cm-md-fenced-code-line-first cm-md-fenced-code-line-gap-before');
     assert.equal(decos[1]?.class, 'cm-md-fenced-code-line');
     assert.equal(decos[2]?.class, 'cm-md-fenced-code-line');
-    assert.equal(decos[3]?.class, 'cm-md-fenced-code-line cm-md-fenced-code-line-last');
+    assert.equal(decos[3]?.class, 'cm-md-fenced-code-line cm-md-fenced-code-line-last cm-md-fenced-code-line-gap-after');
 });
 
 test('no decorations for plain text with no code', () => {

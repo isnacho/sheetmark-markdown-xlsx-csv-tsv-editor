@@ -8,6 +8,7 @@
 
 import { EditorState, EditorSelection, Prec } from '@codemirror/state';
 import type { TransactionSpec } from '@codemirror/state';
+import { insertNewlineContinueMarkupCommand, deleteMarkupBackward } from '@codemirror/lang-markdown';
 import { EditorView, keymap, Decoration } from '@codemirror/view';
 import type { DecorationSet } from '@codemirror/view';
 import { syntaxTree } from '@codemirror/language';
@@ -28,8 +29,123 @@ function isSetextUnderlineListMarkerLine(state: EditorState, setextNode: SyntaxN
     return false;
 }
 
+/** Line text matches an activated list marker (trailing gap space present). */
+export function listMarkerLineIsActivated(lineText: string): boolean {
+    return /^\s*(?:[-*+]\s\[[ xX]\]\s|[-*+]\s(?!\[)|\d+[.)]\s)/.test(lineText);
+}
+
+/** True once the marker has its required trailing gap space (e.g. "1. ", "- ", "- [ ] "). */
+export function listItemMarkerIsActivated(state: EditorState, item: SyntaxNode): boolean {
+    if (item.name !== 'ListItem') { return false; }
+    if (!item.getChild('ListMark')) { return false; }
+    return listMarkerLineIsActivated(state.doc.lineAt(item.from).text);
+}
+
+/** True when a blank line separates two sibling list items in the source. */
+export function listItemsSeparatedByBlankLine(state: EditorState, prev: SyntaxNode, next: SyntaxNode): boolean {
+    if (next.from <= prev.to) { return false; }
+    return /\n(?:[ \t]*\n)/.test(state.sliceDoc(prev.to, next.from));
+}
+
+/** First ListItem in the numbering segment that contains `item` (resets after blank lines). */
+export function numberingSegmentStartItem(state: EditorState, item: SyntaxNode): SyntaxNode {
+    let start = item;
+    for (let sib = item.prevSibling; sib; sib = sib.prevSibling) {
+        if (sib.name !== 'ListItem') { continue; }
+        if (listItemsSeparatedByBlankLine(state, sib, start)) { break; }
+        start = sib;
+    }
+    return start;
+}
+
+/** 0-based index of `item` within its numbering segment (resets after blank lines). */
+export function listItemPositionInSegment(state: EditorState, item: SyntaxNode): number {
+    const segmentStart = numberingSegmentStartItem(state, item);
+    let index = 0;
+    for (let sib: SyntaxNode | null = segmentStart; sib; sib = sib.nextSibling) {
+        if (sib.name !== 'ListItem') { continue; }
+        if (sib.from === item.from) { return index; }
+        index++;
+    }
+    return index;
+}
+
+/** Parses the segment-start item's typed starting number (drops the trailing "."/")" ). */
+export function orderedListStartNumber(state: EditorState, item: SyntaxNode): number {
+    const segmentStart = numberingSegmentStartItem(state, item);
+    const prev = segmentStart.prevSibling;
+    if (prev?.name === 'ListItem' && listItemsSeparatedByBlankLine(state, prev, segmentStart)) {
+        return 1;
+    }
+    const mark = segmentStart.getChild('ListMark');
+    if (!mark) { return 1; }
+    const n = parseInt(state.sliceDoc(mark.from, mark.to - 1), 10);
+    return Number.isFinite(n) ? n : 1;
+}
+
+function enclosingListItem(state: EditorState, pos: number): SyntaxNode | null {
+    const line = state.doc.lineAt(pos);
+    const probe = pos > line.from && pos === line.to ? pos - 1 : pos;
+    for (let node: SyntaxNode | null = syntaxTree(state).resolveInner(probe, 1); node; node = node.parent) {
+        if (node.name === 'ListItem') { return node; }
+    }
+    return null;
+}
+
+/** Activated list line with marker prefix only — no item text yet. */
+export function isEmptyActivatedListItem(lineText: string): boolean {
+    return /^\s*(?:\d+[.)]\s*|[-*+]\s(?:\[[ xX]\]\s)?)$/.test(lineText);
+}
+
+/** Fallback when insertNewlineContinueMarkup returns false on an activated list line. */
+export function computeManualListContinuation(state: EditorState): TransactionSpec | null {
+    const sel = state.selection.main;
+    if (!sel.empty) { return null; }
+
+    const line = state.doc.lineAt(sel.head);
+    if (!listMarkerLineIsActivated(line.text)) { return null; }
+    if (sel.head !== line.to) { return null; }
+
+    const item = enclosingListItem(state, sel.head);
+    if (!item) { return null; }
+
+    const prefix = computeListItemPrefixRange(state, item);
+    if (!prefix) { return null; }
+
+    if (isEmptyActivatedListItem(line.text)) {
+        return {
+            changes: { from: prefix.from, to: line.to, insert: '\n' },
+            selection: EditorSelection.cursor(prefix.from + 1),
+        };
+    }
+
+    const mark = item.getChild('ListMark');
+    if (!mark) { return null; }
+
+    const linePrefix = state.sliceDoc(line.from, mark.from);
+    const task = item.getChild('Task');
+
+    if (item.parent?.name === 'OrderedList') {
+        const nextNum = orderedListStartNumber(state, item) + listItemPositionInSegment(state, item) + 1;
+        const delimiter = state.sliceDoc(mark.to - 1, mark.to);
+        const insert = '\n' + linePrefix + String(nextNum) + delimiter + ' ';
+        return {
+            changes: { from: sel.head, insert },
+            selection: EditorSelection.cursor(sel.head + insert.length),
+        };
+    }
+
+    const bulletMarker = task ? '- [ ] ' : state.sliceDoc(mark.from, mark.to) + ' ';
+    const insert = '\n' + linePrefix + bulletMarker;
+    return {
+        changes: { from: sel.head, insert },
+        selection: EditorSelection.cursor(sel.head + insert.length),
+    };
+}
+
 /** ListItem marker through its trailing gap space (includes Task on checkbox lines). */
 export function computeListItemPrefixRange(state: EditorState, item: SyntaxNode): VisibleRange | null {
+    if (!listItemMarkerIsActivated(state, item)) { return null; }
     const mark = item.getChild('ListMark');
     if (!mark) { return null; }
     const taskMarker = item.getChild('Task')?.getChild('TaskMarker');
@@ -45,19 +161,21 @@ function computeSetextListMarkerPrefix(state: EditorState, setextNode: SyntaxNod
     const underline = state.doc.lineAt(setextNode.to - 1);
     const text = state.sliceDoc(underline.from, underline.to);
     if (!/^[-*+]/.test(text)) { return null; }
-    let to = underline.from + 1;
-    if (text.length > 1 && text[1] === ' ') {
-        to = underline.from + 2;
-    } else {
-        to = underline.to;
-    }
-    return { from: underline.from, to };
+    const spaceIdx = text.search(/\s/);
+    if (spaceIdx < 0) { return null; }
+    return { from: underline.from, to: underline.from + spaceIdx + 1 };
 }
 
-/** Every list-marker prefix span in the document (whole-doc scan for atomicRanges). */
-export function computeListMarkerRanges(state: EditorState): VisibleRange[] {
+/**
+ * Every list-marker prefix span within `bounds` (defaults to the whole
+ * document — used by tests and by the atomicRanges builder, which passes one
+ * call per `view.visibleRanges` chunk instead of scanning the whole tree).
+ */
+export function computeListMarkerRanges(state: EditorState, bounds?: VisibleRange): VisibleRange[] {
     const ranges: VisibleRange[] = [];
     syntaxTree(state).iterate({
+        from: bounds?.from,
+        to: bounds?.to,
         enter(node) {
             if (node.name === 'ListItem') {
                 const range = computeListItemPrefixRange(state, node.node);
@@ -71,15 +189,21 @@ export function computeListMarkerRanges(state: EditorState): VisibleRange[] {
     return ranges;
 }
 
+// A marker always sits on the same line as the cursor position being tested
+// against it, so the keymap handlers below only ever need that one line's
+// worth of tree — not a full-document scan on every keypress.
+
 function findListPrefixEndingAt(state: EditorState, pos: number): VisibleRange | null {
-    for (const range of computeListMarkerRanges(state)) {
+    const line = state.doc.lineAt(pos);
+    for (const range of computeListMarkerRanges(state, { from: line.from, to: line.to })) {
         if (range.to === pos) { return range; }
     }
     return null;
 }
 
 function findListPrefixStartingAt(state: EditorState, pos: number): VisibleRange | null {
-    for (const range of computeListMarkerRanges(state)) {
+    const line = state.doc.lineAt(pos);
+    for (const range of computeListMarkerRanges(state, { from: line.from, to: line.to })) {
         if (range.from === pos) { return range; }
     }
     return null;
@@ -87,7 +211,7 @@ function findListPrefixStartingAt(state: EditorState, pos: number): VisibleRange
 
 function findListPrefixOnLine(state: EditorState, lineNumber: number): VisibleRange | null {
     const line = state.doc.line(lineNumber);
-    for (const range of computeListMarkerRanges(state)) {
+    for (const range of computeListMarkerRanges(state, { from: line.from, to: line.to })) {
         if (range.from >= line.from && range.from <= line.to) { return range; }
     }
     return null;
@@ -132,18 +256,18 @@ export function computeListMarkerArrowRight(state: EditorState): TransactionSpec
     const sel = state.selection.main;
     if (!sel.empty) { return null; }
     const pos = sel.head;
+    const posLine = state.doc.lineAt(pos);
 
-    for (const range of computeListMarkerRanges(state)) {
+    for (const range of computeListMarkerRanges(state, { from: posLine.from, to: posLine.to })) {
         if (pos >= range.from && pos < range.to) {
             return { selection: EditorSelection.cursor(range.to) };
         }
     }
 
-    const line = state.doc.lineAt(pos);
-    const atLineEnd = pos === line.from + line.length;
-    const arrowRightLeavesLine = pos + 1 === line.from + line.length;
-    if ((atLineEnd || arrowRightLeavesLine) && line.number < state.doc.lines) {
-        const nextPrefix = findListPrefixOnLine(state, line.number + 1);
+    const atLineEnd = pos === posLine.from + posLine.length;
+    const arrowRightLeavesLine = pos + 1 === posLine.from + posLine.length;
+    if ((atLineEnd || arrowRightLeavesLine) && posLine.number < state.doc.lines) {
+        const nextPrefix = findListPrefixOnLine(state, posLine.number + 1);
         if (nextPrefix) {
             return { selection: EditorSelection.cursor(nextPrefix.to) };
         }
@@ -180,12 +304,16 @@ function runListMarkerArrowRight(view: EditorView): boolean {
     return true;
 }
 
-function buildListMarkerAtomicRanges(state: EditorState): DecorationSet {
+function buildListMarkerAtomicRanges(view: EditorView): DecorationSet {
     const marker = Decoration.mark({});
-    return Decoration.set(computeListMarkerRanges(state).map(r => marker.range(r.from, r.to)));
+    const ranges: VisibleRange[] = [];
+    for (const { from, to } of view.visibleRanges) {
+        ranges.push(...computeListMarkerRanges(view.state, { from, to }));
+    }
+    return Decoration.set(ranges.map(r => marker.range(r.from, r.to)));
 }
 
-export const listMarkerAtomicRanges = EditorView.atomicRanges.of((view) => buildListMarkerAtomicRanges(view.state));
+export const listMarkerAtomicRanges = EditorView.atomicRanges.of((view) => buildListMarkerAtomicRanges(view));
 
 export const listMarkerKeymap = Prec.highest(keymap.of([
     { key: 'Backspace', run: runListMarkerBackspace },
@@ -198,3 +326,18 @@ export const listMarkerBoundaryExtensions = [
     listMarkerKeymap,
     listMarkerAtomicRanges,
 ];
+
+const insertNewlineContinueMarkup = insertNewlineContinueMarkupCommand({ nonTightLists: false });
+
+export function runLivePreviewEnter(view: EditorView): boolean {
+    if (insertNewlineContinueMarkup(view)) { return true; }
+    const spec = computeManualListContinuation(view.state);
+    if (!spec) { return false; }
+    view.dispatch(spec);
+    return true;
+}
+
+export const livePreviewMarkdownKeymap = Prec.high(keymap.of([
+    { key: 'Enter', run: runLivePreviewEnter },
+    { key: 'Backspace', run: deleteMarkupBackward },
+]));

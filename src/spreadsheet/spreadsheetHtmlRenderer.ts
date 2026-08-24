@@ -9,6 +9,9 @@ export function getWebviewContent(webviewPanel: vscode.WebviewPanel, context: vs
         const themeStyleUri = webview.asWebviewUri(
             vscode.Uri.joinPath(context.extensionUri, 'resources', 'shared', 'theme.css')
         );
+        const menuPanelStyleUri = webview.asWebviewUri(
+            vscode.Uri.joinPath(context.extensionUri, 'resources', 'shared', 'menuPanel.css')
+        );
         const styleUri = webview.asWebviewUri(
             vscode.Uri.joinPath(context.extensionUri, 'resources', 'spreadsheet', 'spreadsheetWebview.css')
         );
@@ -25,6 +28,7 @@ export function getWebviewContent(webviewPanel: vscode.WebviewPanel, context: vs
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sheetmark</title>
     <link href="${themeStyleUri}" rel="stylesheet" />
+    <link href="${menuPanelStyleUri}" rel="stylesheet" />
     <link href="${styleUri}" rel="stylesheet" />
     <link href="${feedbackStyleUri}" rel="stylesheet" />
 </head>

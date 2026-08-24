@@ -20,7 +20,11 @@ import type { VisibleRange } from './revealDecorations';
 
 const inlineCodeMark = Decoration.mark({ class: 'cm-md-inline-code' });
 
-function fencedCodeLineDecoration(position: 'only' | 'first' | 'middle' | 'last') {
+function fencedCodeLineDecoration(
+    position: 'only' | 'first' | 'middle' | 'last',
+    gapBefore: boolean,
+    gapAfter: boolean,
+) {
     const parts = ['cm-md-fenced-code-line'];
     if (position === 'only') {
         parts.push('cm-md-fenced-code-line-first', 'cm-md-fenced-code-line-last');
@@ -29,7 +33,28 @@ function fencedCodeLineDecoration(position: 'only' | 'first' | 'middle' | 'last'
     } else if (position === 'last') {
         parts.push('cm-md-fenced-code-line-last');
     }
+    if (gapBefore && (position === 'first' || position === 'only')) {
+        parts.push('cm-md-fenced-code-line-gap-before');
+    }
+    if (gapAfter && (position === 'last' || position === 'only')) {
+        parts.push('cm-md-fenced-code-line-gap-after');
+    }
     return Decoration.line({ class: parts.join(' ') });
+}
+
+function lineIsInsideAnyFencedCode(state: EditorState, lineNumber: number): boolean {
+    const line = state.doc.line(lineNumber);
+    let inside = false;
+    syntaxTree(state).iterate({
+        from: line.from,
+        to: line.to,
+        enter(node) {
+            if (node.name === 'FencedCode') {
+                inside = true;
+            }
+        },
+    });
+    return inside;
 }
 
 export function computeCodeDecorations(
@@ -60,10 +85,14 @@ export function computeCodeDecorations(
                                 : n === lastLine
                                     ? 'last'
                                     : 'middle';
+                        const gapBefore = n === firstLine
+                            && (n === 1 || !lineIsInsideAnyFencedCode(state, n - 1));
+                        const gapAfter = n === lastLine
+                            && (n === state.doc.lines || !lineIsInsideAnyFencedCode(state, n + 1));
                         specs.push({
                             from: state.doc.line(n).from,
                             to: state.doc.line(n).from,
-                            value: fencedCodeLineDecoration(position),
+                            value: fencedCodeLineDecoration(position, gapBefore, gapAfter),
                         });
                     }
                 }

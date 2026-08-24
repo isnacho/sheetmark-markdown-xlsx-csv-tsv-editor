@@ -32,6 +32,7 @@ import {
     computeTransformCase,
     computeSortSelectedLines,
     computeTrimTrailingWhitespace,
+    computeJumpToLine,
 } from './formatCommands.ts';
 
 function stateFor(doc: string, anchor: number, head = anchor): EditorState {
@@ -70,6 +71,20 @@ test('toggleLinePrefix: removes the prefix when already present', () => {
     const { doc, sel } = apply(state, computeToggleLinePrefix(state, '# '));
     assert.equal(doc, 'Title');
     assert.deepEqual([sel.from, sel.to], [0, 0]);
+});
+
+test('toggleLinePrefix: applies prefix to every line in a multi-line selection', () => {
+    const doc = 'one\ntwo\nthree';
+    const state = stateFor(doc, 0, doc.length);
+    const { doc: next } = apply(state, computeToggleLinePrefix(state, '- '));
+    assert.equal(next, '- one\n- two\n- three');
+});
+
+test('toggleLinePrefix: removes prefix from every line when all selected lines have it', () => {
+    const doc = '> one\n> two';
+    const state = stateFor(doc, 0, doc.length);
+    const { doc: next } = apply(state, computeToggleLinePrefix(state, '> '));
+    assert.equal(next, 'one\ntwo');
 });
 
 test('insertAtCursor: inserts text and places cursor at the given offset', () => {
@@ -157,10 +172,10 @@ test('insertImage: uses the selection as alt text and selects "image-url"', () =
     assert.deepEqual([sel.from, sel.to], [10, 19]);
 });
 
-test('insertTable: inserts the fixed table snippet at cursor', () => {
+test('insertTable: inserts an empty 3x2 table snippet at cursor', () => {
     const state = stateFor('', 0, 0);
     const { doc } = apply(state, computeInsertTable(state));
-    assert.ok(doc.includes('| Header 1 | Header 2 | Header 3 |'));
+    assert.ok(doc.includes('|  |  |  |\n| --- | --- | --- |\n|  |  |  |'));
 });
 
 test('insertHorizontalRule: no leading newline at doc start', () => {
@@ -262,6 +277,46 @@ test('tabIndent: list-aware — mid-line Tab nests the item under its preceding 
     assert.equal(sel.from, pos + 2);
 });
 
+test('tabIndent: list-aware — a single-line word selection on a list item indents the whole line, not 4 spaces at the selection', () => {
+    const doc = '- one\n- two three\n';
+    const from = doc.indexOf('two');
+    const to = from + 3;
+    const state = stateFor(doc, from, to);
+    const { doc: newDoc, sel } = apply(state, computeTabIndent(state, false));
+    assert.equal(newDoc, '- one\n  - two three\n');
+    assert.deepEqual([sel.from, sel.to], [from + 2, to + 2]);
+});
+
+test('tabIndent: list-aware — single-line selection on checkbox and ordered items nest the whole line', () => {
+    const checkboxDoc = '- [ ] one\n- [ ] two\n';
+    const cbFrom = checkboxDoc.indexOf('two');
+    const cbState = stateFor(checkboxDoc, cbFrom, cbFrom + 3);
+    const { doc: cbNext } = apply(cbState, computeTabIndent(cbState, false));
+    assert.equal(cbNext, '- [ ] one\n  - [ ] two\n');
+
+    const orderedDoc = '1. one\n2. two\n';
+    const ordFrom = orderedDoc.indexOf('two');
+    const ordState = stateFor(orderedDoc, ordFrom, ordFrom + 3);
+    const { doc: ordNext } = apply(ordState, computeTabIndent(ordState, false));
+    assert.equal(ordNext, '1. one\n   1. two\n');
+});
+
+test('tabIndent: list-aware — cursor in leading whitespace before marker still nests the line', () => {
+    const doc = '- one\n- two\n';
+    const line2Start = doc.indexOf('- two');
+    const state = stateFor(doc, line2Start, line2Start);
+    const { doc: newDoc } = apply(state, computeTabIndent(state, false));
+    assert.equal(newDoc, '- one\n  - two\n');
+});
+
+test('tabIndent: list-looking line never gets flat spaces inserted at the cursor', () => {
+    const doc = '- two\n';
+    const pos = doc.indexOf('w');
+    const state = stateFor(doc, pos, pos + 1);
+    const { doc: newDoc } = apply(state, computeTabIndent(state, false));
+    assert.equal(newDoc, '  - two\n');
+});
+
 test('tabIndent: list-aware — Shift-Tab outdents a nested item back to a sibling, symmetrically', () => {
     const doc = '- one\n  - two three\n';
     const pos = doc.indexOf('ree');
@@ -277,13 +332,13 @@ test('tabIndent: list-aware — Shift-Tab on an already-flush list line is a tru
     assert.equal(computeTabIndent(state, true), null);
 });
 
-test('tabIndent: list-aware — Tab is disabled (no-op) when there is no preceding sibling to nest under', () => {
-    // Regression: the very first/only item in a list has nothing to nest
-    // under — naively adding 4 spaces turns it into an indented CodeBlock,
-    // silently destroying the list item. Must be a true no-op instead.
+test('tabIndent: list-aware — Tab on the only top-level item indents at line start by marker width (not 4 spaces at cursor)', () => {
     const doc = '- one two\n';
-    const state = stateFor(doc, doc.indexOf('wo'));
-    assert.equal(computeTabIndent(state, false), null);
+    const pos = doc.indexOf('wo');
+    const state = stateFor(doc, pos);
+    const { doc: newDoc, sel } = apply(state, computeTabIndent(state, false));
+    assert.equal(newDoc, '  - one two\n');
+    assert.equal(sel.from, pos + 2);
 });
 
 test('tabIndent: list-aware — an ordered-list item nests correctly under its preceding sibling by exactly the marker width (3 for "1. "), and its own digit resets to 1 since it becomes the first child of a brand-new nested list', () => {
@@ -332,11 +387,28 @@ test('tabIndent: list-aware — a wrapped continuation line indents too, by its 
     assert.equal(sel.from, pos + 2);
 });
 
-test('tabIndent: non-list line is unaffected by the list-aware path', () => {
-    const state = stateFor('plain text', 5);
-    const { doc, sel } = apply(state, computeTabIndent(state, false));
-    assert.equal(doc, 'plain     text');
-    assert.equal(sel.from, 9);
+test('tabIndent: setext-as-list marker line ("para\\n- ") is a no-op, not a flat 4-space insert', () => {
+    const doc = 'para\n- ';
+    const pos = doc.length - 1;
+    const state = stateFor(doc, pos);
+    assert.equal(computeTabIndent(state, false), null);
+});
+
+test('tabIndent: list after a paragraph still nests the second item normally', () => {
+    const doc = 'para\n- one\n- two\n';
+    const pos = doc.indexOf('two');
+    const state = stateFor(doc, pos);
+    const { doc: newDoc } = apply(state, computeTabIndent(state, false));
+    assert.equal(newDoc, 'para\n- one\n  - two\n');
+});
+
+test('tabIndent: list-aware — cursor at end-of-line (line.to) still nests the item', () => {
+    const doc = '- one\n- two\n';
+    const marker = '- two';
+    const pos = doc.indexOf(marker) + marker.length;
+    const state = stateFor(doc, pos);
+    const { doc: newDoc } = apply(state, computeTabIndent(state, false));
+    assert.equal(newDoc, '- one\n  - two\n');
 });
 
 test('multiLineListAwareIndent: selecting two sibling items nests both under the preceding item, together', () => {
@@ -515,4 +587,10 @@ test('trimTrailingWhitespace: strips trailing spaces/tabs on every line', () => 
 test('trimTrailingWhitespace: no-op when nothing to trim', () => {
     const state = stateFor('one\ntwo', 0, 0);
     assert.equal(computeTrimTrailingWhitespace(state), null);
+});
+
+test('computeJumpToLine: moves cursor to the requested line', () => {
+    const state = stateFor('one\ntwo\nthree', 0, 0);
+    const { sel } = apply(state, computeJumpToLine(state, 3));
+    assert.equal(sel.from, state.doc.line(3).from);
 });

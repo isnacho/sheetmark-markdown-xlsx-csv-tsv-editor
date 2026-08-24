@@ -9,6 +9,7 @@ import { EditorState, StateField } from '@codemirror/state';
 import { Decoration, EditorView } from '@codemirror/view';
 import type { DecorationSet } from '@codemirror/view';
 import { syntaxTree } from '@codemirror/language';
+import { isSetextUnderlineListMarker } from './listSetextAmbiguity';
 
 const HEADING_LEVEL: Record<string, number> = {
     ATXHeading1: 1, ATXHeading2: 2, ATXHeading3: 3, ATXHeading4: 4, ATXHeading5: 5, ATXHeading6: 6,
@@ -22,6 +23,7 @@ function forEachHeadingLine(state: EditorState, fn: (lineFrom: number, level: nu
         enter(node) {
             const level = HEADING_LEVEL[node.name];
             if (!level) { return; }
+            if (isSetextUnderlineListMarker(state, node.node)) { return; }
             fn(state.doc.lineAt(node.from).from, level);
         },
     });
@@ -41,7 +43,10 @@ function buildHeadingLineDecorations(state: EditorState): DecorationSet {
 
 export const headingLineDecorationField = StateField.define<DecorationSet>({
     create: (state) => buildHeadingLineDecorations(state),
-    update(_value, tr) {
+    update(value, tr) {
+        if (!tr.docChanged) {
+            return value;
+        }
         return buildHeadingLineDecorations(tr.state);
     },
     provide: (f) => EditorView.decorations.from(f),

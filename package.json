@@ -352,7 +352,7 @@
                 "xlsxViewer.md.wordWrap": {
                     "type": "boolean",
                     "default": true,
-                    "description": "Enable word wrap in the Markdown preview."
+                    "description": "Enable line wrap in the Markdown editor."
                 },
                 "xlsxViewer.md.showOutline": {
                     "type": "boolean",
@@ -378,6 +378,54 @@
                     "type": "boolean",
                     "default": false,
                     "description": "Automatically save Markdown edits after a short debounce."
+                },
+                "xlsxViewer.md.showStats": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Show line/word/character counts and estimated reading time in the Markdown editor status bar."
+                },
+                "xlsxViewer.md.statsShowLines": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Include the line count in Document Stats (only applies when Document Stats is enabled)."
+                },
+                "xlsxViewer.md.statsShowWords": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Include the word count in Document Stats (only applies when Document Stats is enabled)."
+                },
+                "xlsxViewer.md.statsShowChars": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Include the character count in Document Stats (only applies when Document Stats is enabled)."
+                },
+                "xlsxViewer.md.statsShowReadingTime": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Include estimated reading time in Document Stats (only applies when Document Stats is enabled)."
+                },
+                "xlsxViewer.md.showCursorPosition": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Show the current line and column position (Ln X, Col Y) in the Markdown editor status bar."
+                },
+                "xlsxViewer.md.autoShowDiskDiff": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "When a Markdown file is changed outside the editor, show the changes as a diff automatically instead of waiting for Review changes."
+                },
+                "xlsxViewer.md.diffLayout": {
+                    "type": "string",
+                    "enum": [
+                        "inline",
+                        "sideBySide"
+                    ],
+                    "enumDescriptions": [
+                        "Show external changes inline, in place in the document.",
+                        "Show external changes in two side-by-side panes (not yet implemented; falls back to inline)."
+                    ],
+                    "default": "inline",
+                    "description": "How the disk-vs-editor diff is presented."
                 }
             }
         }
@@ -418,6 +466,7 @@
         "@codemirror/lang-markdown": "^6.3.2",
         "@codemirror/language": "^6.11.0",
         "@codemirror/lint": "^6.9.7",
+        "@codemirror/merge": "^6.12.2",
         "@codemirror/search": "^6.5.10",
         "@codemirror/state": "^6.5.2",
         "@codemirror/view": "^6.36.5",

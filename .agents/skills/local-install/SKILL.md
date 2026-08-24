@@ -1,5 +1,5 @@
 ---
-name: idea-lab
+name: mi-idea-lab
 description: Take an idea from a raw jot-down through brainstorming, an implementation plan, coding, and QA in five gated phases, tracked in a markdown file any agent can resume. Use when the user wants to capture a new idea, continue/resume an idea file, brainstorm improvements to an idea, plan or implement an idea against this codebase, or archive/complete an idea. Trigger on "/idea", "new idea", "jot down an idea", "let's brainstorm this", or when asked to continue something under .docs/ideas/.
 ---
 

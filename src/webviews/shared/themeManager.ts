@@ -1,5 +1,16 @@
+import { renderMenuActionRow, renderMenuSelectRow } from './menuPanel';
+
 export function renderThemeToggleSettingItem(selectId: string): string {
-    return `<div class="setting-item theme-setting-item"><span>Theme</span><select id="${selectId}" class="theme-select" title="Theme"><option value="vscode">VS Code</option><option value="light">Light</option><option value="dark">Dark</option></select></div>`;
+    return renderMenuSelectRow({
+        selectId,
+        label: 'Theme',
+        title: 'Theme',
+        choices: [
+            { value: 'vscode', label: 'VS Code' },
+            { value: 'light', label: 'Light' },
+            { value: 'dark', label: 'Dark' }
+        ]
+    });
 }
 
 export interface ThemeManagerOptions {

@@ -11,10 +11,14 @@ import {
     computeListMarkerDelete,
     computeListMarkerArrowLeft,
     computeListMarkerArrowRight,
+    listItemMarkerIsActivated,
+    computeManualListContinuation,
+    isEmptyActivatedListItem,
+    runLivePreviewEnter,
 } from './listMarkerEditing.ts';
 
-function stateFor(doc: string): EditorState {
-    return EditorState.create({ doc, extensions: [markdown({ extensions: GFM })] });
+function stateFor(doc: string, pos = 0): EditorState {
+    return EditorState.create({ doc, selection: { anchor: pos, head: pos }, extensions: [markdown({ extensions: GFM, addKeymap: false })] });
 }
 
 function firstListItem(state: EditorState) {
@@ -32,6 +36,17 @@ function apply(state: EditorState, spec: ReturnType<typeof computeListMarkerBack
     const next = state.update(spec).state;
     return { doc: next.doc.toString(), sel: next.selection.main.head };
 }
+
+test('listItemMarkerIsActivated: requires gap space after marker or task checkbox', () => {
+    for (const doc of ['1.', '-', '- [ ]', '12.']) {
+        const state = stateFor(doc);
+        assert.equal(listItemMarkerIsActivated(state, firstListItem(state)!), false, doc);
+    }
+    for (const doc of ['1. ', '- ', '- [ ] ', '12. item']) {
+        const state = stateFor(doc);
+        assert.equal(listItemMarkerIsActivated(state, firstListItem(state)!), true, doc);
+    }
+});
 
 test('computeListItemPrefixRange: bullet marker + gap space', () => {
     const state = stateFor('- plain\n');
@@ -143,4 +158,27 @@ test('arrow right from line above checkbox line jumps to item text start', () =>
     assert.ok(spec);
     const next = state.update(spec!).state;
     assert.equal(next.selection.main.head, doc.indexOf('todo'));
+});
+
+test('computeManualListContinuation: continues ordered list with the next number', () => {
+    const doc = '1. list';
+    const state = stateFor(doc, doc.length);
+    const result = apply(state, computeManualListContinuation(state));
+    assert.equal(result.doc, '1. list\n2. ');
+});
+
+test('computeManualListContinuation: empty ordered item exits without wiping the document', () => {
+    const doc = '1. ';
+    const state = stateFor(doc, doc.length);
+    const result = apply(state, computeManualListContinuation(state));
+    assert.equal(result.doc, '\n');
+});
+
+test('runLivePreviewEnter: continues ordered list on Enter', () => {
+    const doc = '1. list';
+    const state = stateFor(doc, doc.length);
+    let next = state;
+    const ok = runLivePreviewEnter({ state, dispatch: (tr) => { next = tr.state; } } as import('@codemirror/view').EditorView);
+    assert.equal(ok, true);
+    assert.equal(next.doc.toString(), '1. list\n2. ');
 });

@@ -10,19 +10,15 @@
 // sites: toolbar clicks (mdWebview.ts `applyFormat`) and CM6-native
 // keybindings (Tab/Shift-Tab, Mod+letter shortcuts).
 //
-// Enter-key list/blockquote continuation and smart Backspace are NOT ported
-// here — `@codemirror/lang-markdown`'s `markdown({..})` already installs its
-// own `markdownKeymap` (Enter -> insertNewlineContinueMarkup, Backspace ->
-// deleteMarkupBackward) with `Prec.high`, which is strictly more capable than
-// the legacy regex (it also continues blockquotes, which the legacy
-// bullet/ordered/checkbox-only regex never did). Reusing it beats
-// reimplementing it, same reasoning the plan already applied to the slash
-// menu (`@codemirror/autocomplete` over a hand-rolled popup).
+// Enter-key list/blockquote continuation uses listEnterContinuation.ts (wraps
+// @codemirror/lang-markdown's insertNewlineContinueMarkup with nonTightLists:false
+// plus a manual fallback). Smart Backspace stays on deleteMarkupBackward there too.
 
 import { EditorState, EditorSelection, ChangeSet, Prec } from '@codemirror/state';
 import type { TransactionSpec } from '@codemirror/state';
 import { EditorView, keymap } from '@codemirror/view';
 import type { KeyBinding } from '@codemirror/view';
+import { insertTab } from '@codemirror/commands';
 import { syntaxTree } from '@codemirror/language';
 import type { SyntaxNode } from '@lezer/common';
 
@@ -31,6 +27,11 @@ function safeSlice(state: EditorState, from: number, to: number): string {
     const f = Math.max(0, Math.min(from, len));
     const t = Math.max(f, Math.min(to, len));
     return state.sliceDoc(f, t);
+}
+
+/** Mirrored from listMarkerEditing.ts — kept local for Node ESM test loading. */
+function listMarkerLineIsActivated(lineText: string): boolean {
+    return /^\s*(?:[-*+]\s\[[ xX]\]\s|[-*+]\s(?!\[)|\d+[.)]\s)/.test(lineText);
 }
 
 // Mirrored from listSetextAmbiguity.ts — kept local so formatCommands.test.mts
@@ -44,6 +45,7 @@ function setextListMarkerLineAt(state: EditorState, pos: number): boolean {
             const text = state.sliceDoc(underline.from, underline.to);
             if (/^={3,}\s*$/.test(text) || /^-{3,}\s*$/.test(text)) { return; }
             if (!/^[-*+]\s*$/.test(text) && !/^--\s?$/.test(text)) { return; }
+            if (!/\s/.test(text)) { return; }
             if (pos >= underline.from && pos <= underline.to && /^[-*+]/.test(text)) { found = true; }
         },
     });
@@ -54,6 +56,64 @@ function dispatchSpec(view: EditorView, spec: TransactionSpec | null): boolean {
     if (!spec) { return false; }
     view.dispatch(spec);
     return true;
+}
+
+/** Bullet, ordered, or task-list marker line (after optional leading whitespace). */
+function looksLikeListMarkerLine(text: string): boolean {
+    return listMarkerLineIsActivated(text);
+}
+
+function listContentProbePos(line: ReturnType<EditorState['doc']['lineAt']>): number {
+    const offset = line.text.length - line.text.trimStart().length;
+    return line.from + Math.min(offset, line.text.length);
+}
+
+/**
+ * Resolve the list item for Tab/Shift-Tab, plus the doc position to use for depth
+ * checks. Cursor in a line's leading whitespace often sits outside any ListItem
+ * node in the syntax tree — probe at the first non-whitespace column instead.
+ */
+function resolveListItemForIndent(state: EditorState, from: number, to: number): { item: SyntaxNode | null; depthPos: number } {
+    const line = state.doc.lineAt(from);
+    const endLine = state.doc.lineAt(to);
+    let item = enclosingListItem(state, from)
+        ?? (endLine.number === line.number ? enclosingListItem(state, to) : null);
+    let depthPos = listSyntaxProbePos(state, from);
+    if (!item && looksLikeListMarkerLine(line.text)) {
+        const probe = listContentProbePos(line);
+        item = enclosingListItem(state, probe);
+        if (item) { depthPos = probe; }
+    } else if (item && from < listContentProbePos(line)) {
+        depthPos = listContentProbePos(line);
+    } else if (item) {
+        depthPos = listSyntaxProbePos(state, from);
+    }
+    if (item && !listMarkerLineIsActivated(state.doc.lineAt(item.from).text)) {
+        item = null;
+    }
+    return { item, depthPos };
+}
+
+/** True when either end of the primary selection sits on a list item line. */
+function selectionTouchesListItem(state: EditorState): boolean {
+    const { from, to } = state.selection.main;
+    return resolveListItemForIndent(state, from, to).item !== null
+        || looksLikeListMarkerLine(state.doc.lineAt(from).text);
+}
+
+function runTabIndent(view: EditorView): boolean {
+    if (dispatchSpec(view, computeTabIndent(view.state, false))) { return true; }
+    // List-aware nesting refused (already max depth, etc.) — still consume Tab
+    // so VS Code doesn't move focus out of the editor. Non-list lines fall back
+    // to CM6's default tab insert (defaultKeymap does not include Tab).
+    if (selectionTouchesListItem(view.state)) { return true; }
+    return insertTab(view);
+}
+
+function runShiftTabIndent(view: EditorView): boolean {
+    if (dispatchSpec(view, computeTabIndent(view.state, true))) { return true; }
+    if (selectionTouchesListItem(view.state)) { return true; }
+    return false;
 }
 
 // ===== Pure compute functions (headlessly testable) =====
@@ -267,6 +327,12 @@ export function computeMultiLineIndent(state: EditorState, outdent: boolean): Tr
     };
 }
 
+function listSyntaxProbePos(state: EditorState, pos: number): number {
+    const line = state.doc.lineAt(pos);
+    if (pos > line.from && pos === line.to) { return pos - 1; }
+    return pos;
+}
+
 /**
  * The nearest enclosing ListItem for a position at the start of a physical line — the
  * marker line itself, or a wrapped continuation line within that item's content. Same
@@ -274,7 +340,8 @@ export function computeMultiLineIndent(state: EditorState, outdent: boolean): Tr
  * enclosingBlockquote.
  */
 export function enclosingListItem(state: EditorState, pos: number): SyntaxNode | null {
-    for (let node: SyntaxNode | null = syntaxTree(state).resolveInner(pos, 1); node; node = node.parent) {
+    const probe = listSyntaxProbePos(state, pos);
+    for (let node: SyntaxNode | null = syntaxTree(state).resolveInner(probe, 1); node; node = node.parent) {
         if (node.name === 'ListItem') { return node; }
     }
     return null;
@@ -282,8 +349,9 @@ export function enclosingListItem(state: EditorState, pos: number): SyntaxNode |
 
 /** Count of ListItem ancestors at `pos` — how many list levels deep this position is. */
 export function listItemDepth(state: EditorState, pos: number): number {
+    const probe = listSyntaxProbePos(state, pos);
     let depth = 0;
-    for (let node: SyntaxNode | null = syntaxTree(state).resolveInner(pos, 1); node; node = node.parent) {
+    for (let node: SyntaxNode | null = syntaxTree(state).resolveInner(probe, 1); node; node = node.parent) {
         if (node.name === 'ListItem') { depth++; }
     }
     return depth;
@@ -556,12 +624,8 @@ export function computeTabIndent(state: EditorState, shiftKey: boolean): Transac
     }
 
     const line = state.doc.lineAt(from);
-    // Resolve the enclosing item from the cursor position itself, not the
-    // line's raw start — an already-nested line's leading whitespace can
-    // include a "gap" beyond what's structurally required for its own depth,
-    // which has no specific enclosing node and would resolve to the wrong
-    // (shallower) ancestor. The cursor is always inside real content.
-    const item = from === to ? enclosingListItem(state, from) : null;
+    const { item, depthPos } = resolveListItemForIndent(state, from, to);
+    const collapsed = from === to;
 
     if (item) {
         const hasIndent = /^[ \t]/.test(line.text);
@@ -589,7 +653,7 @@ export function computeTabIndent(state: EditorState, shiftKey: boolean): Transac
                     // No sibling to nest under — top-level only/first items get a
                     // safe flat indent at line start (own marker width, not 4
                     // spaces at cursor). Nested only-children stay a no-op.
-                    if (listItemDepth(state, from) > 1) { return null; }
+                    if (listItemDepth(state, depthPos) > 1) { return null; }
                     return computeSingleLineIndentBy(state, line, false, markerPrefixWidth(state, item), from);
                 }
                 step = markerPrefixWidth(state, prevSibling);
@@ -621,11 +685,16 @@ export function computeTabIndent(state: EditorState, shiftKey: boolean): Transac
             // extra padding beyond the minimum) could still leave the step short of a
             // real level change; refuse rather than risk a corrupted structure.
             const trialState = state.update(spec).state;
-            const depthBefore = listItemDepth(state, from);
+            const depthBefore = listItemDepth(state, depthPos);
             const depthAfter = listItemDepth(trialState, trialState.selection.main.from);
             if (depthAfter !== depthBefore + (shiftKey ? -1 : 1)) {
                 return null;
             }
+        }
+        if (!collapsed) {
+            if (!spec.changes) { return spec; }
+            const changeSet = ChangeSet.of(spec.changes, state.doc.length);
+            return { changes: spec.changes, selection: state.selection.map(changeSet) };
         }
         return spec;
     }
@@ -635,6 +704,11 @@ export function computeTabIndent(state: EditorState, shiftKey: boolean): Transac
     // bullet. Fall through to flat 4-space Tab here and the marker line gets
     // mangled; treat it as a lone list marker (no sibling to nest under) instead.
     if (setextListMarkerLineAt(state, from)) {
+        return null;
+    }
+
+    // List-looking line the parser missed — never insert spaces at the cursor.
+    if (looksLikeListMarkerLine(line.text)) {
         return null;
     }
 
@@ -908,8 +982,8 @@ export function runFormatCommand(view: EditorView, action: string): boolean {
 // (e.g. defaultKeymap's own "Mod-i" -> selectParentSyntax).
 
 export const livePreviewTabKeymap = Prec.highest(keymap.of([
-    { key: 'Tab', run: (view) => dispatchSpec(view, computeTabIndent(view.state, false)) },
-    { key: 'Shift-Tab', run: (view) => dispatchSpec(view, computeTabIndent(view.state, true)) },
+    { key: 'Tab', run: runTabIndent },
+    { key: 'Shift-Tab', run: runShiftTabIndent },
 ]));
 
 export const livePreviewFormatKeymap: KeyBinding[] = [

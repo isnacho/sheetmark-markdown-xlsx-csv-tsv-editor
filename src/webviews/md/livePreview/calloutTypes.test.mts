@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { EditorState, Text } from '@codemirror/state';
+import { markdown } from '@codemirror/lang-markdown';
+import { GFM } from '@lezer/markdown';
 import {
     findCalloutBlocks,
     calloutTypeClass,
@@ -48,6 +50,13 @@ test('findCalloutBlocks: unclosed block runs content through EOF', () => {
     assert.equal(blocks[0].type, 'warning');
     assert.equal(blocks[0].closeFrom, null);
     assert.equal(blocks[0].contentEndLine, 2);
+});
+
+test('findCalloutBlocks: ignores ::: syntax inside fenced code', () => {
+    const doc = Text.of(['```', ':::note', 'example', ':::', '```']);
+    const state = EditorState.create({ doc, extensions: [markdown({ extensions: GFM })] });
+    const blocks = findCalloutBlocks(doc, state);
+    assert.equal(blocks.length, 0);
 });
 
 test('calloutTypeClass: known types map to semantic classes, unknown to neutral', () => {

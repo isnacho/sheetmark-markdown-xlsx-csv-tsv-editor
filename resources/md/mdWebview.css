@@ -1231,9 +1231,6 @@ body.preview-edit-mode .markdown-preview .table-tool-btn[data-table-action="tabl
 
 /* ===== Status Info ===== */
 .status-info {
-    position: fixed;
-    bottom: 12px;
-    right: 16px;
     background: var(--color-surface-panel);
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
@@ -1270,8 +1267,13 @@ body.preview-edit-mode .markdown-preview .table-tool-btn[data-table-action="tabl
     z-index: 2000;
     display: flex;
     flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
     align-items: center;
     gap: 12px;
+    row-gap: 8px;
+    max-width: min(92vw, 620px);
+    box-sizing: border-box;
     opacity: 0;
     visibility: hidden;
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -1307,7 +1309,10 @@ body.preview-edit-mode .markdown-preview .table-tool-btn[data-table-action="tabl
     font-size: 15px;
     font-weight: 500;
     color: var(--color-toast-text);
-    white-space: nowrap;
+    /* Was `nowrap`, which made the pill grow past the pane instead of wrapping. */
+    white-space: normal;
+    overflow-wrap: break-word;
+    min-width: 0;
 }
 
 .toast-action {
@@ -1844,4 +1849,164 @@ body:not(.show-line-numbers) .markdown-preview .code-line::before {
 .status-info {
     font-variant-numeric: tabular-nums;
     letter-spacing: 0.02em;
+}
+
+/* ===================================================================
+   Disk-vs-editor diff overlay
+   =================================================================== */
+
+/* Fixed row owning what used to be .status-info's own positioning, so the
+   diff badge can sit beside the stats pill and survive stats being switched
+   off. pointer-events: none keeps the row from swallowing clicks over the
+   document; the badge re-enables them for itself. */
+.status-bar {
+    position: fixed;
+    bottom: 12px;
+    right: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    z-index: 100;
+    pointer-events: none;
+}
+
+.diff-badge {
+    pointer-events: auto;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--color-surface-panel);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid var(--color-border-default);
+    border-radius: var(--surface-radius);
+    padding: 4px 10px;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+}
+
+.diff-badge-added {
+    color: var(--color-status-success);
+    font-weight: 600;
+}
+
+.diff-badge-removed {
+    color: var(--color-status-error);
+    font-weight: 600;
+}
+
+/* --- @codemirror/merge unified view, retinted to the active theme --------
+   The package ships its own baseTheme with hardcoded greens/reds; these
+   overrides map it onto the same status tokens the rest of the editor uses so
+   it tracks light/dark/VS Code themes. */
+.cm-changedLine {
+    background: var(--color-status-success-subtle);
+}
+
+.cm-changedText {
+    /* Overrides the package's gradient underline with a flat tint — reads
+       better against Markdown live-preview decorations. */
+    background: color-mix(in srgb, var(--color-status-success) 22%, transparent);
+    border-radius: 2px;
+}
+
+.cm-deletedChunk {
+    background: var(--color-status-error-subtle);
+    /* Keeps the package's 6px left indent — overriding `padding` wholesale
+       would flatten it and misalign deleted lines against the document. */
+    padding: 2px 0 2px 6px;
+}
+
+.cm-deletedChunk .cm-deletedText {
+    background: color-mix(in srgb, var(--color-status-error) 24%, transparent);
+    border-radius: 2px;
+}
+
+.cm-changeGutter {
+    width: 3px;
+    background: transparent;
+}
+
+.cm-changedLineGutter {
+    background: var(--color-status-success);
+}
+
+.cm-deletedLineGutter {
+    background: var(--color-status-error);
+}
+
+.cm-inlineChangedLineGutter {
+    background: var(--color-status-warning);
+}
+
+.cm-inlineChangedLine {
+    background: color-mix(in srgb, var(--color-status-warning-subtle) 60%, transparent);
+}
+
+/* Per-chunk accept/reject controls.
+   Every rule here is prefixed with .cm-deletedChunk on purpose. The package's
+   baseTheme declares `.cm-deletedChunk button { color: white }` at the same
+   specificity a bare `.cm-chunkButtons button` rule would have, and CodeMirror
+   injects its StyleModule after this stylesheet — so an unprefixed override
+   loses the tie and the label renders white-on-panel, i.e. invisible. The extra
+   class makes these win regardless of injection order. Solid accent fills with
+   --color-text-on-action also guarantee contrast in every theme. */
+.cm-deletedChunk .cm-chunkButtons {
+    display: flex;
+    gap: 4px;
+    padding: 2px 4px;
+}
+
+.cm-deletedChunk .cm-chunkButtons button {
+    border: none;
+    border-radius: var(--surface-radius);
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.5;
+    padding: 1px 8px;
+    margin: 0;
+    cursor: pointer;
+    color: var(--color-text-on-action);
+}
+
+.cm-deletedChunk .cm-chunkButtons button[name="accept"] {
+    background: var(--color-status-success);
+    color: var(--color-text-on-action);
+}
+
+.cm-deletedChunk .cm-chunkButtons button[name="reject"] {
+    background: var(--color-status-error);
+    color: var(--color-text-on-action);
+}
+
+.cm-deletedChunk .cm-chunkButtons button:hover {
+    filter: brightness(1.1);
+}
+
+.cm-deletedChunk .cm-chunkButtons button:focus-visible {
+    outline: 2px solid var(--color-text-on-action);
+    outline-offset: -3px;
+}
+
+.cm-collapsedLines {
+    background: var(--color-surface-panel);
+    color: var(--color-text-secondary);
+    font-size: 11px;
+    padding: 2px 8px;
+    cursor: pointer;
+}
+
+/* The disk-change toast now carries two actions (Reload + See changes); the
+   parent's 12px gap is too wide between them. */
+.toast-action + .toast-action {
+    margin-left: -6px;
+}
+
+/* Second action slot empty (single-action toasts): the existing
+   `.toast-action:not(.hidden) + .toast-close` rule can't reach past the hidden
+   sibling, so restore the tightened close-button gap here. */
+.toast-action:not(.hidden) + .toast-action.hidden + .toast-close {
+    margin-left: -6px;
 }

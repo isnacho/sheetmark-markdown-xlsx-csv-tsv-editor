@@ -56,7 +56,7 @@ export function appendCalloutDecorationSpecs(
         return rangesIntersect(selFrom, selTo, from, to);
     };
 
-    for (const block of findCalloutBlocks(doc)) {
+    for (const block of findCalloutBlocks(doc, state)) {
         const blockTo = block.closeTo ?? doc.length;
         const active = isBlockActive(block.openFrom, blockTo);
         const fenceMark = active ? dimMark : hiddenMark;

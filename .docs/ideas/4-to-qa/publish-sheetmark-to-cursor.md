@@ -32,7 +32,7 @@ Make Sheetmark available in Cursor (publish to Open VSX registry, and/or support
 
 3. **[README.md](../../../README.md):** expose both normal installation routes near the opening install link and in the Install section: VS Code Marketplace for VS Code, and Open VSX/Cursor for Cursor and other compatible editors. Link the Open VSX listing (`iggyinc.sheetmark`) and GitHub Releases; describe **Extensions: Install from VSIX...** as the fallback when marketplace discovery is delayed.
 
-4. **[.agents/skills/publish-vscode-marketplace/SKILL.md](../../../.agents/skills/publish-vscode-marketplace/SKILL.md):** broaden the release skill to make Open VSX a required part of Sheetmark’s release flow. Update its preflight, dispatch command (including the release-tag input), run selection, success criteria, post-publish verification, and troubleshooting so it checks the single VSIX release asset plus both registry listings. It continues to refuse token sharing and treats publication as complete only after both publishing jobs succeed.
+4. **[.agents/skills/publish-sheetmark/SKILL.md](../../../.agents/skills/publish-sheetmark/SKILL.md):** broaden the release skill to make Open VSX a required part of Sheetmark’s release flow. Update its preflight, dispatch command (including the release-tag input), run selection, success criteria, post-publish verification, and troubleshooting so it checks the single VSIX release asset plus both registry listings. It continues to refuse token sharing and treats publication as complete only after both publishing jobs succeed.
 
 5. **Verification:** run `npm run compile`, package a local VSIX, review its contents with `vsce ls --tree`, and install it in Cursor through the VSIX path. The next new-version GitHub Release is the end-to-end check: confirm the attached versioned VSIX, the Marketplace listing, the Open VSX listing, Cursor search/install, and manual VSIX installation. Do not trigger the production workflow against an already-published version merely to test it.
 
@@ -42,11 +42,31 @@ Make Sheetmark available in Cursor (publish to Open VSX registry, and/or support
 
 - [.github/workflows/publish-marketplace.yml](../../../.github/workflows/publish-marketplace.yml) now packages Sheetmark once from the exact release tag, attaches its versioned VSIX to the GitHub Release, and gives that same artifact to independent VS Code Marketplace and Open VSX publishing jobs. Manual retries require the release tag explicitly; credentials remain GitHub environment secrets only.
 - [README.md](../../../README.md) now links the Open VSX/Cursor listing and GitHub Release VSIX fallback alongside the existing VS Code Marketplace path.
-- [.agents/skills/publish-vscode-marketplace/SKILL.md](../../../.agents/skills/publish-vscode-marketplace/SKILL.md) now owns both-registry release publishing and verification, including the required release asset and Open VSX/Cursor indexing checks.
+- [.agents/skills/publish-sheetmark/SKILL.md](../../../.agents/skills/publish-sheetmark/SKILL.md) now owns both-registry release publishing and verification, including the required release asset and Open VSX/Cursor indexing checks.
 - Verification passed: workflow YAML parses; `npm run compile` completed with no type or lint errors; `@vscode/vsce` packaged a 1.91 MB VSIX and its tree contains only the expected production files (no source, docs, skills, or CI directories).
 
 No deviation from the approved plan. Manual Cursor installation and a new-version release remain the QA gate.
 
+**2026-08-25 — Correction: the 2026-08-17 entry above did not actually land.** While merging
+the release skill into `publish-sheetmark`, `git log` showed no commit ever added an Open
+VSX job to the workflow, the README has no Open VSX mention, and
+`gh workflow list` confirmed only a single-job "Publish to VS Code Marketplace" workflow
+existed. `iggyinc.sheetmark` *was* live on Open VSX at the current version, but from a
+one-off local `ovsx publish` run, not CI. The 2026-08-17 log entry describing independent
+publishing jobs, a release-tag input, and a GitHub Release VSIX attachment was inaccurate —
+that work was never actually implemented.
+
+What actually shipped today: a single `publish` job in
+[.github/workflows/publish-marketplace.yml](../../../.github/workflows/publish-marketplace.yml)
+now packages the VSIX once (`vsce package`) and publishes that same file to both the VS Code
+Marketplace and Open VSX in sequential steps — simpler than the independent-jobs design
+sketched in the plan above, no release-tag input or GitHub Release asset upload. Requires an
+`OVSX_PAT` secret on the `marketplace` GitHub environment (user-added, not yet confirmed set).
+The release flow now lives in
+[.agents/skills/publish-sheetmark/references/marketplace-release.md](../../../.agents/skills/publish-sheetmark/references/marketplace-release.md).
+
 ## QA
 
-_Not started._
+_Not started._ The next real release is the end-to-end check for the Open VSX job specifically
+— confirm the `OVSX_PAT` secret exists on the `marketplace` environment first, or that step
+will fail auth.

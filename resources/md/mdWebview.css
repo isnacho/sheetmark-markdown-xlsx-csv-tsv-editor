@@ -1998,8 +1998,8 @@ body:not(.show-line-numbers) .markdown-preview .code-line::before {
     cursor: pointer;
 }
 
-/* The disk-change toast now carries two actions (Reload + See changes); the
-   parent's 12px gap is too wide between them. */
+/* The disk-change toast now carries three actions (Load disk changes, Review
+   changes, Keep local version); the parent's 12px gap is too wide between them. */
 .toast-action + .toast-action {
     margin-left: -6px;
 }
@@ -2008,5 +2008,15 @@ body:not(.show-line-numbers) .markdown-preview .code-line::before {
    `.toast-action:not(.hidden) + .toast-close` rule can't reach past the hidden
    sibling, so restore the tightened close-button gap here. */
 .toast-action:not(.hidden) + .toast-action.hidden + .toast-close {
+    margin-left: -6px;
+}
+
+/* Only the 1st action is visible (2nd and 3rd hidden). */
+.toast-action:not(.hidden) + .toast-action.hidden + .toast-action.hidden + .toast-close {
+    margin-left: -6px;
+}
+
+/* 1st and 2nd visible, 3rd hidden (a two-action toast, with an empty 3rd slot). */
+.toast-action:not(.hidden) + .toast-action:not(.hidden) + .toast-action.hidden + .toast-close {
     margin-left: -6px;
 }

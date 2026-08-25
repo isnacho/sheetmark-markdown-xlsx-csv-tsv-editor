@@ -714,7 +714,14 @@ function applyReloadedContent(text: string) {
 // VS Code webviews are sandboxed without `allow-modals` — window.confirm()/alert()/
 // prompt() are silently blocked, so a real dialog is built here reusing the shared
 // .feedback-overlay/.feedback-modal pattern (same one FeedbackModal uses).
-function confirmModal(title: string, message: string, confirmLabel: string): Promise<boolean> {
+type ModalOutcome = 'confirm' | 'secondary' | 'cancel';
+
+function confirmModal(
+    title: string,
+    message: string,
+    confirmLabel: string,
+    secondaryLabel?: string
+): Promise<ModalOutcome> {
     return new Promise((resolve) => {
         const overlay = document.createElement('div');
         overlay.className = 'feedback-overlay reload-confirm-overlay';
@@ -729,7 +736,7 @@ function confirmModal(title: string, message: string, confirmLabel: string): Pro
                     ${escapeHtmlAttr(message)}
                 </p>
                 <div style="display: flex; justify-content: flex-end; gap: 8px;">
-                    <button class="reload-confirm-cancel" type="button" style="background: none; border: 1px solid var(--color-border-default); border-radius: 6px; color: var(--color-text-primary); font-size: 13px; font-weight: 500; padding: 6px 14px; cursor: pointer;">Cancel</button>
+                    <button class="reload-confirm-cancel" type="button" style="background: none; border: 1px solid var(--color-border-default); border-radius: 6px; color: var(--color-text-primary); font-size: 13px; font-weight: 500; padding: 6px 14px; cursor: pointer;">${escapeHtmlAttr(secondaryLabel ?? 'Cancel')}</button>
                     <button class="reload-confirm-ok" type="button" style="background: var(--color-status-warning); border: none; border-radius: 6px; color: var(--color-text-on-action); font-size: 13px; font-weight: 600; padding: 6px 14px; cursor: pointer;">${escapeHtmlAttr(confirmLabel)}</button>
                 </div>
             </div>
@@ -741,19 +748,28 @@ function confirmModal(title: string, message: string, confirmLabel: string): Pro
             modal.classList.add('active');
         });
 
-        const finish = (result: boolean) => {
+        const finish = (result: ModalOutcome) => {
             overlay.remove();
             modal.remove();
             resolve(result);
         };
-        overlay.addEventListener('click', () => finish(false));
-        modal.querySelector('.reload-confirm-cancel')?.addEventListener('click', () => finish(false));
-        modal.querySelector('.reload-confirm-ok')?.addEventListener('click', () => finish(true));
+        overlay.addEventListener('click', () => finish('cancel'));
+        modal.querySelector('.reload-confirm-cancel')?.addEventListener('click', () => finish(secondaryLabel ? 'secondary' : 'cancel'));
+        modal.querySelector('.reload-confirm-ok')?.addEventListener('click', () => finish('confirm'));
     });
 }
 
-function confirmDiscardAndReload(): Promise<boolean> {
-    return confirmModal('Reload from Disk', 'Discard unsaved changes and reload from disk?', 'Discard & Reload');
+type ReloadDecision = 'reload' | 'keepLocal' | 'cancel';
+
+// 'keepLocal' is a real action (force-write to disk) distinct from 'cancel', which
+// stays the passive backdrop/click-outside no-op it always was.
+function confirmDiscardAndReload(): Promise<ReloadDecision> {
+    return confirmModal(
+        'Reload from Disk',
+        'Discard unsaved changes and reload from disk?',
+        'Discard & Reload',
+        'Keep mine, ignore disk'
+    ).then((r) => (r === 'confirm' ? 'reload' : r === 'secondary' ? 'keepLocal' : 'cancel'));
 }
 
 function confirmOverwriteConflict(): Promise<boolean> {
@@ -761,7 +777,7 @@ function confirmOverwriteConflict(): Promise<boolean> {
         'File Changed on Disk',
         'This file changed on disk since you opened it. Overwrite it with your local changes anyway?',
         'Overwrite'
-    );
+    ).then((r) => r === 'confirm');
 }
 
 function confirmRestoreConflict(): Promise<boolean> {
@@ -769,7 +785,12 @@ function confirmRestoreConflict(): Promise<boolean> {
         'File Changed on Disk',
         'This file changed on disk since you opened it. Restore the selected version anyway? Your disk changes will be lost.',
         'Restore Anyway'
-    );
+    ).then((r) => r === 'confirm');
+}
+
+function confirmOverwriteWithLocal(): Promise<boolean> {
+    return confirmModal('Keep Local Version', 'Overwrite disk with your version?', 'Overwrite disk')
+        .then((r) => r === 'confirm');
 }
 
 function showInitialLoadError(message: string): void {
@@ -806,8 +827,16 @@ async function requestReloadFromDisk() {
     if (isSaving || isReloadingFromDisk || !isEditMode || !canReloadFromDisk()) {return;}
     currentContent = getActiveEditorContent();
     const dirty = currentContent !== originalContent;
-    if (dirty && !(await confirmDiscardAndReload())) {
-        return;
+    if (dirty) {
+        const decision = await confirmDiscardAndReload();
+        if (decision === 'cancel') {return;}
+        if (decision === 'keepLocal') {
+            if (isSaving) {return;}
+            pendingDiskContent = null;
+            hideToast();
+            doSave(true);
+            return;
+        }
     }
     isReloadingFromDisk = true;
     setButtonsEnabled(false);
@@ -852,7 +881,8 @@ function showToast(
     action?: ToastAction | ToastAction[],
     opts?: { persistent?: boolean; onDismiss?: () => void; icon?: 'success' | 'warning' }
 ) {
-    // Two slots: the disk-change toast carries Load disk changes plus Review changes.
+    // Three slots: the disk-change toast carries Load disk changes, Review changes,
+    // and Keep local version.
     const actions = action ? (Array.isArray(action) ? action : [action]) : [];
     let toast = $('toastNotification');
     if (!toast) {
@@ -864,6 +894,7 @@ function showToast(
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></svg>
             </div>
             <span class="toast-text"></span>
+            <button class="toast-action hidden" type="button"></button>
             <button class="toast-action hidden" type="button"></button>
             <button class="toast-action hidden" type="button"></button>
             <button class="toast-close" type="button" aria-label="Dismiss">&times;</button>
@@ -1004,8 +1035,14 @@ function revealDiskChanges() {
     };
 
     if (isEditMode && getActiveEditorContent() !== originalContent) {
-        confirmDiscardAndReload().then((confirmed) => {
-            if (confirmed) { applyAndShow(); }
+        confirmDiscardAndReload().then((decision) => {
+            if (decision === 'reload') {
+                applyAndShow();
+            } else if (decision === 'keepLocal' && !isSaving) {
+                pendingDiskContent = null;
+                hideToast();
+                doSave(true);
+            }
         });
         return;
     }
@@ -1796,12 +1833,26 @@ window.addEventListener('message', (event) => {
                 }
                 const dirty = isEditMode && getActiveEditorContent() !== originalContent;
                 if (dirty) {
-                    confirmDiscardAndReload().then((confirmed) => {
-                        if (confirmed) {applyPending();}
+                    confirmDiscardAndReload().then((decision) => {
+                        if (decision === 'reload') {
+                            applyPending();
+                        } else if (decision === 'keepLocal' && !isSaving) {
+                            pendingDiskContent = null;
+                            hideToast();
+                            doSave(true);
+                        }
                     });
                 } else {
                     applyPending();
                 }
+            };
+            const keepLocalVersion = () => {
+                confirmOverwriteWithLocal().then((confirmed) => {
+                    if (!confirmed || isSaving) {return;}
+                    pendingDiskContent = null;
+                    hideToast();
+                    doSave(true);
+                });
             };
 
             // Auto-show only when nothing local is at risk; with unsaved edits the
@@ -1825,6 +1876,7 @@ window.addEventListener('message', (event) => {
                 [
                     { label: 'Load disk changes', onClick: reloadPending },
                     { label: 'Review changes', onClick: () => revealDiskChanges() },
+                    { label: 'Keep local version', onClick: keepLocalVersion },
                 ],
                 { persistent: true, icon: 'warning' }
             );

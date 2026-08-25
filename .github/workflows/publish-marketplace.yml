@@ -1,4 +1,4 @@
-name: Publish to VS Code Marketplace
+name: Publish Sheetmark Release
 
 on:
   release:
@@ -32,7 +32,15 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Publish extension
+      - name: Package extension
+        run: npx --yes @vscode/vsce@latest package --no-dependencies --out sheetmark.vsix
+
+      - name: Publish to VS Code Marketplace
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
-        run: npx --yes @vscode/vsce@latest publish --no-dependencies
+        run: npx --yes @vscode/vsce@latest publish --no-dependencies --packagePath sheetmark.vsix
+
+      - name: Publish to Open VSX
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: npx --yes ovsx publish sheetmark.vsix -p "$OVSX_PAT"

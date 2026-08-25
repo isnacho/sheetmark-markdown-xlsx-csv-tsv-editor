@@ -3,7 +3,7 @@ title: Diff view — disk vs editor
 slug: diff-view-disk-vs-editor
 status: to-qa
 created: 2026-08-20
-updated: 2026-08-20
+updated: 2026-08-24
 ---
 
 # Diff view — disk vs editor
@@ -121,6 +121,51 @@ All three drive the same single "diff visible" state; the toggle reflects it.
 - Per AGENTS.md rule 2, every new message needs both ends wired plus an entry in
   `.docs/dev/MESSAGE-PROTOCOL.md`.
 
+### Bounced back to to-plan (2026-08-24)
+
+The shipped v1 (Load disk changes / Review changes, per-chunk + bulk diff) was ready for
+QA, but working through a full state diagram of the flow surfaced a genuinely new,
+unbuilt piece of scope — the "Keep local version" toast action below. Rather than QA
+the shipped part while unplanned scope sits half-described in the same file, the whole
+idea bounces back to `to-plan` so the addendum gets a proper Plan-phase pass (own
+`EnterPlanMode` round) before Implement/QA resume. The v1 QA checklist further down is
+untouched and still valid — it just waits for this addendum to be planned and merged in.
+
+### Addendum (2026-08-24) — third toast action: "Keep local version"
+
+Worked out against a full state-diagram pass of the disk-changed flow (captured in
+`.docs/sheetmark-draw.excalidraw`), covering ground the original Brainstorm didn't: what
+happens when the user wants to keep *their* version and discard the incoming external
+edit, rather than only "load" or "review" it.
+
+- **New toast action, "Keep local version"**, alongside the existing **Load disk
+  changes** / **Review changes**. Effect: force-write the current buffer to disk,
+  discarding the external change. Gated behind an explicit confirm — **"Overwrite disk
+  with your version?"** → **Overwrite disk** / **Cancel**.
+- **Cancel is terminal.** Closes quietly, toast stays exactly as it was, no re-prompt
+  loop back into the toast flow.
+- **This is a real, user-confirmed save, not a silent write** — the concern going in was
+  that writing disk outside the normal save command breaks undo history / dirty-flag
+  bookkeeping. Resolved: since the user explicitly clicks a confirm button naming the
+  effect ("Overwrite disk"), that click *is* the save trigger, same as Cmd+S. Plan
+  requirement: it must route through the **same save call** the editor's own Save command
+  uses, not a bespoke `fs.writeFile` — see Plan addendum below.
+- **The existing reload-confirm gets a second resolution.** Today (per QA §4), triggering
+  "Load disk changes" with a dirty buffer shows "Discard unsaved changes and reload from
+  disk?" and Cancel just leaves the buffer dirty (a no-op). New scope: Cancel on *that*
+  dialog is reframed as **"Keep mine, ignore disk"** and now performs the same
+  force-write-to-disk as the new toast action, rather than leaving the buffer hanging
+  dirty. Two entry points (top-level toast button, and the reload confirm's cancel path)
+  converging on the same effect — intentional, not a duplicate.
+- **Per-chunk accept/reject is unchanged** — still never a direct disk write, still flows
+  through `onDocChanged` into the normal dirty/save path exactly as shipped.
+- Confirmed already covered, no new scope: the diagram pass flagged what looked like a
+  missing "last chunk resolved → done" exit edge on the per-chunk diff view, but that's
+  already handled by the shipped `onDiffChunkResolved` hook (see Implementation Log,
+  "Post-implementation fixes"). Also confirmed the bulk (**Accept all**/**Reject all**)
+  and per-chunk actions are correctly a single `unifiedMergeView`, not two separate
+  dialogs — the diagram's two boxes were a documentation artifact, not a real gap.
+
 ## Plan
 
 Approved 2026-08-20. Full plan file: `~/.claude/plans/recursive-nibbling-quokka.md`.
@@ -211,6 +256,48 @@ real verification.
 2. `diffLayout` enum through boolean-only settings plumbing.
 3. Baseline lifetime vs. version preview — must be mutually exclusive.
 4. Working tree already carries ~20 uncommitted modified files, several near `mdWebview.ts`.
+
+### Addendum (2026-08-24) — "Keep local version": approved plan
+
+Approved 2026-08-24. Full plan file: `~/.claude/plans/stateless-whistling-cocoa.md`.
+New scope on top of the shipped v1 (not built or QA'd yet — see Brainstorm addendum
+above for the product decision). All changes are webview-side; no new host↔webview
+message and no `mdEditorProvider.ts` change — `doSave(true, false)` already posts
+`saveMarkdown` with `force: true`, which the host handler (`mdEditorProvider.ts:351-374`)
+already honors, skipping its conflict re-check and writing straight through
+`vscode.workspace.fs.writeFile`. Mirrors the existing `confirmOverwriteConflict` →
+`doSave` precedent in `performSave` (`mdWebview.ts:662-667`).
+
+1. **Generalize `confirmModal`** (`mdWebview.ts:717-753`, today `Promise<boolean>`) to take
+   an optional 4th param `secondaryLabel` and resolve `'confirm' | 'secondary' | 'cancel'`.
+   Omitted `secondaryLabel` keeps today's exact behavior (Cancel button + backdrop both →
+   `'cancel'`). The 3 existing wrappers (`confirmOverwriteConflict`, `confirmRestoreConflict`)
+   keep exposing `Promise<boolean>` via `.then(r => r === 'confirm')` — no call-site changes.
+2. **`confirmDiscardAndReload`** (:755-757) exposes the 3-way result directly as
+   `ReloadDecision = 'reload' | 'keepLocal' | 'cancel'`, passing `'Keep mine, ignore disk'`
+   as the new secondary label. Its 3 call sites — `requestReloadFromDisk` (:805-815),
+   `revealDiskChanges` (:993-1013), and the `reloadPending` closure inside
+   `diskChangedExternally` (:1788-1802) — each branch on the 3-way result: `'reload'` keeps
+   today's path, `'cancel'` is unchanged (no-op), `'keepLocal'` clears `pendingDiskContent`,
+   calls `hideToast()`, then `doSave(true)`. Guarded on `isSaving` to avoid a concurrent
+   double-save.
+3. **New `confirmOverwriteWithLocal()`** wrapper (same file, alongside the other three) for
+   "Overwrite disk with your version?" (Overwrite disk / Cancel) — plain boolean, no
+   secondary label needed since Cancel here is already the "closes quietly" no-op.
+4. **New toast action** "Keep local version" added to the `diskChangedExternally` call site
+   (:1820-1828) via a `keepLocalVersion` handler (same clear-pending/hide-toast/`doSave(true)`
+   sequence as step 2's `'keepLocal'` branch).
+5. **`showToast` template** (:850-914) gains a 3rd hardcoded `<button class="toast-action
+   hidden">` — the existing positional mapping loop (:887-898) needs no change.
+6. **CSS** (`resources/md/mdWebview.css`): the `.toast-action + .toast-action` gap rule is
+   already adjacency-generic for N slots; the close-button bridging rule (~:2010-2012) needs
+   2 new selector variants to cover "only 1st visible" and "1st+2nd visible, 3rd hidden" now
+   that a 3rd slot always exists in the DOM.
+7. **Not needed**: no `.docs/dev/MESSAGE-PROTOCOL.md` / `MAP-mdWebview.md` changes (no new
+   message, no new module); no changes to per-chunk accept/reject or bulk accept/reject-all
+   (both already correct — see Brainstorm addendum). Existing QA §4 checklist item
+   ("cancelling keeps your edits") will need re-verification once this lands — cancelling via
+   the *button* now writes to disk; only backdrop-dismiss stays a true no-op.
 
 ## Implementation Log
 
@@ -311,6 +398,34 @@ the merge decorations rendering over tables, mermaid fences, callouts and list m
 documented fallback (reconfigure `revealCompartment` off while the diff is on) has not been
 needed or implemented. This needs eyes in the Extension Development Host.
 
+### Addendum (2026-08-24) — "Keep local version" implemented
+
+Per the approved plan (`~/.claude/plans/stateless-whistling-cocoa.md`, see Plan addendum
+above). All changes webview-side, no host or protocol changes, per plan.
+
+#### Files changed
+
+| File | Change |
+|---|---|
+| `src/webviews/md/mdWebview.ts` | `confirmModal` gains an optional `secondaryLabel` param and now resolves `ModalOutcome` ('confirm'/'secondary'/'cancel') instead of a plain boolean; `confirmDiscardAndReload` exposes the 3-way `ReloadDecision` ('reload'/'keepLocal'/'cancel') directly; `confirmOverwriteConflict`/`confirmRestoreConflict` adapted via `.then(r => r === 'confirm')`; new `confirmOverwriteWithLocal()`; new `keepLocalVersion` handler; 3 call sites (`requestReloadFromDisk`, `revealDiskChanges`, the `reloadPending` closure) branch on the 3-way decision and force-write via `doSave(true)` on `'keepLocal'`; 3rd toast action wired at the `diskChangedExternally` call site; `showToast` template gains a 3rd `.toast-action` button |
+| `resources/md/mdWebview.css` | 2 new close-button bridging selectors for the 3-slot toast (only 1st visible; 1st+2nd visible, 3rd hidden); comment updates |
+
+#### Deviations from the plan
+
+None — implemented exactly as planned. The plan's sketch code matched what actually
+landed at every call site.
+
+#### Verification
+
+- `npm run compile` — clean: 0 type errors, 0 lint errors, 0 warnings.
+- `npm run test:unit` — 225 pass, same 3 pre-existing Node-25 load failures as `HEAD`
+  (`slashMenu`, `revealDecorations`, `tableWidget` — unrelated, documented above). No new
+  test file per plan (no new pure module was introduced).
+- Confirmed the new strings (`Keep local version`, `Keep mine, ignore disk`, `Overwrite
+  disk with your version`) actually reached `dist/md/mdWebview.js`, not just compiled.
+- **Not yet done — manual smoke test.** Nothing below has been exercised in the Extension
+  Development Host yet; see QA section for the checklist.
+
 ## QA
 
 Branch: `feat/disk-diff-view` (`f1299c5`). Automated state: `npm run compile` clean,
@@ -332,8 +447,8 @@ sed -i '' 's/^# Sheetmark/# Sheetmark (edited)/' samples/test.md            # mo
 
 ### 1. Golden path
 
-- [ ] External append → toast reads `File changed on disk · +N −M` with **Load disk changes**
-      and **Review changes**.
+- [ ] External append → toast reads `File changed on disk · +N −M` with **Load disk
+      changes**, **Review changes**, and **Keep local version**.
 - [ ] **Review changes** → content loads and the inline diff appears: added lines tinted,
       deleted text shown in a chunk widget above.
 - [ ] Chunk **Accept** / **Reject** labels are legible (white on green / red).
@@ -366,7 +481,9 @@ Needs a document containing a table, a mermaid fence, a callout and a task list.
 ### 4. Dirty-buffer safety
 
 - [ ] Type something, then trigger an external change → **Load disk changes** shows the
-      "Discard unsaved changes and reload from disk?" confirm; cancelling keeps your edits.
+      "Discard unsaved changes and reload from disk?" confirm, now with buttons **Discard &
+      Reload** / **Keep mine, ignore disk** (behavior changed — see §8: clicking the
+      button now force-writes, only a click outside the modal is a true no-op).
 - [ ] Same with **Review changes** → same confirm, no silent discard.
 - [ ] Enable `md.autoShowDiskDiff`, keep the buffer **clean**, trigger a change → diff opens
       by itself.
@@ -397,6 +514,29 @@ Needs a document containing a table, a mermaid fence, a callout and a task list.
 
 - [ ] Light, dark, and VS Code theme → chunk button labels, changed-line tints and the badge
       are all readable in each.
+
+### 8. Keep local version (2026-08-24 addendum)
+
+- [ ] External change, **clean** buffer → click **Keep local version** → confirm dialog
+      "Overwrite disk with your version?" (Overwrite disk / Cancel) → **Overwrite disk** →
+      toast becomes "Saved"; `cat` the file from a second terminal to confirm disk now holds
+      the buffer's content, not the external edit.
+- [ ] Same dialog, click **Cancel** (or click outside the modal) → toast stays exactly as it
+      was (still showing all 3 actions), disk unchanged, no re-prompt loop.
+- [ ] External change, **dirty** buffer → click **Load disk changes** → reload-confirm shows
+      **Discard & Reload** / **Keep mine, ignore disk** → click **Keep mine, ignore disk** →
+      disk now holds the buffer's content (verify via `cat`), toast becomes "Saved", buffer's
+      `originalContent` updates (no longer shows dirty).
+- [ ] Same dirty-buffer case, click **outside the modal** (backdrop) → true no-op: buffer
+      stays dirty exactly as before, disk unchanged, no write happens.
+- [ ] Repeat the "Keep mine, ignore disk" check via **Review changes** (dirty buffer) and via
+      the toolbar **Reload from disk** button (dirty buffer) — all three entry points into
+      `confirmDiscardAndReload` should behave identically.
+- [ ] Narrow the editor pane with all 3 toast actions visible → toast wraps correctly, no
+      clipped buttons, close-button spacing stays tight.
+- [ ] Trigger the single-action "Reloaded from disk" toast (auto-reload path) → close-button
+      spacing still correct with only 1 of 3 slots filled (regression check for the new CSS
+      bridging rules).
 
 ### Results
 

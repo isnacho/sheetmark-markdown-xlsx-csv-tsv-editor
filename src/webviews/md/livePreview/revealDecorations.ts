@@ -444,6 +444,10 @@ export function computeRevealDecorations(
 
     // Link tree shape (verified against the real parse tree, not assumed):
     function handleLink(node: SyntaxNode) {
+        // A malformed label (e.g. nested "[" before the real closing "]") makes
+        // lezer-markdown close on the wrong bracket and emit a Link node with no
+        // URL child — skip decorating those so they don't get styled as real links.
+        if (!node.getChild('URL')) { return; }
         const marks = node.getChildren('LinkMark');
         if (marks.length < 2) { return; }
         const open = marks[0];

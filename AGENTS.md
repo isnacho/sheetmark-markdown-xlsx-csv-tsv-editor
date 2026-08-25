@@ -8,7 +8,7 @@ Deep references (load on demand): [.docs/dev/ARCHITECTURE.md](.docs/dev/ARCHITEC
 [.docs/dev/MAP-spreadsheetWebview.md](.docs/dev/MAP-spreadsheetWebview.md) ·
 [.docs/dev/MAP-mdWebview.md](.docs/dev/MAP-mdWebview.md) ·
 [changelog](CHANGELOG.md) · roadmap: [.docs/product/PLAN.md](.docs/product/PLAN.md) ·
-local dev install/reversal: [.docs/product/LOCAL-DEV-INSTALL.md](.docs/product/LOCAL-DEV-INSTALL.md)
+publish/local install: [.agents/skills/publish-sheetmark/SKILL.md](.agents/skills/publish-sheetmark/SKILL.md)
 
 ---
 

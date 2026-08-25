@@ -1,0 +1,4 @@
+interface:
+  display_name: "Publish Sheetmark"
+  short_description: "Publish or locally install the Sheetmark extension"
+  default_prompt: "Use $publish-sheetmark to publish or locally install the next Sheetmark update."

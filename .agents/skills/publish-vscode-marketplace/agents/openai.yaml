@@ -1,4 +1,0 @@
-interface:
-  display_name: "Publish VS Code Extension"
-  short_description: "Publish Sheetmark Marketplace updates"
-  default_prompt: "Use $publish-vscode-marketplace to publish the next Sheetmark update."

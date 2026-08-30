@@ -64,6 +64,7 @@ import { cursorPosAfterFrontmatter } from '../frontmatter';
 import { headingLineDecorationField } from './headingGutterSync';
 import { hoverLineGutter, hoverGutterDomEventHandlers } from './hoverLineGutter';
 import { resolveLinePosAtPointer } from './pointerLineResolution';
+import { normalizeClipboardPasteText } from './pasteNormalization';
 import {
     mermaidWidgetField,
     mermaidAtomicRanges,
@@ -87,6 +88,7 @@ import {
     setCalloutDefaultTypeEffect,
 } from './calloutDefaultType';
 import { runFormatCommand, livePreviewFormatKeymap, livePreviewTabKeymap, computePasteLink } from './formatCommands';
+import { computePasteList } from './listPaste';
 import { paragraphSelectionKeymap } from './paragraphNavigation';
 import { applyTableCellInlineFormatAction, blurActiveTableEditingCell } from './tableWidget';
 import { spellcheckExtensions, loadSpellDictionary, teardownSpellcheck } from './spellcheck';
@@ -227,9 +229,11 @@ export function mountLivePreview(opts: LivePreviewMountOptions): EditorView {
             return true;
         },
         paste(event, editorView) {
-            const text = event.clipboardData?.getData('text/plain');
-            if (!text) { return false; }
-            const spec = computePasteLink(editorView.state, text);
+            const raw = event.clipboardData?.getData('text/plain');
+            if (!raw) { return false; }
+            const text = normalizeClipboardPasteText(editorView.state, raw);
+            const spec = computePasteList(editorView.state, text)
+                ?? computePasteLink(editorView.state, text);
             if (!spec) { return false; }
             editorView.dispatch(spec);
             event.preventDefault();
@@ -244,6 +248,7 @@ export function mountLivePreview(opts: LivePreviewMountOptions): EditorView {
         extensions: [
             history(),
             drawSelection(),
+            EditorView.clipboardInputFilter.of((text, state) => normalizeClipboardPasteText(state, text)),
             highlightActiveLine(),
             highlightActiveLineGutter(),
             hoverLineGutter(),

@@ -1,6 +1,8 @@
 // Map a screen Y coordinate to a document line position using DOM line
 // elements when possible, otherwise `lineBlockAtHeight` + `documentTop`.
 
+import { EditorSelection } from '@codemirror/state';
+import type { EditorState, TransactionSpec } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 
 function closestCmLine(view: EditorView, target: EventTarget | null): HTMLElement | null {
@@ -32,4 +34,23 @@ export function resolveLinePosAtPointer(
 
 export function closestCmLineElement(view: EditorView, target: EventTarget | null): HTMLElement | null {
     return closestCmLine(view, target);
+}
+
+/** End position for a whole-line selection (CM6 `selectLine` / triple-click convention). */
+export function lineSelectionEnd(line: { to: number }, docLength: number): number {
+    return Math.min(line.to + 1, docLength);
+}
+
+/** Whole-line selection for double-click (line text only — no trailing break). */
+export function computeLineClickSelection(
+    state: EditorState,
+    pos: number,
+    shiftKey: boolean,
+): TransactionSpec {
+    const line = state.doc.lineAt(pos);
+    if (shiftKey) {
+        const anchor = state.selection.main.anchor;
+        return { selection: EditorSelection.range(Math.min(anchor, line.from), Math.max(anchor, line.to)) };
+    }
+    return { selection: EditorSelection.range(line.from, line.to) };
 }

@@ -5,11 +5,14 @@
 // can land one line low while the painted text sits higher. Resolve the target
 // row from the clicked `.cm-line` element instead, then map the column with the
 // browser caret API.
+//
+// Double-click selects the whole line (overriding CM6's default word select).
+// Single-click still corrects row alignment when the height map drifts.
 
 import { EditorSelection } from '@codemirror/state';
 import type { TransactionSpec } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
-import { closestCmLineElement } from './pointerLineResolution';
+import { closestCmLineElement, computeLineClickSelection } from './pointerLineResolution';
 
 function caretFromPoint(x: number, y: number): { node: Node; offset: number } | null {
     if (document.caretRangeFromPoint) {
@@ -87,14 +90,28 @@ export function computeContentClickCorrection(
     return { selection: EditorSelection.cursor(corrected) };
 }
 
+function dispatchClickSpec(view: EditorView, spec: TransactionSpec): void {
+    const head = view.state.update(spec).state.selection.main.head;
+    view.dispatch({ ...spec, effects: EditorView.scrollIntoView(head) });
+}
+
 function runContentClick(view: EditorView, event: MouseEvent): boolean {
-    if (event.button !== 0 || event.ctrlKey || event.metaKey || event.altKey || event.detail > 1) {
+    if (event.button !== 0 || event.ctrlKey || event.metaKey || event.altKey) {
+        return false;
+    }
+    if (event.detail === 2) {
+        const pos = resolveContentClickPos(view, event);
+        if (pos === null) { return false; }
+        dispatchClickSpec(view, computeLineClickSelection(view.state, pos, event.shiftKey));
+        event.preventDefault();
+        return true;
+    }
+    if (event.detail > 2) {
         return false;
     }
     const spec = computeContentClickCorrection(view, event);
     if (!spec) { return false; }
-    const pos = view.state.update(spec).state.selection.main.head;
-    view.dispatch({ ...spec, effects: EditorView.scrollIntoView(pos) });
+    dispatchClickSpec(view, spec);
     event.preventDefault();
     return true;
 }

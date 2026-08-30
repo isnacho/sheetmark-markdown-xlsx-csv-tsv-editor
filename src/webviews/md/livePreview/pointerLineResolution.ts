@@ -41,8 +41,8 @@ export function lineSelectionEnd(line: { to: number }, docLength: number): numbe
     return Math.min(line.to + 1, docLength);
 }
 
-/** Whole-line selection for double-click (line text only — no trailing break). */
-export function computeLineClickSelection(
+/** Whole-line selection for triple-click (line text only — no trailing break). */
+export function computeTripleClickLineSelection(
     state: EditorState,
     pos: number,
     shiftKey: boolean,

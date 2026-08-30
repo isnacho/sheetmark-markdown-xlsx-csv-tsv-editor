@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { EditorState, EditorSelection } from '@codemirror/state';
-import { lineSelectionEnd, computeLineClickSelection } from './pointerLineResolution.ts';
+import { lineSelectionEnd, computeTripleClickLineSelection } from './pointerLineResolution.ts';
 
 test('lineSelectionEnd includes the line break for non-final lines', () => {
     const state = EditorState.create({ doc: 'aaa\nbbb\nccc' });
@@ -43,19 +43,20 @@ test('pasting a line with a trailing newline leaves a blank line when the select
     assert.equal(next.doc.toString(), 'aaa\nxxx\n\nccc');
 });
 
-test('computeLineClickSelection: double-click selects the whole line text', () => {
+test('computeTripleClickLineSelection: selects the whole line text without the break', () => {
     const state = EditorState.create({ doc: 'aaa\nbbb\nccc' });
     const line2 = state.doc.line(2);
-    const next = state.update(computeLineClickSelection(state, line2.from + 1, false)).state;
+    const next = state.update(computeTripleClickLineSelection(state, line2.from + 1, false)).state;
     assert.equal(next.sliceDoc(next.selection.main.from, next.selection.main.to), 'bbb');
+    assert.equal(next.selection.main.to, line2.to);
 });
 
-test('computeLineClickSelection: shift double-click extends to include the clicked line', () => {
+test('computeTripleClickLineSelection: shift extends to include the clicked line', () => {
     const state = EditorState.create({
         doc: 'aaa\nbbb\nccc',
         selection: EditorSelection.cursor(0),
     });
     const line2 = state.doc.line(2);
-    const next = state.update(computeLineClickSelection(state, line2.from + 1, true)).state;
+    const next = state.update(computeTripleClickLineSelection(state, line2.from + 1, true)).state;
     assert.equal(next.sliceDoc(next.selection.main.from, next.selection.main.to), 'aaa\nbbb');
 });

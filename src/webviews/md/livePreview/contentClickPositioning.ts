@@ -6,13 +6,15 @@
 // row from the clicked `.cm-line` element instead, then map the column with the
 // browser caret API.
 //
-// Double-click selects the whole line (overriding CM6's default word select).
-// Single-click still corrects row alignment when the height map drifts.
+// Triple-click selects the whole line without the trailing break (CM6's default
+// includes the newline, which bleeds into the next row and breaks paste).
+// Double-click stays CM6 default (word select). Single-click still corrects row
+// alignment when the height map drifts.
 
 import { EditorSelection } from '@codemirror/state';
 import type { TransactionSpec } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
-import { closestCmLineElement, computeLineClickSelection } from './pointerLineResolution';
+import { closestCmLineElement, computeTripleClickLineSelection } from './pointerLineResolution';
 
 function caretFromPoint(x: number, y: number): { node: Node; offset: number } | null {
     if (document.caretRangeFromPoint) {
@@ -99,14 +101,14 @@ function runContentClick(view: EditorView, event: MouseEvent): boolean {
     if (event.button !== 0 || event.ctrlKey || event.metaKey || event.altKey) {
         return false;
     }
-    if (event.detail === 2) {
+    if (event.detail === 3) {
         const pos = resolveContentClickPos(view, event);
         if (pos === null) { return false; }
-        dispatchClickSpec(view, computeLineClickSelection(view.state, pos, event.shiftKey));
+        dispatchClickSpec(view, computeTripleClickLineSelection(view.state, pos, event.shiftKey));
         event.preventDefault();
         return true;
     }
-    if (event.detail > 2) {
+    if (event.detail !== 1) {
         return false;
     }
     const spec = computeContentClickCorrection(view, event);

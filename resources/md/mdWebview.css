@@ -14,6 +14,28 @@ body {
     -webkit-font-smoothing: antialiased;
 }
 
+/*
+ * Markdown needs a little more separation between document surfaces than a
+ * workbench theme normally provides.  Several themes intentionally make
+ * editor, widget, and panel colors nearly identical; using those colors
+ * directly made code fences, frontmatter, tables, and the editor chrome look
+ * unstyled.  These blends are fully opaque, so they also avoid inheriting the
+ * translucent "Liquid Glass" appearance from newer macOS/VS Code themes.
+ *
+ * Keep the source colors semantic rather than hard-coding light/dark values:
+ * every theme, including high-contrast themes, still supplies its own text and
+ * document background colors.
+ */
+body {
+    --md-surface-base: var(--color-surface-default);
+    --md-surface-panel: color-mix(in srgb, var(--color-text-primary) 4%, var(--color-surface-default));
+    --md-surface-raised: color-mix(in srgb, var(--color-text-primary) 7%, var(--color-surface-default));
+    --md-surface-sunken: color-mix(in srgb, var(--color-text-primary) 10%, var(--color-surface-default));
+    --md-border: color-mix(in srgb, var(--color-text-primary) 22%, var(--color-surface-default));
+    --md-border-subtle: color-mix(in srgb, var(--color-text-primary) 14%, var(--color-surface-default));
+    --md-row-stripe: color-mix(in srgb, var(--color-text-primary) 5%, var(--color-surface-default));
+}
+
 body.sticky-toolbar-enabled {
     /* Flex chrome + scrollable #content is more reliable in the MD webview than
        position:fixed (which breaks once Preview Edit shows the formatting bar
@@ -40,6 +62,52 @@ body.sticky-toolbar-enabled #toolbar.toolbar {
     left: auto;
     right: auto;
     min-height: 0;
+}
+
+/* Use a solid toolbar in Markdown.  `backdrop-filter` makes the native window
+   material show through on recent macOS releases and can make the controls
+   appear to float without a bar behind them. */
+#toolbar.toolbar,
+.formatting-toolbar {
+    background-color: var(--md-surface-raised);
+    border-color: var(--md-border);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+}
+
+/* The shared settings panel intentionally uses a glass surface for other
+   webviews. In Markdown it sits over the document, so make it a solid theme
+   surface as well. `color-scheme` also keeps the native <select> control dark
+   when the user chooses Sheetmark's Dark theme. */
+body .menu-panel.settings-panel {
+    background: var(--md-surface-raised);
+    border-color: var(--md-border);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+}
+
+body .menu-panel.settings-panel .theme-select,
+body .menu-panel.settings-panel .settings-close-btn,
+body .menu-panel.settings-panel input[type="checkbox"],
+body .menu-panel.settings-panel input[type="radio"] {
+    background-color: var(--md-surface-base);
+    border-color: var(--md-border);
+}
+
+/* This must be more specific than the solid unchecked-control rule above;
+   otherwise the light surface wins over the shared :checked background. */
+body .menu-panel.settings-panel input[type="checkbox"]:checked {
+    background-color: var(--color-action);
+    border-color: var(--color-action);
+}
+
+body.dark-mode .menu-panel.settings-panel,
+body.vscode-dark .menu-panel.settings-panel {
+    color-scheme: dark;
+}
+
+body:not(.dark-mode):not(.vscode-dark) .menu-panel.settings-panel {
+    color-scheme: light;
 }
 
 body.sticky-toolbar-enabled #formattingToolbar.formatting-toolbar:not(.hidden) {
@@ -417,6 +485,96 @@ body.cm6-preview-active.cm6-word-wrap .cm-md-inline-code {
     font-size: var(--font-mono-size);
 }
 
+/*
+ * CodeMirror normally installs these rules in a runtime <style> element.  Keep
+ * the core Markdown presentation in this linked stylesheet as well: it makes
+ * Preview Edit resilient when an embedded browser delays or rejects dynamic
+ * styles, while preserving the same output when CodeMirror's theme loads.
+ */
+body.cm6-preview-active .cm-editor,
+body.cm6-preview-active .cm-gutters {
+    color: var(--color-text-primary);
+    background-color: var(--md-surface-base);
+}
+
+body.cm6-preview-active .cm-gutters {
+    color: color-mix(in srgb, var(--color-text-primary) 48%, var(--md-surface-base));
+}
+
+body.cm6-preview-active .cm-md-inline-code {
+    padding: 0.1em 0.3em;
+    background-color: var(--md-surface-sunken);
+    color: var(--color-text-code);
+    border: 1px solid var(--md-border-subtle);
+    border-radius: var(--surface-radius);
+}
+
+body.cm6-preview-active .cm-md-fenced-code-line {
+    background-color: var(--md-surface-sunken);
+    border-left: 1px solid var(--md-border-subtle);
+    border-right: 1px solid var(--md-border-subtle);
+}
+
+body.cm6-preview-active .cm-md-fenced-code-line-first {
+    border-top: 1px solid var(--md-border-subtle);
+}
+
+body.cm6-preview-active .cm-md-fenced-code-line-last {
+    border-bottom: 1px solid var(--md-border-subtle);
+}
+
+body.cm6-preview-active .cm-md-strong-content { font-weight: 700; }
+body.cm6-preview-active .cm-md-em-content { font-style: italic; }
+body.cm6-preview-active .cm-md-strike-content { text-decoration: line-through; }
+body.cm6-preview-active .cm-md-link-content {
+    color: var(--color-text-link);
+    text-decoration: underline;
+}
+
+body.cm6-preview-active .cm-md-bullet-marker {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    margin-left: 4px;
+    margin-right: 6px;
+    border-radius: 50%;
+    background-color: var(--color-text-primary);
+    vertical-align: middle;
+}
+
+body.cm6-preview-active .cm-md-bullet-marker-nested {
+    background-color: transparent;
+    border: 1.5px solid var(--color-text-primary);
+}
+
+body.cm6-preview-active .cm-md-ordered-marker {
+    margin-left: 4px;
+    margin-right: 6px;
+    color: var(--color-text-primary);
+    font-weight: 600;
+}
+
+body.cm6-preview-active .cm-md-checkbox-bullet-hidden { display: none; }
+
+body.cm6-preview-active .cm-md-task-checkbox {
+    margin-left: 4px;
+    margin-right: 6px;
+    vertical-align: middle;
+    accent-color: var(--color-action);
+}
+
+body.cm6-preview-active .cm-md-task-done-content {
+    color: var(--color-text-secondary);
+    text-decoration: line-through;
+}
+
+body.cm6-preview-active .cm-md-blockquote-line {
+    margin-left: 4px;
+    padding-left: 8px;
+    border-left: 2px solid var(--color-text-primary);
+    color: var(--color-text-secondary);
+}
+
 .cm-md-mermaid-lang {
     font-family: var(--font-mono);
     font-weight: var(--font-mono-weight);
@@ -489,7 +647,7 @@ body.resizing * {
     overflow-y: auto;
     max-width: 100%;
     color: var(--color-text-primary);
-    background: var(--color-surface-default);
+    background: var(--md-surface-base);
 }
 
 .markdown-preview.hidden {
@@ -544,7 +702,7 @@ body.resizing * {
     font-family: var(--font-mono);
     font-weight: var(--font-mono-weight);
     font-size: 90%;
-    background: var(--color-surface-sunken);
+    background: var(--md-surface-sunken);
     padding: 0.2em 0.4em;
     border-radius: var(--surface-radius);
     color: var(--color-text-code);
@@ -602,9 +760,9 @@ body.resizing * {
 
 /* YAML frontmatter card */
 .markdown-preview .yaml-frontmatter-card {
-    border: 1px solid var(--color-border-default);
+    border: 1px solid var(--md-border);
     border-radius: var(--surface-radius);
-    background: var(--color-surface-panel);
+    background: var(--md-surface-panel);
     margin: 0 0 32px 0;
     overflow: hidden;
 }
@@ -627,8 +785,8 @@ body.cm6-preview-active .markdown-preview .yaml-frontmatter-card {
     justify-content: space-between;
     gap: 8px;
     padding: 10px 12px;
-    border-bottom: 1px solid var(--color-border-default);
-    background: var(--color-surface-raised);
+    border-bottom: 1px solid var(--md-border);
+    background: var(--md-surface-raised);
     color: var(--color-text-primary);
     font-weight: 600;
 }
@@ -641,8 +799,8 @@ body.cm6-preview-active .markdown-preview .yaml-frontmatter-card {
 
 .markdown-preview .yaml-frontmatter-edit-btn,
 .markdown-preview .yaml-frontmatter-toggle {
-    border: 1px solid var(--color-border-default);
-    background: var(--color-surface-panel);
+    border: 1px solid var(--md-border);
+    background: var(--md-surface-panel);
     color: var(--color-text-secondary);
     border-radius: var(--surface-radius);
     cursor: pointer;
@@ -707,7 +865,7 @@ body.cm6-preview-active .markdown-preview .yaml-frontmatter-card {
     padding: 6px 0;
     font-size: 13px;
     line-height: 1.5;
-    border-bottom: 1px solid color-mix(in srgb, var(--color-border-default) 55%, transparent);
+    border-bottom: 1px solid var(--md-border-subtle);
 }
 
 .markdown-preview .yaml-frontmatter-field:last-child {
@@ -767,7 +925,7 @@ body.cm6-preview-active .markdown-preview .yaml-frontmatter-card {
     font-size: 85%;
     line-height: 1.45;
     color: var(--color-text-primary);
-    background: var(--color-surface-default);
+    background: var(--md-surface-base);
     box-sizing: border-box;
 }
 
@@ -794,7 +952,7 @@ body.cm6-preview-active .markdown-preview .yaml-frontmatter-card {
     margin: 16px 0;
     overflow-x: hidden;
     overflow-y: hidden;
-    border: 1px solid var(--color-border-default);
+    border: 1px solid var(--md-border);
     border-radius: var(--surface-radius);
     /* markdown-it appends a trailing newline after </table>; collapse the
        stray line box so the bordered wrapper hugs the table height. */
@@ -854,8 +1012,8 @@ body.cm6-preview-active .markdown-preview .yaml-frontmatter-card {
 .cm-md-table-scroll table.md-table th,
 .cm-md-table-scroll table.md-table td {
     border: none;
-    border-right: 1px solid var(--color-border-default);
-    border-bottom: 1px solid var(--color-border-default);
+    border-right: 1px solid var(--md-border-subtle);
+    border-bottom: 1px solid var(--md-border-subtle);
 }
 
 .cm-md-table-scroll table.md-table th:last-child,
@@ -883,12 +1041,12 @@ body.preview-edit-mode .markdown-preview table.md-table td {
 }
 
 .markdown-preview table.md-table th {
-    background: var(--color-surface-raised);
+    background: var(--md-surface-raised);
     font-weight: 600;
 }
 
 .markdown-preview table.md-table tr:nth-child(2n) {
-    background: var(--color-surface-raised);
+    background: var(--md-row-stripe);
 }
 
 /* CM6 live-preview table widget: enforce table layout so min-height on cells
@@ -1231,10 +1389,10 @@ body.preview-edit-mode .markdown-preview .table-tool-btn[data-table-action="tabl
 
 /* ===== Status Info ===== */
 .status-info {
-    background: var(--color-surface-panel);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    border: 1px solid var(--color-border-default);
+    background: var(--md-surface-panel);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border: 1px solid var(--md-border);
     border-radius: var(--surface-radius);
     padding: 4px 10px;
     font-size: 11px;
@@ -1260,7 +1418,7 @@ body.preview-edit-mode .markdown-preview .table-tool-btn[data-table-action="tabl
     bottom: 28px;
     left: 50%;
     transform: translateX(-50%) translateY(8px) scale(0.9);
-    background-color: var(--color-toast-bg);
+    background-color: #1e1e20;
     color: var(--color-toast-text);
     padding: 9px 16px;
     border-radius: 12px;
@@ -1277,8 +1435,8 @@ body.preview-edit-mode .markdown-preview .table-tool-btn[data-table-action="tabl
     opacity: 0;
     visibility: hidden;
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
     pointer-events: none;
     box-shadow: var(--shadow-toast);
     border: 1px solid var(--color-toast-border);
@@ -1480,8 +1638,8 @@ html::-webkit-scrollbar-corner,
     align-items: center;
     gap: 2px;
     padding: 4px 12px;
-    background: var(--color-surface-raised);
-    border-bottom: 1px solid var(--color-border-default);
+    background: var(--md-surface-raised);
+    border-bottom: 1px solid var(--md-border);
     overflow-x: auto;
     scrollbar-width: none;
     z-index: 19;
@@ -1875,10 +2033,10 @@ body:not(.show-line-numbers) .markdown-preview .code-line::before {
     display: flex;
     align-items: center;
     gap: 6px;
-    background: var(--color-surface-panel);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    border: 1px solid var(--color-border-default);
+    background: var(--md-surface-panel);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border: 1px solid var(--md-border);
     border-radius: var(--surface-radius);
     padding: 4px 10px;
     font-size: 11px;

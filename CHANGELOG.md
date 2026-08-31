@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v1.3.0 — 2026-08-31
+
+### Improvements
+
 - Markdown: the status bar's Document Stats now update to show word/character/line counts and reading time for the current selection, and count only displayed text (Markdown syntax like `**`/`#`/link URLs is excluded). Individual stats — including the current line indicator — can be toggled on/off in Settings.
 - Markdown: Mermaid diagrams support zoom (Ctrl/Cmd+scroll, or the toolbar's +/− buttons) and pan (drag once zoomed in), with a reset button and double-click to fit.
 - Markdown lists: Notion-style marker navigation (arrow keys and delete treat bullet/number as one unit) and improved marker inset/spacing in Preview Edit.

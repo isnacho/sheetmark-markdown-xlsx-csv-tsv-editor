@@ -8,6 +8,7 @@
 .docs/**
 samples/**
 src/**
+out/**
 AGENTS.md
 CLAUDE.md
 **/*-mii-air.*

@@ -1,9 +1,9 @@
 ---
 title: Diff view — disk vs editor
 slug: diff-view-disk-vs-editor
-status: to-qa
+status: completed
 created: 2026-08-20
-updated: 2026-08-24
+updated: 2026-08-31
 ---
 
 # Diff view — disk vs editor
@@ -426,6 +426,70 @@ landed at every call site.
 - **Not yet done — manual smoke test.** Nothing below has been exercised in the Extension
   Development Host yet; see QA section for the checklist.
 
+### Addendum (2026-08-31) — HUD redesign, master setting, and follow-on polish
+
+Driven by manual QA in the Extension Development Host (the "Not yet verified" risk above),
+which surfaced real bugs and UX friction not caught by compile/lint. This round both fixed
+what QA found and added scope the original plan didn't cover — noted here rather than as a
+separate idea file since it's all still the same "disk vs editor diff" surface.
+
+**New scope beyond the original plan:**
+- **Master setting `md.diffReviewEnabled`** (default **off**, was previously the unplanned
+  `md.autoShowDiskDiff` sub-toggle). Off: exactly the original 2-action toast (Load disk
+  changes / Keep local version), no diff anywhere. On: external changes auto-open the diff
+  immediately — no dirty-check needed, since diffing never discards anything — and the old
+  3-action toast collapses to just this. Persists via the same VS Code configuration
+  mechanism as every other setting.
+- **The diff HUD (Accept All/Reject All/nav) is now itself a toast.** Was a separate
+  top-right icon-toolbar cluster; now literally wears `.toast-notification`/`.toast-header`/
+  `.toast-actions`/`.toast-action` so it inherits real toast padding, spacing, and text size
+  automatically. Row 1 = "File changed on disk" heading, row 2 = `N of M` counter, ↑/↓ nav
+  (centers the target chunk), `+A −R` badge, Accept All/Reject All (own green/red fill, toast
+  text size). No close button — stays up until the user acts. Bottom offset matches
+  `.status-bar`'s stats pill exactly (`bottom: 12px` on the shared `.toast-notification` rule,
+  not just this element) per explicit user ask that this apply to **every** toast.
+- **Reject All no longer force-saves.** Originally added a force-write parity with "Keep
+  local version"; reverted after a safety-net discussion — a misclick on a forced disk write
+  is a bigger mistake than one that just leaves the buffer dirty (protected by normal
+  save/undo). Accept All and Reject All are now symmetric.
+- **Chunk-density ruler.** Tick marks along the scrollbar, one per remaining chunk, at its
+  real scroll-height fraction; click to jump straight there.
+- **Resolution summary.** Closing toast reads "Resolved: N accepted, M rejected" (tracked via
+  `acceptChunk`/`rejectChunk`'s own `userEvent` tag) instead of a blind "resolved".
+- **Command Palette / keybindings.** Real `xlsx-viewer.md.acceptAllDiskChanges` /
+  `rejectAllDiskChanges` commands, bound to `Ctrl+Alt+Y` / `Ctrl+Alt+N`
+  (`Cmd+Alt+Y/N` on macOS) while a Sheetmark Markdown editor is focused — required tracking
+  the active panel in `MDEditorProvider` since there's no "which custom editor is focused"
+  API.
+
+**Bugs found via manual QA and fixed:**
+- Nav arrows and Accept All/Reject All toolbar buttons existed but were effectively invisible
+  among the other icon-toolbar buttons — moved out into their own control (see above) instead
+  of a labeling fix.
+- The persistent decision toast stayed on screen while reviewing the diff underneath it —
+  `showDiskDiff()` now explicitly dismisses it once the diff actually mounts.
+- The diff HUD and the search overlay (Ctrl+F) shared the exact same fixed position/z-index —
+  offset so they no longer collide.
+- After the HUD became a toast, the nav arrows stopped being clickable: `.toast-notification`
+  sets `pointer-events: none` on itself and opts `.toast-action`/`.toast-close` back in
+  individually; the arrows carried neither class and needed the same explicit opt-in.
+- Several rounds of spacing/positioning tuning (bottom offset, close-button removal on the
+  3-action toast, toast width growing to fit content instead of wrapping early — a Chromium
+  quirk where an auto-width wrapping flex container sizes to the narrowest per-item fit
+  rather than the one-line content width).
+
+**Files touched this round** (beyond the original Files table): `package.json` (setting
+renamed + default flipped, 2 new commands + keybindings), `src/extension.ts` (command
+registration), `src/mdEditorProvider.ts` (`activePanel` tracking, HTML restructure for the
+toast-HUD and density ruler), `src/webviews/md/livePreview/diffView.ts` (chunk-index/position
+helpers, resolution-kind detection, centered nav), `src/webviews/md/livePreview/
+livePreviewEditor.ts` (matching exports), `src/webviews/shared/delayedTitleTooltip.ts`
+(tooltip selector), `resources/md/mdWebview.css`, `.docs/dev/MESSAGE-PROTOCOL.md`.
+
+Not captured as a separate idea file per the user's direct request to fold this into QA for
+the existing idea rather than spin up new Brainstorm/Plan phases for what is, functionally,
+still "diff view — disk vs editor."
+
 ## QA
 
 Branch: `feat/disk-diff-view` (`f1299c5`). Automated state: `npm run compile` clean,
@@ -540,5 +604,25 @@ Needs a document containing a table, a mermaid fence, a callout and a task list.
 
 ### Results
 
-_Pending — record outcomes here, and bounce the status back to `to-plan` / `to-implement` if
-something structural fails._
+Manually exercised in the running extension across an extended interactive session
+(2026-08-31) — not the full checklist above line by line, but the same ground covered
+through real use, with several genuine bugs found and fixed along the way (see the
+Implementation Log addendum above for the full list: invisible toolbar controls, a toast
+that didn't dismiss, an overlay position collision, arrows that stopped being clickable,
+several spacing passes).
+
+**Confirmed working through direct use:** golden path (external change → diff opens →
+review), per-chunk accept/reject, bulk Accept All/Reject All, chunk navigation (arrows +
+density ruler), the resolution summary toast, the `diffReviewEnabled` setting gate in both
+positions, the toast-styled HUD's positioning relative to the search overlay and the
+bottom-of-page stats pill. `npm run compile` and `npm run test:unit` clean throughout (225
+pass, same 3 pre-existing unrelated Node-25 load failures as `HEAD`).
+
+**Not independently re-verified this round** (no regression expected, but not re-clicked
+through): the reveal/widget-layer risk (§3 — tables/mermaid/callouts/lists under an active
+diff), full theme pass (§7), the dirty-buffer confirm-dialog wording checks in §4/§8 now that
+`diffReviewEnabled` changes when those dialogs are reachable, and the edge cases in §6.
+Nothing in this round's changes touched that machinery, so risk is low, but it's worth a
+follow-up look if any of those specifically misbehave later.
+
+Marked complete on the user's direct call.

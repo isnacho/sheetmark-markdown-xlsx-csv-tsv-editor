@@ -132,6 +132,16 @@
                 "command": "xlsx-viewer.openWithMd",
                 "title": "Open with Sheetmark",
                 "icon": "$(book)"
+            },
+            {
+                "command": "xlsx-viewer.md.acceptAllDiskChanges",
+                "title": "Accept All Disk Changes",
+                "category": "Sheetmark"
+            },
+            {
+                "command": "xlsx-viewer.md.rejectAllDiskChanges",
+                "title": "Reject All Disk Changes",
+                "category": "Sheetmark"
             }
         ],
         "menus": {
@@ -202,6 +212,20 @@
                 }
             ]
         },
+        "keybindings": [
+            {
+                "command": "xlsx-viewer.md.acceptAllDiskChanges",
+                "key": "ctrl+alt+y",
+                "mac": "cmd+alt+y",
+                "when": "activeCustomEditorId == 'xlsxViewer.md'"
+            },
+            {
+                "command": "xlsx-viewer.md.rejectAllDiskChanges",
+                "key": "ctrl+alt+n",
+                "mac": "cmd+alt+n",
+                "when": "activeCustomEditorId == 'xlsxViewer.md'"
+            }
+        ],
         "configuration": {
             "title": "Sheetmark",
             "properties": {
@@ -409,10 +433,10 @@
                     "default": true,
                     "description": "Show the current line and column position (Ln X, Col Y) in the Markdown editor status bar."
                 },
-                "xlsxViewer.md.autoShowDiskDiff": {
+                "xlsxViewer.md.diffReviewEnabled": {
                     "type": "boolean",
                     "default": false,
-                    "description": "When a Markdown file is changed outside the editor, show the changes as a diff automatically instead of waiting for Review changes."
+                    "description": "When a Markdown file is changed outside the editor, show what changed as a diff you can accept or reject piece by piece. Turn on to enable it; leave off to just choose between loading the disk version or keeping yours, with no diff view."
                 },
                 "xlsxViewer.md.diffLayout": {
                     "type": "string",

@@ -330,6 +330,7 @@ body:not(.sticky-toolbar-enabled) .toc-panel {
 
 /* ===== Markdown Container ===== */
 .markdown-container {
+    position: relative;
     height: 100%;
     display: flex;
     overflow: hidden;
@@ -1415,7 +1416,10 @@ body.preview-edit-mode .markdown-preview .table-tool-btn[data-table-action="tabl
    style for every toast variant. */
 .toast-notification {
     position: fixed;
-    bottom: 28px;
+    /* Same distance from the bottom edge as .status-bar's stats pill — if a
+       toast happens to overlay it, that's fine, but every toast's own gap
+       to the bottom of the page should match. */
+    bottom: 12px;
     left: 50%;
     transform: translateX(-50%) translateY(8px) scale(0.9);
     background-color: #1e1e20;
@@ -1424,13 +1428,19 @@ body.preview-edit-mode .markdown-preview .table-tool-btn[data-table-action="tabl
     border-radius: 12px;
     z-index: 2000;
     display: flex;
-    flex-direction: row;
-    flex-wrap: wrap;
-    justify-content: center;
+    /* Header (icon/text/close) and actions are two stacked rows rather than
+       one wrapping row — otherwise a long action list wraps action-by-action
+       instead of staying together as a unit below the message. */
+    flex-direction: column;
     align-items: center;
-    gap: 12px;
-    row-gap: 8px;
-    max-width: min(92vw, 620px);
+    gap: 8px;
+    /* A wrapping flex container with only `width: auto` sizes itself to the
+       narrowest per-item fit in Chromium, not the one-line content width —
+       so it wraps early even with room to spare. `width: max-content` forces
+       the one-line size first; `max-width` then caps it and is what actually
+       triggers the wrap once content would exceed the available page width. */
+    width: max-content;
+    max-width: 92vw;
     box-sizing: border-box;
     opacity: 0;
     visibility: hidden;
@@ -1446,6 +1456,22 @@ body.preview-edit-mode .markdown-preview .table-tool-btn[data-table-action="tabl
     opacity: 1;
     visibility: visible;
     transform: translateX(-50%) translateY(0) scale(1);
+}
+
+.toast-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.toast-actions {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    /* Never wrap: the three actions are one unit, always on their own line
+       below the header — see the .toast-notification comment above. */
+    flex-wrap: nowrap;
+    gap: 6px;
 }
 
 .toast-icon-wrapper {
@@ -1494,14 +1520,6 @@ body.preview-edit-mode .markdown-preview .table-tool-btn[data-table-action="tabl
     display: none;
 }
 
-/* Pull the close button closer to the action button specifically — the
-   parent's 12px gap is fine between icon/text/action, just too wide here.
-   :not(.hidden) so this doesn't also shrink the text-to-close gap on toasts
-   with no action button. */
-.toast-action:not(.hidden) + .toast-close {
-    margin-left: -6px;
-}
-
 .toast-close {
     pointer-events: auto;
     background: none;
@@ -1525,6 +1543,130 @@ body.preview-edit-mode .markdown-preview .table-tool-btn[data-table-action="tabl
     color: var(--color-toast-text);
 }
 
+
+/* ===== Disk-diff bulk actions =====
+   This IS a toast — literally wears .toast-notification/.toast-header/
+   .toast-actions/.toast-action, so padding, spacing, and text size (and now
+   position) track the real toast automatically instead of a second
+   hand-tuned copy. It's functionally the same "decision pending" UI the old
+   toast carried (Accept All/Reject All replaced Load disk changes/Keep
+   local version): row 1 is the heading, row 2 is the actions we already
+   had. Only z-index is overridden below, to clear the search overlay. No
+   close button: stays up until the user acts, same principle as the toast
+   it replaced. */
+#diskDiffBulkActions.toast-notification {
+    z-index: 200100;
+}
+
+/* Secondary to the actions beside it (Accept All/Reject All, +N/−N) — kept
+   at its previous smaller size instead of matching .toast-action's 15px,
+   since it's a status readout, not an action. */
+.disk-diff-chunk-indicator {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--color-toast-text);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+    padding: 0 2px;
+}
+
+/* Sized like .toast-close (24px/no text) rather than .toast-action (text-sized
+   by font-size) — these are icon-only, so they follow the toast's OTHER
+   icon-button precedent. */
+.disk-diff-nav-btn {
+    /* .toast-notification sets pointer-events: none on itself and opts
+       .toast-action/.toast-close back in individually — these carry
+       neither class, so they need the same opt-in explicitly. */
+    pointer-events: auto;
+    border: none;
+    background: none;
+    border-radius: var(--surface-radius);
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    cursor: pointer;
+    color: var(--color-toast-text);
+    flex-shrink: 0;
+}
+
+.disk-diff-nav-btn svg {
+    width: 15px;
+    height: 15px;
+    stroke: currentColor;
+}
+
+.disk-diff-nav-btn:hover {
+    background: color-mix(in srgb, var(--color-toast-text) 12%, transparent);
+}
+
+.disk-diff-sep {
+    width: 1px;
+    height: 18px;
+    background: color-mix(in srgb, var(--color-toast-text) 24%, transparent);
+}
+
+/* Same box as .toast-action (font-size, padding, border-radius) — the ask
+   was to match text size, not color, so accept/reject keep their own fill
+   instead of .toast-action's uniform --color-toast-text. */
+.disk-diff-bulk-btn.accept {
+    background: var(--color-status-success);
+    color: var(--color-text-on-action);
+}
+
+.disk-diff-bulk-btn.reject {
+    background: var(--color-status-error);
+    color: var(--color-text-on-action);
+}
+
+/* Explicit background (not just filter) so these outrank the shared
+   .toast-action:hover rule's translucent overlay — higher specificity wins
+   regardless of source order, but only because background is set here too. */
+.disk-diff-bulk-btn.accept:hover {
+    background: var(--color-status-success);
+    filter: brightness(1.1);
+}
+
+.disk-diff-bulk-btn.reject:hover {
+    background: var(--color-status-error);
+    filter: brightness(1.1);
+}
+
+.disk-diff-bulk-btn:focus-visible {
+    outline: 2px solid var(--color-text-on-action);
+    outline-offset: -3px;
+}
+
+/* Density ruler alongside the scrollbar: where are the remaining changes,
+   not just how many. Neutral amber rather than green/red — a tick just
+   marks "unresolved", it doesn't imply which way you'll go. */
+.disk-diff-chunk-ruler {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    right: 2px;
+    width: 6px;
+    pointer-events: none;
+    z-index: 50;
+}
+
+.disk-diff-chunk-ruler .disk-diff-chunk-tick {
+    position: absolute;
+    left: 0;
+    width: 100%;
+    height: 3px;
+    margin-top: -1px;
+    border-radius: 1px;
+    background: var(--color-status-warning);
+    cursor: pointer;
+    pointer-events: auto;
+}
+
+.disk-diff-chunk-ruler .disk-diff-chunk-tick:hover {
+    filter: brightness(1.15);
+}
 
 /* ===== Theme Tooltip (matches tableWebview.css) ===== */
 .theme-tooltip {
@@ -2013,10 +2155,9 @@ body:not(.show-line-numbers) .markdown-preview .code-line::before {
    Disk-vs-editor diff overlay
    =================================================================== */
 
-/* Fixed row owning what used to be .status-info's own positioning, so the
-   diff badge can sit beside the stats pill and survive stats being switched
-   off. pointer-events: none keeps the row from swallowing clicks over the
-   document; the badge re-enables them for itself. */
+/* Fixed row owning what used to be .status-info's own positioning.
+   pointer-events: none keeps the row from swallowing clicks over the
+   document; .status-info re-enables them for itself via its own background. */
 .status-bar {
     position: fixed;
     bottom: 12px;
@@ -2028,17 +2169,12 @@ body:not(.show-line-numbers) .markdown-preview .code-line::before {
     pointer-events: none;
 }
 
+/* Lives inside .disk-diff-bulk-actions (top-right, under the toolbar) —
+   flush against that shared panel background, not a pill of its own. */
 .diff-badge {
-    pointer-events: auto;
     display: flex;
     align-items: center;
     gap: 6px;
-    background: var(--md-surface-panel);
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-    border: 1px solid var(--md-border);
-    border-radius: var(--surface-radius);
-    padding: 4px 10px;
     font-size: 11px;
     font-variant-numeric: tabular-nums;
     letter-spacing: 0.02em;
@@ -2057,29 +2193,72 @@ body:not(.show-line-numbers) .markdown-preview .code-line::before {
 
 /* --- @codemirror/merge unified view, retinted to the active theme --------
    The package ships its own baseTheme with hardcoded greens/reds; these
-   overrides map it onto the same status tokens the rest of the editor uses so
-   it tracks light/dark/VS Code themes. */
+   overrides map it onto --palette-green/red-100/300 (theme.css) instead, so
+   it tracks light/dark/VS Code themes without any hardcoded hex here. */
 .cm-changedLine {
-    background: var(--color-status-success-subtle);
+    /* --palette-green-100/300 (theme.css) are curated per theme block —
+       literal hex for light/dark, color-mix from the VS Code-resolved
+       green-500 for the vscode-theme block — so this needs no light-only
+       override; each theme already carries its own correct shade. */
+    background: var(--palette-green-100);
+    /* .cm-content has its own 16px left padding (cm6Theme.ts, so the live
+       document reads at a comfortable width) — that padding sits *inside*
+       the line's box, so the line's own background stops 16px short of the
+       gutter. box-shadow paints past the box edge without moving it (a
+       margin/width change would shift this line's text out of alignment
+       with every other line), bleeding the tint out to meet the gutter
+       marker exactly at the boundary. */
+    box-shadow: -16px 0 0 0 var(--palette-green-100);
+}
+
+/* The editor host carries .markdown-preview for live-preview typography, so
+   the "inserted text" rule (`.markdown-preview ins`, further up) also matches
+   the merge package's own <ins class="cm-insertedLine"> chunk-wide mark —
+   adding a 3rd background layer plus its border-bottom underline on top of
+   .cm-changedLine and .cm-changedText. Diff inserts should show only those
+   two; the ins-specific tint/underline is for real Markdown ++underline++
+   syntax, not diffs, so it's neutralized here by tag+class specificity. */
+.markdown-preview ins.cm-insertedLine {
+    background: none;
+    border-bottom: none;
+    padding: 0;
+    border-radius: 0;
 }
 
 .cm-changedText {
-    /* Overrides the package's gradient underline with a flat tint — reads
-       better against Markdown live-preview decorations. */
-    background: color-mix(in srgb, var(--color-status-success) 22%, transparent);
+    /* The package's own rule for this class is a compound selector
+       (e.g. "&light.cm-merge-b .cm-changedText") with higher specificity
+       than a bare class, so a plain override here loses on specificity
+       alone (injection order is irrelevant when specificity differs) —
+       hence !important to force out its gradient-underline background. */
+    background: var(--palette-green-300) !important;
     border-radius: 2px;
 }
 
 .cm-deletedChunk {
-    background: var(--color-status-error-subtle);
+    background: var(--palette-red-100);
     /* Keeps the package's 6px left indent — overriding `padding` wholesale
        would flatten it and misalign deleted lines against the document. */
     padding: 2px 0 2px 6px;
+    /* Same content-padding bleed as .cm-changedLine above. */
+    box-shadow: -16px 0 0 0 var(--palette-red-100);
 }
 
 .cm-deletedChunk .cm-deletedText {
-    background: color-mix(in srgb, var(--color-status-error) 24%, transparent);
+    /* Same specificity problem as .cm-changedText above. */
+    background: var(--palette-red-300) !important;
     border-radius: 2px;
+}
+
+/* A pure-addition chunk (nothing deleted) still gets this same
+   DeletionWidget from the merge package — it's what renders the
+   Accept/Reject buttons — just with no deleted text appended, so its DOM
+   is only the button row. With nothing deleted, the red tint has no text
+   to attach to and just reads as a stray red sliver above a green-only
+   addition, so it's suppressed for that content-less case. */
+.cm-deletedChunk:has(> .cm-chunkButtons:only-child) {
+    background: none;
+    box-shadow: none;
 }
 
 .cm-changeGutter {
@@ -2088,11 +2267,15 @@ body:not(.show-line-numbers) .markdown-preview .code-line::before {
 }
 
 .cm-changedLineGutter {
-    background: var(--color-status-success);
+    /* Same green family as the line background/text tint (-100/-300) —
+       --color-status-success is a 3rd, more saturated shade of green that
+       reads as an unrelated color once the marker sits flush against the
+       -100 background (see the box-shadow bleed above). */
+    background: var(--palette-green-300);
 }
 
 .cm-deletedLineGutter {
-    background: var(--color-status-error);
+    background: var(--palette-red-300);
 }
 
 .cm-inlineChangedLineGutter {
@@ -2101,6 +2284,7 @@ body:not(.show-line-numbers) .markdown-preview .code-line::before {
 
 .cm-inlineChangedLine {
     background: color-mix(in srgb, var(--color-status-warning-subtle) 60%, transparent);
+    box-shadow: -16px 0 0 0 color-mix(in srgb, var(--color-status-warning-subtle) 60%, transparent);
 }
 
 /* Per-chunk accept/reject controls.
@@ -2156,25 +2340,3 @@ body:not(.show-line-numbers) .markdown-preview .code-line::before {
     cursor: pointer;
 }
 
-/* The disk-change toast now carries three actions (Load disk changes, Review
-   changes, Keep local version); the parent's 12px gap is too wide between them. */
-.toast-action + .toast-action {
-    margin-left: -6px;
-}
-
-/* Second action slot empty (single-action toasts): the existing
-   `.toast-action:not(.hidden) + .toast-close` rule can't reach past the hidden
-   sibling, so restore the tightened close-button gap here. */
-.toast-action:not(.hidden) + .toast-action.hidden + .toast-close {
-    margin-left: -6px;
-}
-
-/* Only the 1st action is visible (2nd and 3rd hidden). */
-.toast-action:not(.hidden) + .toast-action.hidden + .toast-action.hidden + .toast-close {
-    margin-left: -6px;
-}
-
-/* 1st and 2nd visible, 3rd hidden (a two-action toast, with an empty 3rd slot). */
-.toast-action:not(.hidden) + .toast-action:not(.hidden) + .toast-action.hidden + .toast-close {
-    margin-left: -6px;
-}

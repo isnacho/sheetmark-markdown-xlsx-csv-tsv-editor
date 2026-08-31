@@ -161,6 +161,7 @@ const TOOLBAR_TOOLTIP_SELECTORS = [
     '.xlsx-edit-strip button.icon-only',
     '.search-nav-btn',
     '.search-close-btn',
+    '.disk-diff-nav-btn',
 ];
 
 export function wireDelayedToolbarTooltips(root: ParentNode = document): void {

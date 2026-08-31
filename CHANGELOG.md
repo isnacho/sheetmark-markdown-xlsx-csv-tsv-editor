@@ -4,6 +4,10 @@
 
 - Markdown: the status bar's Document Stats now update to show word/character/line counts and reading time for the current selection, and count only displayed text (Markdown syntax like `**`/`#`/link URLs is excluded). Individual stats — including the current line indicator — can be toggled on/off in Settings.
 - Markdown: Mermaid diagrams support zoom (Ctrl/Cmd+scroll, or the toolbar's +/− buttons) and pan (drag once zoomed in), with a reset button and double-click to fit.
+- Markdown lists: Notion-style marker navigation (arrow keys and delete treat bullet/number as one unit) and improved marker inset/spacing in Preview Edit.
+- Markdown tables: column resize can make tables wider than the pane with isolated horizontal scroll and a right-edge fade; canonical behavior is documented in `MARKDOWN-TABLES.md`.
+- Markdown: spell check dictionary now loads in Preview Edit (CSP fix), with responsive linting while scrolling.
+- Markdown: when a file changes on disk, you can now review the change as a diff and accept or reject it piece by piece (or all at once), instead of only choosing to load the disk version or keep yours. Opt in from Settings ("Review External Changes as a Diff"); off by default.
 
 ## v1.2.0 — 2026-08-17
 

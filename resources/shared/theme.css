@@ -37,8 +37,12 @@
     --palette-blue-500: #0071e3;
     --palette-blue-600: #0077ed;
     --palette-green-500: #24a148;
+    --palette-green-100: #deffdb;
+    --palette-green-300: #9aed9b;
     --palette-amber-500: #da8b00;
     --palette-red-500: #da1e28;
+    --palette-red-100: #ffe7e9;
+    --palette-red-300: #f8b5be;
     --palette-indigo-500: #0043ce;
     --palette-toast-bg: rgba(30, 30, 32, 0.96);
     --palette-toast-text: #f5f5f7;
@@ -172,8 +176,14 @@ body.dark-mode {
     --palette-blue-500: #2997ff;
     --palette-blue-600: #3ea1ff;
     --palette-green-500: #34c759;
+    --palette-green-100: #d5fade;
+    --palette-green-300: #86e79e;
     --palette-amber-500: #ff9f0a;
+    --palette-amber-100: #fff0d9;
+    --palette-amber-300: #fed69b;
     --palette-red-500: #ff453a;
+    --palette-red-100: #ffe8e7;
+    --palette-red-300: #ff9d98;
     --palette-indigo-500: #0a84ff;
     --palette-toast-bg: rgba(30, 30, 32, 0.96);
     --palette-toast-text: #f5f5f7;
@@ -273,8 +283,16 @@ body.vscode-theme {
     --palette-blue-500: var(--vscode-focusBorder, #007aff);
     --palette-blue-600: var(--vscode-button-hoverBackground, #0062cc);
     --palette-green-500: var(--vscode-testing-iconPassed, #34c759);
+    /* No fixed -100/-300 swatch makes sense here — the base color itself
+       comes from whatever VS Code theme is active, so these are mixed
+       toward the editor background rather than pinned to a literal hex,
+       the same way --color-status-success-subtle already does below. */
+    --palette-green-100: color-mix(in srgb, var(--palette-green-500) 20%, var(--vscode-editor-background, #ffffff));
+    --palette-green-300: color-mix(in srgb, var(--palette-green-500) 45%, var(--vscode-editor-background, #ffffff));
     --palette-amber-500: var(--vscode-editorWarning-foreground, #ff9500);
     --palette-red-500: var(--vscode-errorForeground, #ff3b30);
+    --palette-red-100: color-mix(in srgb, var(--palette-red-500) 20%, var(--vscode-editor-background, #ffffff));
+    --palette-red-300: color-mix(in srgb, var(--palette-red-500) 45%, var(--vscode-editor-background, #ffffff));
     --palette-indigo-500: var(--vscode-editorInfo-foreground, #5856d6);
     --palette-toast-bg: rgba(30, 30, 32, 0.96);
     --palette-toast-text: #f5f5f7;

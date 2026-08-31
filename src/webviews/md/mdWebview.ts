@@ -40,9 +40,13 @@ import {
     setLivePreviewDiff,
     isLivePreviewDiffActive,
     getLivePreviewDiffChunkCount,
+    getLivePreviewDiffChunkIndex,
+    getLivePreviewDiffChunkPositions,
+    goToLivePreviewDiffChunkAt,
     goToNextLivePreviewDiffChunk,
     goToPrevLivePreviewDiffChunk,
     acceptAllLivePreviewDiffChunks,
+    rejectAllLivePreviewDiffChunks,
 } from './livePreview/livePreviewEditor';
 import { setImageUriResolver } from './livePreview/imageWidget';
 import { diffLineStats, formatDiffLineStats } from './diffStats';
@@ -100,6 +104,10 @@ let hasEnteredPreviewEdit = false;
 // applyReloadedContent() on purpose.
 let diffBaseline: string | null = null;
 let diffVisible = false;
+// Tallied per diff session (reset alongside diffBaseline) so the closing
+// toast can report what actually happened instead of just "resolved".
+let diffAcceptedCount = 0;
+let diffRejectedCount = 0;
 let originalContent = '';
 let currentContent = '';
 let toolbarManager: ToolbarManager | null = null;
@@ -137,7 +145,7 @@ let currentSettings = {
     statsShowChars: true,
     statsShowReadingTime: true,
     showCursorPosition: true,
-    autoShowDiskDiff: false,
+    diffReviewEnabled: false,
     diffLayout: 'inline' as 'inline' | 'sideBySide'
 };
 
@@ -480,7 +488,7 @@ function enterPreviewEditMode() {
                 updateEditToolbarButtons();
             },
             onScroll: throttledScrollSpy,
-            onDiffChunkResolved: syncDiskDiffAfterDocChange,
+            onDiffChunkResolved: handleDiffChunkResolved,
             onModifierClick: handleLivePreviewModifierClick,
             reveal: currentSettings.livePreviewReveal,
             showLineNumbers: livePreviewGutterLineNumbersEnabled(),
@@ -879,7 +887,7 @@ interface ToastAction {
 function showToast(
     message: string,
     action?: ToastAction | ToastAction[],
-    opts?: { persistent?: boolean; onDismiss?: () => void; icon?: 'success' | 'warning' }
+    opts?: { persistent?: boolean; onDismiss?: () => void; icon?: 'success' | 'warning'; hideCloseButton?: boolean }
 ) {
     // Three slots: the disk-change toast carries Load disk changes, Review changes,
     // and Keep local version.
@@ -890,14 +898,18 @@ function showToast(
         toast.id = 'toastNotification';
         toast.className = 'toast-notification';
         toast.innerHTML = `
-            <div class="toast-icon-wrapper">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></svg>
+            <div class="toast-header">
+                <div class="toast-icon-wrapper">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></svg>
+                </div>
+                <span class="toast-text"></span>
+                <button class="toast-close" type="button" aria-label="Dismiss">&times;</button>
             </div>
-            <span class="toast-text"></span>
-            <button class="toast-action hidden" type="button"></button>
-            <button class="toast-action hidden" type="button"></button>
-            <button class="toast-action hidden" type="button"></button>
-            <button class="toast-close" type="button" aria-label="Dismiss">&times;</button>
+            <div class="toast-actions">
+                <button class="toast-action hidden" type="button"></button>
+                <button class="toast-action hidden" type="button"></button>
+                <button class="toast-action hidden" type="button"></button>
+            </div>
         `;
         document.body.appendChild(toast);
 
@@ -927,8 +939,12 @@ function showToast(
                 btn.onclick = null;
             }
         });
+        // The row itself still takes up a flex gap even with every button hidden.
+        toast.querySelector('.toast-actions')?.classList.toggle('hidden', actions.length === 0);
 
         toastOnDismiss = opts?.onDismiss || null;
+
+        toast.querySelector('.toast-close')?.classList.toggle('hidden', !!opts?.hideCloseButton);
 
         toast.classList.add('show');
         if (toastDismissTimer !== null) {window.clearTimeout(toastDismissTimer);}
@@ -964,15 +980,23 @@ function updateDiffChrome() {
             badge.innerHTML = `<span class="diff-badge-added">+${stats.added}</span>`
                 + `<span class="diff-badge-removed">\u2212${stats.removed}</span>`;
             badge.classList.remove('hidden');
+            $('diffBadgeSep')?.classList.remove('hidden');
         } else {
             badge.textContent = '';
             badge.classList.add('hidden');
+            $('diffBadgeSep')?.classList.add('hidden');
         }
     }
 
-    toolbarManager?.setButtonVisibility('diffAcceptAllButton', diffVisible);
-    toolbarManager?.setButtonVisibility('diffPrevButton', diffVisible);
-    toolbarManager?.setButtonVisibility('diffNextButton', diffVisible);
+    // Uses .toast-notification's own opacity/visibility transition (the
+    // "show" class), not the generic .hidden utility — same fade as every
+    // other toast, since this element now IS one, just externally driven.
+    $('diskDiffBulkActions')?.classList.toggle('show', diffVisible);
+    const indicator = $('diskDiffChunkIndicator');
+    if (indicator) {
+        const total = getLivePreviewDiffChunkCount();
+        indicator.textContent = diffVisible && total > 0 ? `${getLivePreviewDiffChunkIndex()} of ${total}` : '';
+    }
     toolbarManager?.setButtonTooltip(
         'toggleDiffButton',
         diffVisible
@@ -981,11 +1005,44 @@ function updateDiffChrome() {
                 ? 'Show Changes from Disk'
                 : 'No external changes to compare'
     );
+    updateDiffChunkRuler();
 }
 
-/** Mount the diff overlay against the captured baseline. */
+/**
+ * Renders one tick per remaining chunk along the right edge of the preview
+ * pane, at its proportional scroll position — a map of where the changes
+ * are, since "3 of 12" alone doesn't say whether they're clustered near the
+ * top or spread across the whole document. Rebuilt wholesale on every call;
+ * there are at most a few dozen chunks, so diffing the DOM isn't worth it.
+ */
+function updateDiffChunkRuler() {
+    const ruler = $('diskDiffChunkRuler');
+    if (!ruler) {return;}
+    if (!diffVisible) {
+        ruler.classList.add('hidden');
+        ruler.innerHTML = '';
+        return;
+    }
+    const positions = getLivePreviewDiffChunkPositions();
+    ruler.classList.toggle('hidden', positions.length === 0);
+    ruler.innerHTML = positions
+        .map((fraction, index) => {
+            const percent = (fraction * 100).toFixed(2);
+            // data-index, not a closure per tick — innerHTML is rebuilt wholesale above.
+            return `<div class="disk-diff-chunk-tick" style="top:${percent}%" data-chunk-index="${index}"></div>`;
+        })
+        .join('');
+}
+
+/**
+ * Mount the diff overlay against the captured baseline. The single choke
+ * point for every entry path (toast, toolbar toggle, F7 nav, auto-open) —
+ * gating diffReviewEnabled here means none of those callers need their own
+ * check.
+ */
 function showDiskDiff() {
-    if (!isEditMode || isVersionPreviewMode || !isLivePreviewActive() || diffBaseline === null) {
+    if (!currentSettings.diffReviewEnabled
+        || !isEditMode || isVersionPreviewMode || !isLivePreviewActive() || diffBaseline === null) {
         return;
     }
     if (!hasDiskDiffBaseline()) {
@@ -996,6 +1053,10 @@ function showDiskDiff() {
     setLivePreviewDiff(diffBaseline);
     updateDiffChrome();
     updateEditToolbarButtons();
+    // The decision toast (Load/Review/Keep local) has served its purpose once
+    // the diff is actually on screen — leaving it up just occludes the editor
+    // while the user works through chunks.
+    hideToast();
 }
 
 /**
@@ -1076,12 +1137,53 @@ function acceptAllDiskChanges() {
     }
 }
 
+/**
+ * Reject every incoming change in one go, restoring the local version
+ * throughout. Deliberately does NOT force-save afterward — a misclick here
+ * is a one-way trip to disk if it did, whereas leaving the buffer merely
+ * dirty (same as accept) means the normal save flow and Ctrl+Z still protect
+ * against it.
+ */
+function rejectAllDiskChanges() {
+    if (!diffVisible) {
+        return;
+    }
+    const rejected = rejectAllLivePreviewDiffChunks();
+    if (rejected === 0) {
+        hideDiskDiff(true);
+        return;
+    }
+    // Reject produces a real document change, so the update listener's
+    // onDocChanged already routed through syncDiskDiffAfterDocChange per
+    // chunk during the loop above — this call is a safety net in case that
+    // hook is ever detached.
+    syncDiskDiffAfterDocChange();
+    if (diffVisible) {
+        hideDiskDiff(true);
+        showToast(`Rejected ${rejected} change${rejected === 1 ? '' : 's'} from disk`);
+    }
+}
+
 function toggleDiskDiff() {
     if (diffVisible) {
         hideDiskDiff();
     } else {
         revealDiskChanges();
     }
+}
+
+/** Tallies one chunk resolution — per-chunk clicks and bulk actions both flow through here. */
+function handleDiffChunkResolved(kind: 'accept' | 'reject') {
+    if (kind === 'accept') { diffAcceptedCount++; } else { diffRejectedCount++; }
+    syncDiskDiffAfterDocChange();
+}
+
+/** "3 accepted", "2 rejected", or "1 accepted, 1 rejected" — whichever categories are non-zero. */
+function diffResolutionSummary(): string {
+    const parts: string[] = [];
+    if (diffAcceptedCount > 0) { parts.push(`${diffAcceptedCount} accepted`); }
+    if (diffRejectedCount > 0) { parts.push(`${diffRejectedCount} rejected`); }
+    return parts.length ? `Resolved: ${parts.join(', ')}` : 'All external changes resolved';
 }
 
 /**
@@ -1094,7 +1196,7 @@ function syncDiskDiffAfterDocChange() {
     }
     if (isLivePreviewDiffActive() && getLivePreviewDiffChunkCount() === 0) {
         hideDiskDiff(true);
-        showToast('All external changes resolved');
+        showToast(diffResolutionSummary());
         return;
     }
     updateDiffChrome();
@@ -1383,6 +1485,31 @@ function initSearchOverlay() {
     wireDelayedToolbarTooltips($('searchOverlay') || document);
 }
 
+function wireDiskDiffBulkActions() {
+    const prevBtn = $('diffPrevButton');
+    const nextBtn = $('diffNextButton');
+    // Up/down, not left/right — chunks are ordered top-to-bottom in the
+    // document, so the arrows follow that flow rather than reading direction.
+    if (prevBtn) {prevBtn.innerHTML = Icons.DiffPrev;}
+    if (nextBtn) {nextBtn.innerHTML = Icons.DiffNext;}
+    prevBtn?.addEventListener('click', () => { goToPrevLivePreviewDiffChunk(); updateDiffChrome(); });
+    nextBtn?.addEventListener('click', () => { goToNextLivePreviewDiffChunk(); updateDiffChrome(); });
+
+    $('diffAcceptAllButton')?.addEventListener('click', () => acceptAllDiskChanges());
+    $('diffRejectAllButton')?.addEventListener('click', () => rejectAllDiskChanges());
+
+    // Delegated: ticks are rebuilt wholesale on every updateDiffChunkRuler() call,
+    // so a per-tick listener would just be discarded along with the element.
+    $('diskDiffChunkRuler')?.addEventListener('click', (e) => {
+        const tick = (e.target as HTMLElement)?.closest('[data-chunk-index]') as HTMLElement | null;
+        const index = tick ? Number(tick.dataset.chunkIndex) : NaN;
+        if (Number.isInteger(index)) {
+            goToLivePreviewDiffChunkAt(index);
+            updateDiffChrome();
+        }
+    });
+}
+
 // ===== Settings =====
 function applySettings(settings: any, persist = false) {
     if (!settings) {return;}
@@ -1426,7 +1553,7 @@ function applySettings(settings: any, persist = false) {
     const chkStatsWords = $('chkStatsWords') as HTMLInputElement;
     const chkStatsChars = $('chkStatsChars') as HTMLInputElement;
     const chkStatsReadingTime = $('chkStatsReadingTime') as HTMLInputElement;
-    const chkAutoShowDiskDiff = $('chkAutoShowDiskDiff') as HTMLInputElement;
+    const chkDiffReviewEnabled = $('chkDiffReviewEnabled') as HTMLInputElement;
 
     if (chkWordWrap) {chkWordWrap.checked = currentSettings.wordWrap;}
     if (chkStickyToolbar) {chkStickyToolbar.checked = currentSettings.stickyToolbar;}
@@ -1441,7 +1568,7 @@ function applySettings(settings: any, persist = false) {
     if (chkStatsWords) {chkStatsWords.checked = !!currentSettings.statsShowWords;}
     if (chkStatsChars) {chkStatsChars.checked = !!currentSettings.statsShowChars;}
     if (chkStatsReadingTime) {chkStatsReadingTime.checked = !!currentSettings.statsShowReadingTime;}
-    if (chkAutoShowDiskDiff) {chkAutoShowDiskDiff.checked = !!currentSettings.autoShowDiskDiff;}
+    if (chkDiffReviewEnabled) {chkDiffReviewEnabled.checked = !!currentSettings.diffReviewEnabled;}
 
     const statsEnabled = !!currentSettings.showStats;
     [chkShowCursorPosition, chkStatsLines, chkStatsWords, chkStatsChars, chkStatsReadingTime].forEach((el) => {
@@ -1455,6 +1582,15 @@ function applySettings(settings: any, persist = false) {
     const tocPanel = $('tocPanel');
     if (container) {container.classList.toggle('toc-open', !!currentSettings.showOutline);}
     if (tocPanel) {tocPanel.classList.toggle('hidden', !currentSettings.showOutline);}
+
+    // The whole diff-review affordance (toolbar icon, HUD, overlay) hinges on
+    // this setting — hide the entry point and tear down anything already
+    // showing rather than leaving an inert button or an overlay the setting
+    // says shouldn't exist.
+    toolbarManager?.setButtonVisibility('toggleDiffButton', !!currentSettings.diffReviewEnabled);
+    if (!currentSettings.diffReviewEnabled && diffVisible) {
+        hideDiskDiff(true);
+    }
 
     if (persist) {
         vscode.postMessage({ command: 'updateSettings', settings: currentSettings });
@@ -1508,13 +1644,13 @@ function initializeSettings() {
             }
         },
         {
-            id: 'chkAutoShowDiskDiff',
+            id: 'chkDiffReviewEnabled',
             section: 'General',
-            label: 'Show Changes from Disk Automatically',
-            tooltip: 'When the file is changed outside the editor, show the changes as a diff right away instead of waiting for Review changes. Skipped while you have unsaved edits.',
-            defaultValue: currentSettings.autoShowDiskDiff,
+            label: 'Review External Changes as a Diff',
+            tooltip: 'When the file changes outside the editor, show what changed as a diff you can accept or reject piece by piece. Turn off to just choose between loading the disk version or keeping yours, with no diff view.',
+            defaultValue: currentSettings.diffReviewEnabled,
             onChange: (val: boolean) => {
-                currentSettings.autoShowDiskDiff = val;
+                currentSettings.diffReviewEnabled = val;
                 applySettings(currentSettings, true);
             }
         },
@@ -1798,6 +1934,8 @@ window.addEventListener('message', (event) => {
             // should still diff against what the user last actually saw.
             if (diffBaseline === null) {
                 diffBaseline = currentContent;
+                diffAcceptedCount = 0;
+                diffRejectedCount = 0;
             }
             const incomingLabel = formatDiffLineStats(diffLineStats(diffBaseline, incomingContent));
 
@@ -1808,13 +1946,33 @@ window.addEventListener('message', (event) => {
                 applyReloadedContent(incomingContent);
                 showToast(
                     incomingLabel ? `Reloaded from disk \u00B7 ${incomingLabel}` : 'Reloaded from disk',
-                    hasDiskDiffBaseline() ? { label: 'Review changes', onClick: () => showDiskDiff() } : undefined
+                    hasDiskDiffBaseline() && currentSettings.diffReviewEnabled
+                        ? { label: 'Review changes', onClick: () => showDiskDiff() }
+                        : undefined
                 );
                 updateEditToolbarButtons();
                 updateDiffChrome();
                 break;
             }
 
+            // Diffing is non-destructive — local edits become the rejectable
+            // side of the comparison rather than being discarded — so this path
+            // never needs a "you have unsaved edits" confirm. It replaces the
+            // toast decision entirely: the diff HUD (itself a toast — "File
+            // changed on disk" header, Accept All/Reject All in its actions
+            // row) is what the old "Load disk changes"/"Keep local version"
+            // toast used to be.
+            if (currentSettings.diffReviewEnabled) {
+                applyReloadedContent(incomingContent);
+                pendingDiskContent = null;
+                showDiskDiff();
+                updateEditToolbarButtons();
+                break;
+            }
+
+            // Diff review disabled: the only two ways to resolve are a full
+            // reload or a full overwrite, each with its own confirm dialog
+            // since — unlike the diff — either one can genuinely discard work.
             pendingDiskContent = incomingContent;
 
             const applyPending = () => {
@@ -1825,8 +1983,8 @@ window.addEventListener('message', (event) => {
             };
             const reloadPending = () => {
                 // Never dead-end: if the queued content was already consumed (a
-                // second watcher event, or the diff path applying it first), ask
-                // the host for a fresh read instead of silently doing nothing.
+                // second watcher event) ask the host for a fresh read instead of
+                // silently doing nothing.
                 if (pendingDiskContent === null) {
                     void requestReloadFromDisk();
                     return;
@@ -1855,35 +2013,30 @@ window.addEventListener('message', (event) => {
                 });
             };
 
-            // Auto-show only when nothing local is at risk; with unsaved edits the
-            // user still gets the toast and decides.
-            const localEditsAtRisk = getActiveEditorContent() !== originalContent;
-            if (currentSettings.autoShowDiskDiff && !localEditsAtRisk && isLivePreviewActive()) {
-                applyReloadedContent(incomingContent);
-                pendingDiskContent = null;
-                showDiskDiff();
-                showToast(
-                    incomingLabel ? `File changed on disk \u00B7 ${incomingLabel}` : 'File changed on disk',
-                    undefined,
-                    { icon: 'warning' }
-                );
-                updateEditToolbarButtons();
-                break;
-            }
-
             showToast(
                 incomingLabel ? `File changed on disk \u00B7 ${incomingLabel}` : 'File changed on disk',
                 [
                     { label: 'Load disk changes', onClick: reloadPending },
-                    { label: 'Review changes', onClick: () => revealDiskChanges() },
                     { label: 'Keep local version', onClick: keepLocalVersion },
                 ],
-                { persistent: true, icon: 'warning' }
+                // No close button: the user has to make a decision, not dismiss it.
+                { persistent: true, icon: 'warning', hideCloseButton: true }
             );
             updateEditToolbarButtons();
             updateDiffChrome();
             break;
         }
+
+        // From the xlsx-viewer.md.{accept,reject}AllDiskChanges commands (package.json
+        // keybindings / Command Palette) — no-ops via the guard already in each function
+        // if there's no diff open.
+        case 'acceptAllDiskChanges':
+            acceptAllDiskChanges();
+            break;
+
+        case 'rejectAllDiskChanges':
+            rejectAllDiskChanges();
+            break;
 
         case 'reloadFromDiskError':
             if (isReloadingFromDisk) {
@@ -2031,30 +2184,6 @@ function buildToolbarButtons(): ToolbarButton[] {
             onClick: () => toggleDiskDiff()
         },
         {
-            id: 'diffAcceptAllButton',
-            icon: Icons.DiffAcceptAll,
-            tooltip: 'Accept All Changes from Disk',
-            cls: 'icon-only',
-            hidden: true,
-            onClick: () => acceptAllDiskChanges()
-        },
-        {
-            id: 'diffPrevButton',
-            icon: Icons.DiffPrev,
-            tooltip: 'Previous Change (Shift+F7)',
-            cls: 'icon-only',
-            hidden: true,
-            onClick: () => { goToPrevLivePreviewDiffChunk(); }
-        },
-        {
-            id: 'diffNextButton',
-            icon: Icons.DiffNext,
-            tooltip: 'Next Change (F7)',
-            cls: 'icon-only',
-            hidden: true,
-            onClick: () => { goToNextLivePreviewDiffChunk(); }
-        },
-        {
             id: 'saveEditsButton',
             icon: Icons.Save,
             tooltip: 'Save Changes (Ctrl+S)',
@@ -2140,6 +2269,7 @@ document.addEventListener('keydown', (e) => {
         } else {
             goToNextLivePreviewDiffChunk();
         }
+        updateDiffChrome();
         return;
     }
 
@@ -2366,6 +2496,7 @@ wireHoverTooltip();
 wireTocPanel();
 initLightbox();
 initSearchOverlay();
+wireDiskDiffBulkActions();
 initScrollSpy();
 initResizeHandles();
 updateHeaderHeight();

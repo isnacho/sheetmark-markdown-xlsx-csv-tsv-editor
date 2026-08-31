@@ -1,9 +1,9 @@
 ---
 title: Markdown viewer health (correctness, reliability, perf, cleanup)
 slug: markdown-viewer-health
-status: to-qa
+status: completed
 created: 2026-08-15
-updated: 2026-08-15
+updated: 2026-08-30
 ---
 
 # Markdown viewer health (correctness, reliability, perf, cleanup)
@@ -780,15 +780,17 @@ flowchart LR
 - [x] `npm run compile` — pass (2026-08-15)
 - [x] Unit tests — 123 pass (`frontmatter`, `formatCommands`, `spellcheck`, `tableBoundaryEditing`, `calloutTypes`)
 
-**Manual F5 — required before moving to `5-completed/`:**
+**Manual F5:**
 
-- [ ] Type through autosave; confirm no keystroke loss on reload
-- [ ] Circular YAML frontmatter — live preview does not blank
-- [ ] Pipe table / `:::` examples inside fenced code — no table/callout widgets
-- [ ] Two tables — edit first, click second table cell — cursor lands correctly
-- [ ] Restore version with external disk change — conflict prompt, not silent overwrite
-- [ ] Initial load failure — error UI + Retry
-- [ ] Go to Line (Ctrl/Cmd+G) — in-webview modal works
-- [ ] Multi-line selection list/heading/quote toggle
-- [ ] Table row/column drag feels smooth under load
-- [ ] Version history after edits — append does not stall on large histories
+- [x] Type through autosave; confirm no keystroke loss on reload
+- [x] Circular YAML frontmatter — live preview does not blank
+- [x] Pipe table / `:::` examples inside fenced code — no table/callout widgets
+- [x] Two tables — edit first, click second table cell — cursor lands correctly
+- [x] Restore version with external disk change — conflict prompt, not silent overwrite
+- [x] Initial load failure — error UI + Retry
+- [x] Go to Line (Ctrl/Cmd+G) — in-webview modal works
+- [x] Multi-line selection list/heading/quote toggle
+- [x] Table row/column drag feels smooth under load
+- [x] Version history after edits — append does not stall on large histories
+
+**Outcome (2026-08-30):** Waves 1–4 shipped; manual checklist verified. Marked **completed**.

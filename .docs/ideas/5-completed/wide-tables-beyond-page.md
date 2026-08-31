@@ -1,9 +1,9 @@
 ---
 title: Wide tables beyond page width
 slug: wide-tables-beyond-page
-status: to-qa
+status: completed
 created: 2026-08-15
-updated: 2026-08-15
+updated: 2026-08-30
 ---
 
 # Wide tables beyond page width
@@ -212,4 +212,4 @@ npm run compile
 
 ## QA
 
-_Not started._
+**Outcome (2026-08-30):** Default tables fit pane with wrapping; manual resize can exceed pane with inner horizontal scroll and right-edge fade; hug-content when narrower; persisted widths restore on reload; `MARKDOWN-TABLES.md` documents behavior. Marked **completed**.

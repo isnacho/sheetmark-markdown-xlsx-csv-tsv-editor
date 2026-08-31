@@ -458,6 +458,15 @@ export function activate(context: vscode.ExtensionContext) {
     );
 
     context.subscriptions.push(
+        vscode.commands.registerCommand('xlsx-viewer.md.acceptAllDiskChanges', () => {
+            mdProvider.postCommandToActivePanel('acceptAllDiskChanges');
+        }),
+        vscode.commands.registerCommand('xlsx-viewer.md.rejectAllDiskChanges', () => {
+            mdProvider.postCommandToActivePanel('rejectAllDiskChanges');
+        })
+    );
+
+    context.subscriptions.push(
         vscode.commands.registerCommand('xlsx-viewer.toggleAssociation', async (params: { type: SheetmarkAssociationType, enable: boolean }) => {
             try {
                 await setEditorAssociation(params.type, params.enable, { showToast: true });

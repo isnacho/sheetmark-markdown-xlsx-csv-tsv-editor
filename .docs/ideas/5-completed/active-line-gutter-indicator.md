@@ -1,9 +1,9 @@
 ---
 title: Active line gutter indicator
 slug: active-line-gutter-indicator
-status: to-qa
+status: completed
 created: 2026-08-14
-updated: 2026-08-14
+updated: 2026-08-30
 ---
 
 # Active line gutter indicator
@@ -46,4 +46,4 @@ When editing Markdown files and the line number functionality is on, I want the 
 
 ## QA
 
-_Not started._
+**Outcome (2026-08-30):** Preview Edit with line numbers on — focused cursor line shows bold gutter number and 2px left-edge bar; no layout shift; toggle off hides gutter. Marked **completed**.

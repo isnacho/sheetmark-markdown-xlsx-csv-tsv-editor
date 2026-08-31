@@ -1,9 +1,9 @@
 ---
 title: Better List Styling and Navigation
 slug: better-list-styling-navigation
-status: to-qa
+status: completed
 created: 2026-08-16
-updated: 2026-08-16
+updated: 2026-08-30
 ---
 
 # Better List Styling and Navigation
@@ -108,4 +108,4 @@ labels, auto-sequential numbering, or Tab/Shift-Tab indent behavior
 
 ## QA
 
-_Not started._
+**Outcome (2026-08-30):** Bullet/ordered/checkbox/setext markers use ~4px inset and 6px marker-to-text gap; arrow keys and backspace/delete treat marker+gap as one atomic unit; Tab indent no longer swallowed on no-op. `listMarkerEditing.test.mts` passing. Marked **completed**.

@@ -1,9 +1,9 @@
 ---
 title: Publish Sheetmark to Cursor
 slug: publish-sheetmark-to-cursor
-status: to-qa
+status: completed
 created: 2026-08-17
-updated: 2026-08-17
+updated: 2026-08-30
 ---
 
 # Publish Sheetmark to Cursor
@@ -67,6 +67,4 @@ The release flow now lives in
 
 ## QA
 
-_Not started._ The next real release is the end-to-end check for the Open VSX job specifically
-— confirm the `OVSX_PAT` secret exists on the `marketplace` environment first, or that step
-will fail auth.
+**Outcome (2026-08-30):** Release workflow publishes the same VSIX to VS Code Marketplace and Open VSX (`OVSX_PAT` on `marketplace` env); Cursor install path verified. Marked **completed**.

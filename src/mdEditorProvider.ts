@@ -28,7 +28,7 @@ function buildMdWebviewSettings() {
         statsShowChars: cfg.get('md.statsShowChars', true),
         statsShowReadingTime: cfg.get('md.statsShowReadingTime', true),
         showCursorPosition: cfg.get('md.showCursorPosition', true),
-        autoShowDiskDiff: cfg.get('md.autoShowDiskDiff', false),
+        diffReviewEnabled: cfg.get('md.diffReviewEnabled', false),
         diffLayout: normalizeDiffLayout(cfg.get('md.diffLayout', 'inline')),
     };
 }
@@ -43,12 +43,23 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
     private readonly frontmatterPanelStorage: FrontmatterPanelStorageService;
     private readonly mermaidPreviewModeStorage: MermaidPreviewModeStorageService;
     private readonly calloutDefaultTypeStorage: CalloutDefaultTypeStorageService;
+    // Backs the Accept All/Reject All Disk Changes commands (package.json
+    // keybindings) — there's no API to ask "which custom editor is focused",
+    // so this is kept in sync via onDidChangeViewState/onDidDispose below.
+    private activePanel: vscode.WebviewPanel | null = null;
 
     constructor(private readonly context: vscode.ExtensionContext) {
         this.tableColumnWidthStorage = new TableColumnWidthStorageService(context);
         this.frontmatterPanelStorage = new FrontmatterPanelStorageService(context);
         this.mermaidPreviewModeStorage = new MermaidPreviewModeStorageService(context);
         this.calloutDefaultTypeStorage = new CalloutDefaultTypeStorageService(context);
+    }
+
+    /** Used by the Accept All/Reject All Disk Changes commands. No-op if no Sheetmark Markdown editor is focused. */
+    postCommandToActivePanel(command: string): void {
+        if (this.activePanel?.active) {
+            void this.activePanel.webview.postMessage({ command });
+        }
     }
 
     async openCustomDocument(
@@ -320,8 +331,8 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                             if (typeof s.showCursorPosition === 'boolean') {
                                 await cfg.update('md.showCursorPosition', !!s.showCursorPosition, vscode.ConfigurationTarget.Global);
                             }
-                            if (typeof s.autoShowDiskDiff === 'boolean') {
-                                await cfg.update('md.autoShowDiskDiff', !!s.autoShowDiskDiff, vscode.ConfigurationTarget.Global);
+                            if (typeof s.diffReviewEnabled === 'boolean') {
+                                await cfg.update('md.diffReviewEnabled', !!s.diffReviewEnabled, vscode.ConfigurationTarget.Global);
                             }
                             // Only non-boolean setting here — validate rather than coerce, so a
                             // stale webview can't write a bogus enum value into user config.
@@ -739,14 +750,29 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                 refreshMarkdownLocalResourceRoots();
             });
 
+            if (webviewPanel.active) {
+                this.activePanel = webviewPanel;
+            }
+            const viewStateDisposable = webviewPanel.onDidChangeViewState(e => {
+                if (e.webviewPanel.active) {
+                    this.activePanel = e.webviewPanel;
+                } else if (this.activePanel === e.webviewPanel) {
+                    this.activePanel = null;
+                }
+            });
+
             webviewPanel.onDidDispose(() => {
                 configChangeDisposable.dispose();
                 themeChangeDisposable.dispose();
                 workspaceFoldersDisposable.dispose();
+                viewStateDisposable.dispose();
                 externalFileWatcher.dispose();
                 if (versionSnapshotDebounceTimer) {
                     clearTimeout(versionSnapshotDebounceTimer);
                     versionSnapshotDebounceTimer = null;
+                }
+                if (this.activePanel === webviewPanel) {
+                    this.activePanel = null;
                 }
             });
 
@@ -846,6 +872,29 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                 </div>
             </div>
 
+            <div id="diskDiffBulkActions" class="toast-notification disk-diff-bulk-actions">
+                <div class="toast-header">
+                    <div class="toast-icon-wrapper">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                            <line x1="12" y1="9" x2="12" y2="13"></line>
+                            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                        </svg>
+                    </div>
+                    <span class="toast-text">File changed on disk</span>
+                </div>
+                <div class="toast-actions">
+                    <span id="diskDiffChunkIndicator" class="disk-diff-chunk-indicator"></span>
+                    <button id="diffPrevButton" class="disk-diff-nav-btn" type="button" title="Previous Change (Shift+F7)"></button>
+                    <button id="diffNextButton" class="disk-diff-nav-btn" type="button" title="Next Change (F7)"></button>
+                    <span class="disk-diff-sep"></span>
+                    <div class="diff-badge hidden" id="diffBadge" aria-live="polite"></div>
+                    <span class="disk-diff-sep hidden" id="diffBadgeSep"></span>
+                    <button id="diffAcceptAllButton" class="toast-action disk-diff-bulk-btn accept" type="button">Accept All</button>
+                    <button id="diffRejectAllButton" class="toast-action disk-diff-bulk-btn reject" type="button">Reject All</button>
+                </div>
+            </div>
+
             <div id="content">
                 <div id="loadingIndicator" class="loading-indicator">Loading Markdown...</div>
                 <div class="markdown-container" id="markdownContainer">
@@ -857,11 +906,11 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                         <div id="tocBody" class="toc-body"></div>
                     </aside>
                     <div id="markdownPreview" class="markdown-preview"></div>
+                    <div id="diskDiffChunkRuler" class="disk-diff-chunk-ruler hidden" aria-hidden="true"></div>
                 </div>
             </div>
 
             <div class="status-bar" id="statusBar">
-                <div class="diff-badge hidden" id="diffBadge" aria-live="polite"></div>
                 <div class="status-info" id="statusInfo"></div>
             </div>
 

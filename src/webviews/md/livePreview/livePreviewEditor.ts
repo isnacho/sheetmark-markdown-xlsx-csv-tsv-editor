@@ -48,9 +48,13 @@ import {
     acceptDiffChunkAtCursor,
     buildDiffExtension,
     countDiffChunks,
-    isDiffChunkResolution,
+    currentDiffChunkIndex,
+    diffChunkPositions,
+    diffChunkResolutionKind,
+    goToDiffChunkAt,
     nextDiffChunk,
     prevDiffChunk,
+    rejectAllDiffChunks,
     rejectDiffChunkAtCursor,
 } from './diffView';
 import { listMarkerBoundaryExtensions, livePreviewMarkdownKeymap } from './listMarkerEditing';
@@ -114,7 +118,7 @@ export interface LivePreviewMountOptions {
      * this hook the change count would go stale and the overlay would never
      * retire once the last chunk was accepted.
      */
-    onDiffChunkResolved?: () => void;
+    onDiffChunkResolved?: (kind: 'accept' | 'reject') => void;
     /** Fired on Ctrl/Cmd+Click at a doc position — mdWebview.ts resolves the interaction and acts. */
     onModifierClick?: (pos: number) => void;
     /** Whether reveal-on-cursor decorations are on (mirrors the md.livePreviewReveal setting). */
@@ -211,8 +215,9 @@ export function mountLivePreview(opts: LivePreviewMountOptions): EditorView {
         if (update.transactions.some(tr => tr.effects.some(e => e.is(setColumnWidthsEffect)))) {
             onColumnWidthsChanged?.(update.state.field(columnWidthsField));
         }
-        if (diffActive && isDiffChunkResolution(update)) {
-            onDiffChunkResolved?.();
+        if (diffActive) {
+            const kind = diffChunkResolutionKind(update);
+            if (kind) { onDiffChunkResolved?.(kind); }
         }
         if (!update.docChanged) { return; }
         const isProgrammatic = update.transactions.some(tr => tr.annotation(programmatic));
@@ -461,12 +466,26 @@ export function getLivePreviewDiffChunkCount(): number {
     return view && diffActive ? countDiffChunks(view) : 0;
 }
 
+/** 1-based index of the chunk closest to the cursor, for an "N of M" indicator. */
+export function getLivePreviewDiffChunkIndex(): number {
+    return view && diffActive ? currentDiffChunkIndex(view) : 0;
+}
+
 export function goToNextLivePreviewDiffChunk(): boolean {
     return view && diffActive ? nextDiffChunk(view) : false;
 }
 
 export function goToPrevLivePreviewDiffChunk(): boolean {
     return view && diffActive ? prevDiffChunk(view) : false;
+}
+
+export function goToLivePreviewDiffChunkAt(index: number): boolean {
+    return view && diffActive ? goToDiffChunkAt(view, index) : false;
+}
+
+/** Top position of each remaining chunk as a fraction [0, 1] of scroll height, for a density ruler. */
+export function getLivePreviewDiffChunkPositions(): number[] {
+    return view && diffActive ? diffChunkPositions(view) : [];
 }
 
 /**
@@ -485,6 +504,11 @@ export function rejectLivePreviewDiffChunk(): boolean {
 /** Accept every remaining chunk at once. Returns how many were accepted. */
 export function acceptAllLivePreviewDiffChunks(): number {
     return view && diffActive ? acceptAllDiffChunks(view) : 0;
+}
+
+/** Reject every remaining chunk at once. Returns how many were rejected. */
+export function rejectAllLivePreviewDiffChunks(): number {
+    return view && diffActive ? rejectAllDiffChunks(view) : 0;
 }
 
 // ===== Re-integration (Phase 2): scroll metrics, TOC scroll, search, click =====

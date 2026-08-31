@@ -1,9 +1,9 @@
 ---
 title: Spell Check
 slug: spell-check
-status: to-qa
+status: completed
 created: 2026-08-17
-updated: 2026-08-17
+updated: 2026-08-30
 ---
 
 # Spell Check
@@ -49,3 +49,5 @@ keystroke — scrolling into new text showed nothing.
 QA for this idea should therefore be run *after* that fix, and its checklist covers the
 spell-check behavior (underlines appear while scrolling, hover and right-click suggestions apply
 correctly, code spans / fenced blocks / frontmatter stay excluded).
+
+**Outcome (2026-08-30):** After document-stats perf fix — misspelled words underline in viewport while scrolling; right-click suggestions apply; code/fenced/frontmatter excluded; no typing lag. Marked **completed**.

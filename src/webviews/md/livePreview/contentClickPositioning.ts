@@ -1,4 +1,4 @@
-// DOM-accurate click positioning for CM6 Preview Edit.
+// DOM-accurate click and drag positioning for CM6 Preview Edit.
 //
 // CM6's height map ignores CSS margins on decorated lines and replace widgets
 // (see line-number-gutter-alignment QA / codemirror/dev#1164). `posAtCoords`
@@ -6,14 +6,23 @@
 // row from the clicked `.cm-line` element instead, then map the column with the
 // browser caret API.
 //
+// List lines (`.cm-md-list-line`) also carry a negative `text-indent` for the
+// hanging-indent column. `posAtCoords` / `posAndSideAtCoords` map horizontal
+// pointer coordinates against the raw source layout, not the painted indent, so
+// drag-to-select on bullet text often snaps the anchor to the line start and
+// feels like the whole line got selected. `listLineMouseSelectionStyle` below
+// routes those gestures through the same DOM caret resolver as single clicks.
+//
 // Triple-click selects the whole line without the trailing break (CM6's default
 // includes the newline, which bleeds into the next row and breaks paste).
 // Double-click stays CM6 default (word select). Single-click still corrects row
 // alignment when the height map drifts.
 
-import { EditorSelection } from '@codemirror/state';
-import type { TransactionSpec } from '@codemirror/state';
+import { EditorSelection, Prec } from '@codemirror/state';
+import type { EditorState, TransactionSpec } from '@codemirror/state';
+import type { SelectionRange } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
+import type { MouseSelectionStyle } from '@codemirror/view';
 import { closestCmLineElement, computeTripleClickLineSelection } from './pointerLineResolution';
 
 function caretFromPoint(x: number, y: number): { node: Node; offset: number } | null {
@@ -73,6 +82,83 @@ export function resolveContentClickPos(view: EditorView, event: MouseEvent): num
     return lineFrom;
 }
 
+function isListLineElement(lineEl: HTMLElement | null): boolean {
+    return lineEl?.classList.contains('cm-md-list-line') ?? false;
+}
+
+/** Selection range for a list-line click (single / double / triple). */
+export function selectionRangeForListLineClick(state: EditorState, pos: number, clickDetail: number): SelectionRange {
+    if (clickDetail >= 3) {
+        const line = state.doc.lineAt(pos);
+        return EditorSelection.range(line.from, line.to);
+    }
+    if (clickDetail === 2) {
+        return state.wordAt(pos) ?? EditorSelection.cursor(pos);
+    }
+    return EditorSelection.cursor(pos);
+}
+
+function removeRangeAround(sel: EditorSelection, pos: number): EditorSelection | null {
+    for (let i = 0; i < sel.ranges.length; i++) {
+        const { from, to } = sel.ranges[i];
+        if (from <= pos && to >= pos) {
+            return EditorSelection.create(
+                sel.ranges.slice(0, i).concat(sel.ranges.slice(i + 1)),
+                sel.mainIndex === i ? 0 : sel.mainIndex - (sel.mainIndex > i ? 1 : 0),
+            );
+        }
+    }
+    return null;
+}
+
+function makeListLineMouseSelectionStyle(view: EditorView, event: MouseEvent): MouseSelectionStyle | null {
+    if (event.button !== 0 || event.ctrlKey || event.metaKey || event.altKey) {
+        return null;
+    }
+    if (!isListLineElement(closestCmLineElement(view, event.target))) {
+        return null;
+    }
+    const clickDetail = event.detail || 1;
+    const initial = resolveContentClickPos(view, event);
+    if (initial === null) { return null; }
+
+    let startPos = initial;
+    let startSel = view.state.selection;
+
+    return {
+        update(update) {
+            if (update.docChanged) {
+                startPos = update.changes.mapPos(startPos);
+                startSel = startSel.map(update.changes);
+            }
+        },
+        get(event, extend, multiple) {
+            const curPos = resolveContentClickPos(view, event) ?? startPos;
+            let range = selectionRangeForListLineClick(view.state, curPos, clickDetail);
+            if (startPos !== curPos && !extend && clickDetail === 1) {
+                const startRange = selectionRangeForListLineClick(view.state, startPos, clickDetail);
+                const from = Math.min(startRange.from, range.from);
+                const to = Math.max(startRange.to, range.to);
+                range = EditorSelection.range(from, to);
+            }
+            if (extend) {
+                return startSel.replaceRange(startSel.main.extend(range.from, range.to));
+            }
+            if (multiple && clickDetail === 1 && startSel.ranges.length > 1) {
+                const removed = removeRangeAround(startSel, curPos);
+                if (removed) { return removed; }
+            }
+            if (multiple) { return startSel.addRange(range); }
+            return EditorSelection.create([range]);
+        },
+    };
+}
+
+/** DOM-accurate mouse selection on hanging-indent list lines. */
+export const listLineMouseSelectionStyle = Prec.high(
+    EditorView.mouseSelectionStyle.of(makeListLineMouseSelectionStyle),
+);
+
 /** When DOM row disagrees with `posAtCoords`, snap to the DOM row. */
 export function computeContentClickCorrection(
     view: EditorView,
@@ -99,6 +185,10 @@ function dispatchClickSpec(view: EditorView, spec: TransactionSpec): void {
 
 function runContentClick(view: EditorView, event: MouseEvent): boolean {
     if (event.button !== 0 || event.ctrlKey || event.metaKey || event.altKey) {
+        return false;
+    }
+    // List-line clicks and drags are owned by listLineMouseSelectionStyle.
+    if (isListLineElement(closestCmLineElement(view, event.target))) {
         return false;
     }
     if (event.detail === 3) {

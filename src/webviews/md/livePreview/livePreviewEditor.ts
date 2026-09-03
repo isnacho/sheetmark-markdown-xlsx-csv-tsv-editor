@@ -60,7 +60,7 @@ import {
 import { listMarkerBoundaryExtensions, livePreviewMarkdownKeymap } from './listMarkerEditing';
 import { codeStylingPlugin } from './codeStylingPlugin';
 import { codeBlockNavigationKeymap } from './codeBlockBoundaryEditing';
-import { contentClickHandlers } from './contentClickPositioning';
+import { contentClickHandlers, listLineMouseSelectionStyle } from './contentClickPositioning';
 import { tableWidgetField, columnWidthsField, setColumnWidthsEffect } from './tableWidget';
 import { tableBoundaryExtensions } from './tableBoundaryEditing';
 import { frontmatterWidgetField, seedFrontmatterCollapsed, seedFrontmatterEditing, setFrontmatterCollapsedCallback, blurActiveFrontmatterEditing, setFrontmatterEditingEffect } from './frontmatterWidget';
@@ -300,6 +300,7 @@ export function mountLivePreview(opts: LivePreviewMountOptions): EditorView {
             revealCompartment.of(reveal ? [livePreviewRevealPlugin, tableWidgetField, ...tableBoundaryExtensions, mermaidWidgetField, mermaidAtomicRanges, ...listMarkerBoundaryExtensions] : []),
             codeStylingPlugin,
             codeBlockNavigationKeymap,
+            listLineMouseSelectionStyle,
             contentClickHandlers,
             ...spellcheckExtensions,
             slashMenuAutocompletion(),

@@ -12,6 +12,7 @@ import {
     computeRevealDecorations, computeToggleTaskMarker, TaskCheckboxWidget, HorizontalRuleWidget,
     numberToLowerAlpha, numberToLowerRoman, formatOrderedMarkerLabel,
     OrderedMarkerWidget, BulletMarkerWidget, computeOrderedMarkerRanges,
+    DEFAULT_MONO_CHAR_WIDTH_PX, LIST_INDENT_FLOOR_CHARS, LIST_MARKER_NESTED_INSET_PX,
 } from './revealDecorations.ts';
 
 // GFM is required for Strikethrough/TaskList nodes to exist in the tree at
@@ -507,6 +508,153 @@ test('setext-as-list: blank-line "- " also shows bullet widget before any item t
     const widgets = widgetsOfType(doc, BulletMarkerWidget);
     assert.equal(widgets.length, 1);
     assert.equal(widgets[0]!.from, doc.indexOf('-'));
+});
+
+// ===== Hanging indent / cascading marker columns (hanging-indent-list-text-wrap idea) =====
+
+const FLOOR_PX = LIST_INDENT_FLOOR_CHARS * DEFAULT_MONO_CHAR_WIDTH_PX; // 24
+
+/** One entry per `cm-md-list-line` decoration, keyed by its line number, with its raw inline style. */
+function listLineStyles(doc: string, selFrom = 0, selTo = selFrom): { line: number; style: string }[] {
+    const state = stateFor(doc);
+    const set = computeRevealDecorations(state, selFrom, selTo, [{ from: 0, to: doc.length }]);
+    const out: { line: number; style: string }[] = [];
+    set.between(0, doc.length, (from, _to, value) => {
+        const spec = value.spec as { class?: string; attributes?: { style?: string } };
+        if (spec.class === 'cm-md-list-line' && spec.attributes?.style) {
+            out.push({ line: state.doc.lineAt(from).number, style: spec.attributes.style });
+        }
+    });
+    return out;
+}
+
+test('list indent: flat bullet list gets the floor column, no text-indent difference between items', () => {
+    const doc = '- one\n- two\n';
+    const styles = listLineStyles(doc);
+    assert.deepEqual(styles, [
+        { line: 1, style: `padding-left:${FLOOR_PX}px;text-indent:-${FLOOR_PX}px;--list-col:${FLOOR_PX}px;--list-marker-inset:0px` },
+        { line: 2, style: `padding-left:${FLOOR_PX}px;text-indent:-${FLOOR_PX}px;--list-col:${FLOOR_PX}px;--list-marker-inset:0px` },
+    ]);
+});
+
+test('list indent: a bullet list and an ordered list (both under the floor) share the identical column', () => {
+    const bulletStyle = listLineStyles('- one\n')[0]!.style;
+    const orderedStyle = listLineStyles('1. one\n')[0]!.style;
+    assert.equal(bulletStyle, orderedStyle);
+});
+
+test('list indent: nested list cascades to the PARENT\'S TEXT column, not the parent\'s marker', () => {
+    const doc = '- one\n  - nested\n';
+    const styles = listLineStyles(doc);
+    // Parent (depth 1): floor column, starts at 0, no leading marker inset (nothing to cascade from).
+    assert.deepEqual(styles[0], { line: 1, style: `padding-left:${FLOOR_PX}px;text-indent:-${FLOOR_PX}px;--list-col:${FLOOR_PX}px;--list-marker-inset:0px` });
+    // Child (depth 2): its own column is also the floor, but offset by the PARENT's total
+    // (FLOOR_PX) -- padding-left is the sum, text-indent/--list-col only pull back by the
+    // child's OWN column, landing the child's marker exactly at the parent's text start.
+    // Nested, so it gets the small leading marker inset (LIST_MARKER_NESTED_INSET_PX).
+    assert.deepEqual(styles[1], { line: 2, style: `padding-left:${FLOOR_PX * 2}px;text-indent:-${FLOOR_PX}px;--list-col:${FLOOR_PX}px;--list-marker-inset:${LIST_MARKER_NESTED_INSET_PX}px` });
+});
+
+test('list indent: an ordered list crossing 9->10 items already fits the floor (no jump)', () => {
+    const doc = Array.from({ length: 10 }, (_, i) => `${i + 1}. item\n`).join('');
+    const styles = listLineStyles(doc);
+    assert.ok(styles.every(s => s.style === styles[0]!.style), 'every item, including "10.", should share one unchanged column');
+    assert.ok(styles[0]!.style.includes(`padding-left:${FLOOR_PX}px`));
+});
+
+test('list indent: a list whose numbers reach 3 digits grows past the floor, uniformly across all its items', () => {
+    const doc = '97. a\n98. b\n99. c\n100. d\n';
+    const styles = listLineStyles(doc);
+    const grownPx = 4 * DEFAULT_MONO_CHAR_WIDTH_PX; // "100." is 4 chars, wider than the floor
+    assert.ok(grownPx > FLOOR_PX);
+    assert.equal(styles.length, 4);
+    assert.ok(styles.every(s => s.style === `padding-left:${grownPx}px;text-indent:-${grownPx}px;--list-col:${grownPx}px;--list-marker-inset:0px`));
+});
+
+test('list indent: depth-3 roman label wider than the floor grows; depth-2 short alpha label does not', () => {
+    // "1. " (3 chars) at depth 1, so depth 2 is indented 3 spaces; "1. " at depth 2 is also
+    // 3 chars, so depth 3 is indented 3+3=6 spaces -- same convention as the existing
+    // "nested list renders alpha at depth 2, roman at depth 3" test above.
+    const doc = '1. one\n   1. nested-a\n      13. deep\n';
+    const styles = listLineStyles(doc);
+    const depth1Style = styles.find(s => s.line === 1)!.style;
+    const depth2Style = styles.find(s => s.line === 2)!.style;
+    const depth3Style = styles.find(s => s.line === 3)!.style;
+    assert.ok(depth1Style.includes(`text-indent:-${FLOOR_PX}px`), 'depth 1 (label "1.") stays at the floor');
+    assert.ok(depth2Style.includes(`text-indent:-${FLOOR_PX}px`), 'depth 2 (label "a.") stays at the floor');
+    const depth3ColumnPx = 5 * DEFAULT_MONO_CHAR_WIDTH_PX; // "xiii." is 5 chars
+    assert.ok(depth3ColumnPx > FLOOR_PX);
+    assert.ok(depth3Style.includes(`text-indent:-${depth3ColumnPx}px`), 'depth 3 (label "xiii.") grows past the floor');
+});
+
+test('list indent: lazy continuation line gets padding-left but no text-indent/--list-col', () => {
+    const doc = '- item one\n  continuation line\n';
+    const styles = listLineStyles(doc);
+    assert.deepEqual(styles, [
+        { line: 1, style: `padding-left:${FLOOR_PX}px;text-indent:-${FLOOR_PX}px;--list-col:${FLOOR_PX}px;--list-marker-inset:0px` },
+        { line: 2, style: `padding-left:${FLOOR_PX}px` },
+    ]);
+});
+
+test('list indent: empty list item does not throw and still gets its marker line decorated', () => {
+    assert.doesNotThrow(() => listLineStyles('- \n'));
+    const styles = listLineStyles('- \n');
+    assert.equal(styles.length, 1);
+    assert.equal(styles[0]!.line, 1);
+});
+
+test('list indent: a loose (blank-line-separated) item indents both of its paragraphs; the next item is unaffected', () => {
+    const doc = '- first\n\n  second\n\n- next\n';
+    const styles = listLineStyles(doc);
+    // Item 1 spans lines 1-3 (text, the blank line inside the item, and its second paragraph).
+    assert.deepEqual(styles.map(s => s.line), [1, 2, 3, 5]);
+    assert.ok(styles[0]!.style.includes('text-indent'), 'line 1 (marker line) gets the pulled-back marker style');
+    assert.ok(!styles[1]!.style.includes('text-indent'), 'line 2 (blank line inside the loose item) is a continuation line');
+    assert.ok(!styles[2]!.style.includes('text-indent'), 'line 3 (second paragraph) is a continuation line');
+    assert.ok(styles[3]!.style.includes('text-indent'), 'line 5 ("- next") is its own, unaffected item');
+});
+
+/** True iff some class-less, widget-less `Decoration.replace` (a hidden span) covers exactly [from, to). */
+function isHiddenAt(doc: string, from: number, to: number, selFrom = 0, selTo = selFrom): boolean {
+    const state = stateFor(doc);
+    const set = computeRevealDecorations(state, selFrom, selTo, [{ from: 0, to: doc.length }]);
+    let covered = false;
+    set.between(from, to, (rFrom, rTo, value) => {
+        const spec = value.spec as { widget?: unknown; class?: string };
+        if (rFrom === from && rTo === to && !spec.widget && !spec.class) { covered = true; }
+    });
+    return covered;
+}
+
+test('list indent: a nested item hides its literal leading indentation spaces (not just selectable dead space)', () => {
+    const doc = '- one\n  - nested\n';
+    const nestedMarkerPos = doc.indexOf('- nested');
+    assert.ok(isHiddenAt(doc, nestedMarkerPos - 2, nestedMarkerPos));
+});
+
+test('list indent: a lazy-continuation line hides its own leading indentation too', () => {
+    const doc = '- item one\n  continuation line\n';
+    const contPos = doc.indexOf('continuation line');
+    assert.ok(isHiddenAt(doc, contPos - 2, contPos));
+});
+
+test('list indent: a task item and a plain bullet item in the same list share one column', () => {
+    const doc = '- [ ] todo\n- plain\n';
+    const styles = listLineStyles(doc);
+    assert.equal(styles.length, 2);
+    assert.equal(styles[0]!.style, styles[1]!.style);
+});
+
+test('list indent: typing a new list item character by character never disturbs an EXISTING item elsewhere', () => {
+    const existing = '- existing\n\n';
+    const toType = '1. new';
+    for (let i = 0; i <= toType.length; i++) {
+        const doc = existing + toType.slice(0, i);
+        const styles = listLineStyles(doc, doc.length);
+        const existingLine = styles.find(s => s.line === 1);
+        assert.ok(existingLine, `existing "- existing" lost its line decoration while typing ${JSON.stringify(toType.slice(0, i))}`);
+        assert.equal(existingLine!.style, `padding-left:${FLOOR_PX}px;text-indent:-${FLOOR_PX}px;--list-col:${FLOOR_PX}px;--list-marker-inset:0px`);
+    }
 });
 
 test('setext-as-list: typing item text on the same line switches to normal list parsing', () => {

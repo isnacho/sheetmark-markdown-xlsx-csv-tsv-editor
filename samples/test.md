@@ -110,6 +110,68 @@ Task list:
 - [x] New unchecked task — checked in round six
 - [ ] Round six task — open
 
+## Hanging indent test
+
+Flat bullet list, one item long enough to soft-wrap in a normal-width pane — the wrapped line should hang-indent under the item's own text, not reset to the flat editor margin:
+
+- Short item
+- This bullet item has a deliberately long sentence so that in a normal-width editor pane it soft-wraps onto a second visual line, which should hang-indent under "This", not reset to the flat editor margin.
+- Third item
+
+Three-level nested bullets (dot filled at depth 1, outline at depth 2 and 3; each level's marker should cascade to sit under its parent's text):
+
+- Depth 1 item
+  - Depth 2 item, also with enough extra text that it wraps onto a second line to confirm the wrapped line still hangs under "Depth", not under the depth-1 marker
+    - Depth 3 item
+
+Three-level nested ordered list (decimal at depth 1, lowercase alpha at depth 2, lowercase roman at depth 3):
+
+1. Depth 1, decimal
+   1. Depth 2, alpha
+      1. Depth 3, roman i
+      2. Depth 3, roman ii
+      3. Depth 3, roman iii
+      4. Depth 3, roman iv
+
+Crossing 9 → 10 items (column should already fit "10." — no jump):
+
+1. Item one
+2. Item two
+3. Item three
+4. Item four
+5. Item five
+6. Item six
+7. Item seven
+8. Item eight
+9. Item nine
+10. Item ten
+11. Item eleven
+
+Crossing into triple digits (column should visibly widen once "100." appears, evenly across the whole list):
+
+97. Ninety-seven
+98. Ninety-eight
+99. Ninety-nine
+100. One hundred
+101. One hundred one
+
+Mixed task + plain bullet in one list (checkbox and dot should share the same text-start column):
+
+- [ ] Unchecked task
+- Plain bullet item
+- [x] Checked task
+
+Lazy continuation — the second line below is a raw continuation of the same bullet's paragraph, with no blank line separating them, so it should hang-indent under "continues":
+
+- This item's text continues
+  on a second source line with no blank line separating them.
+
+Blockquote containing a list (known v1 cosmetic gap — the list's own column wins over the blockquote's left-border accent):
+
+> Quoted intro
+> - Quoted bullet one
+> - Quoted bullet two
+
 ::: info
 Info callout — tests the markdown-it container plugin. Round six refresh.
 :::

@@ -243,7 +243,7 @@ export class TaskCheckboxWidget extends WidgetType {
             event.preventDefault();
             view.dispatch(computeToggleTaskMarker(view.state, this.markerFrom, this.markerTo));
         });
-        return box;
+        return wrapInListMarkerSlot(box);
     }
     ignoreEvent(): boolean {
         return true;
@@ -279,7 +279,7 @@ export class OrderedMarkerWidget extends WidgetType {
         const span = document.createElement('span');
         span.className = 'cm-md-ordered-marker';
         span.textContent = this.label;
-        return span;
+        return wrapInListMarkerSlot(span, 'cm-md-list-marker-slot-numeric');
     }
     ignoreEvent(): boolean {
         return false;
@@ -306,10 +306,173 @@ export class BulletMarkerWidget extends WidgetType {
     toDOM(): HTMLElement {
         const span = document.createElement('span');
         span.className = this.nested ? 'cm-md-bullet-marker cm-md-bullet-marker-nested' : 'cm-md-bullet-marker';
-        return span;
+        return wrapInListMarkerSlot(span);
     }
     ignoreEvent(): boolean {
         return false;
+    }
+}
+
+/**
+ * Wraps a marker widget's own element (dot / label / checkbox, unchanged) in
+ * a slot span whose `min-width` comes from the `--list-col` custom property
+ * set on the enclosing line's decoration (see getListColumnMetrics below).
+ * CSS custom properties inherit down through descendant DOM, so this needs no
+ * per-widget width field/constructor param — the same widget DOM instance
+ * keeps being reused across rebuilds (via each widget's existing `eq()`) even
+ * as the list's column width changes from edits elsewhere in the same list;
+ * only the inherited CSS variable (and thus the repaint) changes.
+ *
+ * Default alignment is LEFT (near the cascade boundary — the parent's own
+ * text start) — right for bullets/checkboxes, which never need to grow, so
+ * hugging the column's own text side just eats the floor's slack as dead
+ * space and reads as misaligned with the level above. `extraClass` opts a
+ * marker into right-alignment instead (`cm-md-list-marker-slot-numeric`, for
+ * ordered labels only) — those DO grow (more digits, wider roman numerals),
+ * and need to stay flush against their own text as that happens.
+ */
+function wrapInListMarkerSlot(marker: HTMLElement, extraClass?: string): HTMLElement {
+    const slot = document.createElement('span');
+    slot.className = extraClass ? `cm-md-list-marker-slot ${extraClass}` : 'cm-md-list-marker-slot';
+    slot.appendChild(marker);
+    return slot;
+}
+
+// ===== List item hanging indent / marker column width (hanging-indent-list-text-wrap idea) =====
+// Every list gets one "text-start column" that its item text — first line and
+// wrapped/lazy-continuation lines — aligns to. Floor = width of a 2-digit
+// decimal marker ("12."); grows only for the one list whose own labels are
+// wider (3+ digit numbers, or — since ordered markers cycle decimal/alpha/
+// roman by depth, see formatOrderedMarkerLabel above — a long roman numeral
+// or double-letter alpha label). Bullets/tasks never exceed the floor
+// (computeOrderedMarkerLabel returns null for them, so they never contribute
+// to the max below).
+export const LIST_INDENT_FLOOR_CHARS = 3; // "12." — two digits + delimiter
+
+// `--font-mono` is fixed-pitch (unlike `.cm-content`'s proportional
+// `--font-family`), so its character count converts to pixels exactly once
+// its real rendered advance width is known. This constant is a deterministic
+// stand-in for headless tests; production measures the real value once via
+// getMonoCharWidthPx() below (never per-list, never per-render — see there).
+export const DEFAULT_MONO_CHAR_WIDTH_PX = 8;
+
+// A top-level bullet/checkbox has no parent list to cascade from, so it gets
+// NO leading inset — its own left edge lines up exactly with plain paragraph
+// text at the same depth. A nested one needs a small inset so it doesn't sit
+// flush against the cascade boundary (the parent's own text start) — see the
+// "clear gap on the left" requirement in the idea this feature comes from.
+export const LIST_MARKER_NESTED_INSET_PX = 4;
+
+/** Widest ordered-marker label among `list`'s direct ListItem children, floored at LIST_INDENT_FLOOR_CHARS. */
+export function computeListOwnColumnChars(state: EditorState, list: SyntaxNode): number {
+    let maxLabelLen = 0;
+    for (let item = list.firstChild; item; item = item.nextSibling) {
+        if (item.name !== 'ListItem') { continue; }
+        const mark = item.getChild('ListMark');
+        const label = mark && computeOrderedMarkerLabel(state, mark);
+        if (label) { maxLabelLen = Math.max(maxLabelLen, label.length); }
+    }
+    return Math.max(LIST_INDENT_FLOOR_CHARS, maxLabelLen);
+}
+
+function enclosingListContainer(node: SyntaxNode | null): SyntaxNode | null {
+    for (let p = node; p; p = p.parent) {
+        if (p.name === 'BulletList' || p.name === 'OrderedList') { return p; }
+    }
+    return null;
+}
+
+export interface ListColumnMetrics {
+    columnChars: number;
+    columnPx: number;
+    offsetPx: number;
+    totalPx: number;
+    markerLineDeco: ReturnType<typeof Decoration.line>;
+    continuationLineDeco: ReturnType<typeof Decoration.line>;
+}
+
+/**
+ * Per-list text-start column, memoized in `cache` (keyed by the list node's
+ * own start offset) for the lifetime of one computeRevealDecorations call —
+ * every ListItem in the same list shares one entry, so the O(items-in-list)
+ * scan in computeListOwnColumnChars runs once per list per rebuild, not once
+ * per item. A nested list's `offsetPx` is its immediate parent's own
+ * `totalPx` — the cascading step-in lands at the parent's TEXT column, not
+ * the parent's marker column.
+ */
+export function getListColumnMetrics(
+    state: EditorState,
+    list: SyntaxNode,
+    monoCharWidthPx: number,
+    cache: Map<number, ListColumnMetrics>,
+): ListColumnMetrics {
+    const cached = cache.get(list.from);
+    if (cached) { return cached; }
+    const columnChars = computeListOwnColumnChars(state, list);
+    const columnPx = columnChars * monoCharWidthPx;
+    const parentList = enclosingListContainer(list.parent);
+    const offsetPx = parentList ? getListColumnMetrics(state, parentList, monoCharWidthPx, cache).totalPx : 0;
+    const totalPx = offsetPx + columnPx;
+    const markerInsetPx = offsetPx === 0 ? 0 : LIST_MARKER_NESTED_INSET_PX;
+    const metrics: ListColumnMetrics = {
+        columnChars, columnPx, offsetPx, totalPx,
+        markerLineDeco: Decoration.line({
+            class: 'cm-md-list-line',
+            attributes: { style: `padding-left:${totalPx}px;text-indent:-${columnPx}px;--list-col:${columnPx}px;--list-marker-inset:${markerInsetPx}px` },
+        }),
+        continuationLineDeco: Decoration.line({
+            class: 'cm-md-list-line',
+            attributes: { style: `padding-left:${totalPx}px` },
+        }),
+    };
+    cache.set(list.from, metrics);
+    return metrics;
+}
+
+/**
+ * `item`'s own last content line — covers CommonMark lazy continuation (a
+ * second typed source line with no blank line, swallowed into the same
+ * Paragraph/Task node) so its wrapped/continuation lines get indented too.
+ * Stops before a trailing nested sublist (that sublist indents its own lines
+ * separately, at its own deeper column, when its own items are visited),
+ * including the case where the item has no body text of its own at all and a
+ * nested list starts immediately on the next line.
+ */
+function listItemBodyLastLine(state: EditorState, item: SyntaxNode): number {
+    const firstLine = state.doc.lineAt(item.from).number;
+    let sublistFrom: number | null = null;
+    for (let child = item.lastChild; child && (child.name === 'BulletList' || child.name === 'OrderedList'); child = child.prevSibling) {
+        sublistFrom = child.from;
+    }
+    if (sublistFrom === null) { return state.doc.lineAt(item.to).number; }
+    return Math.max(firstLine, state.doc.lineAt(sublistFrom).number - 1);
+}
+
+// Source indentation (the literal leading spaces markdown uses to signal
+// nesting depth, and any leading whitespace on a lazy-continuation line) is
+// real, selectable text that sits BEFORE the marker/content — left alone, it
+// renders as dead selectable space to the left of the CSS-driven column,
+// doubling up with padding-left/text-indent. Hidden unconditionally (no
+// active-state toggle), same category as this file's other always-on
+// structural hides (hiddenBulletMark, the marker's own trailing gap space).
+const hiddenListIndent = Decoration.replace({});
+
+function applyListLineIndentDecorations(state: EditorState, item: SyntaxNode, metrics: ListColumnMetrics, specs: Spec[]) {
+    const firstLine = state.doc.lineAt(item.from).number;
+    const lastLine = listItemBodyLastLine(state, item);
+    for (let n = firstLine; n <= lastLine; n++) {
+        const line = state.doc.line(n);
+        specs.push({ from: line.from, to: line.from, value: n === firstLine ? metrics.markerLineDeco : metrics.continuationLineDeco });
+        if (n === firstLine) {
+            if (item.from > line.from) {
+                specs.push({ from: line.from, to: item.from, value: hiddenListIndent });
+            }
+        } else {
+            const leadingWhitespace = /^[ \t]*/.exec(line.text)![0].length;
+            if (leadingWhitespace > 0) {
+                specs.push({ from: line.from, to: line.from + leadingWhitespace, value: hiddenListIndent });
+            }
+        }
     }
 }
 
@@ -324,10 +487,12 @@ export function computeRevealDecorations(
     selFrom: number,
     selTo: number,
     visibleRanges: readonly VisibleRange[],
+    monoCharWidthPx: number = DEFAULT_MONO_CHAR_WIDTH_PX,
 ): DecorationSet {
     const specs: Spec[] = [];
     const dimMark = Decoration.mark({ class: 'cm-md-reveal-mark' });
     const hiddenMark = Decoration.replace({});
+    const listColumnCache = new Map<number, ListColumnMetrics>();
 
     const isActive = (from: number, to: number) => {
         // Lezer node ranges are half-open [from, to). A collapsed caret sitting
@@ -538,6 +703,11 @@ export function computeRevealDecorations(
     function handleListMark(node: SyntaxNode) {
         const item = node.parent;
         if (!item || item.name !== 'ListItem' || !listItemMarkerIsActivated(state, item)) { return; }
+        const list = item.parent;
+        if (list && (list.name === 'BulletList' || list.name === 'OrderedList')) {
+            const metrics = getListColumnMetrics(state, list, monoCharWidthPx, listColumnCache);
+            applyListLineIndentDecorations(state, item, metrics, specs);
+        }
         const orderedLabel = computeOrderedMarkerLabel(state, node);
         if (orderedLabel !== null) {
             specs.push({ from: node.from, to: node.to, value: Decoration.replace({ widget: new OrderedMarkerWidget(orderedLabel) }) });
@@ -648,9 +818,38 @@ export function computeRevealDecorations(
     return Decoration.set(specs.map(s => s.value.range(s.from, s.to)), true);
 }
 
+let cachedMonoCharWidthPx: number | null = null;
+
+/**
+ * Measures `--font-mono`'s real rendered advance width once, via a hidden
+ * probe span inserted into the view's own DOM (so it inherits the live theme
+ * cascade — no hardcoded font-metrics ratio), then caches the result
+ * module-wide. Never re-measured per list or per decoration rebuild — this is
+ * the ONE DOM read this feature needs, not a per-list/per-render one. Falls
+ * back to DEFAULT_MONO_CHAR_WIDTH_PX if the probe ever reports zero width
+ * (e.g. measured before the view has laid out).
+ */
+function getMonoCharWidthPx(view: EditorView): number {
+    if (cachedMonoCharWidthPx !== null) { return cachedMonoCharWidthPx; }
+    const probe = document.createElement('span');
+    probe.style.position = 'absolute';
+    probe.style.visibility = 'hidden';
+    probe.style.whiteSpace = 'pre';
+    probe.style.fontFamily = 'var(--font-mono)';
+    probe.style.fontWeight = 'var(--font-mono-weight)';
+    probe.style.fontSize = 'var(--font-mono-size)';
+    const sample = '00000000';
+    probe.textContent = sample;
+    view.dom.appendChild(probe);
+    const width = probe.getBoundingClientRect().width;
+    view.dom.removeChild(probe);
+    cachedMonoCharWidthPx = width > 0 ? width / sample.length : DEFAULT_MONO_CHAR_WIDTH_PX;
+    return cachedMonoCharWidthPx;
+}
+
 function buildFromView(view: EditorView): DecorationSet {
     const sel = view.state.selection.main;
-    return computeRevealDecorations(view.state, sel.from, sel.to, view.visibleRanges);
+    return computeRevealDecorations(view.state, sel.from, sel.to, view.visibleRanges, getMonoCharWidthPx(view));
 }
 
 export const livePreviewRevealPlugin = ViewPlugin.fromClass(class {

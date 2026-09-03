@@ -54,6 +54,20 @@ test('computeListItemPrefixRange: bullet marker + gap space', () => {
     assert.deepEqual(range, { from: 0, to: 2 });
 });
 
+test('computeListItemPrefixRange: a nested item\'s range starts at the LINE start, including its leading indentation spaces', () => {
+    const doc = '- one\n  - nested\n';
+    const state = stateFor(doc);
+    let nested: import('@lezer/common').SyntaxNode | null = null;
+    syntaxTree(state).iterate({
+        enter(node) {
+            if (node.name === 'ListItem' && node.from > 0) { nested = node.node; }
+        },
+    });
+    const range = computeListItemPrefixRange(state, nested!);
+    // Line 2 is "  - nested" -> starts at offset 6; "-" is at 8-9, plus its trailing gap space -> 10.
+    assert.deepEqual(range, { from: 6, to: 10 });
+});
+
 test('computeListMarkerRanges: bullet, ordered, and checkbox prefixes include gap', () => {
     const doc = '- a\n1. b\n- [ ] c\n';
     const ranges = computeListMarkerRanges(stateFor(doc));

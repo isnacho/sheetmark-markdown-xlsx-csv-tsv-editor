@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Markdown lists: wrapped and nested list text now hang-indents under the item's own text instead of the editor's left margin, with bullet/number/checkbox markers aligned and cascading consistently across nesting levels.
+
 ## v1.3.0 — 2026-08-31
 
 ### Improvements

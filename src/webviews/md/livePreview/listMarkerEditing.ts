@@ -143,7 +143,18 @@ export function computeManualListContinuation(state: EditorState): TransactionSp
     };
 }
 
-/** ListItem marker through its trailing gap space (includes Task on checkbox lines). */
+/**
+ * ListItem marker through its trailing gap space (includes Task on checkbox
+ * lines) — starting from the LINE's own start, not just the marker's own
+ * start, so a nested item's literal leading indentation spaces are part of
+ * this one atomic unit too. Without that, clicking in the (now visually much
+ * wider, since the hanging-indent CSS reserves a real column there) gutter to
+ * the left of a nested marker resolved to a cursor position inside those
+ * leading spaces — nothing rendered there to click on, but a valid document
+ * position all the same. Folding them into the atomic prefix range makes
+ * such a click resolve to the nearest real boundary (line start or the
+ * item's own text start) instead of parking a cursor in a visually empty gap.
+ */
 export function computeListItemPrefixRange(state: EditorState, item: SyntaxNode): VisibleRange | null {
     if (!listItemMarkerIsActivated(state, item)) { return null; }
     const mark = item.getChild('ListMark');
@@ -153,7 +164,7 @@ export function computeListItemPrefixRange(state: EditorState, item: SyntaxNode)
     if (end < state.doc.length && state.sliceDoc(end, end + 1) === ' ') {
         end += 1;
     }
-    return { from: mark.from, to: end };
+    return { from: state.doc.lineAt(mark.from).from, to: end };
 }
 
 function computeSetextListMarkerPrefix(state: EditorState, setextNode: SyntaxNode): VisibleRange | null {

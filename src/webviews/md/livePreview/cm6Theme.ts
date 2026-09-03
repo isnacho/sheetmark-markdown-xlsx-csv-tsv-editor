@@ -528,8 +528,11 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             display: 'inline-block',
             width: '6px',
             height: '6px',
-            marginLeft: '4px',
-            marginRight: '6px',
+            // 0 at top level (no parent to cascade from — lines up flush with
+            // plain paragraph text); a small fixed inset once nested (set by
+            // getListColumnMetrics in revealDecorations.ts), so the dot doesn't
+            // sit flush against the cascade boundary (the parent's own text).
+            marginLeft: 'var(--list-marker-inset, 4px)',
             borderRadius: '50%',
             backgroundColor: 'var(--color-text-primary)',
             verticalAlign: 'middle',
@@ -541,18 +544,62 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
         '.cm-md-ordered-marker': {
             color: 'var(--color-text-primary)',
             fontWeight: '600',
-            marginLeft: '4px',
             marginRight: '6px',
         },
         '.cm-md-checkbox-bullet-hidden': {
             display: 'none',
         },
         '.cm-md-task-checkbox': {
-            marginLeft: '4px',
-            marginRight: '6px',
+            marginLeft: 'var(--list-marker-inset, 4px)',
             verticalAlign: 'middle',
             cursor: 'pointer',
             accentColor: 'var(--color-action)',
+        },
+        // Hanging indent / cascading marker columns (hanging-indent-list-text-wrap
+        // idea). `.cm-md-list-line` is an identification hook only — the actual
+        // padding-left/text-indent/--list-col values are dynamic per-list, set
+        // inline via getListColumnMetrics in revealDecorations.ts, not here.
+        '.cm-md-list-line': {
+            // Intentionally empty: selector kept for devtools/tests and any
+            // future static tweak (e.g. overflow-wrap) to hang off.
+        },
+        // Wraps each marker widget's own element (dot/label/checkbox). Its
+        // min-width inherits --list-col from the ancestor .cm-md-list-line —
+        // that's how the marker's own footprint reaches the list's shared
+        // text-start column without any per-widget width field. `text-align`
+        // (not flex — an inline-flex slot measured a zero-width inner span
+        // inside CM6's widget DOM in practice, confirmed with a headless
+        // render; plain text-align has no such quirk) positions the marker
+        // within that column. Default is LEFT — bullets/checkboxes are a
+        // fixed size, so sitting near the column's own start (the cascade
+        // boundary, i.e. the PARENT's text start) reads as aligned with the
+        // level above; right-aligning a fixed-size marker would just strand
+        // it near its own text with dead space on the left instead. Ordered
+        // labels opt into `-numeric` (right-aligned) below, since THEY do
+        // grow (more digits, wider roman numerals) and need to stay flush
+        // against their own text as that happens, absorbing slack on the left.
+        '.cm-md-list-marker-slot': {
+            display: 'inline-block',
+            textAlign: 'left',
+            // `text-indent` inherits, and this slot is its own block container
+            // (inline-block) — left uninherited, the line's negative
+            // text-indent (the marker-line pull-back) re-applies a SECOND time
+            // to the slot's own left-aligned content, shifting bullets and
+            // checkboxes an extra column-width further left (sometimes clean
+            // off-screen). Right-aligned numeric labels never showed this —
+            // indent only moves the line box's start edge, which text-align:
+            // right doesn't anchor to — which is why it stayed hidden until
+            // bullets/checkboxes switched off right-alignment.
+            textIndent: '0',
+            boxSizing: 'border-box',
+            minWidth: 'var(--list-col, 0px)',
+            verticalAlign: 'middle',
+            position: 'relative',
+            top: '-3.3px',
+        },
+        '.cm-md-list-marker-slot-numeric': {
+            textAlign: 'right',
+            top: '-3px',
         },
         '.cm-md-task-done-content': {
             textDecoration: 'line-through',

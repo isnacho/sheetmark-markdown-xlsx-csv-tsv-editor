@@ -895,7 +895,7 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                 </div>
             </div>
 
-            <div id="content">
+            <div id="content" class="is-loading">
                 <div id="loadingIndicator" class="loading-indicator">Loading Markdown...</div>
                 <div class="markdown-container" id="markdownContainer">
                     <aside id="tocPanel" class="toc-panel hidden" aria-label="Outline">

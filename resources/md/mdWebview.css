@@ -319,6 +319,10 @@ body:not(.sticky-toolbar-enabled) .toc-panel {
 
 
 /* ===== Loading Indicator ===== */
+#content.is-loading .markdown-container {
+    display: none;
+}
+
 .loading-indicator {
     display: flex;
     align-items: center;

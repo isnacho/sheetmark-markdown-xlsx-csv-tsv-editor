@@ -95,6 +95,10 @@ let pendingDiskContent: string | null = null;
 // Set when the watcher reports the file was deleted externally; cleared by a
 // subsequent real disk change, a manual reload, or a save that recreates the file.
 let pendingDiskDeleted = false;
+// Outline visibility waits for host `initSettings` — defaults would flash the
+// panel (and peek at the bottom) while "Loading Markdown..." is still shown.
+let hostSettingsLoaded = false;
+
 // Mount CM6 preview edit exactly once on the panel's first `initSettings`.
 let hasEnteredPreviewEdit = false;
 // Content the user was last looking at before an external write — the baseline
@@ -1580,8 +1584,10 @@ function applySettings(settings: any, persist = false) {
     document.body.classList.toggle('show-line-numbers', livePreviewGutterLineNumbersEnabled());
 
     const tocPanel = $('tocPanel');
-    if (container) {container.classList.toggle('toc-open', !!currentSettings.showOutline);}
-    if (tocPanel) {tocPanel.classList.toggle('hidden', !currentSettings.showOutline);}
+    if (hostSettingsLoaded) {
+        if (container) {container.classList.toggle('toc-open', !!currentSettings.showOutline);}
+        if (tocPanel) {tocPanel.classList.toggle('hidden', !currentSettings.showOutline);}
+    }
 
     // The whole diff-review affordance (toolbar icon, HUD, overlay) hinges on
     // this setting — hide the entry point and tear down anything already
@@ -1874,6 +1880,7 @@ window.addEventListener('message', (event) => {
 
     switch (m.command) {
         case 'initMarkdown':
+            $('content')?.classList.remove('is-loading');
             const loading = $('loadingIndicator');
             if (loading) {loading.style.display = 'none';}
 
@@ -2069,6 +2076,7 @@ window.addEventListener('message', (event) => {
             break;
 
         case 'initSettings':
+            hostSettingsLoaded = true;
             applySettings(m.settings, false);
             if (!hasEnteredPreviewEdit) {
                 hasEnteredPreviewEdit = true;
@@ -2077,6 +2085,7 @@ window.addEventListener('message', (event) => {
             break;
 
         case 'settingsUpdated':
+            hostSettingsLoaded = true;
             applySettings(m.settings, false);
             break;
 

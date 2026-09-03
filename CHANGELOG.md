@@ -2,7 +2,16 @@
 
 ## Unreleased
 
+## v1.4.0 — 2026-09-03
+
+### Improvements
+
 - Markdown lists: wrapped and nested list text now hang-indents under the item's own text instead of the editor's left margin, with bullet/number/checkbox markers aligned and cascading consistently across nesting levels.
+
+### Bug fixes
+
+- Markdown lists: drag-to-select on hanging-indent list lines now resolves the caret correctly instead of snapping the anchor to the line start.
+- Markdown: the editor and outline no longer flash visible content while the document is still loading.
 
 ## v1.3.0 — 2026-08-31
 

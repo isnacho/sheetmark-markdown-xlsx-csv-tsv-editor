@@ -57,12 +57,29 @@ function lineIsInsideAnyFencedCode(state: EditorState, lineNumber: number): bool
     return inside;
 }
 
+export function fenceExternalGapFlags(
+    state: EditorState,
+    nodeFrom: number,
+    nodeTo: number,
+): { gapBefore: boolean; gapAfter: boolean } {
+    const firstLine = state.doc.lineAt(nodeFrom).number;
+    const lastLine = state.doc.lineAt(nodeTo).number;
+    return {
+        gapBefore: firstLine === 1 || !lineIsInsideAnyFencedCode(state, firstLine - 1),
+        gapAfter: lastLine === state.doc.lines || !lineIsInsideAnyFencedCode(state, lastLine + 1),
+    };
+}
+
 export function computeCodeDecorations(
     state: EditorState,
     visibleRanges: readonly VisibleRange[],
     shouldSkipFencedCode?: (node: SyntaxNode) => boolean,
 ): DecorationSet {
-    const specs: { from: number; to: number; value: ReturnType<typeof Decoration.mark> | ReturnType<typeof Decoration.line> }[] = [];
+    const specs: {
+        from: number;
+        to: number;
+        value: ReturnType<typeof Decoration.mark> | ReturnType<typeof Decoration.line>;
+    }[] = [];
 
     for (const { from, to } of visibleRanges) {
         syntaxTree(state).iterate({
@@ -77,6 +94,8 @@ export function computeCodeDecorations(
                     }
                     const firstLine = state.doc.lineAt(node.from).number;
                     const lastLine = state.doc.lineAt(node.to).number;
+                    const { gapBefore, gapAfter } = fenceExternalGapFlags(state, node.from, node.to);
+
                     for (let n = firstLine; n <= lastLine; n++) {
                         const position = firstLine === lastLine
                             ? 'only'
@@ -85,14 +104,14 @@ export function computeCodeDecorations(
                                 : n === lastLine
                                     ? 'last'
                                     : 'middle';
-                        const gapBefore = n === firstLine
-                            && (n === 1 || !lineIsInsideAnyFencedCode(state, n - 1));
-                        const gapAfter = n === lastLine
-                            && (n === state.doc.lines || !lineIsInsideAnyFencedCode(state, n + 1));
                         specs.push({
                             from: state.doc.line(n).from,
                             to: state.doc.line(n).from,
-                            value: fencedCodeLineDecoration(position, gapBefore, gapAfter),
+                            value: fencedCodeLineDecoration(
+                                position,
+                                n === firstLine && gapBefore,
+                                n === lastLine && gapAfter,
+                            ),
                         });
                     }
                 }

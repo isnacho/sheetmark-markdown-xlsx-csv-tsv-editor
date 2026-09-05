@@ -147,6 +147,16 @@ export function cursorPosAfterFrontmatter(content: string): number {
     return extractFrontmatter(content)?.range.to ?? 0;
 }
 
+/** 1-indexed document line where the markdown body begins (after frontmatter). */
+export function frontmatterBodyStartLine(content: string): number {
+    const pos = cursorPosAfterFrontmatter(content);
+    let line = 1;
+    for (let i = 0; i < pos && i < content.length; i++) {
+        if (content[i] === '\n') { line++; }
+    }
+    return line;
+}
+
 export function markdownBodyWithoutFrontmatter(content: string): string {
     const extracted = extractFrontmatter(content);
     if (!extracted) {

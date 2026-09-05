@@ -120,6 +120,7 @@ Provider: [mdEditorProvider.ts](../../src/mdEditorProvider.ts)
 | `diskDeletedExternally` | — | watcher `onDelete` :610 | :1374 |
 | `diskMovedExternally` | `fileName`, `documentUri`, `documentDirUri` | `handleMove` :582 | :1380 |
 | `reloadFromDiskError` | `message` | `requestFreshData` catch :255, `webviewReady` catch :193 | :1378 |
+| `openRelativeFileFailed` | `message` | `openRelativeFile` missing file / open error | :2075 |
 | `acceptAllDiskChanges` | — | `xlsx-viewer.md.acceptAllDiskChanges` command → `MDEditorProvider.postCommandToActivePanel` :59 (in [extension.ts](../../src/extension.ts) :461) | :2033 |
 | `rejectAllDiskChanges` | — | `xlsx-viewer.md.rejectAllDiskChanges` command → `MDEditorProvider.postCommandToActivePanel` :59 (in [extension.ts](../../src/extension.ts) :464) | :2037 |
 | `setTheme` | `kind` | :181, :548 | `ThemeManager`; keyed on `message.type` |

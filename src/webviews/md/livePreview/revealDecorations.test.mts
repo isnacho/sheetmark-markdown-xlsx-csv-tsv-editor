@@ -607,11 +607,10 @@ test('list indent: a loose (blank-line-separated) item indents both of its parag
     const doc = '- first\n\n  second\n\n- next\n';
     const styles = listLineStyles(doc);
     // Item 1 spans lines 1-3 (text, the blank line inside the item, and its second paragraph).
-    assert.deepEqual(styles.map(s => s.line), [1, 2, 3, 5]);
+    assert.deepEqual(styles.map(s => s.line), [1, 3, 5]);
     assert.ok(styles[0]!.style.includes('text-indent'), 'line 1 (marker line) gets the pulled-back marker style');
-    assert.ok(!styles[1]!.style.includes('text-indent'), 'line 2 (blank line inside the loose item) is a continuation line');
-    assert.ok(!styles[2]!.style.includes('text-indent'), 'line 3 (second paragraph) is a continuation line');
-    assert.ok(styles[3]!.style.includes('text-indent'), 'line 5 ("- next") is its own, unaffected item');
+    assert.ok(!styles[1]!.style.includes('text-indent'), 'line 3 (second paragraph) is a continuation line');
+    assert.ok(styles[2]!.style.includes('text-indent'), 'line 5 ("- next") is its own, unaffected item');
 });
 
 /** True iff some class-less, widget-less `Decoration.replace` (a hidden span) covers exactly [from, to). */
@@ -668,4 +667,25 @@ test('setext-as-list: typing item text on the same line switches to normal list 
         },
     });
     assert.equal(setext, false);
+});
+
+test('list indent: a paragraph after a list (blank-line separated) is NOT list-indented', () => {
+    const doc = '- item\n\nparagraph\n';
+    const styles = listLineStyles(doc);
+    assert.deepEqual(styles.map(s => s.line), [1], 'only the list item line is decorated');
+});
+
+test('list indent: a flush-left line directly under a list item is NOT list-indented', () => {
+    const styles = listLineStyles('- item\nparagraph\n');
+    assert.deepEqual(styles.map(s => s.line), [1]);
+});
+
+test('list indent: a flush-left line after the last list item is NOT list-indented', () => {
+    const styles = listLineStyles('- one\n- two\nparagraph\n');
+    assert.deepEqual(styles.map(s => s.line), [1, 2]);
+});
+
+test('list indent: a flush-left line after a checklist item is NOT list-indented', () => {
+    const styles = listLineStyles('- [ ] task\nparagraph\n');
+    assert.deepEqual(styles.map(s => s.line), [1]);
 });

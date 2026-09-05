@@ -1,6 +1,7 @@
 import { EditorState } from '@codemirror/state';
 import { syntaxTree } from '@codemirror/language';
 import type { SyntaxNode } from '@lezer/common';
+import { extractFenceBody, extractFenceLangName } from './fenceExtraction';
 
 const GRAPH_FIRST_LINE = /^graph (?:TB|BT|RL|LR|TD);?$/;
 
@@ -17,19 +18,11 @@ export function isMermaidFenceContent(langName: string, code: string): boolean {
 }
 
 export function extractMermaidLangName(state: EditorState, node: SyntaxNode): string {
-    const info = node.getChild('CodeInfo');
-    if (!info) {
-        return '';
-    }
-    return state.doc.sliceString(info.from, info.to).trim().split(/\s+/g)[0] || '';
+    return extractFenceLangName(state, node);
 }
 
 export function extractMermaidSource(state: EditorState, node: SyntaxNode): string {
-    const parts = node.getChildren('CodeText');
-    if (parts.length === 0) {
-        return '';
-    }
-    return state.doc.sliceString(parts[0].from, parts[parts.length - 1].to);
+    return extractFenceBody(state, node);
 }
 
 /** Display label for the fence header (never empty for a detected mermaid block). */

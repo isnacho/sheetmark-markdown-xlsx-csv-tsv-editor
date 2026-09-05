@@ -2,7 +2,7 @@
     "name": "sheetmark",
     "displayName": "Sheetmark: XLSX, CSV, TSV & Markdown",
     "description": "Sheetmark — view and edit XLSX, CSV, TSV, and Markdown files in VS Code. Rich spreadsheet formatting, live-preview Markdown editing, and a native theme-aware UI.",
-    "version": "1.4.0",
+    "version": "1.5.0",
     "publisher": "iggyinc",
     "engines": {
         "vscode": "^1.60.0"

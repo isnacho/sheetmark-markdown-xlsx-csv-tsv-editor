@@ -21,6 +21,7 @@ import {
     getLivePreviewTopLine,
     scrollLivePreviewToLine,
     resolveLivePreviewInteraction,
+    resolveLivePreviewCollapsedLink,
     findLivePreviewMatches,
     setLivePreviewSearchHighlights,
     clearLivePreviewSearchHighlights,
@@ -50,7 +51,7 @@ import {
 } from './livePreview/livePreviewEditor';
 import { setImageUriResolver } from './livePreview/imageWidget';
 import { diffLineStats, formatDiffLineStats } from './diffStats';
-import { markdownBodyWithoutFrontmatter, extractFrontmatter } from './frontmatter';
+import { markdownBodyWithoutFrontmatter, extractFrontmatter, frontmatterBodyStartLine } from './frontmatter';
 import { stripMarkdownToPlainText, computeTextStats } from './markdownStats';
 import type { TextStats } from './markdownStats';
 import type { Cm6Match } from './livePreview/livePreviewSearch';
@@ -338,7 +339,7 @@ function sanitizeMarkdownCopyLinkArtifacts(markdown: string): string {
 const tocIdToLine = new Map<string, number>();
 const tocLineToId = new Map<number, string>();
 
-function buildToc(tokens: any[]) {
+function buildToc(tokens: any[], bodyStartLine: number) {
     tocIdToLine.clear();
     tocLineToId.clear();
 
@@ -353,7 +354,7 @@ function buildToc(tokens: any[]) {
             if (id && text) {
                 items.push({ id, level, text });
                 if (Array.isArray(token.map)) {
-                    const line = token.map[0] + 1;
+                    const line = token.map[0] + bodyStartLine;
                     tocIdToLine.set(id, line);
                     tocLineToId.set(line, id);
                 }
@@ -373,10 +374,11 @@ function buildToc(tokens: any[]) {
 
 /** Re-derive the TOC + its id<->line map from live CM6 content. */
 function refreshCm6Toc(content: string) {
+    const bodyStartLine = frontmatterBodyStartLine(content || '');
     const body = markdownBodyWithoutFrontmatter(content || '');
     const tokens = md.parse(sanitizeMarkdownCopyLinkArtifacts(body), {});
     addHeadingIds(tokens);
-    updateToc(tokens);
+    updateToc(tokens, bodyStartLine);
 }
 
 const debouncedCm6TocRefresh = debounce((content: string) => refreshCm6Toc(content), 300);
@@ -409,10 +411,27 @@ function applyFrontmatterBlockToDocument(newBlock: string) {
 }
 
 
-function updateToc(tokens: any[]) {
+function updateToc(tokens: any[], bodyStartLine: number) {
     const tocBody = $('tocBody');
     if (!tocBody) {return;}
-    tocBody.innerHTML = buildToc(tokens);
+    tocBody.innerHTML = buildToc(tokens, bodyStartLine);
+}
+
+function resolveTocLineForAnchor(href: string): number | undefined {
+    const raw = href.startsWith('#') ? href.slice(1) : href;
+    if (!raw) { return undefined; }
+    try {
+        return tocIdToLine.get(decodeURIComponent(raw).toLowerCase());
+    } catch {
+        return tocIdToLine.get(raw.toLowerCase());
+    }
+}
+
+function scrollToAnchor(href: string): boolean {
+    const line = resolveTocLineForAnchor(href);
+    if (line === undefined) { return false; }
+    scrollLivePreviewToLine(line);
+    return true;
 }
 
 // ===== Preview Edit Mode (CM6 live preview) =====
@@ -494,6 +513,7 @@ function enterPreviewEditMode() {
             onScroll: throttledScrollSpy,
             onDiffChunkResolved: handleDiffChunkResolved,
             onModifierClick: handleLivePreviewModifierClick,
+            onLinkClick: handleLivePreviewLinkClick,
             reveal: currentSettings.livePreviewReveal,
             showLineNumbers: livePreviewGutterLineNumbersEnabled(),
             onSelectionChange: updateStatusInfo,
@@ -515,6 +535,9 @@ function enterPreviewEditMode() {
             onCalloutDefaultTypeChanged: (type) => {
                 persistCalloutDefaultType(type);
             },
+            onFenceCopied: (success) => {
+                showToast(success ? 'Copied' : 'Copy failed', undefined, success ? undefined : { icon: 'warning' });
+            },
         });
         // mountLivePreview unmounts first and clears the resolver — wire after mount.
         wireImageUriResolver();
@@ -535,21 +558,39 @@ function enterPreviewEditMode() {
     updateStatusInfo();
 }
 
+function executeLivePreviewLinkAction(href: string): void {
+    if (href.startsWith('#')) {
+        if (!scrollToAnchor(href)) {
+            showToast('Section not found', undefined, { icon: 'warning' });
+        }
+    } else if (href.startsWith('http://') || href.startsWith('https://') || href.startsWith('mailto:')) {
+        vscode.postMessage({ command: 'openExternal', url: href });
+    } else if (href) {
+        const hashIdx = href.indexOf('#');
+        if (hashIdx >= 0 && href.slice(0, hashIdx).trim() === '') {
+            if (!scrollToAnchor(href.slice(hashIdx))) {
+                showToast('Section not found', undefined, { icon: 'warning' });
+            }
+            return;
+        }
+        vscode.postMessage({ command: 'openRelativeFile', href, documentUri });
+    }
+}
+
+function handleLivePreviewLinkClick(pos: number): boolean {
+    const link = resolveLivePreviewCollapsedLink(pos);
+    if (!link) { return false; }
+    executeLivePreviewLinkAction(link.href);
+    return true;
+}
+
 // Ctrl/Cmd+Click actions inside CM6 Preview Edit.
 function handleLivePreviewModifierClick(pos: number) {
     const interaction = resolveLivePreviewInteraction(pos);
     if (!interaction) {return;}
 
     if (interaction.kind === 'link') {
-        const href = interaction.href;
-        if (href.startsWith('#')) {
-            const line = tocIdToLine.get(href.slice(1));
-            if (line !== undefined) {scrollLivePreviewToLine(line);}
-        } else if (href.startsWith('http://') || href.startsWith('https://') || href.startsWith('mailto:')) {
-            vscode.postMessage({ command: 'openExternal', url: href });
-        } else if (href) {
-            vscode.postMessage({ command: 'openRelativeFile', href, documentUri });
-        }
+        executeLivePreviewLinkAction(interaction.href);
         return;
     }
 
@@ -2057,6 +2098,10 @@ window.addEventListener('message', (event) => {
             }
             break;
 
+        case 'openRelativeFileFailed':
+            showToast(m.message || 'File not found', undefined, { icon: 'warning' });
+            break;
+
         case 'diskDeletedExternally':
             pendingDiskDeleted = true;
             showToast('File deleted from disk', undefined, { persistent: true, icon: 'warning' });
@@ -2376,8 +2421,9 @@ function wireTocPanel() {
             e.preventDefault();
             const id = link.getAttribute('data-target') || '';
             if (!id) {return;}
-            const line = tocIdToLine.get(id);
-            if (line !== undefined) {scrollLivePreviewToLine(line);}
+            if (!scrollToAnchor(`#${id}`)) {
+                showToast('Section not found', undefined, { icon: 'warning' });
+            }
         });
     }
 

@@ -34,6 +34,30 @@ commits and propose the current date (`YYYY-MM-DD`) for the changelog.
 Before editing release metadata, ask the user to confirm: exact version, changelog release
 date, release-note summary and scope.
 
+### Release-note style (changelog + confirmation prompt)
+
+Write notes users can understand without reading the code. Each bullet should be **1–3
+sentences** — more than a terse feature label, but not a mini spec.
+
+Cover, when relevant:
+
+1. **Where** — surface or mode (e.g. “In Preview Edit”, “fenced code blocks”).
+2. **What you do** — the visible affordance or gesture (hover copy icon, plain click on a
+   collapsed link label).
+3. **What happens** — outcome and scope (copies code only, no fences; opens relative files in
+   VS Code; scrolls to `#heading`).
+4. **Edge cases worth knowing** — preserved shortcuts, edit vs navigate behavior, clearer
+   errors instead of silent failure.
+
+**Too terse (avoid):** “Fenced code blocks show a hover copy button.”
+
+**Good:** “In Preview Edit, hover any fenced code block and a copy icon appears in the
+top-right inside the block border. Click it to copy just the code (no ` ``` ` fences), with a
+brief ‘Copied’ toast. Cmd/Ctrl+Click still works.”
+
+Group under `### Improvements` / `### Bug fixes` / `### Performance` to match prior releases.
+Prefix with `Markdown:` or `Spreadsheet:` when the change is surface-specific.
+
 Once confirmed, update `package.json` and move the relevant `Unreleased` entries under
 `## v<version> — <date>` in `CHANGELOG.md`. Update the lockfile only when its root package
 metadata intentionally mirrors `package.json`; don't make unrelated dependency-lock changes.

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## v1.5.0 — 2026-09-05
+
+### Improvements
+
+- Markdown: copy button on fenced code blocks. In Preview Edit, hover any fenced code block and a copy icon appears in the top-right corner inside the block border. Click it to copy just the code (no ` ``` ` fences). A brief “Copied” toast confirms success. Cmd/Ctrl+Click still works as a shortcut. Mermaid blocks use the same in-block chrome — language label top-left, actions top-right — instead of a separate toolbar sitting above the fence.
+- Markdown: click links to navigate. When a link is collapsed (you see only the styled label, not `[text](url)`), a plain click opens it: relative paths open the file in VS Code, `#heading` anchors scroll within the document, and `http://`, `https://`, and `mailto:` links open externally. Click when the caret is inside the link (expanded for editing) still places the caret as before. Collapsed labels show a pointer cursor on hover. Missing files and unknown section anchors now show a clear warning toast instead of failing silently or opening a blank tab.
+
 ## v1.4.0 — 2026-09-03
 
 ### Improvements

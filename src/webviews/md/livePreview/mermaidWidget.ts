@@ -1,7 +1,6 @@
-import { EditorState, EditorSelection, StateField } from '@codemirror/state';
+import { EditorState, StateField } from '@codemirror/state';
 import { EditorView, Decoration, WidgetType } from '@codemirror/view';
 import type { DecorationSet } from '@codemirror/view';
-import type { Transaction } from '@codemirror/state';
 import { syntaxTree } from '@codemirror/language';
 import mermaid from 'mermaid';
 import { Icons } from '../../shared/icons';
@@ -13,18 +12,22 @@ import {
 } from './mermaidDetection';
 import {
     mermaidPreviewModeField,
-    setMermaidPreviewModeEffect,
     type MermaidPreviewMode,
 } from './mermaidPreviewMode';
+import { createFenceChrome } from './fenceChromeWidget';
+import {
+    createMermaidModeSelect,
+    shouldRebuildMermaidDecorations,
+    setMermaidPreviewModeCallback,
+} from './mermaidPreviewActions';
 
 export type { MermaidPreviewMode } from './mermaidPreviewMode';
-export { mermaidPreviewModeField, setMermaidPreviewModeEffect, seedMermaidPreviewMode } from './mermaidPreviewMode';
-
-let onMermaidPreviewModeChangedCallback: ((mode: MermaidPreviewMode) => void) | undefined;
-
-export function setMermaidPreviewModeCallback(callback: ((mode: MermaidPreviewMode) => void) | undefined): void {
-    onMermaidPreviewModeChangedCallback = callback;
-}
+export {
+    mermaidPreviewModeField,
+    setMermaidPreviewModeEffect,
+    seedMermaidPreviewMode,
+} from './mermaidPreviewMode';
+export { setMermaidPreviewModeCallback } from './mermaidPreviewActions';
 
 function getMermaidTheme(): 'default' | 'dark' {
     const isDark = document.body.classList.contains('dark-mode')
@@ -34,96 +37,16 @@ function getMermaidTheme(): 'default' | 'dark' {
     return isDark ? 'dark' : 'default';
 }
 
-function adjustSelectionForDiagramMode(state: EditorState): EditorSelection | undefined {
-    const { from, to } = state.selection.main;
-    let nextFrom = from;
-    let nextTo = to;
-    let changed = false;
-
-    for (const fence of findMermaidFenceRanges(state)) {
-        if (nextFrom > fence.from && nextFrom < fence.to) {
-            nextFrom = fence.to;
-            changed = true;
-        }
-        if (nextTo > fence.from && nextTo < fence.to) {
-            nextTo = fence.to;
-            changed = true;
-        }
-        if (nextFrom <= fence.from && nextTo >= fence.to) {
-            nextTo = fence.to;
-            if (nextFrom >= fence.from) {
-                nextFrom = fence.to;
-            }
-            changed = true;
-        }
-    }
-
-    if (!changed) {
-        return undefined;
-    }
-    return EditorSelection.single(nextFrom, nextTo);
-}
-
-function dispatchMermaidPreviewMode(view: EditorView, mode: MermaidPreviewMode): void {
-    const selection = mode === 'diagram' ? adjustSelectionForDiagramMode(view.state) : undefined;
-    view.dispatch({
-        effects: setMermaidPreviewModeEffect.of(mode),
-        ...(selection ? { selection } : {}),
-    });
-    onMermaidPreviewModeChangedCallback?.(mode);
-}
-
-function createModeSelect(view: EditorView, mode: MermaidPreviewMode): HTMLSelectElement {
-    const select = document.createElement('select');
-    select.className = 'cm-md-mermaid-mode-select';
-    select.title = 'Preview mode';
-    for (const [value, label] of [['diagram', 'Diagram'], ['code', 'Code']] as const) {
-        const option = document.createElement('option');
-        option.value = value;
-        option.textContent = label;
-        option.selected = mode === value;
-        select.appendChild(option);
-    }
-    select.addEventListener('mousedown', (event) => event.stopPropagation());
-    select.addEventListener('change', () => {
-        const next = select.value === 'code' ? 'code' : 'diagram';
-        dispatchMermaidPreviewMode(view, next);
-    });
-    return select;
-}
-
-function createToolbar(
-    view: EditorView,
-    mode: MermaidPreviewMode,
-    langLabel: string,
-    zoomControls?: HTMLElement,
-): HTMLElement {
-    const toolbar = document.createElement('div');
-    toolbar.className = 'cm-md-mermaid-toolbar';
-
-    const lang = document.createElement('span');
-    lang.className = 'cm-md-mermaid-lang';
-    lang.textContent = langLabel;
-
-    toolbar.appendChild(lang);
-
-    const right = document.createElement('div');
-    right.className = 'cm-md-mermaid-toolbar-right';
-    if (zoomControls) {
-        right.appendChild(zoomControls);
-    }
-    right.appendChild(createModeSelect(view, mode));
-    toolbar.appendChild(right);
-
-    return toolbar;
-}
-
 const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 4;
 const ZOOM_STEP = 1.25;
 
 function clampZoom(scale: number): number {
     return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, scale));
+}
+
+function isFenceChromeTarget(target: EventTarget | null): boolean {
+    return target instanceof Element && !!target.closest('.cm-md-fence-chrome');
 }
 
 /** Wires Ctrl/Cmd+wheel zoom, drag-to-pan (once zoomed), buttons, and reset onto a rendered diagram. */
@@ -219,6 +142,9 @@ function attachZoomPan(diagramWrap: HTMLElement, mermaidEl: HTMLElement): HTMLEl
     });
 
     diagramWrap.addEventListener('wheel', (event) => {
+        if (isFenceChromeTarget(event.target)) {
+            return;
+        }
         if (!(event.ctrlKey || event.metaKey)) {
             return;
         }
@@ -228,7 +154,7 @@ function attachZoomPan(diagramWrap: HTMLElement, mermaidEl: HTMLElement): HTMLEl
         zoomAtPoint(event.clientX, event.clientY, scale * factor);
     }, { passive: false });
 
-    diagramWrap.addEventListener('pointerdown', (event) => {
+    mermaidEl.addEventListener('pointerdown', (event) => {
         if (scale <= 1) {
             return;
         }
@@ -237,10 +163,10 @@ function attachZoomPan(diagramWrap: HTMLElement, mermaidEl: HTMLElement): HTMLEl
         dragging = true;
         lastX = event.clientX;
         lastY = event.clientY;
-        diagramWrap.setPointerCapture(event.pointerId);
+        mermaidEl.setPointerCapture(event.pointerId);
         diagramWrap.style.cursor = 'grabbing';
     });
-    diagramWrap.addEventListener('pointermove', (event) => {
+    mermaidEl.addEventListener('pointermove', (event) => {
         if (!dragging) {
             return;
         }
@@ -256,13 +182,13 @@ function attachZoomPan(diagramWrap: HTMLElement, mermaidEl: HTMLElement): HTMLEl
         }
         dragging = false;
         diagramWrap.style.cursor = scale > 1 ? 'grab' : 'default';
-        if (diagramWrap.hasPointerCapture(event.pointerId)) {
-            diagramWrap.releasePointerCapture(event.pointerId);
+        if (mermaidEl.hasPointerCapture(event.pointerId)) {
+            mermaidEl.releasePointerCapture(event.pointerId);
         }
     };
-    diagramWrap.addEventListener('pointerup', endDrag);
-    diagramWrap.addEventListener('pointercancel', endDrag);
-    diagramWrap.addEventListener('dblclick', (event) => {
+    mermaidEl.addEventListener('pointerup', endDrag);
+    mermaidEl.addEventListener('pointercancel', endDrag);
+    mermaidEl.addEventListener('dblclick', (event) => {
         event.preventDefault();
         event.stopPropagation();
         reset();
@@ -272,35 +198,23 @@ function attachZoomPan(diagramWrap: HTMLElement, mermaidEl: HTMLElement): HTMLEl
     return controls;
 }
 
-class MermaidToolbarWidget extends WidgetType {
-    constructor(
-        private readonly mode: MermaidPreviewMode,
-        private readonly langLabel: string,
-    ) {
-        super();
-    }
-
-    eq(other: MermaidToolbarWidget): boolean {
-        return other.mode === this.mode && other.langLabel === this.langLabel;
-    }
-
-    ignoreEvent(): boolean {
-        return true;
-    }
-
-    toDOM(view: EditorView): HTMLElement {
-        return createToolbar(view, this.mode, this.langLabel);
-    }
-}
-
 class MermaidDiagramWidget extends WidgetType {
+    private readonly mode: MermaidPreviewMode;
+    private readonly langLabel: string;
+    private readonly source: string;
+    private readonly theme: 'default' | 'dark';
+
     constructor(
-        private readonly mode: MermaidPreviewMode,
-        private readonly langLabel: string,
-        private readonly source: string,
-        private readonly theme: 'default' | 'dark',
+        mode: MermaidPreviewMode,
+        langLabel: string,
+        source: string,
+        theme: 'default' | 'dark',
     ) {
         super();
+        this.mode = mode;
+        this.langLabel = langLabel;
+        this.source = source;
+        this.theme = theme;
     }
 
     eq(other: MermaidDiagramWidget): boolean {
@@ -327,7 +241,12 @@ class MermaidDiagramWidget extends WidgetType {
         diagramWrap.appendChild(mermaidEl);
 
         const zoomControls = attachZoomPan(diagramWrap, mermaidEl);
-        block.appendChild(createToolbar(view, this.mode, this.langLabel, zoomControls));
+        const chrome = createFenceChrome({
+            copyText: this.source,
+            overlay: true,
+            leadingActions: [zoomControls, createMermaidModeSelect(view, this.mode)],
+        });
+        diagramWrap.appendChild(chrome);
         block.appendChild(diagramWrap);
 
         mermaid.initialize({ startOnLoad: false, theme: this.theme });
@@ -346,6 +265,9 @@ class MermaidDiagramWidget extends WidgetType {
 
 function buildFromState(state: EditorState): DecorationSet {
     const mode = state.field(mermaidPreviewModeField);
+    if (mode === 'code') {
+        return Decoration.none;
+    }
     const theme = getMermaidTheme();
     const specs: ReturnType<Decoration['range']>[] = [];
 
@@ -355,27 +277,17 @@ function buildFromState(state: EditorState): DecorationSet {
                 return;
             }
             const langLabel = mermaidFenceDisplayLang(state, node.node);
-            if (mode === 'code') {
-                specs.push(
-                    Decoration.widget({
-                        block: true,
-                        side: -1,
-                        widget: new MermaidToolbarWidget(mode, langLabel),
-                    }).range(node.from),
-                );
-            } else {
-                specs.push(
-                    Decoration.replace({
-                        block: true,
-                        widget: new MermaidDiagramWidget(
-                            mode,
-                            langLabel,
-                            extractMermaidSource(state, node.node),
-                            theme,
-                        ),
-                    }).range(node.from, node.to),
-                );
-            }
+            specs.push(
+                Decoration.replace({
+                    block: true,
+                    widget: new MermaidDiagramWidget(
+                        mode,
+                        langLabel,
+                        extractMermaidSource(state, node.node),
+                        theme,
+                    ),
+                }).range(node.from, node.to),
+            );
         },
     });
 
@@ -383,9 +295,8 @@ function buildFromState(state: EditorState): DecorationSet {
 }
 
 /** CM6 parses large docs incrementally; widget fields must rebuild when the tree extends. */
-function shouldRebuildMermaidWidgets(tr: Transaction): boolean {
-    return tr.docChanged
-        || tr.effects.some((effect) => effect.is(setMermaidPreviewModeEffect))
+function shouldRebuildMermaidWidgets(tr: import('@codemirror/state').Transaction): boolean {
+    return shouldRebuildMermaidDecorations(tr)
         || syntaxTree(tr.state).length > syntaxTree(tr.startState).length;
 }
 

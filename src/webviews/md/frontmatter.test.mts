@@ -9,6 +9,7 @@ import {
     resolveFrontmatterWidgetData,
     formatFrontmatterBlock,
     cursorPosAfterFrontmatter,
+    frontmatterBodyStartLine,
 } from './frontmatter.ts';
 
 test('extractFrontmatter: valid block at doc start', () => {
@@ -23,6 +24,15 @@ test('extractFrontmatter: valid block at doc start', () => {
 
 test('cursorPosAfterFrontmatter: no block returns 0', () => {
     assert.equal(cursorPosAfterFrontmatter('# Hello\n'), 0);
+});
+
+test('frontmatterBodyStartLine: no block starts at line 1', () => {
+    assert.equal(frontmatterBodyStartLine('# Hello\n'), 1);
+});
+
+test('frontmatterBodyStartLine: body starts after frontmatter block', () => {
+    const raw = '---\ntitle: Hello\n---\n# Body\n';
+    assert.equal(frontmatterBodyStartLine(raw), 4);
 });
 
 test('extractFrontmatter: ignores mid-document hr block', () => {

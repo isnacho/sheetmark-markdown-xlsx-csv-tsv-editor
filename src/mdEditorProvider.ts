@@ -582,15 +582,32 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                             
                             // Remove any anchor/hash from the href
                             const hrefWithoutAnchor = href.split('#')[0];
+                            if (!hrefWithoutAnchor.trim()) {
+                                break;
+                            }
                             
                             // Resolve the relative path
                             const resolvedPath = path.resolve(currentDir, hrefWithoutAnchor);
                             const targetUri = vscode.Uri.file(resolvedPath);
+
+                            try {
+                                await vscode.workspace.fs.stat(targetUri);
+                            } catch {
+                                const fileName = path.basename(resolvedPath);
+                                webviewPanel.webview.postMessage({
+                                    command: 'openRelativeFileFailed',
+                                    message: `File not found: ${fileName}`,
+                                });
+                                break;
+                            }
                             
                             // Open the file
                             await vscode.commands.executeCommand('vscode.open', targetUri);
                         } catch (err) {
-                            vscode.window.showErrorMessage(`Failed to open file: ${err}`);
+                            webviewPanel.webview.postMessage({
+                                command: 'openRelativeFileFailed',
+                                message: `Failed to open file: ${err}`,
+                            });
                         }
                         break;
 

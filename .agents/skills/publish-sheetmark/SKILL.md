@@ -33,3 +33,7 @@ Skip the question when the request already answers it ("let me test this in anot
   fields that can move.
 - Never expose `VSCE_PAT` or `OVSX_PAT` values in chat, commands, or logs — reference them
   only by name (env var / secret name), never their value.
+- **Release notes:** when drafting changelog entries or the confirmation prompt, follow the
+  release-note style in [marketplace-release.md](references/marketplace-release.md) — explain
+  where, what the user does, what happens, and any non-obvious edge cases; 1–3 sentences per
+  bullet, not one-line labels.

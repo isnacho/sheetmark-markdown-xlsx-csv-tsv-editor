@@ -435,8 +435,13 @@ export function getListColumnMetrics(
  * Paragraph/Task node) so its wrapped/continuation lines get indented too.
  * Stops before a trailing nested sublist (that sublist indents its own lines
  * separately, at its own deeper column, when its own items are visited),
- * including the case where the item has no body text of its own at all and a
+ * including the case where the item has no body text of its own and a
  * nested list starts immediately on the next line.
+ *
+ * Note: flush-left continuation lines (no leading whitespace) are still
+ * inside the parse tree here, but `applyListLineIndentDecorations` skips
+ * decorating them so they align with plain paragraphs — the usual shape when
+ * a user exits a list by deleting the auto-inserted marker.
  */
 function listItemBodyLastLine(state: EditorState, item: SyntaxNode): number {
     const firstLine = state.doc.lineAt(item.from).number;
@@ -457,11 +462,19 @@ function listItemBodyLastLine(state: EditorState, item: SyntaxNode): number {
 // structural hides (hiddenBulletMark, the marker's own trailing gap space).
 const hiddenListIndent = Decoration.replace({});
 
+/** Non-marker lines that carry explicit list continuation (leading whitespace). */
+function listContinuationLineNeedsIndent(lineText: string): boolean {
+    return /^[ \t]/.test(lineText);
+}
+
 function applyListLineIndentDecorations(state: EditorState, item: SyntaxNode, metrics: ListColumnMetrics, specs: Spec[]) {
     const firstLine = state.doc.lineAt(item.from).number;
     const lastLine = listItemBodyLastLine(state, item);
     for (let n = firstLine; n <= lastLine; n++) {
         const line = state.doc.line(n);
+        if (n > firstLine && !listContinuationLineNeedsIndent(line.text)) {
+            continue;
+        }
         specs.push({ from: line.from, to: line.from, value: n === firstLine ? metrics.markerLineDeco : metrics.continuationLineDeco });
         if (n === firstLine) {
             if (item.from > line.from) {

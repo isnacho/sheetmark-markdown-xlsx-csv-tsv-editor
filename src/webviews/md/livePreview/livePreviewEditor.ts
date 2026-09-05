@@ -40,7 +40,7 @@ import {
     clearCm6SearchHighlights, scrollCm6ToMatch,
 } from './livePreviewSearch';
 import type { Cm6Match } from './livePreviewSearch';
-import { detectInteractionAtPos } from './livePreviewInteractions';
+import { detectInteractionAtPos, detectCollapsedLinkAtPos } from './livePreviewInteractions';
 import type { Cm6Interaction } from './livePreviewInteractions';
 import { livePreviewRevealPlugin } from './revealDecorations';
 import {
@@ -60,7 +60,7 @@ import {
 import { listMarkerBoundaryExtensions, livePreviewMarkdownKeymap } from './listMarkerEditing';
 import { codeStylingPlugin } from './codeStylingPlugin';
 import { codeBlockNavigationKeymap } from './codeBlockBoundaryEditing';
-import { contentClickHandlers, listLineMouseSelectionStyle } from './contentClickPositioning';
+import { contentClickHandlers, listLineMouseSelectionStyle, resolveContentClickPos } from './contentClickPositioning';
 import { tableWidgetField, columnWidthsField, setColumnWidthsEffect } from './tableWidget';
 import { tableBoundaryExtensions } from './tableBoundaryEditing';
 import { frontmatterWidgetField, seedFrontmatterCollapsed, seedFrontmatterEditing, setFrontmatterCollapsedCallback, blurActiveFrontmatterEditing, setFrontmatterEditingEffect } from './frontmatterWidget';
@@ -74,6 +74,7 @@ import {
     mermaidAtomicRanges,
     setMermaidPreviewModeCallback,
 } from './mermaidWidget';
+import { fenceChromeWidgetField, setFenceCopyCallback } from './fenceChromeWidget';
 import {
     mermaidPreviewModeField,
     seedMermaidPreviewMode,
@@ -121,6 +122,8 @@ export interface LivePreviewMountOptions {
     onDiffChunkResolved?: (kind: 'accept' | 'reject') => void;
     /** Fired on Ctrl/Cmd+Click at a doc position — mdWebview.ts resolves the interaction and acts. */
     onModifierClick?: (pos: number) => void;
+    /** Fired on plain click on a collapsed link — return true when navigation ran (suppresses caret placement). */
+    onLinkClick?: (pos: number) => boolean;
     /** Whether reveal-on-cursor decorations are on (mirrors the md.livePreviewReveal setting). */
     reveal?: boolean;
     /** Whether to show the line-number gutter (mirrors the md.livePreviewLineNumbers setting). */
@@ -141,6 +144,8 @@ export interface LivePreviewMountOptions {
     calloutDefaultType?: string;
     /** Fired when the user picks a callout type — mdWebview.ts persists it as the new default. */
     onCalloutDefaultTypeChanged?: (type: string) => void;
+    /** Fired after a fenced-code copy button succeeds or fails. */
+    onFenceCopied?: (success: boolean) => void;
     /** Fired on any selection/cursor change (including plain cursor moves with no doc change) — drives the status-bar Ln/Col display. */
     onSelectionChange?: () => void;
     /** Fired when undo/redo availability changes (incl. after undo/redo). */
@@ -189,17 +194,19 @@ export function mountLivePreview(opts: LivePreviewMountOptions): EditorView {
     unmountLivePreview();
 
     const {
-        parent, doc, onDocChanged, lineWrapping = true, onScroll, onModifierClick, reveal = true,
+        parent, doc, onDocChanged, lineWrapping = true, onScroll, onModifierClick, onLinkClick, reveal = true,
         onDiffChunkResolved,
         showLineNumbers = false, columnWidths, onColumnWidthsChanged, onSelectionChange, onHistoryChange,
         frontmatterCollapsed = false, onFrontmatterCollapsedChanged,
         mermaidPreviewMode = 'diagram', onMermaidPreviewModeChanged,
         calloutDefaultType = 'info', onCalloutDefaultTypeChanged,
+        onFenceCopied,
     } = opts;
     parent.innerHTML = '';
     setFrontmatterCollapsedCallback(onFrontmatterCollapsedChanged);
     setMermaidPreviewModeCallback(onMermaidPreviewModeChanged);
     setCalloutDefaultTypeCallback(onCalloutDefaultTypeChanged);
+    setFenceCopyCallback(onFenceCopied);
     void loadSpellDictionary();
 
     const updateListener = EditorView.updateListener.of((update) => {
@@ -227,11 +234,20 @@ export function mountLivePreview(opts: LivePreviewMountOptions): EditorView {
 
     const domHandlers = EditorView.domEventHandlers({
         mousedown(event, editorView) {
-            if (!onModifierClick || !(event.ctrlKey || event.metaKey)) { return false; }
-            const pos = editorView.posAtCoords({ x: event.clientX, y: event.clientY });
+            if (event.button !== 0) { return false; }
+            const pos = resolveContentClickPos(editorView, event)
+                ?? editorView.posAtCoords({ x: event.clientX, y: event.clientY });
             if (pos === null) { return false; }
-            onModifierClick(pos);
-            return true;
+            if (onModifierClick && (event.ctrlKey || event.metaKey)) {
+                onModifierClick(pos);
+                event.preventDefault();
+                return true;
+            }
+            if (onLinkClick && !event.altKey && onLinkClick(pos)) {
+                event.preventDefault();
+                return true;
+            }
+            return false;
         },
         paste(event, editorView) {
             const raw = event.clipboardData?.getData('text/plain');
@@ -298,6 +314,7 @@ export function mountLivePreview(opts: LivePreviewMountOptions): EditorView {
             calloutWidgetField,
             imageWidgetField,
             revealCompartment.of(reveal ? [livePreviewRevealPlugin, tableWidgetField, ...tableBoundaryExtensions, mermaidWidgetField, mermaidAtomicRanges, ...listMarkerBoundaryExtensions] : []),
+            fenceChromeWidgetField,
             codeStylingPlugin,
             codeBlockNavigationKeymap,
             listLineMouseSelectionStyle,
@@ -331,6 +348,7 @@ export function unmountLivePreview(): void {
     setFrontmatterCollapsedCallback(undefined);
     setMermaidPreviewModeCallback(undefined);
     setCalloutDefaultTypeCallback(undefined);
+    setFenceCopyCallback(undefined);
     setImageUriResolver(undefined);
 }
 
@@ -568,6 +586,10 @@ export function scrollLivePreviewToLine(line: number): void {
 
 export function resolveLivePreviewInteraction(pos: number): Cm6Interaction | null {
     return view ? detectInteractionAtPos(view.state, pos) : null;
+}
+
+export function resolveLivePreviewCollapsedLink(pos: number): { href: string } | null {
+    return view ? detectCollapsedLinkAtPos(view.state, pos) : null;
 }
 
 export function findLivePreviewMatches(query: string): Cm6Match[] {

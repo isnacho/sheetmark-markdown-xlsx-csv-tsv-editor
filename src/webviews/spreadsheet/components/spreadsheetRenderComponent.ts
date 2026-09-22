@@ -1,4 +1,5 @@
  
+import { formatCellTextHtml } from './spreadsheetCellTextComponent';
 
 export function getExcelColumnLabel(n: number): string {
     let label = '';
@@ -253,7 +254,8 @@ function renderCellContent(cellData: any, isPlainView: boolean, allowInteractive
             + '</span>';
     }
 
-    const text = cellData?.value || '&nbsp;';
+    const rawValue = cellData?.value;
+    const text = rawValue ? formatCellTextHtml(String(rawValue)) : '&nbsp;';
     return '<span class="cell-content">' + text + '</span>';
 }
 
@@ -265,7 +267,7 @@ function toPlainCellContent(value: unknown): string {
     tmp.innerHTML = raw;
     const plain = (tmp.textContent || tmp.innerText || '').replace(/\u00a0/g, ' ').trim();
 
-    return plain ? escapeHtml(plain) : '&nbsp;';
+    return plain ? formatCellTextHtml(plain) : '&nbsp;';
 }
 
 export interface XlsxRowHtmlParams {

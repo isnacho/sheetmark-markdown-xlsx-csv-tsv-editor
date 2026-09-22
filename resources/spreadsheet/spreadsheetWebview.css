@@ -432,6 +432,14 @@ body.edit-mode td.editable-cell:focus {
     outline-offset: -2px;
 }
 
+body.edit-mode td[contenteditable="true"],
+body:not(.edit-mode) td[contenteditable="true"] {
+    white-space: pre-wrap !important;
+    word-wrap: break-word;
+    overflow: visible;
+    text-overflow: clip;
+}
+
 body.edit-mode #xlsxTable td.editable-cell .cell-content,
 body.edit-mode #xlsxTable td[contenteditable="true"] .cell-content {
     overflow: visible !important;

@@ -60,6 +60,12 @@ import {
     getCellRichRuns,
     hasRunFormatting
 } from './components/spreadsheetRichTextComponent';
+import {
+    formatCellTextHtml,
+    insertLineBreakAtCaret,
+    loadEditableCellContent,
+    serializeEditableCellText
+} from './components/spreadsheetCellTextComponent';
 import { XlsxFindManager } from './components/spreadsheetFindComponent';
 import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClipboardAsync } from './components/spreadsheetCopyComponent';
 
@@ -3211,14 +3217,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
 
     function setPlainCellContent(cell: HTMLElement, value: string) {
         const plainText = normalizeCellText(value || '');
-        const safeText = plainText
-            ? plainText
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;')
-                .replace(/'/g, '&#39;')
-            : '&nbsp;';
+        const safeText = plainText ? formatCellTextHtml(plainText) : '&nbsp;';
         cell.innerHTML = `<span class="cell-content">${safeText}</span>`;
     }
 
@@ -4168,7 +4167,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
 
     function normalizeCellText(text: string | null | undefined): string {
         if (!text) {return '';}
-        return String(text).replace(/\u00a0/g, '').replace(/\r?\n/g, ' ').trimEnd();
+        return String(text).replace(/\u00a0/g, '').replace(/\r\n?/g, '\n').trimEnd();
     }
 
     function getCellType(cell: HTMLElement | null): string {
@@ -4301,7 +4300,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
             return normalizeDateInputValue(cell.getAttribute('data-date-value'));
         }
 
-        return normalizeCellText(cell.textContent || '');
+        return normalizeCellText(serializeEditableCellText(cell));
     }
 
     function canUseInteractiveControlsOutsideEditMode(): boolean {
@@ -6489,6 +6488,16 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
             } else {
                 if (e.key === 'Enter') {
                     e.preventDefault();
+                    if (e.shiftKey) {
+                        const editableCell = document.activeElement as HTMLElement | null;
+                        if (editableCell && editableCell.tagName === 'TD') {
+                            insertLineBreakAtCaret(editableCell);
+                            if (isEditMode) {
+                                scheduleAutoSave('text');
+                            }
+                        }
+                        return;
+                    }
                     exitCellEditMode();
                     moveSelection(1, 0, false);
                     return;
@@ -6946,8 +6955,9 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
         cell.focus();
 
         if (clearContent) {
-            cell.textContent = '';
+            loadEditableCellContent(cell, '');
         } else {
+            loadEditableCellContent(cell, cell.dataset.originalText || '');
             const range = document.createRange();
             const sel = window.getSelection();
             range.selectNodeContents(cell);

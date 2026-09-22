@@ -30,6 +30,11 @@ function collectRichRunsFromNode(node: Node, inherited: Omit<RichRun, 'text'>, o
     const el = node as HTMLElement;
     const tag = el.tagName.toLowerCase();
 
+    if (tag === 'br') {
+        output.push({ text: '\n', ...inherited });
+        return;
+    }
+
     const next = { ...inherited };
     if (tag === 'b' || tag === 'strong') {next.bold = true;}
     if (tag === 'i' || tag === 'em') {next.italic = true;}

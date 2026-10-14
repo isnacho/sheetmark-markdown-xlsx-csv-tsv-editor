@@ -2,11 +2,13 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { IncomingMessage } from 'http';
+import { randomBytes } from 'crypto';
 import { VERSION_HISTORY_RETENTION_MS, VERSION_HISTORY_SNAPSHOT_DEBOUNCE_MS, buildGroupedVersionHistoryItems, formatVersionHistoryTimestamp, getVersionHistoryFile } from './shared/versionHistory';
 import { TableColumnWidthStorageService } from './shared/tableColumnWidthStorageService';
 import { FrontmatterPanelStorageService } from './shared/frontmatterPanelStorageService';
 import { MermaidPreviewModeStorageService } from './shared/mermaidPreviewModeStorageService';
 import { CalloutDefaultTypeStorageService } from './shared/calloutDefaultTypeStorageService';
+import { isAllowedExternalUrl } from './shared/externalLinks';
 import { createExternalFileChangeWatcher } from './shared/fileExternalChangeWatcher';
 import { migrateFileUriState } from './shared/migrateFileUriState';
 import { disableOpenByDefault, enableOpenByDefault, isSheetmarkConfiguredAsDefault } from './shared/editorAssociationUtils';
@@ -559,8 +561,10 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                     case 'openExternal':
                         try {
                             const url = typeof message.url === 'string' ? message.url : '';
-                            if (url) {
+                            if (url && isAllowedExternalUrl(url)) {
                                 await vscode.env.openExternal(vscode.Uri.parse(url));
+                            } else if (url) {
+                                void vscode.window.showWarningMessage(`Sheetmark only opens http, https and mailto links. Blocked: ${url.slice(0, 200)}`);
                             }
                         } catch {
                             // ignore
@@ -809,13 +813,16 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
         const spellAffUri = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'spell', 'en_US.aff'));
         const spellDicUri = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'spell', 'en_US.dic'));
         const cspSource = webview.cspSource;
+        // Only scripts carrying this nonce (plus bundled files) may run: inline handlers smuggled in
+        // through document content (<img onerror>, javascript: links) are blocked by the CSP.
+        const nonce = randomBytes(16).toString('base64');
 
         return `
         <!DOCTYPE html>
         <html lang="en">
         <head>
             <meta charset="UTF-8">
-            <meta http-equiv="Content-Security-Policy" content="default-src 'none'; connect-src ${cspSource}; img-src ${cspSource} https: data:; style-src ${cspSource} https: 'unsafe-inline'; font-src ${cspSource} https:; script-src ${cspSource} 'unsafe-inline';">
+            <meta http-equiv="Content-Security-Policy" content="default-src 'none'; connect-src ${cspSource}; img-src ${cspSource} https: data:; style-src ${cspSource} https: 'unsafe-inline'; font-src ${cspSource} https:; script-src ${cspSource} 'nonce-${nonce}';">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <title>Sheetmark</title>
             <link href="${themeUri}" rel="stylesheet" />
@@ -941,8 +948,8 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                     JavaScript is disabled in this webview, so the Markdown preview cannot load.
                 </div>
             </noscript>
-            <script>window.__SPELL_DICT__={aff:${JSON.stringify(spellAffUri.toString())},dic:${JSON.stringify(spellDicUri.toString())}};</script>
-            <script src="${scriptUri}"></script>
+            <script nonce="${nonce}">window.__SPELL_DICT__={aff:${JSON.stringify(spellAffUri.toString())},dic:${JSON.stringify(spellDicUri.toString())}};</script>
+            <script nonce="${nonce}" src="${scriptUri}"></script>
         </body>
         </html>`;
     }

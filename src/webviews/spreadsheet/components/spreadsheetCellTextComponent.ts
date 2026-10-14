@@ -1,3 +1,5 @@
+import { sanitizeHtml } from '../../shared/sanitizeHtml';
+
 const BR_TAG_RE = /<br\s*\/?>/gi;
 
 /** Walk editable cell DOM and preserve line breaks as `\n`. */
@@ -55,11 +57,15 @@ export function escapeHtml(input: string): string {
         .replace(/'/g, '&#39;');
 }
 
-/** Render stored cell text for display, preserving line breaks. */
+/**
+ * Render stored cell text for display, preserving line breaks. Values containing `<` or `&` may be
+ * rich text (host-built `<b>`/`<i>`/`<span style>` runs), so they go through the allowlist sanitizer:
+ * cell content comes from untrusted files and must never reach innerHTML raw.
+ */
 export function formatCellTextHtml(value: string): string {
     if (!value) { return '&nbsp;'; }
     if (/[<&]/.test(value)) {
-        return value;
+        return sanitizeHtml(value) || '&nbsp;';
     }
     return escapeHtml(value).replace(/\n/g, '<br>');
 }

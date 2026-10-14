@@ -91,6 +91,7 @@ export {
 
 import type { VisibleRange } from './revealDecorations';
 import { Icons } from '../../shared/icons';
+import { sanitizeHtml } from '../../shared/sanitizeHtml';
 
 function remapColumnWidths(widths: readonly number[], fromCol: number, toCol: number): readonly number[] {
     if (fromCol === toCol || fromCol < 0 || toCol < 0 || fromCol >= widths.length) { return widths; }
@@ -1711,7 +1712,8 @@ export class TableWidget extends WidgetType {
         const scroll = document.createElement('div');
         scroll.className = 'cm-md-table-scroll';
         const colCount = this.grid[0]?.length ?? 0;
-        scroll.innerHTML = md.render(this.source, { colCount, widths: this.widths });
+        // html: true lets cells use <br> and inline tags; sanitize because the .md file is untrusted.
+        scroll.innerHTML = sanitizeHtml(md.render(this.source, { colCount, widths: this.widths }));
         wrap.appendChild(scroll);
 
         const table = scroll.querySelector('table.md-table') as HTMLTableElement | null;

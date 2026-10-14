@@ -10,6 +10,7 @@ import { Utils } from '../shared/utils';
 import { Icons } from '../shared/icons';
 import { vscode, VirtualScrollConfig, debounce } from '../shared/common';
 import { VirtualLoader } from '../shared/virtualLoader';
+import { htmlToPlainText } from '../shared/sanitizeHtml';
 import { createXlsxRowHtml, getExcelColumnLabel, renderDropdownCellContent } from './components/spreadsheetRenderComponent';
 import { XlsxSelectionManager } from './components/spreadsheetSelectionComponent';
 import { createXlsxToolbarButtons } from './components/spreadsheetToolbarComponent';
@@ -4574,9 +4575,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
             return value;
         }
 
-        const tmp = document.createElement('div');
-        tmp.innerHTML = value;
-        return (tmp.textContent || tmp.innerText || '').replace(/\u00a0/g, ' ');
+        return htmlToPlainText(value).replace(/\u00a0/g, ' ');
     }
 
     function readCellTextForDataOps(rowData: any, colZeroBased: number): string {

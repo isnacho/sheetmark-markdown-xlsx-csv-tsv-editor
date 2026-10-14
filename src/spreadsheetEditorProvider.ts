@@ -8,6 +8,7 @@ import { VERSION_HISTORY_RETENTION_MS, buildGroupedVersionHistoryItems as buildS
 import { convertARGBToRGBA, isShadeOfBlack, isShadeOfWhite } from './spreadsheet/spreadsheetUtilities';
 import { convertTabularFile, readTabularFile, detectTabularFileType, writeTabularFile, TabularFileType } from './shared/fileConversionService';
 import { StyleStorageService } from './shared/styleStorageService';
+import { isAllowedExternalUrl } from './shared/externalLinks';
 import { createExternalFileChangeWatcher } from './shared/fileExternalChangeWatcher';
 import { migrateFileUriState } from './shared/migrateFileUriState';
 import { enableOpenByDefault, disableOpenByDefault, isSheetmarkConfiguredAsDefault } from './shared/editorAssociationUtils';
@@ -1665,8 +1666,10 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
             if (message?.command === 'openExternal') {
                 try {
                     const url = typeof message.url === 'string' ? message.url : '';
-                    if (url) {
+                    if (url && isAllowedExternalUrl(url)) {
                         await vscode.env.openExternal(vscode.Uri.parse(url));
+                    } else if (url) {
+                        void vscode.window.showWarningMessage(`Sheetmark only opens http, https and mailto links. Blocked: ${url.slice(0, 200)}`);
                     }
                 } catch {
                     // ignore
@@ -3037,7 +3040,8 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                         } else if (argb.length === 6) {
                             hex = '#' + argb;
                         }
-                        if (hex.startsWith('#')) {
+                        // argb comes from the file: only emit it when it is really a hex color.
+                        if (/^#[0-9a-fA-F]{6}$/.test(hex)) {
                             txt = `<span style="color: ${hex};">${txt}</span>`;
                         }
                     }

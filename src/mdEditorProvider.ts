@@ -9,6 +9,7 @@ import { FrontmatterPanelStorageService } from './shared/frontmatterPanelStorage
 import { MermaidPreviewModeStorageService } from './shared/mermaidPreviewModeStorageService';
 import { CalloutDefaultTypeStorageService } from './shared/calloutDefaultTypeStorageService';
 import { isAllowedExternalUrl } from './shared/externalLinks';
+import { createSerialQueue } from './shared/serialQueue';
 import { createExternalFileChangeWatcher } from './shared/fileExternalChangeWatcher';
 import { migrateFileUriState } from './shared/migrateFileUriState';
 import { disableOpenByDefault, enableOpenByDefault, isSheetmarkConfiguredAsDefault } from './shared/editorAssociationUtils';
@@ -112,7 +113,8 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
             let currentContent = '';
             let previewVersionId: string | null = null;
             let restoredVersionId: string | null = null;
-            let isSaving = false;
+            // Save and restore write the file; run them one at a time (see serialQueue.ts).
+            const fileQueue = createSerialQueue();
             let lastSaveTime = 0;
 
             const getHistoryFilePath = () => {
@@ -235,7 +237,7 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
             webviewPanel.webview.html = this.getWebviewContent(webviewPanel);
 
             // Handle messages from webview
-            webviewPanel.webview.onDidReceiveMessage(async message => {
+            const handleMessage = async (message: any) => {
                 switch (message.command) {
                     case 'webviewReady':
                         try {
@@ -378,7 +380,6 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                                 }
                             }
 
-                            isSaving = true;
                             await vscode.workspace.fs.writeFile(currentUri, Buffer.from(text, 'utf8'));
                             currentContent = text;
                             lastSaveTime = Date.now();
@@ -386,8 +387,6 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                             webviewPanel.webview.postMessage({ command: 'saveResult', ok: true, isAutosave });
                         } catch (err) {
                             webviewPanel.webview.postMessage({ command: 'saveResult', ok: false, error: String(err), isAutosave: !!message.isAutosave });
-                        } finally {
-                            isSaving = false;
                         }
                         break;
 
@@ -428,7 +427,7 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
 
                     case 'showVersionHistory':
                         try {
-                            if (isSaving) {
+                            if (fileQueue.busy) {
                                 webviewPanel.webview.postMessage({
                                     command: 'versionHistoryError',
                                     message: 'Wait for the current save to finish before opening version history',
@@ -534,7 +533,6 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                                         }
                                     }
 
-                                    isSaving = true;
                                     await vscode.workspace.fs.writeFile(currentUri, Buffer.from(entry.content, 'utf8'));
                                     currentContent = entry.content;
                                     lastSaveTime = Date.now();
@@ -553,8 +551,6 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                                         command: 'versionHistoryError',
                                         message: `Version history failed: ${String(err)}`
                                     });
-                                } finally {
-                                    isSaving = false;
                                 }
                                 break;
 
@@ -680,6 +676,13 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                         break;
                     }
                 }
+            };
+
+            const FILE_WRITING_COMMANDS = new Set(['saveMarkdown', 'restoreVersion']);
+            webviewPanel.webview.onDidReceiveMessage(message => {
+                const run = () => handleMessage(message);
+                const done = FILE_WRITING_COMMANDS.has(message?.command) ? fileQueue.run(run) : run();
+                done.catch(err => console.error(`[Sheetmark md] '${message?.command}' handler failed:`, err));
             });
 
             // Forward settings changes
@@ -705,10 +708,8 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                 } catch { }
             });
 
-            const handleMove = async (newUri: vscode.Uri) => {
-                if (isSaving) {
-                    return;
-                }
+            // Queued behind any in-flight save so the save finishes at the old path and later saves use the new one.
+            const handleMove = (newUri: vscode.Uri) => fileQueue.run(async () => {
                 const oldUri = currentUri;
                 currentUri = newUri;
                 filePath = newUri.fsPath;
@@ -722,10 +723,8 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                 });
 
                 externalFileWatcher.repoint(filePath, currentUri);
-                webviewPanel.webview.options = {
-                    enableScripts: true,
-                    localResourceRoots: markdownLocalResourceRoots,
-                };
+                // Rebuild roots for the new folder, or local images next to the moved file are blocked.
+                refreshMarkdownLocalResourceRoots();
 
                 try {
                     webviewPanel.webview.postMessage({
@@ -735,13 +734,13 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                         documentDirUri: documentDirUri.toString(),
                     });
                 } catch { }
-            };
+            });
 
             const externalFileWatcher = createExternalFileChangeWatcher({
                 filePath,
                 documentUri: currentUri,
                 onChange: async () => {
-                    if (isSaving || Date.now() - lastSaveTime < 1500) {
+                    if (fileQueue.busy || Date.now() - lastSaveTime < 1500) {
                         return;
                     }
                     try {
@@ -758,7 +757,7 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                     }
                 },
                 onDelete: () => {
-                    if (isSaving) {
+                    if (fileQueue.busy) {
                         return;
                     }
                     webviewPanel.webview.postMessage({ command: 'diskDeletedExternally' });

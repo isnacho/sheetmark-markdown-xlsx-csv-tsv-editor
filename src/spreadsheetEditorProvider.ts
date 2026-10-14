@@ -9,6 +9,7 @@ import { convertARGBToRGBA, isShadeOfBlack, isShadeOfWhite } from './spreadsheet
 import { convertTabularFile, readTabularFile, detectTabularFileType, writeTabularFile, TabularFileType } from './shared/fileConversionService';
 import { StyleStorageService } from './shared/styleStorageService';
 import { isAllowedExternalUrl } from './shared/externalLinks';
+import { createSerialQueue } from './shared/serialQueue';
 import { createExternalFileChangeWatcher } from './shared/fileExternalChangeWatcher';
 import { migrateFileUriState } from './shared/migrateFileUriState';
 import { enableOpenByDefault, disableOpenByDefault, isSheetmarkConfiguredAsDefault } from './shared/editorAssociationUtils';
@@ -252,7 +253,8 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
         let hasActiveTemporaryStyles = false;
         let shouldOpenDelimitedInStyledMode = false;
         let currentIsPlainView = false;
-        let isSaving = false;
+        // Save and restore both read-modify-write the file; run them one at a time (see serialQueue.ts).
+        const fileQueue = createSerialQueue();
         let lastSaveTime = 0;
 
         type VersionHistoryEntry = {
@@ -1450,7 +1452,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
         };
 
         // Listen for messages
-        webview.onDidReceiveMessage(async message => {
+        const handleMessage = async (message: any) => {
             if (message?.command === 'webviewReady') {
                 isWebviewReady = true;
                 await pruneHistory();
@@ -1527,7 +1529,6 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
 
             if (message?.command === 'restoreVersion') {
                 try {
-                    isSaving = true;
                     const versionId = typeof message.versionId === 'string' ? message.versionId : '';
                     if (!versionId) {
                         return;
@@ -1563,8 +1564,6 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                         command: 'versionHistoryError',
                         message: `Restore failed: ${String(err)}`
                     });
-                } finally {
-                    isSaving = false;
                 }
                 return;
             }
@@ -1787,7 +1786,6 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
 
             if (message?.command === 'saveXlsxEdits') {
                 try {
-                    isSaving = true;
                     if (previewVersionId) {
                         webview.postMessage({ command: 'saveResult', ok: false, error: 'Preview mode is read-only' });
                         return;
@@ -2282,10 +2280,15 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                     try { webview.postMessage({ command: 'saveResult', ok: true, isAutosave }); } catch { }
                 } catch (err) {
                     try { webview.postMessage({ command: 'saveResult', ok: false, error: String(err), isAutosave: !!message?.isAutosave }); } catch { }
-                } finally {
-                    isSaving = false;
                 }
             }
+        };
+
+        const FILE_WRITING_COMMANDS = new Set(['saveXlsxEdits', 'restoreVersion']);
+        webview.onDidReceiveMessage(message => {
+            const run = () => handleMessage(message);
+            const done = FILE_WRITING_COMMANDS.has(message?.command) ? fileQueue.run(run) : run();
+            done.catch(err => console.error(`[Sheetmark spreadsheet] '${message?.command}' handler failed:`, err));
         });
 
         // Forward settings changes made outside the webview
@@ -2301,10 +2304,8 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
         });
         webviewPanel.onDidDispose(() => configChangeDisposable.dispose());
 
-        const handleMove = async (newUri: vscode.Uri) => {
-            if (isSaving) {
-                return;
-            }
+        // Queued behind any in-flight save so the save finishes at the old path and later saves use the new one.
+        const handleMove = (newUri: vscode.Uri) => fileQueue.run(async () => {
             const oldUri = currentUri;
             currentUri = newUri;
             filePath = newUri.fsPath;
@@ -2327,13 +2328,13 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                     fileName: vscode.workspace.asRelativePath(newUri),
                 });
             } catch { }
-        };
+        });
 
         const externalFileWatcher = createExternalFileChangeWatcher({
             filePath,
             documentUri: currentUri,
             onChange: async () => {
-                if (isSaving || Date.now() - lastSaveTime < 1000) {
+                if (fileQueue.busy || Date.now() - lastSaveTime < 1000) {
                     return;
                 }
                 try {
@@ -2344,7 +2345,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                 }
             },
             onDelete: () => {
-                if (isSaving) {
+                if (fileQueue.busy) {
                     return;
                 }
                 try {

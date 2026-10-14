@@ -68,6 +68,8 @@ assuming it exists.
   `MDEditorProvider.getWebviewContent` in [mdEditorProvider.ts](src/mdEditorProvider.ts)). Spreadsheet
   roots: `resources/` + `dist/`. Markdown also allows the document's directory, workspace folders
   and ancestor directories (local images). Anything else is silently blocked.
+- **Do not bump `@types/vscode` on its own.** It is pinned to the `engines.vscode` floor (1.67) so
+  tsc rejects VS Code APIs that older supported versions lack. Raising it means raising `engines` too.
 - **Do not change esbuild output paths** without updating the providers, which hardcode
   `dist/spreadsheet/spreadsheetWebview.js` and `dist/md/mdWebview.js`.
 - **Do not stage, stash, reset or reformat files you did not change.** The owner often has

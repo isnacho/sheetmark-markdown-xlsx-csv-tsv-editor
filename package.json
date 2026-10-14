@@ -5,7 +5,7 @@
     "version": "1.5.0",
     "publisher": "iggyinc",
     "engines": {
-        "vscode": "^1.60.0"
+        "vscode": "^1.67.0"
     },
     "repository": {
         "type": "git",
@@ -472,7 +472,7 @@
         "@types/js-yaml": "^4.0.9",
         "@types/markdown-it": "^14.2.0",
         "@types/node": "^20.19.43",
-        "@types/vscode": "^1.60.0",
+        "@types/vscode": "~1.67.0",
         "@typescript-eslint/eslint-plugin": "^8.30.1",
         "@typescript-eslint/parser": "^8.30.1",
         "esbuild": "^0.25.1",

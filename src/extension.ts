@@ -31,7 +31,7 @@ function resolveDocumentUri(uri?: vscode.Uri): vscode.Uri | undefined {
     }
 
     const activeTab = vscode.window.tabGroups.activeTabGroup.activeTab;
-    if (activeTab?.input instanceof (vscode as any).TabInputCustom || activeTab?.input instanceof (vscode as any).TabInputText) {
+    if (activeTab?.input instanceof vscode.TabInputCustom || activeTab?.input instanceof vscode.TabInputText) {
         return (activeTab.input as any).uri;
     }
 
@@ -40,7 +40,7 @@ function resolveDocumentUri(uri?: vscode.Uri): vscode.Uri | undefined {
 
 function getTabUri(tab: vscode.Tab): vscode.Uri | undefined {
     const input = tab.input;
-    if (input instanceof (vscode as any).TabInputText || input instanceof (vscode as any).TabInputCustom) {
+    if (input instanceof vscode.TabInputText || input instanceof vscode.TabInputCustom) {
         return (input as { uri: vscode.Uri }).uri;
     }
     return undefined;
@@ -185,7 +185,7 @@ export function activate(context: vscode.ExtensionContext) {
             } else {
                 // Try to get URI from active tab if not a text editor
                 const activeTab = vscode.window.tabGroups.activeTabGroup.activeTab;
-                if (activeTab?.input instanceof (vscode as any).TabInputCustom || activeTab?.input instanceof (vscode as any).TabInputText) {
+                if (activeTab?.input instanceof vscode.TabInputCustom || activeTab?.input instanceof vscode.TabInputText) {
                     const tabUri = (activeTab.input as any).uri;
                     if (tabUri) {
                         const path = tabUri.fsPath.toLowerCase();
@@ -217,7 +217,7 @@ export function activate(context: vscode.ExtensionContext) {
             } else {
                 // Try to get URI from active tab if not a text editor
                 const activeTab = vscode.window.tabGroups.activeTabGroup.activeTab;
-                if (activeTab?.input instanceof (vscode as any).TabInputCustom || activeTab?.input instanceof (vscode as any).TabInputText) {
+                if (activeTab?.input instanceof vscode.TabInputCustom || activeTab?.input instanceof vscode.TabInputText) {
                     const tabUri = (activeTab.input as any).uri;
                     if (tabUri && tabUri.fsPath.toLowerCase().endsWith('.xlsx')) {
                         await vscode.commands.executeCommand('workbench.action.closeActiveEditor');

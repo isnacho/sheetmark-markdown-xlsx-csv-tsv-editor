@@ -60,7 +60,7 @@ test('option table includes every block transform named in the plan', () => {
 
 test('computeSlashApply: "Heading 2" replaces "/head" with "## " and places the cursor after it', () => {
     const state = stateFor('/head');
-    const tr = state.update(computeSlashApply({ label: 'Heading 2', insert: '## ', cursorOffset: 3 }, 1, 5));
+    const tr = state.update(computeSlashApply({ ...option('Heading 2'), insert: '## ', cursorOffset: 3 }, 1, 5));
     assert.equal(tr.state.doc.toString(), '## ');
     assert.equal(tr.state.selection.main.from, 3);
 });

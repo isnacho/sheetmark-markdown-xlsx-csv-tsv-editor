@@ -652,7 +652,7 @@ test('list indent: typing a new list item character by character never disturbs 
         const styles = listLineStyles(doc, doc.length);
         const existingLine = styles.find(s => s.line === 1);
         assert.ok(existingLine, `existing "- existing" lost its line decoration while typing ${JSON.stringify(toType.slice(0, i))}`);
-        assert.equal(existingLine!.style, `padding-left:${FLOOR_PX}px;text-indent:-${FLOOR_PX}px;--list-col:${FLOOR_PX}px;--list-marker-inset:0px`);
+        assert.equal<string>(existingLine!.style, `padding-left:${FLOOR_PX}px;text-indent:-${FLOOR_PX}px;--list-col:${FLOOR_PX}px;--list-marker-inset:0px`);
     }
 });
 

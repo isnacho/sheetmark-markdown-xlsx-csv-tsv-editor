@@ -192,7 +192,7 @@ test('runLivePreviewEnter: continues ordered list on Enter', () => {
     const doc = '1. list';
     const state = stateFor(doc, doc.length);
     let next = state;
-    const ok = runLivePreviewEnter({ state, dispatch: (tr) => { next = tr.state; } } as import('@codemirror/view').EditorView);
+    const ok = runLivePreviewEnter({ state, dispatch: (tr: import('@codemirror/state').Transaction) => { next = tr.state; } } as import('@codemirror/view').EditorView);
     assert.equal(ok, true);
     assert.equal(next.doc.toString(), '1. list\n2. ');
 });

@@ -4,7 +4,8 @@
 		{
 			"label": "watch",
 			"dependsOn": [
-				"watch:tsc",
+				"watch:tsc:host",
+				"watch:tsc:webview",
 				"watch:esbuild"
 			],
 			"presentation": {
@@ -50,9 +51,24 @@
 			}
 		},
 		{
-			"label": "watch:tsc",
+			"label": "watch:tsc:host",
 			"type": "shell",
-			"command": "npx tsc --noEmit --watch --project tsconfig.json",
+			"command": "npx tsc --watch --project tsconfig.json",
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"group": "build",
+			"problemMatcher": "$tsc-watch",
+			"isBackground": true,
+			"presentation": {
+				"group": "watch",
+				"reveal": "never"
+			}
+		},
+		{
+			"label": "watch:tsc:webview",
+			"type": "shell",
+			"command": "npx tsc --watch --project src/webviews/tsconfig.json",
 			"options": {
 				"cwd": "${workspaceFolder}"
 			},

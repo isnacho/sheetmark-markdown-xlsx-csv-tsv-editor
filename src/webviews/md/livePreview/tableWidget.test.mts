@@ -51,7 +51,7 @@ test('cursor inside the table still produces a widget, with the cell under the c
     const cursor = doc.indexOf('1');
     const found: TableWidget[] = [];
     computeTableDecorations(state, cursor, cursor, [{ from: 0, to: doc.length }])
-        .between(0, doc.length, (from, to, value) => found.push((value.spec as { widget: TableWidget }).widget));
+        .between(0, doc.length, (from, to, value) => { found.push((value.spec as { widget: TableWidget }).widget); });
     assert.equal(found.length, 1);
     assert.deepEqual(found[0].activeCell, { row: 1, col: 0, from: cursor, to: cursor + 1 });
 });
@@ -62,7 +62,7 @@ test('collapsed cursor resolves to the nearer cell across a pipe/delimiter, neve
     const pipePos = doc.indexOf('|', doc.indexOf('1')); // the pipe between "1" and "2"
     const found: TableWidget[] = [];
     computeTableDecorations(state, pipePos, pipePos, [{ from: 0, to: doc.length }])
-        .between(0, doc.length, (from, to, value) => found.push((value.spec as { widget: TableWidget }).widget));
+        .between(0, doc.length, (from, to, value) => { found.push((value.spec as { widget: TableWidget }).widget); });
     assert.equal(found.length, 1);
     assert.notEqual(found[0].activeCell, null); // never lands "outside every cell" on a real line
 });
@@ -152,7 +152,7 @@ test('no decorations when there is no table', () => {
     const state = stateFor(doc);
     const decos: unknown[] = [];
     computeTableDecorations(state, 0, 0, [{ from: 0, to: doc.length }])
-        .between(0, doc.length, (from, to, value) => decos.push(value));
+        .between(0, doc.length, (from, to, value) => { decos.push(value); });
     assert.deepEqual(decos, []);
 });
 
@@ -179,7 +179,7 @@ test('computeTableDecorations assigns table index by order of appearance and loo
     const state = stateFor(doc);
     const widgets: TableWidget[] = [];
     computeTableDecorations(state, 0, 0, [{ from: 0, to: doc.length }], { 0: [111], 1: [222] })
-        .between(0, doc.length, (from, to, value) => widgets.push((value.spec as { widget: TableWidget }).widget));
+        .between(0, doc.length, (from, to, value) => { widgets.push((value.spec as { widget: TableWidget }).widget); });
     assert.equal(widgets.length, 2);
     assert.equal(widgets[0].tableIndex, 0);
     assert.deepEqual(widgets[0].widths, [111]);
@@ -192,7 +192,7 @@ test('computeTableDecorations defaults widthsByTable to {} when omitted, and a t
     const state = stateFor(doc);
     const widgets: TableWidget[] = [];
     computeTableDecorations(state, 0, 0, [{ from: 0, to: doc.length }])
-        .between(0, doc.length, (from, to, value) => widgets.push((value.spec as { widget: TableWidget }).widget));
+        .between(0, doc.length, (from, to, value) => { widgets.push((value.spec as { widget: TableWidget }).widget); });
     assert.equal(widgets[0].widths, null);
 });
 
@@ -492,6 +492,7 @@ test('selectionPosAfterTableInsert lands in the new row or column', () => {
     assert.equal(newCol, emptyAfterCol.from);
 
     const rowSpec = computeInsertRow(state, node, grid, 1, 'below');
+    assert.ok(rowSpec);
     const afterRow = state.update(rowSpec).state;
     const rowNode = tableNode(afterRow);
     const rowGrid = buildCellGrid(afterRow, rowNode);
@@ -533,14 +534,16 @@ test('computeMoveRowTo moves a body row to an arbitrary index', () => {
     assert.equal(state.update(spec!).state.doc.toString(), '| a | b |\n| - | - |\n| 3 | 4 |\n| 1 | 2 |');
 });
 
-test('computeMoveRowTo clamps a drop-past-end target to the last row', () => {
+test('computeMoveRowTo treats body.length as drop-at-end and rejects indexes past it', () => {
+    // The drag handler runs normalizeRowDropIndex first, so only 0..body.length reach here.
     const doc = '| a | b |\n| - | - |\n| 1 | 2 |\n| 3 | 4 |';
     const state = stateFor(doc);
     const node = tableNode(state);
     const grid = buildCellGrid(state, node);
-    const spec = computeMoveRowTo(state, node, grid, 1, 99);
+    const spec = computeMoveRowTo(state, node, grid, 1, 2);
     assert.ok(spec);
     assert.equal(state.update(spec!).state.doc.toString(), '| a | b |\n| - | - |\n| 3 | 4 |\n| 1 | 2 |');
+    assert.equal(computeMoveRowTo(state, node, grid, 1, 99), null);
 });
 
 test('computeMoveColumnTo moves a column to an arbitrary index', () => {

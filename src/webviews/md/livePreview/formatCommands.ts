@@ -1,16 +1,12 @@
-// Phase 5 — formatting commands for CM6 Preview Edit mode.
+// Formatting commands for the CM6 live-preview editor.
 //
-// Runtime: WEBVIEW (browser). Ports the Split-mode formatting helpers
-// (mdWebview.ts wrapSelection/toggleLinePrefix/... — see AGENTS.md's
-// "formatting commands" note in the plan doc) from an imperative
-// mutate-`editor.value`-then-read model to CM6's compute-a-TransactionSpec-
-// then-dispatch model. Each `computeXxx` function is a pure function of
+// Runtime: WEBVIEW (browser). Each `computeXxx` function is a pure function of
 // `EditorState` (headlessly testable, no `EditorView`/DOM); each is wrapped
 // by `runFormatCommand`/`livePreviewFormatKeymap` for the two real call
 // sites: toolbar clicks (mdWebview.ts `applyFormat`) and CM6-native
 // keybindings (Tab/Shift-Tab, Mod+letter shortcuts).
 //
-// Enter-key list/blockquote continuation uses listEnterContinuation.ts (wraps
+// Enter-key list/blockquote continuation lives in listMarkerEditing.ts (wraps
 // @codemirror/lang-markdown's insertNewlineContinueMarkup with nonTightLists:false
 // plus a manual fallback). Smart Backspace stays on deleteMarkupBackward there too.
 
@@ -21,35 +17,14 @@ import type { KeyBinding } from '@codemirror/view';
 import { insertTab } from '@codemirror/commands';
 import { syntaxTree } from '@codemirror/language';
 import type { SyntaxNode } from '@lezer/common';
+import { listMarkerLineIsActivated } from './listMarkerEditing';
+import { setextListMarkerLineAt } from './listSetextAmbiguity';
 
 function safeSlice(state: EditorState, from: number, to: number): string {
     const len = state.doc.length;
     const f = Math.max(0, Math.min(from, len));
     const t = Math.max(f, Math.min(to, len));
     return state.sliceDoc(f, t);
-}
-
-/** Mirrored from listMarkerEditing.ts — kept local for Node ESM test loading. */
-function listMarkerLineIsActivated(lineText: string): boolean {
-    return /^\s*(?:[-*+]\s\[[ xX]\]\s|[-*+]\s(?!\[)|\d+[.)]\s)/.test(lineText);
-}
-
-// Mirrored from listSetextAmbiguity.ts — kept local so formatCommands.test.mts
-// can load this file under Node's ESM resolver (no extensionless relative imports).
-function setextListMarkerLineAt(state: EditorState, pos: number): boolean {
-    let found = false;
-    syntaxTree(state).iterate({
-        enter(node) {
-            if (node.name !== 'SetextHeading1' && node.name !== 'SetextHeading2') { return; }
-            const underline = state.doc.lineAt(node.to - 1);
-            const text = state.sliceDoc(underline.from, underline.to);
-            if (/^={3,}\s*$/.test(text) || /^-{3,}\s*$/.test(text)) { return; }
-            if (!/^[-*+]\s*$/.test(text) && !/^--\s?$/.test(text)) { return; }
-            if (!/\s/.test(text)) { return; }
-            if (pos >= underline.from && pos <= underline.to && /^[-*+]/.test(text)) { found = true; }
-        },
-    });
-    return found;
 }
 
 function dispatchSpec(view: EditorView, spec: TransactionSpec | null): boolean {
@@ -703,7 +678,7 @@ export function computeTabIndent(state: EditorState, shiftKey: boolean): Transac
     // so `enclosingListItem` returns null even though the reveal layer shows a
     // bullet. Fall through to flat 4-space Tab here and the marker line gets
     // mangled; treat it as a lone list marker (no sibling to nest under) instead.
-    if (setextListMarkerLineAt(state, from)) {
+    if (setextListMarkerLineAt(state, from) !== null) {
         return null;
     }
 

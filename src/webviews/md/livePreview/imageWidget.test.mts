@@ -30,7 +30,7 @@ test('imageReplaceRange: standalone line uses full line block range', () => {
     const doc = '![icon](../icon.png)\n';
     const state = stateFor(doc);
     const tree = syntaxTree(state);
-    let imageNode: { from: number; to: number; node: any } | null = null;
+    let imageNode = null as { from: number; to: number; node: any } | null;
     tree.iterate({
         enter(node) {
             if (node.name === 'Image') {
@@ -50,7 +50,7 @@ test('computeImageDecorations: cursor away replaces standalone image', () => {
     const state = stateFor(doc, doc.length);
     const set = computeImageDecorations(state, doc.length, doc.length);
     const specs: { from: number; to: number }[] = [];
-    set.between(0, doc.length, (from, to) => specs.push({ from, to }));
+    set.between(0, doc.length, (from, to) => { specs.push({ from, to }); });
     assert.equal(specs.length, 1);
     assert.equal(specs[0].from, 0);
     assert.equal(specs[0].to, doc.trimEnd().length);
@@ -62,7 +62,7 @@ test('computeImageDecorations: cursor inside image does not replace', () => {
     const state = stateFor(doc, cursor);
     const set = computeImageDecorations(state, cursor, cursor);
     const specs: { from: number; to: number }[] = [];
-    set.between(0, doc.length, (from, to) => specs.push({ from, to }));
+    set.between(0, doc.length, (from, to) => { specs.push({ from, to }); });
     assert.equal(specs.length, 0);
 });
 

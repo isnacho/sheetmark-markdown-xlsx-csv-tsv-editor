@@ -1,18 +1,17 @@
 {
+	// Extension host (Node.js). No DOM types: browser globals are compile errors here.
+	// Webview code has its own config in src/webviews/tsconfig.json; tests in tsconfig.test.json.
 	"compilerOptions": {
 		"module": "commonjs",
 		"target": "ES2020",
-		"outDir": "dist",
-		"lib": [
-			"ES2020",
-			"DOM"
-		],
-		"sourceMap": true,
+		"lib": ["ES2020"],
+		"types": ["node"],
 		"rootDir": "src",
 		"strict": true,
 		"esModuleInterop": true,
-		"skipLibCheck": true
+		"skipLibCheck": true,
+		"noEmit": true
 	},
 	"include": ["src/**/*.ts"],
-	"exclude": ["node_modules", ".vscode-test"]
+	"exclude": ["node_modules", "src/webviews"]
 }

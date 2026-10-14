@@ -239,7 +239,7 @@ test('buildFieldRows: push-notifications frontmatter shapes', () => {
 
 test('resolveFrontmatterWidgetData: circular YAML does not throw', () => {
     const raw = '---\na: &x\n  b: *x\n---\nbody';
-    let data: ReturnType<typeof resolveFrontmatterWidgetData>;
+    let data: ReturnType<typeof resolveFrontmatterWidgetData> | undefined;
     assert.doesNotThrow(() => { data = resolveFrontmatterWidgetData(raw); });
     assert.ok(data);
 });

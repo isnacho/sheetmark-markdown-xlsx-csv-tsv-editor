@@ -18,6 +18,7 @@ CLAUDE.md
 node_modules/**
 esbuild.js
 eslint.config.mjs
-tsconfig.json
+tsconfig*.json
 .gitignore
 **/.DS_Store
+.gitmodules

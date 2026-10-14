@@ -1,0 +1,17 @@
+{
+	// Unit tests (*.test.mts), run by `npm run test:unit` through tsx. Tests import webview modules,
+	// so DOM types are on; Node types are on for node:test / node:assert.
+	"compilerOptions": {
+		"module": "preserve",
+		"moduleResolution": "bundler",
+		"target": "ES2022",
+		"lib": ["ES2022", "DOM", "DOM.Iterable"],
+		"types": ["node"],
+		"allowImportingTsExtensions": true,
+		"strict": true,
+		"esModuleInterop": true,
+		"skipLibCheck": true,
+		"noEmit": true
+	},
+	"include": ["src/**/*.test.mts", "src/webviews/**/*.d.ts"]
+}

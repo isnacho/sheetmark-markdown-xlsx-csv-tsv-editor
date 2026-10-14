@@ -13,7 +13,6 @@ import {
     computeListMarkerArrowRight,
     listItemMarkerIsActivated,
     computeManualListContinuation,
-    isEmptyActivatedListItem,
     runLivePreviewEnter,
 } from './listMarkerEditing.ts';
 

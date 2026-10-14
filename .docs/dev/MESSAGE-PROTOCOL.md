@@ -43,7 +43,7 @@ Provider: [spreadsheetEditorProvider.ts](../../src/spreadsheetEditorProvider.ts)
 | `restoreVersion` | `versionId` | `ensurePreviewBanner` (Restore button) | `restoreVersion` block |
 | `cancelVersionPreview` | none | `ensurePreviewBanner` (Cancel button); Escape key in `initializeSelection` | `cancelVersionPreview` block |
 | `convertFile` | none | `attachHandlersOnce` | `convertFile` block |
-| `enableAsDefault` | none | `wireSettingsUI` (`onOpenByDefaultChange`) | `enableDefaultEditor` \|\| `enableAsDefault` block |
+| `enableAsDefault` | none | `wireSettingsUI` (`onOpenByDefaultChange`) | `enableAsDefault` block |
 | `disableDefaultEditor` | none | `wireSettingsUI` (`onOpenByDefaultChange`) | `disableDefaultEditor` block |
 | `openExternal` | `url` | `showLinkTooltipForCell`; also `FeedbackModal.bindEvents` (GitHub issues button) in [feedbackModal.ts](../../src/webviews/shared/feedbackModal.ts) | `openExternal` block |
 | `getSystemDetails` | none | `FeedbackModal.show` ([feedbackModal.ts](../../src/webviews/shared/feedbackModal.ts)) | `getSystemDetails` block |
@@ -75,13 +75,11 @@ Provider: [spreadsheetEditorProvider.ts](../../src/spreadsheetEditorProvider.ts)
 | `systemDetails` | details | `getSystemDetails` block | `FeedbackModal.initialize` listener ([feedbackModal.ts](../../src/webviews/shared/feedbackModal.ts)) |
 | `feedbackResult` | `ok` | `submitFeedback` block | `FeedbackModal.initialize` listener ([feedbackModal.ts](../../src/webviews/shared/feedbackModal.ts)) |
 
-### Known orphans and dead paths (spreadsheet)
+### Removed messages (spreadsheet)
 
-| Message | Side that exists | Status |
-|---|---|---|
-| `enableDefaultEditor` | Host handles it (shares the `enableAsDefault` block) | Nothing sends it. Legacy alias; the webview sends `enableAsDefault`. |
-| `init` | Webview handles it (`init` block, older data shape) | The host never sends it; it sends `initVirtualTable`. Leave it unless you are deliberately removing dead paths. |
-| `toggleView` | Neither | Removed as dead code. Do not reintroduce without wiring both sides. |
+`enableDefaultEditor` (host-only alias), the legacy webview `init` handler (the host sends
+`initVirtualTable`) and `toggleView` were one-sided and have been deleted. Do not reintroduce them
+without wiring both sides.
 
 ---
 

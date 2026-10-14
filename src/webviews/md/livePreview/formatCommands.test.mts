@@ -422,7 +422,7 @@ test('multiLineListAwareIndent: selecting two sibling items nests both under the
 test('multiLineListAwareIndent: outdents multiple nested siblings back to top-level, symmetrically', () => {
     const doc = '- top\n  - one\n  - two';
     const state = stateFor(doc, doc.indexOf('- one'), doc.length);
-    const { doc: newDoc, sel } = apply(state, computeMultiLineListAwareIndent(state, true));
+    const { doc: newDoc } = apply(state, computeMultiLineListAwareIndent(state, true));
     assert.equal(newDoc, '- top\n- one\n- two');
 });
 

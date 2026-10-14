@@ -1,4 +1,4 @@
-import { renderMenuActionRow, renderMenuSelectRow } from './menuPanel';
+import { renderMenuSelectRow } from './menuPanel';
 
 export function renderThemeToggleSettingItem(selectId: string): string {
     return renderMenuSelectRow({

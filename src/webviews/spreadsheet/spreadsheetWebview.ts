@@ -36,7 +36,6 @@ import {
 } from './components/spreadsheetBorderComponent';
 import type {
     StructuralOpType,
-    WorksheetOpType,
     InsertControlType,
     HorizontalAlign,
     VerticalAlign,
@@ -177,7 +176,6 @@ import { parseTsv } from './components/tsvClipboard';
     let isCellEditing = false;
     let activeTextEditBeforeState: CellUndoState | null = null;
     let lastEditRange: Range | null = null;
-    let lastFocusedEditableCell: HTMLElement | null = null;
 
     let pendingWorksheetOps: WorksheetOp[] = [];
     const pendingCellStyleEdits = new Map<string, CellStyleEdit>();
@@ -251,7 +249,6 @@ import { parseTsv } from './components/tsvClipboard';
     let linkTooltipHideTimer: any = null;
 
     // Toast
-    let toastEl: HTMLElement | null = null;
 
     // Copy state (CSV-parity: avoid concurrent copies)
     let isCopying = false;
@@ -1071,10 +1068,6 @@ import { parseTsv } from './components/tsvClipboard';
         }
     }
 
-    async function runFind(query: string) {
-        await getFindManager().run(query);
-    }
-
     async function navigateFind(direction: 'next' | 'prev') {
         await getFindManager().navigate(direction);
     }
@@ -1085,10 +1078,6 @@ import { parseTsv } from './components/tsvClipboard';
 
     function toggleFindOverlay() {
         getFindManager().toggle();
-    }
-
-    function closeFindOverlay() {
-        getFindManager().close();
     }
 
     async function ensureAllRowsLoadedForStructureEdits(withOverlay = true) {
@@ -2788,54 +2777,6 @@ import { parseTsv } from './components/tsvClipboard';
         cells.forEach(cell => {
             cell.style.fontFamily = value;
             recordCellStyleEdit(cell, { fontFamily: value });
-        });
-    }
-
-    function applyWrapMode(mode: WrapMode) {
-        if (requestStyledMode(() => applyWrapMode(mode))) {
-            return;
-        }
-
-        const cells = getEditableCellsOrToast('Select cells to set wrapping');
-        if (!cells.length) {return;}
-
-        cells.forEach(cell => {
-            const content = cell.querySelector('.cell-content') as HTMLElement | null;
-            if (mode === 'wrap') {
-                cell.style.whiteSpace = 'pre-wrap';
-                cell.style.wordWrap = 'break-word';
-                cell.style.overflow = 'visible';
-                cell.style.textOverflow = 'clip';
-                if (content) {
-                    content.style.whiteSpace = 'pre-wrap';
-                    content.style.wordWrap = 'break-word';
-                    content.style.overflow = 'visible';
-                    content.style.textOverflow = 'clip';
-                }
-            } else if (mode === 'overflow') {
-                cell.style.wordWrap = 'normal';
-                cell.style.whiteSpace = 'nowrap';
-                cell.style.overflow = 'visible';
-                cell.style.textOverflow = 'clip';
-                if (content) {
-                    content.style.whiteSpace = 'nowrap';
-                    content.style.wordWrap = 'normal';
-                    content.style.overflow = 'visible';
-                    content.style.textOverflow = 'clip';
-                }
-            } else {
-                cell.style.wordWrap = 'normal';
-                cell.style.whiteSpace = 'nowrap';
-                cell.style.overflow = 'hidden';
-                cell.style.textOverflow = 'clip';
-                if (content) {
-                    content.style.whiteSpace = 'nowrap';
-                    content.style.wordWrap = 'normal';
-                    content.style.overflow = 'hidden';
-                    content.style.textOverflow = 'clip';
-                }
-            }
-            recordCellStyleEdit(cell, { wrapMode: mode });
         });
     }
 
@@ -5489,19 +5430,6 @@ import { parseTsv } from './components/tsvClipboard';
         });
     }
 
-    function autoFitAllColumns() {
-        if (!worksheetsMeta || !worksheetsMeta.length) {return;}
-        // Note: worksheetsData was not defined in original JS, assuming it meant worksheetsMeta or similar
-        // But autoFitAllColumns was not called anywhere in the original JS.
-        // Keeping it but commenting out usage if any.
-        /*
-        const data = worksheetsMeta[currentWorksheet].data;
-        for (let c = 0; c < data.maxCol; c++) {
-            autoFitColumn(c);
-        }
-        */
-    }
-
     function clearSelection() {
         selectionStart = null;
         selectionEnd = null;
@@ -5592,10 +5520,6 @@ import { parseTsv } from './components/tsvClipboard';
         if (activeCell) {
             syncBorderSelectionFromCell(activeCell);
         }
-    }
-
-    function copySelection() {
-        copySelectionToClipboard();
     }
 
     async function copySelectionToClipboard() {
@@ -5704,17 +5628,6 @@ import { parseTsv } from './components/tsvClipboard';
                 }
             }
         }
-    }
-
-    function invertColor(color: string) {
-        const match = String(color || '').match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/);
-        if (!match) {return color;}
-
-        const r = 255 - parseInt(match[1], 10);
-        const g = 255 - parseInt(match[2], 10);
-        const b = 255 - parseInt(match[3], 10);
-        const a = match[4] ? match[4] : '1';
-        return `rgba(${r}, ${g}, ${b}, ${a})`;
     }
 
     function initializeSelection() {
@@ -6823,7 +6736,6 @@ import { parseTsv } from './components/tsvClipboard';
     function applySettings(settings: any, scopeOverride?: SettingsScope) {
         const scope = scopeOverride || getCurrentSettingsScope();
         const previousSpacious = !!currentSettings.spaciousCells;
-        const previousTextWrap = !!currentSettings.textWrap;
         const previousSettings = getStoredSettingsForScope(scope);
         currentSettings = normalizeSettingsForScope(scope, settings, previousSettings);
         setStoredSettingsForScope(scope, currentSettings);
@@ -7117,7 +7029,6 @@ import { parseTsv } from './components/tsvClipboard';
             onLayoutApplied: initializeVirtualScrolling
         });
 
-        const sheetSelector = document.getElementById('sheetSelector');
         const toggleExpandButton = document.getElementById('toggleExpandButton');
         const togglePlainViewButton = document.getElementById('togglePlainViewButton');
         const versionHistoryButton = document.getElementById('versionHistoryButton');
@@ -7689,46 +7600,6 @@ import { parseTsv } from './components/tsvClipboard';
 
             renderWorksheet(currentWorksheet);
             return;
-        }
-
-        // Legacy init handler (for backwards compatibility)
-        if (message.command === 'init') {
-            const previousWorksheet = currentWorksheet;
-            // Convert old format to new format
-            const worksheets = Array.isArray(message.worksheets) ? message.worksheets : [];
-            worksheetsMeta = worksheets.map((ws: any, index: number) => ({
-                name: ws.name,
-                index,
-                totalRows: ws.data ? ws.data.maxRow : 0,
-                columnCount: ws.data ? ws.data.maxCol : 0,
-                columnWidths: ws.data ? ws.data.columnWidths : [],
-                mergedCells: ws.data ? ws.data.mergedCells : []
-            }));
-            // Also cache all rows since they were sent
-            worksheets.forEach((ws: any, wsIndex: number) => {
-                if (ws.data && ws.data.rows) {
-                    ws.data.rows.forEach((row: any, rowIndex: number) => {
-                        if (wsIndex === 0) {
-                            rowCache.set(rowIndex, row);
-                        }
-                    });
-                }
-            });
-            currentWorksheet = Math.min(Math.max(previousWorksheet, 0), Math.max(worksheetsMeta.length - 1, 0));
-            clearDataTransforms();
-
-            const rowHeaderWidth = typeof message.rowHeaderWidth === 'number' ? message.rowHeaderWidth : MIN_ROW_HEADER_WIDTH;
-            setRowHeaderWidth(rowHeaderWidth, true);
-
-            attachHandlersOnce();
-            populateSheetSelector();
-            const selector = document.getElementById('sheetSelector') as HTMLSelectElement | null;
-            if (selector) {selector.value = String(currentWorksheet);}
-            const expandBtn = document.getElementById('toggleExpandButton');
-            if (expandBtn) {expandBtn.setAttribute('data-state', 'default');}
-            setExpandedMode(false);
-            setVersionPreviewMode(false);
-            renderWorksheet(currentWorksheet);
         }
     });
 

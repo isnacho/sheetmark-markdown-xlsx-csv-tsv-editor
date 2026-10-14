@@ -103,10 +103,6 @@ function cellRangesFromLine(state: EditorState, lineFrom: number, lineTo: number
     return ranges;
 }
 
-function cellRangesFromRowLine(state: EditorState, rowNode: SyntaxNode): CellRange[] {
-    return cellRangesFromLine(state, rowNode.from, rowNode.to);
-}
-
 /** GFM delimiter row (`| --- |`, `| - |`, `:---:`). */
 function isDelimiterRowLine(text: string): boolean {
     const cells = splitTableRowCells(text);

@@ -913,7 +913,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                                 const address = parseStyleKey(key);
                                 if (!address) {continue;}
                                 const cell = ws.getRow(address.row).getCell(address.col);
-                                const { controlType, dropdownOptions, defaultValue } = cellMeta.control;
+                                const { controlType, dropdownOptions } = cellMeta.control;
                                 if (controlType === 'checkbox') {
                                     cell.dataValidation = {
                                         type: 'list',
@@ -1163,7 +1163,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                 return;
             }
 
-            if (message?.command === 'enableDefaultEditor' || message?.command === 'enableAsDefault') {
+            if (message?.command === 'enableAsDefault') {
                 const associationType = getAssociationType();
                 await enableOpenByDefault(associationType);
                 trySendSettings();
@@ -1906,67 +1906,6 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
         } catch (error) {
             vscode.window.showErrorMessage(`Error reading XLSX file: ${error}`);
         }
-    }
-
-    private getLoadingContent(): string {
-        return `<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Loading XLSX File</title>
-    <style>
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            margin: 0;
-            padding: 0;
-            background-color: #ffffff;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            flex-direction: column;
-        }
-        
-        .loading-container {
-            text-align: center;
-        }
-        
-        .spinner {
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #2196f3;
-            border-radius: 50%;
-            width: 60px;
-            height: 60px;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 20px;
-        }
-        
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        
-        .loading-text {
-            font-size: 18px;
-            color: #333;
-            margin-bottom: 10px;
-        }
-        
-        .loading-subtext {
-            font-size: 14px;
-            color: #666;
-        }
-    </style>
-</head>
-<body>
-    <div class="loading-container">
-        <div class="spinner"></div>
-        <div class="loading-text">Loading XLSX File...</div>
-        <div class="loading-subtext">Please wait while we process your spreadsheet</div>
-    </div>
-</body>
-</html>`;
     }
 
     private extractWorksheetData(worksheet: Excel.Worksheet, workbook: Excel.Workbook): any {
@@ -2788,17 +2727,5 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
 
         return style;
     }
-
-    private getExcelColumnLabel(n: number): string {
-        let label = '';
-        while (n > 0) {
-            let rem = (n - 1) % 26;
-            label = String.fromCharCode(65 + rem) + label;
-            n = Math.floor((n - 1) / 26);
-        }
-        return label;
-    }
-
-
 }
 

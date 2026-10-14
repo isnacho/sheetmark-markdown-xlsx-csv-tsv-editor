@@ -109,7 +109,8 @@ npm run package        # production build (also runs tests); used by vsce on rel
 ```
 
 - `check-types` runs three projects: `tsconfig.json` (host), `src/webviews/tsconfig.json`
-  (webviews), `tsconfig.test.json` (tests). Lint has zero warnings today; keep it that way.
+  (webviews), `tsconfig.test.json` (tests), all with `noUnusedLocals`: delete dead code instead of
+  leaving it. Lint has zero warnings today; keep it that way.
 - **Unit tests** are co-located `*.test.mts` files. They test pure functions headlessly: build a
   CM6 `EditorState`, call the `computeXxx` function, assert on the result. No DOM, no
   `EditorView`, no VS Code. New logic should be written as a pure function with a test next to it.

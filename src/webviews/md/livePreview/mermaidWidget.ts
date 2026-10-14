@@ -18,7 +18,6 @@ import { createFenceChrome } from './fenceChromeWidget';
 import {
     createMermaidModeSelect,
     shouldRebuildMermaidDecorations,
-    setMermaidPreviewModeCallback,
 } from './mermaidPreviewActions';
 
 export type { MermaidPreviewMode } from './mermaidPreviewMode';

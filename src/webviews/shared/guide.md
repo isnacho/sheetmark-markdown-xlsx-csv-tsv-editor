@@ -14,7 +14,7 @@ the spreadsheet webview (xlsx, csv, tsv) and the Markdown webview. A change here
 | `menuPanel.ts` | Markup helpers for menu-panel rows (settings gear panel, slash menu icons): `renderMenuCheckboxRow`, `renderMenuActionRow`, `renderMenuSelectRow`, `renderMenuSection`, `renderMenuPanelShell` |
 | `delayedTitleTooltip.ts` | Delayed hover tooltips for icon-only controls: `wireDelayedToolbarTooltips`, `applyDelayedTitle`, `setDelayedTitleText` |
 | `feedbackModal.ts` | `FeedbackModal`: feedback dialog; sends `getSystemDetails`, `submitFeedback`, `openExternal`; handles `systemDetails`, `feedbackResult` |
-| `utils.ts` | `Utils` static helpers: `Utils.$` (element by id), `Utils.showToast`, `Utils.writeToClipboardAsync`, `Utils.escapeHtml`, `Utils.normalizeCellText` |
+| `utils.ts` | `Utils` static helpers: `Utils.$` (element by id), `Utils.showToast`, `Utils.escapeHtml` |
 | `icons.ts` | `Icons`: SVG icon strings for toolbars and menus |
 
 Message details for the shared modules are in

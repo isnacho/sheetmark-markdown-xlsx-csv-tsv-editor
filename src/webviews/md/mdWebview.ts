@@ -51,7 +51,7 @@ import {
 } from './livePreview/livePreviewEditor';
 import { setImageUriResolver } from './livePreview/imageWidget';
 import { diffLineStats, formatDiffLineStats } from './diffStats';
-import { markdownBodyWithoutFrontmatter, extractFrontmatter, frontmatterBodyStartLine } from './frontmatter';
+import { markdownBodyWithoutFrontmatter, frontmatterBodyStartLine } from './frontmatter';
 import { stripMarkdownToPlainText, computeTextStats } from './markdownStats';
 import type { TextStats } from './markdownStats';
 import type { Cm6Match } from './livePreview/livePreviewSearch';
@@ -397,17 +397,6 @@ function persistMermaidPreviewMode(mode: 'diagram' | 'code') {
 function persistCalloutDefaultType(type: string) {
     calloutDefaultType = type;
     vscode.postMessage({ command: 'saveCalloutDefaultType', type });
-}
-
-function applyFrontmatterBlockToDocument(newBlock: string) {
-    const extracted = extractFrontmatter(currentContent);
-    if (!extracted) { return; }
-    currentContent = newBlock + extracted.body;
-    if (isLivePreviewActive()) {
-        setLivePreviewContent(currentContent);
-        refreshCm6Toc(currentContent);
-    }
-    updateStatusInfo();
 }
 
 

@@ -1364,6 +1364,8 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                     const sourceType = detectTabularFileType(currentUri.fsPath) || 'xlsx';
                     if (sourceType === 'csv' || sourceType === 'tsv') {
                         await saveDelimitedFileAndStyles(sourceType, edits, richEdits, styleEdits, operations, isAutosave);
+                        // Same as the XLSX path below: every save is a restorable version (deduped by hash).
+                        await persistVersionSnapshot();
                         return;
                     }
 

@@ -3,6 +3,13 @@
 ## Unreleased
 
 - YAML frontmatter: lists of objects (e.g. `{ name, role }` entries) now expand as indented rows instead of showing `[object Object]` pills; string-only lists still render as chips.
+- Security: opening an untrusted spreadsheet or Markdown file can no longer run script inside the editor. Cell text and Markdown table cells keep their formatting (bold, italic, colors, line breaks) but anything executable is stripped, and links from file content only open if they are `http`, `https` or `mailto` (others show a warning instead).
+- Spreadsheets: fast consecutive edits no longer lose changes. Autosaves now run one after another, so a second save can't overwrite the first one's edits; a file moved or renamed during a save also keeps saving to its new location.
+- Spreadsheets: copying cells that contain line breaks (Shift+Enter) and pasting them back, or into Excel or Google Sheets, keeps each multi-line cell as one cell instead of splitting it into extra rows. Copied rich-text cells paste as plain text, without HTML tags.
+- CSV/TSV: "Convert to XLSX" from the Command Palette now keeps font size and text wrap, matching the toolbar's Convert button.
+- CSV/TSV: every save is now kept in version history, so you can roll back edits; before, history only held the file as it was when opened.
+- Markdown: after moving or renaming a file, local images next to it keep loading.
+- Requires VS Code 1.67 or newer (the previous "1.60" minimum was never accurate).
 
 ## v1.5.0 — 2026-09-05
 

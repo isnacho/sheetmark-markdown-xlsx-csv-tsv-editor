@@ -1,35 +1,21 @@
 # Shared Webview Components Guide
 
-This directory contains shared components and utilities used across the different webviews (Markdown, Table, XLSX).
+Modules in this folder run in the **webview (browser)** and are bundled into both webviews:
+the spreadsheet webview (xlsx, csv, tsv) and the Markdown webview. A change here affects both.
 
-## Components
+| File | What it provides |
+|---|---|
+| `common.ts` | `vscode` (the `acquireVsCodeApi()` wrapper used for every `postMessage`), `VirtualScrollConfig` (`ROW_HEIGHT`, `BUFFER_ROWS`, `CHUNK_SIZE`), `debounce` |
+| `virtualLoader.ts` | `VirtualLoader`: request/response bookkeeping for row windows from the host (`getRows` → `rowsData`, `resolveRequest`) |
+| `themeManager.ts` | `ThemeManager` (VS Code / Light / Dark; handles the host's `setTheme` message, keyed on `type`), `renderThemeToggleSettingItem` |
+| `settingsManager.ts` | `SettingsManager`, `SettingDefinition`: settings panel rendering and change wiring |
+| `toolbarManager.ts` | `ToolbarManager`, `ToolbarButton`: toolbar buttons, visibility, sticky layout, header height |
+| `toolbarLayout.ts` | `applyToolbarLayout`: applies the sticky/non-sticky toolbar setting via `ToolbarManager` |
+| `menuPanel.ts` | Markup helpers for menu-panel rows (settings gear panel, slash menu icons): `renderMenuCheckboxRow`, `renderMenuActionRow`, `renderMenuSelectRow`, `renderMenuSection`, `renderMenuPanelShell` |
+| `delayedTitleTooltip.ts` | Delayed hover tooltips for icon-only controls: `wireDelayedToolbarTooltips`, `applyDelayedTitle`, `setDelayedTitleText` |
+| `feedbackModal.ts` | `FeedbackModal`: feedback dialog; sends `getSystemDetails`, `submitFeedback`, `openExternal`; handles `systemDetails`, `feedbackResult` |
+| `utils.ts` | `Utils` static helpers: `Utils.$` (element by id), `Utils.showToast`, `Utils.writeToClipboardAsync`, `Utils.escapeHtml`, `Utils.normalizeCellText` |
+| `icons.ts` | `Icons`: SVG icon strings for toolbars and menus |
 
-### `common.ts`
-Contains common utilities and constants.
-- `vscode`: Wrapper for the VS Code API.
-- `VirtualScrollConfig`: Constants for virtual scrolling (ROW_HEIGHT, BUFFER_ROWS, CHUNK_SIZE).
-- `debounce`: Utility function for debouncing events.
-
-### `virtualLoader.ts`
-Handles data fetching for virtual scrolling.
-- `VirtualLoader`: Class that manages requests to the extension host for row data.
-
-### `themeManager.ts`
-Manages theme switching (Light, Dark, VS Code High Contrast).
-
-### `settingsManager.ts`
-Manages the settings panel and persistence.
-
-### `toolbarManager.ts`
-Manages the toolbar buttons and their states.
-
-### `utils.ts`
-General utilities.
-- `$`: DOM element selector.
-- `showToast`: Displays a toast notification.
-- `writeToClipboardAsync`: Handles clipboard operations.
-- `escapeHtml`: Escapes HTML strings.
-- `normalizeCellText`: Normalizes text for cell display.
-
-### `icons.ts`
-Contains SVG icon strings used in the toolbar.
+Message details for the shared modules are in
+[MESSAGE-PROTOCOL.md](../../../.docs/dev/MESSAGE-PROTOCOL.md).

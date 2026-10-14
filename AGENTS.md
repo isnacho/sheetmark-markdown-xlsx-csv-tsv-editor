@@ -1,140 +1,160 @@
-# AGENTS.md — agent working guide
+# AGENTS.md: agent working guide
 
-VS Code extension: custom editors for spreadsheets (`.xlsx`/`.csv`/`.tsv`) and Markdown (`.md`).
-Fork of upstream `xlsx-viewer` v1.9.91, ~20k lines TypeScript. Read this file fully before editing.
+Sheetmark is a VS Code extension with custom editors for spreadsheets (`.xlsx`/`.csv`/`.tsv`) and
+Markdown (`.md`). It started as a fork of upstream `xlsx-viewer` v1.9.91 and is published as
+`iggyinc.sheetmark`. TypeScript, bundled with esbuild. Read this file fully before editing.
 
-Deep references (load on demand): [.docs/dev/ARCHITECTURE.md](.docs/dev/ARCHITECTURE.md) ·
-[.docs/dev/MESSAGE-PROTOCOL.md](.docs/dev/MESSAGE-PROTOCOL.md) ·
-[.docs/dev/MAP-spreadsheetWebview.md](.docs/dev/MAP-spreadsheetWebview.md) ·
-[.docs/dev/MAP-mdWebview.md](.docs/dev/MAP-mdWebview.md) ·
-[changelog](CHANGELOG.md) · roadmap: [.docs/product/PLAN.md](.docs/product/PLAN.md) ·
-publish/local install: [.agents/skills/publish-sheetmark/SKILL.md](.agents/skills/publish-sheetmark/SKILL.md)
+**Verify every change with `npm run verify`** (types for all three tsconfigs, lint, unit tests,
+bundle). It must end green before you call work done. See §5.
+
+Deep references (load on demand):
+
+| Doc | Use it for |
+|---|---|
+| [.docs/dev/ARCHITECTURE.md](.docs/dev/ARCHITECTURE.md) | Runtime boundary, providers, data model |
+| [.docs/dev/MESSAGE-PROTOCOL.md](.docs/dev/MESSAGE-PROTOCOL.md) | Every host ⇄ webview message, both sides |
+| [.docs/dev/MAP-spreadsheetWebview.md](.docs/dev/MAP-spreadsheetWebview.md) | Navigating the spreadsheet webview (very large file) |
+| [.docs/dev/MAP-mdWebview.md](.docs/dev/MAP-mdWebview.md) | Navigating the Markdown webview and `livePreview/` |
+| [CHANGELOG.md](CHANGELOG.md) | Release notes; add user-facing changes under `## Unreleased` |
+| [publish-sheetmark skill](.agents/skills/publish-sheetmark/SKILL.md) | Releasing, or installing locally to test in another window |
+| [.docs/README.md](.docs/README.md) | Index of everything else (product docs, Idea Lab) |
 
 ---
 
-## 1. The one thing to internalize: TWO runtimes
+## 1. Two runtimes, enforced by the compiler
 
-Code here runs in **two different places** with different globals. Mixing them is the
-most common way to break this repo. `import ... 'vscode'` means two different things.
+Code runs in two places with different globals. Each has its own tsconfig, so using the wrong
+runtime's APIs is a compile error, not a runtime surprise.
 
 | | **Extension host** (Node.js) | **Webview** (browser sandbox) |
 |---|---|---|
-| Files | `src/extension.ts`, `src/*EditorProvider.ts`, `src/shared/**` | `src/webviews/**` |
-| Bundle | `dist/extension.js` (esbuild, `platform: node`) | `dist/spreadsheet/*.js`, `dist/md/*.js` (esbuild, `platform: browser`, IIFE) |
-| `vscode` | the real VS Code module (`vscode.window`, `Uri`, fs, commands) | **NOT available.** `vscode` = `acquireVsCodeApi()` wrapper from [src/webviews/shared/common.ts](src/webviews/shared/common.ts) — only `postMessage` / `getState` / `setState` |
-| Can use | Node APIs (`fs`, `path`), `exceljs`, the `vscode` module | `document`, `window`, DOM, `markdown-it` (TOC), CodeMirror 6, `mermaid` |
-| Cannot use | DOM / `window` / `document` | Node APIs, `fs`, `path`, the `vscode` module, `require` |
+| Files | `src/extension.ts`, `src/*EditorProvider.ts`, `src/shared/**`, `src/spreadsheet/**` | `src/webviews/**` |
+| tsconfig | [tsconfig.json](tsconfig.json): Node types, **no DOM** | [src/webviews/tsconfig.json](src/webviews/tsconfig.json): DOM, **no Node types** |
+| Bundle | `dist/extension.js` (esbuild, `platform: node`) | `dist/spreadsheet/spreadsheetWebview.js`, `dist/md/mdWebview.js` (`platform: browser`, IIFE) |
+| `vscode` | The real VS Code module (`vscode.window`, `Uri`, fs, commands) | **Not available.** `vscode` is the `acquireVsCodeApi()` wrapper in [src/webviews/shared/common.ts](src/webviews/shared/common.ts): only `postMessage` / `getState` / `setState` |
+| Can use | Node APIs, `exceljs`, the `vscode` module | DOM, CodeMirror 6, `markdown-it` (TOC, inactive table cells), `mermaid`, `js-yaml`, `typo-js` |
 
-**They talk ONLY by message passing** (`postMessage` ⇄ `onDidReceiveMessage`). There are no
-shared function calls across the boundary. See rule 2.
+The two sides talk **only** by message passing (`postMessage` ⇄ `onDidReceiveMessage`). Never
+import across the boundary (`src/webviews/**` must not import from `src/shared/**` and vice versa).
 
-Rule of thumb before writing a line: *"which runtime is this file in?"* If `src/webviews/**`,
-you're in the browser — no Node, no `vscode` module, no `fs`.
+## 2. The message protocol is untyped strings: wire BOTH sides
 
----
+Every host ⇄ webview interaction is `postMessage({ command: 'x', ... })` matched on the other end
+by a string compare. **The compiler does not check these yet.** A typo or a one-sided edit is a
+silent no-op, the most common bug class here.
 
-## 2. The message protocol is untyped strings — wire BOTH sides
+When you add or change a message:
+1. Add the sender (`vscode.postMessage(...)` in the webview, `webview.postMessage(...)` in the provider).
+2. Add the handler on the other side, matching the exact string.
+3. Keep payload field names identical on both ends.
+4. Update [.docs/dev/MESSAGE-PROTOCOL.md](.docs/dev/MESSAGE-PROTOCOL.md).
 
-Every host⇄webview interaction is a `postMessage({ command: 'x', ... })` matched on the other
-end by a raw string compare. **The compiler does NOT check these.** A typo or a one-sided edit
-is a silent no-op — the #1 bug class in this codebase.
+Senders and handlers live in files thousands of lines apart: grep for the counterpart before
+assuming it exists.
 
-When you add or change any message:
-1. Add the **sender** (`vscode.postMessage(...)` in webview, or `webview.postMessage(...)` in provider).
-2. Add the **matching handler** on the other side (a `case`/`if` on the exact same string).
-3. Keep the payload field names identical on both ends.
-4. Update the table in [.docs/dev/MESSAGE-PROTOCOL.md](.docs/dev/MESSAGE-PROTOCOL.md).
+## 3. Hard DO-NOTs
 
-The senders/handlers live in files thousands of lines apart — always grep the counterpart
-before assuming it exists. The full inventory is in the protocol doc.
-
----
-
-## 3. Hard DO-NOTs (each has bitten someone)
-
-- **Do NOT rename the internal IDs** `xlsxViewer.*` (viewTypes) or `xlsx-viewer.*` (command IDs).
-  They look like leftover fork branding but are load-bearing: `package.json`
-  `contributes.customEditors[].viewType` / `commands[].command` must match the strings in
-  [src/extension.ts](src/extension.ts) `registerCustomEditorProvider(...)` / `registerCommand(...)`
-  **exactly**. Rename one side only → editors/commands silently stop registering. (Users never
-  see these strings; renaming is deferred on purpose — see PLAN.md.)
-- **Do NOT hardcode a new asset without updating the CSP + `localResourceRoots`.** Webview assets
-  load through `webview.asWebviewUri(...)` and are gated by the `Content-Security-Policy` meta tag
-  ([spreadsheetHtmlRenderer.ts:30](src/spreadsheet/spreadsheetHtmlRenderer.ts#L30),
-  [mdEditorProvider.ts:630](src/mdEditorProvider.ts#L630)) and `webview.options.localResourceRoots`.
-  Spreadsheet: `resources/` + `dist/`. Markdown also allows the document directory, workspace
-  folders, and ancestor dirs (local images). Anything outside allowed roots, or a scheme the CSP
-  forbids, is silently blocked.
-- **Do NOT change the esbuild output paths** without updating the provider references. Providers
-  hardcode `dist/spreadsheet/spreadsheetWebview.js` and `dist/md/mdWebview.js`; those must match
-  `esbuild.js` `entryPoints` + `outdir`.
-- **Do NOT trust `npm test` to verify anything** — there is no test suite (see §5).
-
----
+- **Do not rename the internal IDs** `xlsxViewer.*` (viewTypes) or `xlsx-viewer.*` (command IDs).
+  `package.json` `contributes.customEditors[].viewType` / `commands[].command` must match the
+  `registerCustomEditorProvider(...)` / `registerCommand(...)` strings in
+  [src/extension.ts](src/extension.ts) exactly, or editors and commands silently stop registering.
+  Users never see these strings; the rename is deferred on purpose.
+- **Do not insert file content into the DOM as HTML without escaping.** Spreadsheet cells and
+  Markdown come from untrusted files, and the webviews currently allow inline script. Build
+  markup from escaped text.
+- **Do not add a webview asset without updating the CSP and `localResourceRoots`.** Assets load
+  through `webview.asWebviewUri(...)`, gated by the `Content-Security-Policy` meta tag in
+  `getWebviewContent` ([spreadsheetHtmlRenderer.ts](src/spreadsheet/spreadsheetHtmlRenderer.ts) and
+  `MDEditorProvider.getWebviewContent` in [mdEditorProvider.ts](src/mdEditorProvider.ts)). Spreadsheet
+  roots: `resources/` + `dist/`. Markdown also allows the document's directory, workspace folders
+  and ancestor directories (local images). Anything else is silently blocked.
+- **Do not change esbuild output paths** without updating the providers, which hardcode
+  `dist/spreadsheet/spreadsheetWebview.js` and `dist/md/mdWebview.js`.
+- **Do not stage, stash, reset or reformat files you did not change.** The owner often has
+  uncommitted work in the tree. Commit only your own files, by path.
 
 ## 4. Where to change what
 
 | Want to change… | File(s) |
 |---|---|
-| Spreadsheet grid UI / behavior (browser) | `src/webviews/spreadsheet/spreadsheetWebview.ts` + `components/` — see [MAP](.docs/dev/MAP-spreadsheetWebview.md) |
+| Spreadsheet grid UI / behavior (browser) | `src/webviews/spreadsheet/spreadsheetWebview.ts` + `components/` (see [MAP](.docs/dev/MAP-spreadsheetWebview.md)) |
 | Spreadsheet file I/O, save, conversion, versions (host) | [src/spreadsheetEditorProvider.ts](src/spreadsheetEditorProvider.ts) |
-| Markdown shell (browser) | `src/webviews/md/mdWebview.ts` — see [MAP](.docs/dev/MAP-mdWebview.md) |
-| Markdown CM6 live preview + widgets | `src/webviews/md/livePreview/**` — indexed in [MAP](.docs/dev/MAP-mdWebview.md) |
-| Markdown file I/O / save / disk sync (host) | [src/mdEditorProvider.ts](src/mdEditorProvider.ts) |
+| Markdown shell: toolbar, save, disk sync UI, settings (browser) | `src/webviews/md/mdWebview.ts` (see [MAP](.docs/dev/MAP-mdWebview.md)) |
+| Markdown CM6 live preview + widgets | `src/webviews/md/livePreview/**`, one module per feature, wired in `livePreviewEditor.ts` |
+| Markdown file I/O, save, disk sync (host) | [src/mdEditorProvider.ts](src/mdEditorProvider.ts) |
 | External file watch + move detection | [fileExternalChangeWatcher.ts](src/shared/fileExternalChangeWatcher.ts), [migrateFileUriState.ts](src/shared/migrateFileUriState.ts) |
-| MD per-file prefs (column widths, YAML card, …) | `src/shared/*StorageService.ts` (table widths, frontmatter, mermaid mode, callout default) |
-| File conversion csv↔tsv↔xlsx | [src/shared/fileConversionService.ts](src/shared/fileConversionService.ts) |
-| CSV/TSV temporary style persistence | [src/shared/styleStorageService.ts](src/shared/styleStorageService.ts) |
+| Per-file / global prefs (column widths, YAML card, mermaid mode, callout default) | `src/shared/*StorageService.ts` |
+| CSV/TSV style persistence | [src/shared/styleStorageService.ts](src/shared/styleStorageService.ts) |
+| File conversion csv ↔ tsv ↔ xlsx | [src/shared/fileConversionService.ts](src/shared/fileConversionService.ts) |
 | Version history / rollback | [src/shared/versionHistory.ts](src/shared/versionHistory.ts) |
 | Commands, activation, provider registration | [src/extension.ts](src/extension.ts) |
-| Marketplace-visible settings | `contributes.configuration` in [package.json](package.json) |
-| Shared webview building blocks (theme, toolbar, settings, virtual scroll) | `src/webviews/shared/**` (see [guide.md](src/webviews/shared/guide.md)) |
+| User-visible settings | `contributes.configuration` in [package.json](package.json) |
+| Shared webview building blocks (theme, toolbar, settings, menus, virtual scroll) | `src/webviews/shared/**` (see [guide.md](src/webviews/shared/guide.md)) |
 | Static styling | `resources/**/*.css` |
-| The HTML shell + CSP for each webview | [src/spreadsheet/spreadsheetHtmlRenderer.ts](src/spreadsheet/spreadsheetHtmlRenderer.ts), `getWebviewContent` in [src/mdEditorProvider.ts](src/mdEditorProvider.ts) |
 
-Large files — **do not read end-to-end**, use the MAPs:
-`spreadsheetWebview.ts` (~7.7k), `mdWebview.ts` (~1.8k shell) + `livePreview/` (~7k, especially
-`tableWidget.ts` ~1.8k).
+**Large files: do not read end-to-end.** Use the MAPs and grep for symbol names:
+`spreadsheetWebview.ts`, `spreadsheetEditorProvider.ts`, `mdWebview.ts`, `livePreview/tableWidget.ts`.
 
----
-
-## 5. Build & verify loop
+## 5. Build and verify
 
 ```bash
 npm install            # once
-npm run compile        # check-types (tsc --noEmit) + eslint + esbuild bundle — RUN THIS TO VERIFY
+npm run verify         # REQUIRED before calling work done: check-types + lint + test:unit + bundle
+npm run test:unit      # unit tests only (node:test through tsx)
+node --import tsx --test src/webviews/md/livePreview/tableWidget.test.mts   # one test file
 npm run watch          # watch build; what F5 uses
-npm run package        # production/minified build (pre-publish)
+npm run package        # production build (also runs tests); used by vsce on release
 ```
 
-- **Verification = `npm run compile` (0 type + 0 lint errors) THEN a manual smoke test.**
-  There is **no extension-host test suite** — `npm test` / `vscode-test` are referenced in
-  `package.json` but no host tests exist. CM6 `livePreview/` modules have co-located `*.test.mts`
-  unit tests. Do not claim "all tests pass" without specifying scope.
-- **Manual smoke test:** press **F5** in VS Code → Extension Development Host opens with a live
-  watch build → open a sample file from [samples/](samples/) (`test.xlsx`/`.csv`/`.tsv`/`.md`) →
-  exercise your change → `Cmd+R` in the host window to reload after edits.
-- Baseline has 5 pre-existing eslint `curly` warnings (not errors); don't be alarmed, don't let it grow.
-- After touching webview code, confirm the change actually landed in the reloaded host — a silent
-  message-protocol break (rule 2) compiles clean but does nothing.
+- `check-types` runs three projects: `tsconfig.json` (host), `src/webviews/tsconfig.json`
+  (webviews), `tsconfig.test.json` (tests). Lint has zero warnings today; keep it that way.
+- **Unit tests** are co-located `*.test.mts` files. They test pure functions headlessly: build a
+  CM6 `EditorState`, call the `computeXxx` function, assert on the result. No DOM, no
+  `EditorView`, no VS Code. New logic should be written as a pure function with a test next to it.
+  Today tests cover only the Markdown webview; host and spreadsheet logic have none.
+- **There is no extension-host integration test.** After `verify`, smoke-test webview or provider
+  changes manually: **F5** opens an Extension Development Host on [samples/](samples/) → open
+  `test.xlsx` / `.csv` / `.tsv` / `.md` → exercise the change → `Cmd+R` to reload after edits.
+  A broken message (rule 2) compiles clean and does nothing, so confirm the behavior actually happens.
+- When reporting results, say exactly what ran ("verify green, smoke-tested table paste") rather
+  than "all tests pass".
+- CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs `npm run verify` on every push to
+  `main` and every PR.
 
----
+## 6. Workflow conventions
 
-## 6. Data model quick facts
+- **Branches:** work on a branch, not `main`. Releases publish from pushed `main` only.
+- **Commits:** imperative, sentence case, describes the user-visible effect
+  ("Fix drag-to-select on hanging-indent list lines."). Releases use `chore: release vX.Y.Z`.
+- **Changelog:** every user-facing change gets a bullet under `## Unreleased` in
+  [CHANGELOG.md](CHANGELOG.md), written for users (where, what they do, what happens) in 1 to 3
+  sentences. The release flow turns `Unreleased` into a version heading.
+- **Releases and local installs:** follow the [publish-sheetmark skill](.agents/skills/publish-sheetmark/SKILL.md).
+  Never print `VSCE_PAT` / `OVSX_PAT` values.
+- **Idea Lab:** feature ideas move through `.docs/ideas/1-to-brainstorm` → `2-to-plan` →
+  `3-to-implement` → `4-to-qa` → `5-completed`, driven by the `mii-idea-lab` skill. When you ship
+  an idea, move its file forward.
+- **Skills** live in `.agents/skills/` (`.claude/skills` and `.codex/skills` are symlinks to it).
+  `mii-idea-lab` is a symlink into the `.docs/mii-ai` git submodule: edits there must be
+  committed and pushed inside the submodule (GitHub account `isnacho`), then the submodule pointer
+  bumped in this repo.
+- **Docs:** point at symbols (function, class, handler names), never line numbers, and don't
+  record file sizes. Both drift within weeks. When you add a file or a message, update the MAP or
+  MESSAGE-PROTOCOL doc in the same change.
 
-- **Two providers, both `CustomReadonlyEditorProvider`** (open + save via `resolveCustomEditor` /
-  `vscode.workspace.fs.writeFile`, not `CustomTextEditor`). `SpreadsheetEditorProvider` serves all
-  three tabular viewTypes (`xlsxViewer.xlsx/.csv/.tsv`); `MDEditorProvider` serves `xlsxViewer.md`.
-- **Markdown editing** is CM6 live preview only (no legacy reading/split HTML preview). `currentContent`
-  in `mdWebview.ts` is the single source of truth for save and disk reload.
-- **External disk sync** uses [fileExternalChangeWatcher.ts](src/shared/fileExternalChangeWatcher.ts)
-  (change, debounced delete, rename via `onDidRenameFiles`). Moves migrate URI-keyed state via
-  [migrateFileUriState.ts](src/shared/migrateFileUriState.ts) and post `diskMovedExternally` to the webview.
-- **Large tables are virtualized** — the webview requests row windows from the host
-  (`getRows` → `rowsData`); it does not hold the whole file. Row height/buffer/chunk in
-  `VirtualScrollConfig` ([common.ts](src/webviews/shared/common.ts)).
-- **CSV/TSV can't store styles**, so "styled mode" persists formatting in extension state via
-  `StyleStorageService` (keyed `row:col`), separate from the delimited file bytes. XLSX stores
-  styles natively.
+## 7. Data model quick facts
+
+- **Two providers, both `CustomReadonlyEditorProvider`**: they open and save themselves through
+  `resolveCustomEditor` / `vscode.workspace.fs.writeFile`, not `CustomTextEditor`.
+  `SpreadsheetEditorProvider` serves `xlsxViewer.xlsx/.csv/.tsv`; `MDEditorProvider` serves `xlsxViewer.md`.
+- **Markdown editing** is CM6 live preview only. `currentContent` in `mdWebview.ts` is the single
+  source of truth for save and disk reload.
+- **External disk sync** uses `fileExternalChangeWatcher.ts` (change, debounced delete, rename via
+  `onDidRenameFiles`). Moves migrate URI-keyed state via `migrateFileUriState.ts` and post
+  `diskMovedExternally` to the webview.
+- **Large tables are virtualized**: the webview requests row windows (`getRows` → `rowsData`) and
+  never holds the whole file. Tunables are in `VirtualScrollConfig` ([common.ts](src/webviews/shared/common.ts)).
+- **CSV/TSV can't store styles**, so styled mode persists formatting in extension state via
+  `StyleStorageService` (keyed `row:col`), separate from the file bytes. XLSX stores styles natively.
 - **Version history** snapshots live under `context.globalStorageUri`, indexed per file.
 - Settings are read host-side and pushed to the webview as `initSettings` / `settingsUpdated`.

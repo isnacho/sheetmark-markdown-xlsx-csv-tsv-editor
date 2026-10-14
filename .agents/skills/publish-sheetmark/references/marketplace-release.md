@@ -71,7 +71,7 @@ dev install will vanish from the Extensions view (see that doc's gotcha section)
 
 ```bash
 git diff --check
-npm run compile
+npm run verify
 git diff -- package.json CHANGELOG.md
 RELEASE_VSIX_DIR="$(mktemp -d)"
 npx --yes @vscode/vsce@latest package --no-dependencies \

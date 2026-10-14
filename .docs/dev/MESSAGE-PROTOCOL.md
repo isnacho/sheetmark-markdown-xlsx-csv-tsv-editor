@@ -1,161 +1,182 @@
-# Message Protocol — host ⇄ webview
+# Message Protocol: host ⇄ webview
 
 The extension host and each webview communicate **only** by `postMessage`, matched on a raw
-`command` string. **TypeScript does not check these strings** — a typo or a one-sided edit is a
-silent no-op. This is the #1 bug class in the repo. When you add/change a message you MUST wire
+`command` string. **TypeScript does not check these strings**: a typo or a one-sided edit is a
+silent no-op. This is the #1 bug class in the repo. When you add or change a message you MUST wire
 **both** the sender and the handler, keep payload field names identical, and update this table.
 
-- **Webview → host** sender: `vscode.postMessage({...})` (the `vscode` wrapper from
+- **Webview to host** sender: `vscode.postMessage({...})` (the `vscode` wrapper from
   [common.ts](../../src/webviews/shared/common.ts)); handler: `onDidReceiveMessage` in the provider.
-- **Host → webview** sender: `webview.postMessage({...})` in the provider; handler: the
+- **Host to webview** sender: `webview.postMessage({...})` in the provider; handler: the
   `window.addEventListener('message', ...)` listener in the webview.
-- Dispatch is entirely on `message.command`. (`type: 'setTheme'` is the one exception — see note.)
+- Dispatch is on `message.command`. **Exception:** `setTheme` is sent as `{ type: 'setTheme', kind }`
+  and matched on `message.type` (in `ThemeManager.init`), not `command`.
 
-Line numbers are anchors, not guarantees — grep the command string if a line has drifted.
+Anchors below are file + enclosing function or handler, never line numbers. To find one, grep the
+command string (for example `'saveXlsxEdits'`) in the named file.
 
 ---
 
 ## Spreadsheet (`xlsxViewer.xlsx` / `.csv` / `.tsv`)
 
-Sender webview: [spreadsheetWebview.ts](../../src/webviews/spreadsheet/spreadsheetWebview.ts) ·
+Webview: [spreadsheetWebview.ts](../../src/webviews/spreadsheet/spreadsheetWebview.ts) ·
 Provider: [spreadsheetEditorProvider.ts](../../src/spreadsheetEditorProvider.ts)
 
-### Webview → host
+- **Provider handler:** `webview.onDidReceiveMessage` inside `resolveCustomEditor`, a chain of
+  `if (message?.command === '<command>')` blocks. The table names the block by its command.
+- **Webview handler:** the `window.addEventListener('message', ...)` listener near the end of the
+  IIFE, a chain of `if (message.command === '<command>')` blocks.
+
+### Webview to host
 
 | command | Payload | Sender (webview) | Handler (provider) |
 |---|---|---|---|
-| `webviewReady` | — | :7714 | :1474 |
-| `getRows` | `requestId`, range, `sheetIndex` | via `VirtualLoader` ([virtualLoader.ts](../../src/webviews/shared/virtualLoader.ts)), triggered by `requestRows`/`requestAllRows` :4550 | :1656 |
-| `saveXlsxEdits` | `sheetIndex`, `edits`, `richEdits`, `styleEdits`, `operations`, `isAutosave` | :4420, :4450, :5691, :7345 | :1805 |
-| `updateSettings` | `settingsScope`, `settings` | :6872 | :1592 |
-| `requestFreshData` | — | :7489 | :1759 |
-| `setPreferredViewMode` | `mode` (`'plain'`\|`'styled'`) | :2107, :7464 | :1744 |
-| `requestStyleMode` | — | :2095 | :1769 |
-| `styleModeDecision` | `decision` | :941 | :1783 |
-| `showVersionHistory` | — | :7474 | :1487 |
-| `restoreVersion` | `versionId` | :5182 | :1548 |
-| `cancelVersionPreview` | — | :5185, :6403 | :1536 |
-| `convertFile` | — | :7482 | :1735 |
-| `enableAsDefault` | — | spreadsheet settings `chkOpenByDefault` | :1629 (`enableAsDefault`\|`enableDefaultEditor`) |
-| `openExternal` | `url` | :6645 | :1685 |
-| `disableDefaultEditor` | — | spreadsheet settings `chkOpenByDefault` | :1636 |
-| `getSystemDetails` | — | [feedbackModal.ts](../../src/webviews/shared/feedbackModal.ts) | :1697 |
-| `submitFeedback` | feedback fields | [feedbackModal.ts](../../src/webviews/shared/feedbackModal.ts) | :1710 |
+| `webviewReady` | none | `DOMContentLoaded` listener (bootstrap) | `webviewReady` block (calls `trySendSettings`, `trySendInit`, sends `setTheme`) |
+| `getRows` | `requestId`, range, `sheetIndex` | `VirtualLoader.requestRows` ([virtualLoader.ts](../../src/webviews/shared/virtualLoader.ts)), called from `requestRows` / `requestAllRows` | `getRows` block |
+| `saveXlsxEdits` | `sheetIndex`, `edits`, `richEdits`, `styleEdits`, `operations`, `isAutosave` | `persistInteractiveControlEdit`, `persistPlainTextEdit`, `pasteTextAtSelection`, `saveEdits` | `saveXlsxEdits` block (CSV/TSV path goes through `saveDelimitedFileAndStyles`) |
+| `updateSettings` | `settingsScope`, `settings` | `postSettings` | `updateSettings` block |
+| `requestFreshData` | none | `attachHandlersOnce` (reload button) | `requestFreshData` block (`loadWorkbookPayload` + `trySendInit`) |
+| `setPreferredViewMode` | `mode` (`'plain'` \| `'styled'`) | `activateStyledMode`, `attachHandlersOnce` (plain/styled toggle) | `setPreferredViewMode` block |
+| `requestStyleMode` | none | `requestStyledMode` | `requestStyleMode` block |
+| `styleModeDecision` | `decision` | `submitStyleModeDecision` | `styleModeDecision` block |
+| `showVersionHistory` | none | `attachHandlersOnce` | `showVersionHistory` block |
+| `restoreVersion` | `versionId` | `ensurePreviewBanner` (Restore button) | `restoreVersion` block |
+| `cancelVersionPreview` | none | `ensurePreviewBanner` (Cancel button); Escape key in `initializeSelection` | `cancelVersionPreview` block |
+| `convertFile` | none | `attachHandlersOnce` | `convertFile` block |
+| `enableAsDefault` | none | `wireSettingsUI` (`onOpenByDefaultChange`) | `enableDefaultEditor` \|\| `enableAsDefault` block |
+| `disableDefaultEditor` | none | `wireSettingsUI` (`onOpenByDefaultChange`) | `disableDefaultEditor` block |
+| `openExternal` | `url` | `showLinkTooltipForCell`; also `FeedbackModal.bindEvents` (GitHub issues button) in [feedbackModal.ts](../../src/webviews/shared/feedbackModal.ts) | `openExternal` block |
+| `getSystemDetails` | none | `FeedbackModal.show` ([feedbackModal.ts](../../src/webviews/shared/feedbackModal.ts)) | `getSystemDetails` block |
+| `submitFeedback` | feedback fields | `FeedbackModal.submitForm` ([feedbackModal.ts](../../src/webviews/shared/feedbackModal.ts)) | `submitFeedback` block |
 
-> **External disk changes (spreadsheet):** change reloads via `initVirtualTable`. Moves and deletes
-> via [fileExternalChangeWatcher.ts](../../src/shared/fileExternalChangeWatcher.ts) (:2352+).
+> **External disk changes (spreadsheet):** a change reloads via `loadWorkbookPayload` +
+> `trySendInit` (re-sends `initVirtualTable`). Moves and deletes come from the
+> `createExternalFileChangeWatcher` callbacks ([fileExternalChangeWatcher.ts](../../src/shared/fileExternalChangeWatcher.ts))
+> at the end of `resolveCustomEditor`.
 
-### Host → webview
+### Host to webview
 
 | command | Payload | Sender (provider) | Handler (webview) |
 |---|---|---|---|
-| `initVirtualTable` | `worksheets`, `fileType`, `isPlainView`, `rowHeaderWidth`, `previewMode`, `versionId`, `timestamp` | :1319 | :7643 |
-| `rowsData` | `requestId`, `rows` | :1661, :1675 | :7637 (→ `VirtualLoader.resolveRequest`) |
-| `initSettings` | `settings`, scope | :1289 | :7556 |
-| `settingsUpdated` | `settings` | :2313 | :7561 |
-| `saveResult` | `ok`, `isAutosave`, `error` (on failure) | :1020, :1809, :1821, :2299, :2301 | :7566 |
-| `styleModeActivated` | — | :1772, :1788 | :7611 |
-| `showStyleModeNotice` | — | :1775 | :7616 |
-| `styleModeCancelled` | — | :1777, :1797, :1799 | :7621 |
-| `versionRestoredXlsx` | — | :1577 | :7601 |
-| `versionPreviewCancelledXlsx` | — | :1543 | :7606 |
-| `versionHistoryError` | `message` | :1492, :1528, :1559, :1582 | :7596 |
-| `diskMovedExternally` | `fileName` | move handler :2345 | :7626 |
-| `diskDeletedExternally` | — | watcher `onDelete` :2371 | :7631 |
-| `setTheme` | `kind` | :1300, :1482 | `ThemeManager` ([themeManager.ts](../../src/webviews/shared/themeManager.ts)) — **not** the main listener; keyed on `message.type` |
-| `systemDetails` | details | :1700 | [feedbackModal.ts](../../src/webviews/shared/feedbackModal.ts) |
-| `feedbackResult` | `ok` | :1728, :1730 | [feedbackModal.ts](../../src/webviews/shared/feedbackModal.ts) |
+| `initVirtualTable` | `worksheets`, `fileType`, `isPlainView`, `rowHeaderWidth`, `previewMode`, `versionId`, `timestamp` | `trySendInit` | `initVirtualTable` block |
+| `rowsData` | `requestId`, `rows` | `getRows` block | `rowsData` block (calls `virtualLoader.resolveRequest`) |
+| `initSettings` | `settings`, `plainSettings`, `styledSettings`, `settingsScope` (from `getPersistedSettings`) | `trySendSettings` | `initSettings` block |
+| `settingsUpdated` | same shape as `initSettings` | `onDidChangeConfiguration` listener (`configChangeDisposable`) | `settingsUpdated` block |
+| `saveResult` | `ok`, `isAutosave`, `error` (on failure) | `saveXlsxEdits` block; `saveDelimitedFileAndStyles` | `saveResult` block |
+| `styleModeActivated` | none | `requestStyleMode` and `styleModeDecision` blocks | `styleModeActivated` block |
+| `showStyleModeNotice` | none | `requestStyleMode` block | `showStyleModeNotice` block |
+| `styleModeCancelled` | none | `requestStyleMode` and `styleModeDecision` blocks | `styleModeCancelled` block |
+| `versionRestoredXlsx` | none | `restoreVersion` block | `versionRestoredXlsx` block |
+| `versionPreviewCancelledXlsx` | none | `cancelVersionPreview` block | `versionPreviewCancelledXlsx` block |
+| `versionHistoryError` | `message` | `showVersionHistory` and `restoreVersion` blocks | `versionHistoryError` block |
+| `diskMovedExternally` | `fileName` | `handleMove` | `diskMovedExternally` block |
+| `diskDeletedExternally` | none | watcher `onDelete` callback | `diskDeletedExternally` block |
+| `setTheme` | `kind` (discriminator is `type`, not `command`) | `webviewReady` block; `onDidChangeActiveColorTheme` listener | `ThemeManager.init` ([themeManager.ts](../../src/webviews/shared/themeManager.ts)), **not** the main listener |
+| `systemDetails` | details | `getSystemDetails` block | `FeedbackModal.initialize` listener ([feedbackModal.ts](../../src/webviews/shared/feedbackModal.ts)) |
+| `feedbackResult` | `ok` | `submitFeedback` block | `FeedbackModal.initialize` listener ([feedbackModal.ts](../../src/webviews/shared/feedbackModal.ts)) |
 
-> `init` (webview :7673) is a **legacy** handler for an older data shape; the current provider sends
-> `initVirtualTable`, not `init`. Leave it unless you're deliberately removing dead paths.
+### Known orphans and dead paths (spreadsheet)
 
-> `toggleView` was removed — dead code; do not reintroduce without wiring both sides.
+| Message | Side that exists | Status |
+|---|---|---|
+| `enableDefaultEditor` | Host handles it (shares the `enableAsDefault` block) | Nothing sends it. Legacy alias; the webview sends `enableAsDefault`. |
+| `init` | Webview handles it (`init` block, older data shape) | The host never sends it; it sends `initVirtualTable`. Leave it unless you are deliberately removing dead paths. |
+| `toggleView` | Neither | Removed as dead code. Do not reintroduce without wiring both sides. |
 
 ---
 
 ## Markdown (`xlsxViewer.md`)
 
-Sender webview: [mdWebview.ts](../../src/webviews/md/mdWebview.ts) ·
+Webview: [mdWebview.ts](../../src/webviews/md/mdWebview.ts) ·
 Provider: [mdEditorProvider.ts](../../src/mdEditorProvider.ts)
 
-### Webview → host
+- **Provider handler:** `switch (message.command)` inside `onDidReceiveMessage` in
+  `resolveCustomEditor`, one `case '<command>'` per message.
+- **Webview handler:** `switch (m.command)` under the `// ===== Message Handler =====` section of
+  `mdWebview.ts`, one `case '<command>'` per message.
+
+### Webview to host
 
 | command | Payload | Sender (webview) | Handler (provider) |
 |---|---|---|---|
-| `webviewReady` | — | :1805 | :157 |
-| `saveMarkdown` | `text`, `force` (bypass host disk-conflict check after explicit overwrite confirm), `isAutosave` | :616 | :261 |
-| `updateSettings` | `settings` (includes `autoSave`, Document Stats toggles, current-line toggle, `diffReviewEnabled`, `diffLayout`) | :1119 | :221 |
-| `requestFreshData` | — | :724 | :247 |
-| `resolveImageUris` | `sources` | :197, :202, :502 | :191 |
-| `openExternal` | `url` | :483 | :448 |
-| `openRelativeFile` | `href`, `documentUri` | :485 | :459 |
-| `showVersionHistory` | — | :1541 | :326 |
-| `restoreVersion` | optional `versionId` (webview usually omits — host uses preview id), optional `force` (bypass host disk-conflict check after explicit restore confirm) | :559, :1460 | :405 |
-| `cancelVersionPreview` | — | :562 | :382 |
-| `saveTableColumnWidths` | `widths` (table order-index → px per column) | :440 | :291 |
-| `saveFrontmatterPanelCollapsed` | `collapsed` (boolean) | :326 | :300 |
-| `saveMermaidPreviewMode` | `mode` (`diagram` \| `code`) | :331 | :308 |
-| `saveCalloutDefaultType` | `type` (slug: `[\w-]+`) | :336 | :317 |
-| `enableAsDefault` | — | md settings `chkOpenByDefault` | `enableAsDefault` case |
-| `disableDefaultEditor` | — | md settings `chkOpenByDefault` | `disableDefaultEditor` case |
-| `getSystemDetails` | — | [feedbackModal.ts](../../src/webviews/shared/feedbackModal.ts) | :486 |
-| `submitFeedback` | feedback fields | [feedbackModal.ts](../../src/webviews/shared/feedbackModal.ts) | :499 |
+| `webviewReady` | none | `Initialize` section (bootstrap); Retry button in `showInitialLoadError` | `case 'webviewReady'` |
+| `saveMarkdown` | `text`, `force` (bypass host disk-conflict check after explicit overwrite confirm), `isAutosave` | `doSave` | `case 'saveMarkdown'` |
+| `updateSettings` | `settings` (includes `autoSave`, Document Stats toggles, current-line toggle, `diffReviewEnabled`, `diffLayout`) | `applySettings` (when `persist` is true) | `case 'updateSettings'` |
+| `requestFreshData` | none | `requestReloadFromDisk` | `case 'requestFreshData'` |
+| `resolveImageUris` | `sources` | `wireImageUriResolver`, `handleLivePreviewModifierClick` | `case 'resolveImageUris'` |
+| `openExternal` | `url` | `executeLivePreviewLinkAction`; also `FeedbackModal.bindEvents` (GitHub issues button) in [feedbackModal.ts](../../src/webviews/shared/feedbackModal.ts) | `case 'openExternal'` |
+| `openRelativeFile` | `href`, `documentUri` | `executeLivePreviewLinkAction` | `case 'openRelativeFile'` |
+| `showVersionHistory` | none | `initializeSettings` (`openVersionHistorySetting` button) | `case 'showVersionHistory'` |
+| `restoreVersion` | optional `versionId` (webview usually omits; host uses the preview id), optional `force` (bypass host disk-conflict check after explicit restore confirm) | `ensureVersionPreviewBanner` (Restore button); `case 'restoreConflict'` in the webview handler (resend with `force`) | `case 'restoreVersion'` |
+| `cancelVersionPreview` | none | `ensureVersionPreviewBanner` (Cancel button) | `case 'cancelVersionPreview'` |
+| `saveTableColumnWidths` | `widths` (table order-index to px per column) | `onColumnWidthsChanged` callback in `enterPreviewEditMode` | `case 'saveTableColumnWidths'` |
+| `saveFrontmatterPanelCollapsed` | `collapsed` (boolean) | `persistFrontmatterPanelCollapsed` | `case 'saveFrontmatterPanelCollapsed'` |
+| `saveMermaidPreviewMode` | `mode` (`diagram` \| `code`) | `persistMermaidPreviewMode` | `case 'saveMermaidPreviewMode'` |
+| `saveCalloutDefaultType` | `type` (slug: `[\w-]+`) | `persistCalloutDefaultType` | `case 'saveCalloutDefaultType'` |
+| `enableAsDefault` | none | `initializeSettings` (`chkOpenByDefault`) | `case 'enableAsDefault'` |
+| `disableDefaultEditor` | none | `initializeSettings` (`chkOpenByDefault`) | `case 'disableDefaultEditor'` |
+| `getSystemDetails` | none | `FeedbackModal.show` ([feedbackModal.ts](../../src/webviews/shared/feedbackModal.ts)) | `case 'getSystemDetails'` |
+| `submitFeedback` | feedback fields | `FeedbackModal.submitForm` ([feedbackModal.ts](../../src/webviews/shared/feedbackModal.ts)) | `case 'submitFeedback'` |
 
-### Host → webview
+### Host to webview
 
 | command | Payload | Sender (provider) | Handler (webview) |
 |---|---|---|---|
-| `initMarkdown` | `content` (not `text`), `fileName`, `documentUri`, `documentDirUri`, `workspaceFolderUri`, `tableColumnWidths`, `frontmatterPanelCollapsed`, `mermaidPreviewMode`, `calloutDefaultType` | `buildInitMarkdownPayload` :134, sent e.g. :165 | :1284 |
-| `initSettings` | `settings` (includes `autoSave`, live-preview flags, `isDefaultEditor`, Document Stats toggles, current-line toggle, `diffReviewEnabled`, `diffLayout`) | :178 | :1392 |
-| `settingsUpdated` | `settings` (includes `isDefaultEditor`, Document Stats toggles, current-line toggle, `diffReviewEnabled`, `diffLayout`) | config listener | :1400 |
-| `saveResult` | `ok`, `isAutosave`, `error` (on failure) | :283, :285 | :1404 |
-| `saveConflict` | — | `saveMarkdown` handler fresh-read mismatch :273 | :1435 |
-| `restoreConflict` | `versionId` | `restoreVersion` handler fresh-read mismatch | :1457 |
-| `resolvedImageUris` | `resolved` | :212 | :1449 |
-| `versionPreviewMd` | `versionId`, `timestamp` | :369 | :1434 |
-| `versionPreviewCancelledMd` | — | :396 | :1439 |
-| `versionRestoredMd` | `versionId`, `timestamp` | :433 | :1444 |
-| `versionHistoryError` | `message` | :330, :375, :398, :416, :437 | :1430 |
-| `diskChangedExternally` | same fields as `initMarkdown` (re-read payload) | watcher `onChange` :601, `requestFreshData` :251 | :1309 |
-| `diskDeletedExternally` | — | watcher `onDelete` :610 | :1374 |
-| `diskMovedExternally` | `fileName`, `documentUri`, `documentDirUri` | `handleMove` :582 | :1380 |
-| `reloadFromDiskError` | `message` | `requestFreshData` catch :255, `webviewReady` catch :193 | :1378 |
-| `openRelativeFileFailed` | `message` | `openRelativeFile` missing file / open error | :2075 |
-| `acceptAllDiskChanges` | — | `xlsx-viewer.md.acceptAllDiskChanges` command → `MDEditorProvider.postCommandToActivePanel` :59 (in [extension.ts](../../src/extension.ts) :461) | :2033 |
-| `rejectAllDiskChanges` | — | `xlsx-viewer.md.rejectAllDiskChanges` command → `MDEditorProvider.postCommandToActivePanel` :59 (in [extension.ts](../../src/extension.ts) :464) | :2037 |
-| `setTheme` | `kind` | :181, :548 | `ThemeManager`; keyed on `message.type` |
-| `systemDetails` | details | :490 | [feedbackModal.ts](../../src/webviews/shared/feedbackModal.ts) |
-| `feedbackResult` | `ok` | :514, :516 | [feedbackModal.ts](../../src/webviews/shared/feedbackModal.ts) |
+| `initMarkdown` | `content` (not `text`), `fileName`, `documentUri`, `documentDirUri`, `workspaceFolderUri`, `tableColumnWidths`, `frontmatterPanelCollapsed`, `mermaidPreviewMode`, `calloutDefaultType` | built by `buildInitMarkdownPayload`; sent from `case 'webviewReady'`, `case 'showVersionHistory'` (preview content), `case 'cancelVersionPreview'`, `case 'restoreVersion'` | `case 'initMarkdown'` |
+| `initSettings` | `settings` from `buildMdWebviewSettings` (includes `autoSave`, live-preview flags, `isDefaultEditor`, Document Stats toggles, current-line toggle, `diffReviewEnabled`, `diffLayout`) | `case 'webviewReady'` | `case 'initSettings'` |
+| `settingsUpdated` | `settings` (same builder) | `onDidChangeConfiguration` listener (`configChangeDisposable`); `case 'enableAsDefault'`; `case 'disableDefaultEditor'` | `case 'settingsUpdated'` |
+| `saveResult` | `ok`, `isAutosave`, `error` (on failure) | `case 'saveMarkdown'` | `case 'saveResult'` |
+| `saveConflict` | none | `case 'saveMarkdown'` (fresh-read mismatch) | `case 'saveConflict'` |
+| `restoreConflict` | `versionId` | `case 'restoreVersion'` (fresh-read mismatch) | `case 'restoreConflict'` |
+| `resolvedImageUris` | `resolved` | `case 'resolveImageUris'` | `case 'resolvedImageUris'` |
+| `versionPreviewMd` | `versionId`, `timestamp` | `case 'showVersionHistory'` | `case 'versionPreviewMd'` |
+| `versionPreviewCancelledMd` | none | `case 'cancelVersionPreview'` | `case 'versionPreviewCancelledMd'` |
+| `versionRestoredMd` | `versionId`, `timestamp` | `case 'restoreVersion'` | `case 'versionRestoredMd'` |
+| `versionHistoryError` | `message` | `case 'showVersionHistory'`, `case 'cancelVersionPreview'`, `case 'restoreVersion'` | `case 'versionHistoryError'` |
+| `diskChangedExternally` | same fields as `initMarkdown` (re-read payload) | watcher `onChange` callback; `case 'requestFreshData'` | `case 'diskChangedExternally'` |
+| `diskDeletedExternally` | none | watcher `onDelete` callback | `case 'diskDeletedExternally'` |
+| `diskMovedExternally` | `fileName`, `documentUri`, `documentDirUri` | `handleMove` | `case 'diskMovedExternally'` |
+| `reloadFromDiskError` | `message` | `case 'requestFreshData'` catch; `case 'webviewReady'` catch | `case 'reloadFromDiskError'` |
+| `openRelativeFileFailed` | `message` | `case 'openRelativeFile'` (missing file or open error) | `case 'openRelativeFileFailed'` |
+| `acceptAllDiskChanges` | none | `xlsx-viewer.md.acceptAllDiskChanges` command in `activate` ([extension.ts](../../src/extension.ts)) calls `MDEditorProvider.postCommandToActivePanel` | `case 'acceptAllDiskChanges'` |
+| `rejectAllDiskChanges` | none | `xlsx-viewer.md.rejectAllDiskChanges` command in `activate` ([extension.ts](../../src/extension.ts)) calls `MDEditorProvider.postCommandToActivePanel` | `case 'rejectAllDiskChanges'` |
+| `setTheme` | `kind` (discriminator is `type`, not `command`) | `case 'webviewReady'`; `onDidChangeActiveColorTheme` listener (`themeChangeDisposable`) | `ThemeManager.init` ([themeManager.ts](../../src/webviews/shared/themeManager.ts)) |
+| `systemDetails` | details | `case 'getSystemDetails'` | `FeedbackModal.initialize` listener ([feedbackModal.ts](../../src/webviews/shared/feedbackModal.ts)) |
+| `feedbackResult` | `ok` | `case 'submitFeedback'` | `FeedbackModal.initialize` listener ([feedbackModal.ts](../../src/webviews/shared/feedbackModal.ts)) |
 
-> Version preview also re-sends `initMarkdown` with preview content before `versionPreviewMd`
-> (:368–370). Restore/cancel similarly re-send `initMarkdown` with live disk content.
+> Version preview also re-sends `initMarkdown` with preview content just before `versionPreviewMd`
+> (in `case 'showVersionHistory'`). Restore and cancel similarly re-send `initMarkdown` with live
+> disk content.
 
 ---
 
 ## Notes
 
-- **Shared-module messages.** `getSystemDetails`/`submitFeedback`/`systemDetails`/`feedbackResult`
-  (feedback flow) and `setTheme` (theming) are sent/handled inside `src/webviews/shared/**`
+- **Shared-module messages.** `getSystemDetails` / `submitFeedback` / `systemDetails` /
+  `feedbackResult` (feedback flow), the feedback modal's `openExternal`, and `setTheme` (theming)
+  are sent or handled inside `src/webviews/shared/**`
   ([feedbackModal.ts](../../src/webviews/shared/feedbackModal.ts),
-  [themeManager.ts](../../src/webviews/shared/themeManager.ts)), not the per-editor webview entry files.
-  Both editors reuse them, so a change there hits both.
+  [themeManager.ts](../../src/webviews/shared/themeManager.ts)), not the per-editor webview entry
+  files. Both editors reuse them, so a change there hits both.
 - **Settings** flow one way at init (`initSettings`) and on host-side change (`settingsUpdated`);
   webview edits flow back via `updateSettings`. Shapes are defined in
   [settingsManager.ts](../../src/webviews/shared/settingsManager.ts) and, for the spreadsheet,
   [spreadsheetSettingsComponent.ts](../../src/webviews/spreadsheet/components/spreadsheetSettingsComponent.ts).
 - **Disk-vs-editor diff.** The overlay itself is entirely webview-side: the baseline is
-  `currentContent` captured in the existing `diskChangedExternally` handler and the new content
+  `currentContent` captured in the existing `diskChangedExternally` handler, and the new content
   already arrives in that message's `content` field. The settings payloads gained fields
   (`diffReviewEnabled`, `diffLayout`). `diffLayout` is the one non-boolean setting, so the host's
   `updateSettings` writer validates it against `'inline' | 'sideBySide'` instead of coercing.
-  The two exceptions are `acceptAllDiskChanges`/`rejectAllDiskChanges` (see the host → webview
-  table above) — real `contributes.commands`/`keybindings` in package.json, routed through
-  `MDEditorProvider`'s tracked `activePanel` (there's no VS Code API to ask "which custom editor
-  is focused") rather than through the webview's own message flow.
-- **External file watching.** Both providers use
+  The two exceptions are `acceptAllDiskChanges` / `rejectAllDiskChanges` (see the host to webview
+  table above): real `contributes.commands` / `keybindings` in package.json, routed through
+  `MDEditorProvider`'s tracked `activePanel` (there is no VS Code API to ask "which custom editor
+  is focused") rather than through the webview's own message flow. UX flow: [flow.md](../flow.md).
+- **External file watching.** Both providers use `createExternalFileChangeWatcher` from
   [fileExternalChangeWatcher.ts](../../src/shared/fileExternalChangeWatcher.ts) (VS Code watcher +
   `fs.watch` fallback, debounced delete, `onDidRenameFiles` for moves). URI-keyed extension state
-  migrates via [migrateFileUriState.ts](../../src/shared/migrateFileUriState.ts) on move.
+  migrates via `migrateFileUriState` ([migrateFileUriState.ts](../../src/shared/migrateFileUriState.ts))
+  on move.
 - **The durable fix:** these tables drift on every edit. The real remedy is a shared typed
-  discriminated union (`src/shared/messages.ts`) imported by both runtimes so the compiler enforces
-  the contract. Until that exists, this doc is the source of truth — keep it current.
+  discriminated union (`src/shared/messages.ts`, not yet created) imported by both runtimes so the
+  compiler enforces the contract. Until that exists, this doc is the source of truth; keep it
+  current.

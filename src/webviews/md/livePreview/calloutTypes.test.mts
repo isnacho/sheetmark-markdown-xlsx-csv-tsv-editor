@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { EditorState, Text } from '@codemirror/state';
 import { markdown } from '@codemirror/lang-markdown';
 import { GFM } from '@lezer/markdown';
+import { fullyParsed } from './testState.ts';
 import {
     findCalloutBlocks,
     calloutTypeClass,
@@ -54,7 +55,7 @@ test('findCalloutBlocks: unclosed block runs content through EOF', () => {
 
 test('findCalloutBlocks: ignores ::: syntax inside fenced code', () => {
     const doc = Text.of(['```', ':::note', 'example', ':::', '```']);
-    const state = EditorState.create({ doc, extensions: [markdown({ extensions: GFM })] });
+    const state = fullyParsed(EditorState.create({ doc, extensions: [markdown({ extensions: GFM })] }));
     const blocks = findCalloutBlocks(doc, state);
     assert.equal(blocks.length, 0);
 });
@@ -92,7 +93,7 @@ test('formatCalloutOpener: empty type becomes :::custom', () => {
 
 test('callout opener rewrite preserves optional title suffix for built-ins', () => {
     const doc = ':::info Title\nbody\n:::';
-    const state = EditorState.create({ doc });
+    const state = fullyParsed(EditorState.create({ doc }));
     const block = findCalloutBlocks(state.doc)[0];
     const parsed = parseCalloutOpener(state.doc.line(block.openLine).text);
     assert.ok(parsed);

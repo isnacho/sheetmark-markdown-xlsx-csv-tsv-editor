@@ -5,15 +5,16 @@ import assert from 'node:assert/strict';
 import { EditorState } from '@codemirror/state';
 import { markdown } from '@codemirror/lang-markdown';
 import { computeFencedCodeArrow } from './codeBlockBoundaryEditing.ts';
+import { fullyParsed } from './testState.ts';
 
 const FENCE = '```js\nline1\nline2\nline3\n```';
 
 function stateFor(doc: string, pos: number): EditorState {
-    return EditorState.create({
+    return fullyParsed(EditorState.create({
         doc,
         selection: { anchor: pos, head: pos },
         extensions: [markdown()],
-    });
+    }));
 }
 
 function posAfter(doc: string, prefix: string, startAt = 0): number {

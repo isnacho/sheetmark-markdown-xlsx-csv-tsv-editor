@@ -7,6 +7,7 @@ import { markdown } from '@codemirror/lang-markdown';
 import { GFM } from '@lezer/markdown';
 import { syntaxTree } from '@codemirror/language';
 import type { SyntaxNode } from '@lezer/common';
+import { fullyParsed } from './testState.ts';
 import {
     computeTableBoundaryBackspace,
     computeTableBoundaryArrowDown,
@@ -22,11 +23,11 @@ import {
 const TABLE = '| a | b |\n| - | - |\n| 1 | 2 |';
 
 function stateFor(doc: string, pos: number): EditorState {
-    return EditorState.create({
+    return fullyParsed(EditorState.create({
         doc,
         selection: { anchor: pos, head: pos },
         extensions: [markdown({ extensions: GFM }), tableDeleteArmedField],
-    });
+    }));
 }
 
 function apply(state: EditorState, spec: ReturnType<typeof computeTableBoundaryBackspace>) {

@@ -7,9 +7,10 @@ import assert from 'node:assert/strict';
 import { EditorState } from '@codemirror/state';
 import { gutterLineClass } from '@codemirror/view';
 import { hoverLineGutter, setHoveredLine } from './hoverLineGutter.ts';
+import { fullyParsed } from './testState.ts';
 
 function stateFor(doc: string): EditorState {
-    return EditorState.create({ doc, extensions: [hoverLineGutter()] });
+    return fullyParsed(EditorState.create({ doc, extensions: [hoverLineGutter()] }));
 }
 
 function hoverMarkerPositions(state: EditorState): number[] {

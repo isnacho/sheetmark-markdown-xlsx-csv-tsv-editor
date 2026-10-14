@@ -5,25 +5,26 @@ import assert from 'node:assert/strict';
 import { EditorState } from '@codemirror/state';
 import { markdown } from '@codemirror/lang-markdown';
 import { GFM } from '@lezer/markdown';
+import { fullyParsed } from './testState.ts';
 import {
     computeParagraphBounds,
     computeParagraphBoundarySelection,
 } from './paragraphNavigation.ts';
 
 function stateFor(doc: string, pos: number): EditorState {
-    return EditorState.create({
+    return fullyParsed(EditorState.create({
         doc,
         selection: { anchor: pos, head: pos },
         extensions: [markdown({ extensions: GFM })],
-    });
+    }));
 }
 
 function stateForRange(doc: string, anchor: number, head: number): EditorState {
-    return EditorState.create({
+    return fullyParsed(EditorState.create({
         doc,
         selection: { anchor, head },
         extensions: [markdown({ extensions: GFM })],
-    });
+    }));
 }
 
 function posAfter(doc: string, prefix: string): number {

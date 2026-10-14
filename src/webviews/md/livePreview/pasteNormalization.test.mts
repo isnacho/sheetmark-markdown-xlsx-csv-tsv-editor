@@ -2,22 +2,23 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { EditorState, EditorSelection } from '@codemirror/state';
 import { normalizeClipboardPasteText, selectionIncludesTrailingLineBreak } from './pasteNormalization.ts';
+import { fullyParsed } from './testState.ts';
 
 function stateWithSelection(doc: string, from: number, to: number): EditorState {
-    return EditorState.create({
+    return fullyParsed(EditorState.create({
         doc,
         selection: EditorSelection.range(from, to),
-    });
+    }));
 }
 
 test('selectionIncludesTrailingLineBreak: false for line text only', () => {
-    const state = EditorState.create({ doc: 'aaa\nbbb\nccc' });
+    const state = fullyParsed(EditorState.create({ doc: 'aaa\nbbb\nccc' }));
     const line2 = state.doc.line(2);
     assert.equal(selectionIncludesTrailingLineBreak(state, line2.from, line2.to), false);
 });
 
 test('selectionIncludesTrailingLineBreak: true when the line break is selected', () => {
-    const state = EditorState.create({ doc: 'aaa\nbbb\nccc' });
+    const state = fullyParsed(EditorState.create({ doc: 'aaa\nbbb\nccc' }));
     const line2 = state.doc.line(2);
     assert.equal(selectionIncludesTrailingLineBreak(state, line2.from, line2.to + 1), true);
 });

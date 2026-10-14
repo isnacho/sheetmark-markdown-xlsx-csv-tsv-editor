@@ -4,6 +4,7 @@ import { EditorState } from '@codemirror/state';
 import { markdown } from '@codemirror/lang-markdown';
 import { GFM } from '@lezer/markdown';
 import { syntaxTree } from '@codemirror/language';
+import { fullyParsed } from './testState.ts';
 import {
     computeListItemPrefixRange,
     computeListMarkerRanges,
@@ -17,7 +18,7 @@ import {
 } from './listMarkerEditing.ts';
 
 function stateFor(doc: string, pos = 0): EditorState {
-    return EditorState.create({ doc, selection: { anchor: pos, head: pos }, extensions: [markdown({ extensions: GFM, addKeymap: false })] });
+    return fullyParsed(EditorState.create({ doc, selection: { anchor: pos, head: pos }, extensions: [markdown({ extensions: GFM, addKeymap: false })] }));
 }
 
 function firstListItem(state: EditorState) {

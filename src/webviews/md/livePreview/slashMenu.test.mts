@@ -7,9 +7,10 @@ import assert from 'node:assert/strict';
 import { EditorState } from '@codemirror/state';
 import { CompletionContext } from '@codemirror/autocomplete';
 import { slashMenuSource, slashMenuCompletions, computeSlashApply, SLASH_OPTIONS, SLASH_ICON_BY_LABEL } from './slashMenu.ts';
+import { fullyParsed } from './testState.ts';
 
 function stateFor(doc: string): EditorState {
-    return EditorState.create({ doc });
+    return fullyParsed(EditorState.create({ doc }));
 }
 
 function option(name: string) {

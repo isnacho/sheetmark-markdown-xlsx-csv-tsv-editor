@@ -19,9 +19,10 @@ import {
     collapsedClickPosForCell, selectionPosAfterTableInsert,
 } from './tableWidget.ts';
 import type { CellRange, TableMenuItem } from './tableWidget.ts';
+import { fullyParsed } from './testState.ts';
 
 function stateFor(doc: string): EditorState {
-    return EditorState.create({ doc, extensions: [markdown({ extensions: GFM })] });
+    return fullyParsed(EditorState.create({ doc, extensions: [markdown({ extensions: GFM })] }));
 }
 
 function tableNode(state: EditorState): SyntaxNode {
@@ -197,7 +198,7 @@ test('computeTableDecorations defaults widthsByTable to {} when omitted, and a t
 });
 
 test('columnWidthsField applies setColumnWidthsEffect per table index without clobbering other tables', () => {
-    const state = EditorState.create({ extensions: [columnWidthsField] });
+    const state = fullyParsed(EditorState.create({ extensions: [columnWidthsField] }));
     assert.deepEqual(state.field(columnWidthsField), {});
     const tr1 = state.update({ effects: setColumnWidthsEffect.of({ tableIndex: 1, widths: [50, 60] }) });
     assert.deepEqual(tr1.state.field(columnWidthsField), { 1: [50, 60] });
@@ -206,7 +207,7 @@ test('columnWidthsField applies setColumnWidthsEffect per table index without cl
 });
 
 test('columnWidthsField drops a table entry when all committed widths are cleared', () => {
-    const state = EditorState.create({ extensions: [columnWidthsField] });
+    const state = fullyParsed(EditorState.create({ extensions: [columnWidthsField] }));
     const seeded = state.update({ effects: setColumnWidthsEffect.of({ tableIndex: 1, widths: [50, 60] }) });
     const cleared = seeded.state.update({ effects: setColumnWidthsEffect.of({ tableIndex: 1, widths: [0, 0] }) });
     assert.deepEqual(cleared.state.field(columnWidthsField), {});

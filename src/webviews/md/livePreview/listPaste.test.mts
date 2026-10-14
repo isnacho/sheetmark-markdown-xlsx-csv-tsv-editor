@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { EditorState } from '@codemirror/state';
 import { markdown } from '@codemirror/lang-markdown';
 import { GFM } from '@lezer/markdown';
+import { fullyParsed } from './testState.ts';
 import {
     clipboardLooksLikeList,
     computePasteList,
@@ -11,7 +12,7 @@ import {
 } from './listPaste.ts';
 
 function stateFor(doc: string, anchor: number, head = anchor): EditorState {
-    return EditorState.create({ doc, selection: { anchor, head }, extensions: [markdown({ extensions: GFM })] });
+    return fullyParsed(EditorState.create({ doc, selection: { anchor, head }, extensions: [markdown({ extensions: GFM })] }));
 }
 
 function apply(state: EditorState, spec: ReturnType<typeof computePasteList>) {

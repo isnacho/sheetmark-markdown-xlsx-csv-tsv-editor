@@ -4,6 +4,7 @@ import { EditorState } from '@codemirror/state';
 import { markdown } from '@codemirror/lang-markdown';
 import { GFM } from '@lezer/markdown';
 import { syntaxTree } from '@codemirror/language';
+import { fullyParsed } from './testState.ts';
 import {
     isMermaidFenceContent,
     isMermaidFence,
@@ -11,7 +12,7 @@ import {
 } from './mermaidDetection.ts';
 
 function stateFor(doc: string): EditorState {
-    return EditorState.create({ doc, extensions: [markdown({ extensions: GFM })] });
+    return fullyParsed(EditorState.create({ doc, extensions: [markdown({ extensions: GFM })] }));
 }
 
 function firstFencedCode(state: EditorState) {

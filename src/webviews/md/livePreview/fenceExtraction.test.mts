@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { EditorState } from '@codemirror/state';
 import { markdown } from '@codemirror/lang-markdown';
 import { syntaxTree } from '@codemirror/language';
+import { fullyParsed } from './testState.ts';
 import {
     extractFenceBody,
     extractFenceLangName,
@@ -10,7 +11,7 @@ import {
 } from './fenceExtraction.ts';
 
 function stateFor(doc: string): EditorState {
-    return EditorState.create({ doc, extensions: [markdown()] });
+    return fullyParsed(EditorState.create({ doc, extensions: [markdown()] }));
 }
 
 function firstFencedCode(state: EditorState) {

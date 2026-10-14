@@ -114,6 +114,9 @@ npm run package        # production build (also runs tests); used by vsce on rel
 - **Unit tests** are co-located `*.test.mts` files. They test pure functions headlessly: build a
   CM6 `EditorState`, call the `computeXxx` function, assert on the result. No DOM, no
   `EditorView`, no VS Code. New logic should be written as a pure function with a test next to it.
+  Wrap test states in `fullyParsed(...)` from `livePreview/testState.ts`: CM6 only parses for 20 ms
+  per state, so a cold parse can return a partial tree and make tree-based tests flaky. Tests that
+  need a DOM use `linkedom` (see `src/webviews/shared/sanitizeHtml.test.mts`).
   Today tests cover only the Markdown webview; host and spreadsheet logic have none.
 - **There is no extension-host integration test.** After `verify`, smoke-test webview or provider
   changes manually: **F5** opens an Extension Development Host on [samples/](samples/) → open

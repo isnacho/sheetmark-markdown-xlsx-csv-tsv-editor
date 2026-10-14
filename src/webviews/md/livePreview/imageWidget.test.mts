@@ -4,6 +4,7 @@ import { EditorState } from '@codemirror/state';
 import { syntaxTree } from '@codemirror/language';
 import { markdown } from '@codemirror/lang-markdown';
 import { GFM } from '@lezer/markdown';
+import { fullyParsed } from './testState.ts';
 import {
     computeImageDecorations,
     extractImageAlt,
@@ -19,11 +20,11 @@ const mockResolver = {
 
 function stateFor(doc: string, cursor = 0): EditorState {
     setImageUriResolver(mockResolver);
-    return EditorState.create({
+    return fullyParsed(EditorState.create({
         doc,
         selection: { anchor: cursor },
         extensions: [markdown({ extensions: GFM })],
-    });
+    }));
 }
 
 test('imageReplaceRange: standalone line uses full line block range', () => {

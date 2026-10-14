@@ -69,6 +69,7 @@ import {
 } from './components/spreadsheetCellTextComponent';
 import { XlsxFindManager } from './components/spreadsheetFindComponent';
 import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClipboardAsync } from './components/spreadsheetCopyComponent';
+import { parseTsv } from './components/tsvClipboard';
 
 (function () {
     // ===== Virtual Scrolling Configuration =====
@@ -5619,12 +5620,8 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
         const startRow = bounds.minRow;
         const startCol = bounds.minCol;
 
-        // Parse plain text content using tabs (\t) as column separators and newlines (\n) as row separators.
-        const lines = text.split(/\r?\n/);
-        if (lines.length > 0 && lines[lines.length - 1] === '') {
-            lines.pop();
-        }
-        const grid = lines.map(line => line.split('\t'));
+        // Clipboard TSV: tabs separate columns, newlines rows; quoted cells may hold line breaks.
+        const grid = parseTsv(text);
 
         if (grid.length === 0 || grid[0].length === 0) {
             return;

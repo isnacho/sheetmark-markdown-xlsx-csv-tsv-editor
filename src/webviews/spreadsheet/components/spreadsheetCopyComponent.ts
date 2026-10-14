@@ -1,5 +1,14 @@
  
 
+import { htmlToPlainText } from '../../shared/sanitizeHtml';
+import { serializeTsv } from './tsvClipboard';
+
+/** Cached cell values can be rich-text HTML; the clipboard gets plain text with real line breaks. */
+function cellValueText(value: unknown): string {
+    const raw = value === null || value === undefined ? '' : String(value);
+    return /[<&]/.test(raw) ? htmlToPlainText(raw.replace(/<br\s*\/?>/gi, '\n')) : raw;
+}
+
 export interface XlsxCopyContext {
     selectedCells: Set<HTMLElement>;
     selectedColumnIndices: Set<number>;
@@ -79,7 +88,7 @@ export async function copySelectionToClipboard(ctx: XlsxCopyContext): Promise<vo
         ctx.showToast('Copying...');
         await yieldToMain();
 
-        const outputLines: string[] = [];
+        const outputRows: string[][] = [];
 
         if (hasFullColumnSelection || hasFullRowSelection) {
             const allRows = await ctx.requestAllRows();
@@ -105,9 +114,9 @@ export async function copySelectionToClipboard(ctx: XlsxCopyContext): Promise<vo
                     const rowData = allRows[r] || { cells: [] };
                     const lineParts = sortedCols.map(c => {
                         const cellData = rowData.cells ? rowData.cells.find((cell: any) => cell.colNumber === c + 1) : null;
-                        return cellData ? ctx.normalizeCellText(cellData.value || '') : '';
+                        return cellData ? ctx.normalizeCellText(cellValueText(cellData.value)) : '';
                     });
-                    outputLines.push(lineParts.join('\t'));
+                    outputRows.push(lineParts);
                 }
             } else if (hasFullRowSelection && !hasFullColumnSelection) {
                 const sortedRows = Array.from(ctx.selectedRowIndices).sort((a, b) => a - b);
@@ -118,9 +127,9 @@ export async function copySelectionToClipboard(ctx: XlsxCopyContext): Promise<vo
                         const lineParts: string[] = [];
                         for (let c = 0; c < ctx.columnCount; c++) {
                             const cellData = rowData.cells ? rowData.cells.find((cell: any) => cell.colNumber === c + 1) : null;
-                            lineParts.push(cellData ? ctx.normalizeCellText(cellData.value || '') : '');
+                            lineParts.push(cellData ? ctx.normalizeCellText(cellValueText(cellData.value)) : '');
                         }
-                        outputLines.push(lineParts.join('\t'));
+                        outputRows.push(lineParts);
                     }
                 }
             } else {
@@ -132,9 +141,9 @@ export async function copySelectionToClipboard(ctx: XlsxCopyContext): Promise<vo
                         const rowData = allRows[r] || { cells: [] };
                         const lineParts = sortedCols.map(c => {
                             const cellData = rowData.cells ? rowData.cells.find((cell: any) => cell.colNumber === c + 1) : null;
-                            return cellData ? ctx.normalizeCellText(cellData.value || '') : '';
+                            return cellData ? ctx.normalizeCellText(cellValueText(cellData.value)) : '';
                         });
-                        outputLines.push(lineParts.join('\t'));
+                        outputRows.push(lineParts);
                     }
                 }
             }
@@ -143,7 +152,7 @@ export async function copySelectionToClipboard(ctx: XlsxCopyContext): Promise<vo
                 ? rowCount * ctx.selectedColumnIndices.size
                 : (hasFullRowSelection ? ctx.selectedRowIndices.size * ctx.columnCount : 0);
 
-            await writeToClipboardAsync(outputLines.join('\n'));
+            await writeToClipboardAsync(serializeTsv(outputRows));
 
             ctx.selectedCells.forEach(cell => cell.classList.add('copying'));
             setTimeout(() => ctx.selectedCells.forEach(cell => cell.classList.remove('copying')), 300);
@@ -185,15 +194,15 @@ export async function copySelectionToClipboard(ctx: XlsxCopyContext): Promise<vo
             const lineParts = sortedCols.map(c => {
                 const rowMap = cacheMap.get(r);
                 if (rowMap && rowMap.has(c)) {
-                    return ctx.normalizeCellText(rowMap.get(c));
+                    return ctx.normalizeCellText(cellValueText(rowMap.get(c)));
                 }
                 const cell = document.querySelector('td[data-row="' + r + '"][data-col="' + c + '"]');
                 return ctx.normalizeCellText(cell ? (cell.textContent || '') : '');
             });
-            outputLines.push(lineParts.join('\t'));
+            outputRows.push(lineParts);
         }
 
-        await writeToClipboardAsync(outputLines.join('\n'));
+        await writeToClipboardAsync(serializeTsv(outputRows));
 
         ctx.selectedCells.forEach(cell => cell.classList.add('copying'));
         setTimeout(() => ctx.selectedCells.forEach(cell => cell.classList.remove('copying')), 300);

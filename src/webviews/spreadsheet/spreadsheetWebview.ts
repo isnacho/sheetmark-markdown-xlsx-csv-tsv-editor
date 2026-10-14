@@ -154,6 +154,7 @@ import { parseTsv } from './components/tsvClipboard';
 
     let handlersAttached = false;
     let selectionGlobalListenersAttached = false;
+    let resizeGlobalListenersAttached = false;
     let toolbarManager: ToolbarManager | null = null;
 
     type SettingsScope = 'plain' | 'styled';
@@ -5337,77 +5338,82 @@ import { parseTsv } from './components/tsvClipboard';
             }
         });
 
-        document.addEventListener('mousemove', (e) => {
-            if (!isResizing) {return;}
+        // The table is rebuilt on every re-render, but document listeners must be added only once.
+        if (!resizeGlobalListenersAttached) {
+            resizeGlobalListenersAttached = true;
 
-            const tableEl = document.querySelector('table');
-            if (!tableEl) {return;}
+            document.addEventListener('mousemove', (e) => {
+                if (!isResizing) {return;}
 
-            const indicator = document.getElementById('resizeIndicator');
+                const tableEl = document.querySelector('table');
+                if (!tableEl) {return;}
 
-            if (resizeType === 'column') {
-                const delta = e.clientX - resizeStartPos;
-                const newSize = Math.max(20, resizeStartSize + delta);
+                const indicator = document.getElementById('resizeIndicator');
 
-                const headers = tableEl.querySelectorAll('th.col-header[data-col="' + resizeIndex + '"]') as NodeListOf<HTMLElement>;
-                const cells = tableEl.querySelectorAll('td[data-col="' + resizeIndex + '"]') as NodeListOf<HTMLElement>;
+                if (resizeType === 'column') {
+                    const delta = e.clientX - resizeStartPos;
+                    const newSize = Math.max(20, resizeStartSize + delta);
 
-                headers.forEach(header => {
-                    header.style.width = newSize + 'px';
-                    header.style.minWidth = newSize + 'px';
-                });
+                    const headers = tableEl.querySelectorAll('th.col-header[data-col="' + resizeIndex + '"]') as NodeListOf<HTMLElement>;
+                    const cells = tableEl.querySelectorAll('td[data-col="' + resizeIndex + '"]') as NodeListOf<HTMLElement>;
 
-                cells.forEach(cell => {
-                    if (!cell.getAttribute('colspan') || cell.getAttribute('colspan') === '1') {
-                        cell.style.width = newSize + 'px';
-                        cell.style.minWidth = newSize + 'px';
-                    }
-                });
+                    headers.forEach(header => {
+                        header.style.width = newSize + 'px';
+                        header.style.minWidth = newSize + 'px';
+                    });
 
-                if (indicator) {
-                    indicator.style.left = e.clientX + 'px';
-                    indicator.style.top = e.clientY + 'px';
-                    indicator.textContent = newSize + 'px';
-                }
-            } else if (resizeType === 'row') {
-                const delta = e.clientY - resizeStartPos;
-                const newSize = Math.max(15, resizeStartSize + delta);
-
-                const headers = tableEl.querySelectorAll('th.row-header[data-row="' + resizeIndex + '"]') as NodeListOf<HTMLElement>;
-                const row = tableEl.querySelectorAll('tr')[resizeIndex + 1] as HTMLElement; // +1 for header row
-
-                headers.forEach(header => {
-                    header.style.height = newSize + 'px';
-                });
-
-                if (row) {
-                    row.style.height = newSize + 'px';
-                    const cells = row.querySelectorAll('td') as NodeListOf<HTMLElement>;
                     cells.forEach(cell => {
-                        if (!cell.getAttribute('rowspan') || cell.getAttribute('rowspan') === '1') {
-                            cell.style.height = newSize + 'px';
+                        if (!cell.getAttribute('colspan') || cell.getAttribute('colspan') === '1') {
+                            cell.style.width = newSize + 'px';
+                            cell.style.minWidth = newSize + 'px';
                         }
                     });
-                }
 
-                if (indicator) {
-                    indicator.style.left = e.clientX + 'px';
-                    indicator.style.top = e.clientY + 'px';
-                    indicator.textContent = newSize + 'px';
-                }
-            }
-        });
+                    if (indicator) {
+                        indicator.style.left = e.clientX + 'px';
+                        indicator.style.top = e.clientY + 'px';
+                        indicator.textContent = newSize + 'px';
+                    }
+                } else if (resizeType === 'row') {
+                    const delta = e.clientY - resizeStartPos;
+                    const newSize = Math.max(15, resizeStartSize + delta);
 
-        document.addEventListener('mouseup', () => {
-            if (isResizing) {
-                isResizing = false;
-                resizeType = null;
-                resizeIndex = -1;
-                document.body.style.cursor = '';
-                const indicator = document.getElementById('resizeIndicator');
-                if (indicator) {indicator.style.display = 'none';}
-            }
-        });
+                    const headers = tableEl.querySelectorAll('th.row-header[data-row="' + resizeIndex + '"]') as NodeListOf<HTMLElement>;
+                    const row = tableEl.querySelectorAll('tr')[resizeIndex + 1] as HTMLElement; // +1 for header row
+
+                    headers.forEach(header => {
+                        header.style.height = newSize + 'px';
+                    });
+
+                    if (row) {
+                        row.style.height = newSize + 'px';
+                        const cells = row.querySelectorAll('td') as NodeListOf<HTMLElement>;
+                        cells.forEach(cell => {
+                            if (!cell.getAttribute('rowspan') || cell.getAttribute('rowspan') === '1') {
+                                cell.style.height = newSize + 'px';
+                            }
+                        });
+                    }
+
+                    if (indicator) {
+                        indicator.style.left = e.clientX + 'px';
+                        indicator.style.top = e.clientY + 'px';
+                        indicator.textContent = newSize + 'px';
+                    }
+                }
+            });
+
+            document.addEventListener('mouseup', () => {
+                if (isResizing) {
+                    isResizing = false;
+                    resizeType = null;
+                    resizeIndex = -1;
+                    document.body.style.cursor = '';
+                    const indicator = document.getElementById('resizeIndicator');
+                    if (indicator) {indicator.style.display = 'none';}
+                }
+            });
+        }
 
         // Double-click to auto-fit or edit
         table.addEventListener('dblclick', (e) => {

@@ -98,14 +98,14 @@ async function applyStoredStylesToXlsxFile(filePath: string, storedStyles: Recor
     await workbook.xlsx.writeFile(filePath);
 }
 
-/** Returned from `activate` for the integration tests (src/test/integration); not a public API. */
+/** Returned from `activate` only when running integration tests (src/test/integration); never in normal use. */
 export interface SheetmarkTestApi {
     openEditors(): OpenEditorHandle[];
     styleStorage: StyleStorageService;
     globalStoragePath: string;
 }
 
-export function activate(context: vscode.ExtensionContext): SheetmarkTestApi {
+export function activate(context: vscode.ExtensionContext): SheetmarkTestApi | undefined {
     const spreadsheetProvider = new SpreadsheetEditorProvider(context);
     const mdProvider = new MDEditorProvider(context);
     const styleStorage = new StyleStorageService(context);
@@ -400,6 +400,10 @@ export function activate(context: vscode.ExtensionContext): SheetmarkTestApi {
         })
     );
 
+    // Only test runs get the API: other extensions could otherwise drive Sheetmark's saves through it.
+    if (context.extensionMode !== vscode.ExtensionMode.Test) {
+        return undefined;
+    }
     return {
         openEditors: () => [...spreadsheetProvider.openEditors, ...mdProvider.openEditors],
         styleStorage,

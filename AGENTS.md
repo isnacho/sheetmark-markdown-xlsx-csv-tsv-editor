@@ -121,7 +121,7 @@ npm run package           # production build (also runs unit tests); used by vsc
   `spreadsheetRenderComponent.test.mts`). New logic should be a pure function with a test next to it.
 - **Integration tests** (`src/test/integration/*.test.ts`, mocha `suite`/`test`) run in a real
   VS Code via `@vscode/test-cli` (`.vscode-test.mjs`; the first run downloads VS Code into
-  `.vscode-test/`). `activate()` returns a test API (`SheetmarkTestApi` in `extension.ts`):
+  `.vscode-test/`). In test mode only, `activate()` returns a test API (`SheetmarkTestApi` in `extension.ts`):
   `openEditors()` gives each open panel plus `dispatch(message)`, which delivers a message to the
   host exactly as the webview would and resolves when it is handled. Use it to test saves, history,
   links, CSP and commands against real files (see `helpers.ts`). Webview DOM behavior can't be

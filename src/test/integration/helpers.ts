@@ -11,7 +11,9 @@ import type { OpenEditorHandle } from '../../shared/editorTestHooks';
 export async function sheetmark(): Promise<SheetmarkTestApi> {
     const extension = vscode.extensions.getExtension('iggyinc.sheetmark');
     if (!extension) { throw new Error('Sheetmark extension not found'); }
-    return (await extension.activate()) as SheetmarkTestApi;
+    const api = (await extension.activate()) as SheetmarkTestApi | undefined;
+    if (!api) { throw new Error('Sheetmark returned no test API; is the extension host in test mode?'); }
+    return api;
 }
 
 /** A fresh temp directory with `files` written into it. */

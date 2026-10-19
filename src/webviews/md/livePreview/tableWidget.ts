@@ -132,6 +132,14 @@ md.renderer.rules.table_open = (tokens, idx, options, env, self) => {
     return openTag + colgroup;
 };
 
+/**
+ * HTML for an inactive table. `html: true` lets cells use <br> and inline tags, so the output is
+ * sanitized: the .md file is untrusted.
+ */
+export function renderTableHtml(source: string, colCount: number, widths: readonly number[] | null): string {
+    return sanitizeHtml(md.render(source, { colCount, widths }));
+}
+
 // ===== Row-context-menu structural ops (delete/move/insert row or column,
 // clear cell/row/column) — pure functions of EditorState, headlessly testable
 // like formatCommands.ts's computeXxx functions (see slashMenu.ts's file
@@ -1712,8 +1720,7 @@ export class TableWidget extends WidgetType {
         const scroll = document.createElement('div');
         scroll.className = 'cm-md-table-scroll';
         const colCount = this.grid[0]?.length ?? 0;
-        // html: true lets cells use <br> and inline tags; sanitize because the .md file is untrusted.
-        scroll.innerHTML = sanitizeHtml(md.render(this.source, { colCount, widths: this.widths }));
+        scroll.innerHTML = renderTableHtml(this.source, colCount, this.widths);
         wrap.appendChild(scroll);
 
         const table = scroll.querySelector('table.md-table') as HTMLTableElement | null;

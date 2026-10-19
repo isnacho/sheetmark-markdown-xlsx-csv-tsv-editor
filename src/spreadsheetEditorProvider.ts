@@ -4,19 +4,19 @@ import * as Excel from 'exceljs';
 import * as fs from 'fs';
 import * as path from 'path';
 import { createHash } from 'crypto';
-import { VERSION_HISTORY_RETENTION_MS, buildGroupedVersionHistoryItems as buildSharedVersionHistoryItems, formatVersionHistoryTimestamp, getVersionHistoryDir } from './shared/versionHistory';
+import { VERSION_HISTORY_RETENTION_MS, getVersionHistoryDir, pickVersionHistoryEntry } from './shared/versionHistory';
 import { convertARGBToRGBA, isShadeOfBlack, isShadeOfWhite } from './spreadsheet/spreadsheetUtilities';
 import { applyStoredStylesToWorksheet, normalizeStoredStyle, parseStyleKey, toARGB } from './spreadsheet/excelStyle';
 import { convertTabularFile, readTabularFile, detectTabularFileType, writeTabularFile, TabularFileType } from './shared/fileConversionService';
 import { StyleStorageService } from './shared/styleStorageService';
-import { isAllowedExternalUrl } from './shared/externalLinks';
 import { createSerialQueue } from './shared/serialQueue';
 import { createMessageDispatcher, SPREADSHEET_FILE_WRITING_COMMANDS } from './shared/messageDispatch';
 import { trackOpenEditor, type OpenEditorHandle } from './shared/editorTestHooks';
+import { handleSharedHostMessage, isSharedHostMessage, syncColorTheme, type SharedHostContext } from './shared/commonHostMessages';
 import type { HostToSpreadsheetWebview, SpreadsheetSettings, SpreadsheetSettingsPayload, SpreadsheetWebviewToHost } from './protocol/spreadsheet';
 import { createExternalFileChangeWatcher } from './shared/fileExternalChangeWatcher';
 import { migrateFileUriState } from './shared/migrateFileUriState';
-import { enableOpenByDefault, disableOpenByDefault, isSheetmarkConfiguredAsDefault } from './shared/editorAssociationUtils';
+import { isSheetmarkConfiguredAsDefault } from './shared/editorAssociationUtils';
 
 export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorProvider {
     private readonly styleStorage: StyleStorageService;
@@ -824,12 +824,8 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
             }
         };
 
-        // Sync VS Code theme changes to the webview
-        const themeChangeDisposable = vscode.window.onDidChangeActiveColorTheme(() => {
-            try { post({ type: 'setTheme', kind: vscode.window.activeColorTheme.kind }); } catch { }
-        });
-
-        webviewPanel.onDidDispose(() => themeChangeDisposable.dispose());
+        // Pushes the VS Code theme now (on webviewReady) and on every theme change.
+        const sendTheme = syncColorTheme(webviewPanel, post);
 
         const trySendInit = () => {
             if (!isWebviewReady || !worksheetsData.length) {return;}
@@ -999,17 +995,26 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
         };
 
         // Listen for messages
+        const sharedContext: SharedHostContext = {
+            post,
+            associationType: getAssociationType,
+            sendSettings: () => trySendSettings(),
+        };
+
         const handleMessage = async (message: SpreadsheetWebviewToHost) => {
+            // Links, feedback and the default-editor toggle are shared with the Markdown editor.
+            if (isSharedHostMessage(message)) {
+                await handleSharedHostMessage(message, sharedContext);
+                return;
+            }
+
             if (message?.command === 'webviewReady') {
                 isWebviewReady = true;
                 await pruneHistory();
                 await persistVersionSnapshot();
                 trySendSettings();
                 trySendInit();
-                // Send current theme info to webview
-                try {
-                    post({ type: 'setTheme', kind: vscode.window.activeColorTheme.kind });
-                } catch { }
+                sendTheme();
                 return;
             }
 
@@ -1024,34 +1029,16 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                         return;
                     }
 
-                    const sorted = [...history].sort((a, b) => b.timestamp - a.timestamp);
-                    const oldestVersionId = sorted.length ? sorted[sorted.length - 1].id : null;
-                    const picked = await vscode.window.showQuickPick(
-                        buildSharedVersionHistoryItems(sorted, (entry) => ({
-                            label: entry.id === oldestVersionId && entry.id === restoredVersionId
-                                ? 'Original File (Restored)'
-                                : entry.id === oldestVersionId
-                                    ? 'Original File'
-                                    : entry.id === restoredVersionId
-                                        ? 'Restored'
-                                        : formatVersionHistoryTimestamp(entry.timestamp),
-                            description: entry.id === oldestVersionId || entry.id === restoredVersionId
-                                ? formatVersionHistoryTimestamp(entry.timestamp)
-                                : `${entry.fileName} • ${(entry.byteSize / 1024).toFixed(1)} KB`,
-                            detail: `Saved ${Math.max(1, Math.round((Date.now() - entry.timestamp) / 60000))} min ago`,
-                            entry
-                        })),
-                        { placeHolder: `Version history (${sorted.length} versions)` }
-                    );
+                    const pickedEntry = await pickVersionHistoryEntry(history, restoredVersionId, (entry) => `${entry.fileName} • ${(entry.byteSize / 1024).toFixed(1)} KB`);
 
-                    if (!picked?.entry) {
+                    if (!pickedEntry) {
                         return;
                     }
 
-                    const snapshotFileType = getSnapshotFileType(picked.entry.snapshotFile, picked.entry.fileType || currentFileType);
-                    await loadWorkbookPayload(getSnapshotPath(picked.entry.snapshotFile), snapshotFileType);
-                    previewVersionId = picked.entry.id;
-                    previewVersionTimestamp = picked.entry.timestamp;
+                    const snapshotFileType = getSnapshotFileType(pickedEntry.snapshotFile, pickedEntry.fileType || currentFileType);
+                    await loadWorkbookPayload(getSnapshotPath(pickedEntry.snapshotFile), snapshotFileType);
+                    previewVersionId = pickedEntry.id;
+                    previewVersionTimestamp = pickedEntry.timestamp;
                     trySendInit();
                 } catch (err) {
                     post({
@@ -1152,33 +1139,6 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                 return;
             }
 
-            if (message?.command === 'enableAsDefault') {
-                const associationType = getAssociationType();
-                await enableOpenByDefault(associationType);
-                trySendSettings();
-                return;
-            }
-
-            if (message?.command === 'disableDefaultEditor') {
-                try {
-                    const associationType = getAssociationType();
-                    const result = await vscode.window.showWarningMessage(
-                        `Are you sure you want to disable Sheetmark for all .${associationType} files? You will be prompted to select a new default editor.`,
-                        "Yes, Disable",
-                        "Cancel"
-                    );
-
-                    if (result === "Yes, Disable") {
-                        await disableOpenByDefault(associationType);
-                        await vscode.commands.executeCommand('workbench.action.reopenWithEditor');
-                        trySendSettings();
-                    }
-                } catch (err) {
-                    vscode.window.showErrorMessage(`Error disabling editor: ${err}`);
-                }
-                return;
-            }
-
             // Handle getRows request for virtual scrolling
             if (message?.command === 'getRows') {
                 const { start, end, requestId, sheetIndex } = message;
@@ -1206,58 +1166,6 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                     end: clampedEnd,
                     requestId
                 });
-                return;
-            }
-
-            if (message?.command === 'openExternal') {
-                try {
-                    const url = typeof message.url === 'string' ? message.url : '';
-                    if (url && isAllowedExternalUrl(url)) {
-                        await vscode.env.openExternal(vscode.Uri.parse(url));
-                    } else if (url) {
-                        void vscode.window.showWarningMessage(`Sheetmark only opens http, https and mailto links. Blocked: ${url.slice(0, 200)}`);
-                    }
-                } catch {
-                    // ignore
-                }
-                return;
-            }
-
-            if (message?.command === 'getSystemDetails') {
-                const ext = vscode.extensions.getExtension('iggyinc.sheetmark');
-                const editorName = vscode.env.appName || 'VS Code';
-                post({
-                    command: 'systemDetails',
-                    vscodeVersion: vscode.version,
-                    extensionVersion: ext?.packageJSON?.version ?? 'unknown',
-                    osInfo: `${process.platform} ${process.arch}`,
-                    editorName: editorName
-                });
-                return;
-            }
-
-            if (message?.command === 'submitFeedback') {
-                try {
-                    const https = await import('node:https');
-                    const formData = message.data as Record<string, string>;
-                    const body = Object.entries(formData)
-                        .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v ?? '')}`)
-                        .join('&');
-                    const result = await new Promise<boolean>((resolve) => {
-                        const req = https.request({
-                            hostname: 'docs.google.com',
-                            path: '/forms/d/e/1FAIpQLSc0rQ232X2rAI-gyLeACwaFsgN_UKf5LMt3ENd8WYtNVCCp7w/formResponse',
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(body) }
-                        }, (res: any) => resolve((res.statusCode ?? 500) < 400));
-                        req.on('error', () => resolve(false));
-                        req.write(body);
-                        req.end();
-                    });
-                    post({ command: 'feedbackResult', ok: result });
-                } catch {
-                    post({ command: 'feedbackResult', ok: false });
-                }
                 return;
             }
 

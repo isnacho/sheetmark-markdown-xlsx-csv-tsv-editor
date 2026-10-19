@@ -27,7 +27,7 @@ const MUTATIONS = [
       find: '`script-src ${cspSource}`,', replace: "`script-src ${cspSource} 'unsafe-inline'`," },
     { id: 'csp-markdown-nonce-tag', file: 'src/mdEditorProvider.ts',
       find: '<script nonce="${nonce}">window.__SPELL_DICT__', replace: '<script>window.__SPELL_DICT__' },
-    { id: 'links-any-scheme', file: 'src/spreadsheetEditorProvider.ts',
+    { id: 'links-any-scheme', file: 'src/shared/commonHostMessages.ts',
       find: 'if (url && isAllowedExternalUrl(url)) {', replace: 'if (url && (isAllowedExternalUrl(url) || url.length > 0)) {' },
     { id: 'save-queue-dispatcher', file: 'src/shared/messageDispatch.ts',
       find: 'const done = options.queuedCommands.has(message?.command) ? options.queue.run(run) : run();', replace: 'void options.queuedCommands; void options.queue; const done = run();' },

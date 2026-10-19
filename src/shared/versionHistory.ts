@@ -114,3 +114,34 @@ export function buildGroupedVersionHistoryItems<T extends { timestamp: number }>
 
     return result;
 }
+
+/**
+ * Show the version-history QuickPick (newest first, grouped by day) and return the picked entry.
+ * The oldest entry is labeled "Original File" and the last restored one "Restored"; `describe`
+ * supplies the detail text for ordinary versions (size, character count, ...).
+ */
+export async function pickVersionHistoryEntry<T extends { id: string; timestamp: number }>(
+    entries: readonly T[],
+    restoredVersionId: string | null,
+    describe: (entry: T) => string,
+): Promise<T | undefined> {
+    const sorted = [...entries].sort((a, b) => b.timestamp - a.timestamp);
+    const oldestVersionId = sorted.length ? sorted[sorted.length - 1].id : null;
+    const picked = await vscode.window.showQuickPick(
+        buildGroupedVersionHistoryItems(sorted, (entry) => {
+            const isOriginal = entry.id === oldestVersionId;
+            const isRestored = entry.id === restoredVersionId;
+            return {
+                label: isOriginal && isRestored ? 'Original File (Restored)'
+                    : isOriginal ? 'Original File'
+                        : isRestored ? 'Restored'
+                            : formatVersionHistoryTimestamp(entry.timestamp),
+                description: isOriginal || isRestored ? formatVersionHistoryTimestamp(entry.timestamp) : describe(entry),
+                detail: `Saved ${Math.max(1, Math.round((Date.now() - entry.timestamp) / 60000))} min ago`,
+                entry,
+            };
+        }),
+        { placeHolder: `Version history (${sorted.length} versions)` },
+    );
+    return picked?.entry;
+}

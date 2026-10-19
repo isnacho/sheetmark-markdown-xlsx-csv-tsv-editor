@@ -1,9 +1,9 @@
 ---
 title: Publish extension to VS Code Marketplace
 slug: publish-to-vscode-marketplace
-status: to-implement
+status: completed
 created: 2026-08-12
-updated: 2026-08-14
+updated: 2026-10-19
 ---
 
 # Publish extension to VS Code Marketplace
@@ -25,7 +25,7 @@ fork's own copyright. No other legal blocker found.
 
 **Previous-creator surfaces found in the code** (beyond just text/branding):
 1. A whole **"Other Open Source Projects" modal**
-   ([projectsModal.ts](../../../src/webviews/shared/projectsModal.ts)) that
+   (`projectsModal.ts`, since removed) that
    advertises the old author's unrelated repos (`openpart`, `vibed-puppet`)
    inside the product UI — unrelated to this extension, should be deleted
    entirely (component + wherever it's triggered).
@@ -127,7 +127,7 @@ File: [CHANGELOG.md](../../../CHANGELOG.md)
 
 #### E — Internal docs (non-blocking, same PR ok)
 
-- [x] [.docs/product/LOCAL-DEV-INSTALL.md](../../../.docs/product/LOCAL-DEV-INSTALL.md) — update marketplace ID references to `iggyinc.sheetmark`
+- [x] the local-install guide (now [.agents/skills/publish-sheetmark/references/local-install.md](../../../.agents/skills/publish-sheetmark/references/local-install.md)) — update marketplace ID references to `iggyinc.sheetmark`
 - [x] [.docs/product/PLAN.md](../../../.docs/product/PLAN.md) — mark publisher/rename items done or update table (optional housekeeping)
 
 #### F — Build & local smoke test (before publish)
@@ -181,6 +181,8 @@ File: [CHANGELOG.md](../../../CHANGELOG.md)
 
 **2026-08-14 — Step 3 (G) attempt:** `vsce publish` blocked — no valid Marketplace PAT on this machine (`TF400813` auth error). User must complete publisher login, then re-run publish.
 
+**Later (recorded 2026-10-19):** publishing was unblocked and automated: `.github/workflows/publish-marketplace.yml` publishes each GitHub release to the VS Code Marketplace and Open VSX (see the publish-sheetmark skill). Releases v1.0.0 to v1.5.0 shipped (CHANGELOG).
+
 ## QA
 
-_Not started._
+**Passed (2026-10-19):** `vsce show iggyinc.sheetmark` lists 7 versions, latest 1.5.0; the Open VSX API also reports 1.5.0. Moved to completed during an Idea Lab tidy; it had been left in 3-to-implement after shipping.

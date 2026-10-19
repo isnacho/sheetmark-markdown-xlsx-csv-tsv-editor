@@ -1,9 +1,9 @@
 ---
 title: Default Markdown Open & Editor Title Icon
 slug: default-markdown-open-and-title-icon
-status: incomplete
+status: archived
 created: 2026-08-14
-updated: 2026-08-14
+updated: 2026-10-19
 ---
 
 # Default Markdown Open & Editor Title Icon
@@ -91,3 +91,5 @@ I want to have a setting that opens Sheetmark by default when opening a markdown
 Manual: in stock VS Code, F5 → open each sample type with the built-in editor → confirm the Sheetmark icon shows directly in the title bar (no extra step). In Cursor, confirm it appears after pinning via "⋯" → "Configure Icon Visibility" (one-time per workspace/user) — this is expected Cursor behavior, not something the extension can bypass.
 
 **Outcome:** incomplete. The title-bar icon still did not appear in VS Code after rebuilding and installing the updated VSIX; further runtime investigation is required.
+
+**Archived:** filed in `5-completed/archived/` with this QA outcome and no recorded reason (status was the invalid `incomplete`; set to `archived` on 2026-10-19). The open-by-default settings shipped; the title-bar icon issue is unresolved. Recapture it as a new idea to pick it up again.

@@ -1,9 +1,9 @@
 ---
 title: Detect External File Move
 slug: detect-external-file-move
-status: to-qa
+status: completed
 created: 2026-08-14
-updated: 2026-08-14
+updated: 2026-10-19
 ---
 
 # Detect External File Move
@@ -237,4 +237,15 @@ Built per plan. `npm run compile` passes (0 type errors, 0 new lint errors).
 
 ## QA
 
-_Not started._
+**Done (2026-10-19), with a design change.** Shipped in v1.2.0, then tested in a real VS Code
+(integration tests in `src/test/integration/fileMove.test.ts`):
+
+- Renaming an open file inside VS Code closes the Sheetmark panel and opens a new editor at the new
+  path. The in-panel handling this idea added (the "File moved" toast, `diskMovedExternally`,
+  re-pointing the watcher) only ever ran on the closing panel, so users never saw it.
+- Per-file state moved in `onDidRenameFiles`, after the new editor had loaded, so it reopened with
+  default column widths and without CSV styling.
+- Fix: state now moves in `onWillRenameFiles` (`src/shared/renameStateMigration.ts`), which VS Code
+  waits for; the dead in-panel code was removed. Both regressions are covered by the tests above.
+- Still not handled: renames outside VS Code (Finder, `git mv`) look like a delete, and renaming a
+  folder doesn't move state for the files inside it.

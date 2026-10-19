@@ -325,3 +325,130 @@ export function applyStoredStylesToWorksheet(worksheet: Excel.Worksheet, storedS
         }
     }
 }
+
+/**
+ * Apply one live style edit from the webview (`saveXlsxEdits` `styleEdits[]`, raw format:
+ * bgColor, textColor, bold, wrapMode, border flags, ...) to an exceljs cell.
+ */
+export function applyStyleEditToCell(cell: Excel.Cell, s: any): void {
+    if (s?.clearFormatting) {
+        (cell as any).fill = undefined;
+        (cell as any).font = undefined;
+        (cell as any).alignment = undefined;
+        (cell as any).border = undefined;
+    }
+
+    const bgArgb = toARGB(typeof s?.bgColor === 'string' ? s.bgColor : '');
+    if (bgArgb) {
+        cell.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: bgArgb }
+        } as Excel.FillPattern;
+    }
+
+    const textArgb = toARGB(typeof s?.textColor === 'string' ? s.textColor : '');
+    if (textArgb) {
+        const currentFont = cell.font || {};
+        cell.font = {
+            ...currentFont,
+            color: { argb: textArgb }
+        } as Partial<Excel.Font>;
+    }
+
+    const nextFont: any = cell.font ? { ...cell.font } : {};
+    let hasFontEdit = false;
+    if (typeof s?.fontSize === 'number' && s.fontSize > 0) {
+        nextFont.size = s.fontSize;
+        hasFontEdit = true;
+    }
+    if (typeof s?.fontFamily === 'string' && s.fontFamily.trim().length > 0) {
+        nextFont.name = s.fontFamily.trim();
+        hasFontEdit = true;
+    }
+    if (typeof s?.bold === 'boolean') {
+        nextFont.bold = s.bold;
+        hasFontEdit = true;
+    }
+    if (typeof s?.italic === 'boolean') {
+        nextFont.italic = s.italic;
+        hasFontEdit = true;
+    }
+    if (typeof s?.strike === 'boolean') {
+        nextFont.strike = s.strike;
+        hasFontEdit = true;
+    }
+    if (hasFontEdit) {
+        cell.font = nextFont as Partial<Excel.Font>;
+    }
+
+    const nextAlignment: any = cell.alignment ? { ...cell.alignment } : {};
+    let hasAlignmentEdit = false;
+    const hAlign = typeof s?.horizontalAlign === 'string' ? s.horizontalAlign : '';
+    if (hAlign === 'left' || hAlign === 'center' || hAlign === 'right') {
+        nextAlignment.horizontal = hAlign;
+        hasAlignmentEdit = true;
+    }
+    const vAlign = typeof s?.verticalAlign === 'string' ? s.verticalAlign : '';
+    if (vAlign === 'top' || vAlign === 'middle' || vAlign === 'bottom') {
+        nextAlignment.vertical = vAlign;
+        hasAlignmentEdit = true;
+    }
+    const wrapMode = typeof s?.wrapMode === 'string' ? s.wrapMode : '';
+    if (wrapMode === 'wrap' || wrapMode === 'overflow' || wrapMode === 'clip') {
+        nextAlignment.wrapText = wrapMode === 'wrap';
+        hasAlignmentEdit = true;
+    }
+    if (typeof s?.indent === 'number') {
+        nextAlignment.indent = Math.max(0, Math.round(s.indent));
+        hasAlignmentEdit = true;
+    }
+    if (hasAlignmentEdit) {
+        cell.alignment = nextAlignment as Partial<Excel.Alignment>;
+    }
+
+    if (s?.border) {
+        if (s.border.clear) {
+            (cell as any).border = undefined;
+        } else {
+            const borderStyle = typeof s.border.style === 'string'
+                ? s.border.style : 'thin';
+
+            const allowedStyles = [
+                "thin", "dotted", "dashDot", "hair", "dashDotDot", "slantDashDot", "mediumDashed", "mediumDashDotDot", "mediumDashDot", "medium", "double", "thick"
+            ];
+
+            let finalBorderStyle = 'thin';
+            const sLower = borderStyle.toLowerCase();
+
+            if (sLower.includes('thick') && sLower.includes('dash')) {finalBorderStyle = 'mediumDashed';} // no thickDashed in exceljs? mediumDashed is closest
+            else if (sLower.includes('thick') && sLower.includes('dot')) {finalBorderStyle = 'mediumDashDot';}
+            else if (sLower.includes('medium') && sLower.includes('dash')) {finalBorderStyle = 'mediumDashed';}
+            else if (sLower.includes('medium') && sLower.includes('dot')) {finalBorderStyle = 'mediumDashDot';}
+            else if (sLower.includes('dashdotdot')) {finalBorderStyle = 'dashDotDot';}
+            else if (sLower.includes('dashdot')) {finalBorderStyle = 'dashDot';}
+            else if (sLower.includes('dashed') || sLower === 'dashed' || sLower.includes('dash')) {finalBorderStyle = 'mediumDashed';}
+            else if (allowedStyles.includes(borderStyle)) {finalBorderStyle = borderStyle;}
+            else if (sLower === 'thick') {finalBorderStyle = 'thick';}
+            else if (sLower === 'medium') {finalBorderStyle = 'medium';}
+            else if (sLower === 'dotted') {finalBorderStyle = 'dotted';}
+            else if (sLower === 'double') {finalBorderStyle = 'double';}
+            else {finalBorderStyle = 'thin';}
+
+            const excelBorderStyle = finalBorderStyle;
+            const borderColorArgb = toARGB(typeof s.border.color === 'string' ? s.border.color : '') || 'FF202124';
+
+            const toEdge = (enabled?: boolean) => {
+                if (!enabled) {return undefined;}
+                return { style: excelBorderStyle as any, color: { argb: borderColorArgb } };
+            };
+
+            cell.border = {
+                top: toEdge(s.border.top),
+                right: toEdge(s.border.right),
+                bottom: toEdge(s.border.bottom),
+                left: toEdge(s.border.left)
+            } as any;
+        }
+    }
+}

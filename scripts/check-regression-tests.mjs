@@ -60,6 +60,16 @@ if (existsSync(join(repo, '.vscode-test'))) { symlinkSync(join(repo, '.vscode-te
 
 const results = [];
 try {
+    // Baseline: everything must pass unmutated, or "caught" below would mean nothing.
+    for (const cmd of ['npm run verify', 'npm run test:integration']) {
+        const baseline = run(cmd);
+        if (baseline.status !== 0) {
+            console.error(`Baseline \`${cmd}\` fails on unmodified HEAD; fix that first.\n` + (baseline.stdout + baseline.stderr).slice(-3000));
+            process.exitCode = 1;
+            throw new Error('baseline failed');
+        }
+    }
+
     for (const m of selected) {
         run('git checkout -q -- .');
         const path = join(worktree, m.file);
@@ -70,9 +80,12 @@ try {
         const verify = run('npm run verify');
         if (verify.status !== 0) { results.push({ m, status: `caught by verify (${failingCheck(verify.stdout + verify.stderr)})` }); continue; }
         const integration = run('npm run test:integration');
-        results.push({ m, status: integration.status !== 0 ? 'caught by integration tests' : 'SURVIVED' });
+        const failed = (integration.stdout + integration.stderr).match(/^\s+\d+\) .+$/m)?.[0].trim();
+        results.push({ m, status: integration.status !== 0 ? `caught by integration tests${failed ? ` (${failed})` : ''}` : 'SURVIVED' });
         process.stdout.write('.');
     }
+} catch (error) {
+    if (error.message !== 'baseline failed') { throw error; }
 } finally {
     execSync(`git worktree remove --force "${worktree}"`, { cwd: repo, stdio: 'ignore' });
     rmSync(worktree, { recursive: true, force: true });
@@ -82,9 +95,11 @@ console.log('\n');
 let failed = false;
 for (const { m, status } of results) {
     const survived = status === 'SURVIVED' || status.startsWith('STALE');
-    const label = survived && m.knownGap ? `known gap: ${m.knownGap}` : status;
-    if (survived && !m.knownGap) { failed = true; }
-    if (!survived && m.knownGap) { failed = true; }
-    console.log(`${survived && !m.knownGap ? '✖' : '✔'} ${m.id.padEnd(24)} ${!survived && m.knownGap ? status + ' (remove knownGap)' : label}`);
+    // A known gap that is suddenly "caught" is suspicious too: either a test now covers it (remove
+    // knownGap) or something unrelated is failing.
+    const ok = survived === Boolean(m.knownGap);
+    if (!ok) { failed = true; }
+    const label = survived && m.knownGap ? `known gap: ${m.knownGap}` : status + (!survived && m.knownGap ? ' (check, then remove knownGap)' : '');
+    console.log(`${ok ? '✔' : '✖'} ${m.id.padEnd(24)} ${label}`);
 }
-process.exit(failed ? 1 : 0);
+process.exit(failed || process.exitCode ? 1 : 0);

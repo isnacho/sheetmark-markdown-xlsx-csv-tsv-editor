@@ -9,19 +9,25 @@ import { convertARGBToRGBA, isShadeOfBlack, isShadeOfWhite } from './spreadsheet
 import { applyStoredStylesToWorksheet, applyStyleEditToCell, normalizeStoredStyle, parseStyleKey } from './spreadsheet/excelStyle';
 import { convertTabularFile, readTabularFile, detectTabularFileType, writeTabularFile, TabularFileType } from './shared/fileConversionService';
 import { StyleStorageService } from './shared/styleStorageService';
-import { createSerialQueue } from './shared/serialQueue';
+import { createSerialQueue, type SerialQueue } from './shared/serialQueue';
 import { createMessageDispatcher, SPREADSHEET_FILE_WRITING_COMMANDS } from './shared/messageDispatch';
-import { trackOpenEditor, type OpenEditorHandle } from './shared/editorTestHooks';
+import { recordSentInTests, trackOpenEditor, type OpenEditorHandle } from './shared/editorTestHooks';
 import { handleSharedHostMessage, isSharedHostMessage, syncColorTheme, type SharedHostContext } from './shared/commonHostMessages';
 import type { HostToSpreadsheetWebview, SpreadsheetSettings, SpreadsheetSettingsPayload, SpreadsheetWebviewToHost } from './protocol/spreadsheet';
 import { createExternalFileChangeWatcher } from './shared/fileExternalChangeWatcher';
-import { migrateFileUriState } from './shared/migrateFileUriState';
 import { isSheetmarkConfiguredAsDefault } from './shared/editorAssociationUtils';
 
 export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorProvider {
     private readonly styleStorage: StyleStorageService;
     /** Open panels, for the integration tests only (see editorTestHooks.ts). */
     readonly openEditors = new Set<OpenEditorHandle>();
+    /** Each open panel's write queue, keyed by lowercased path (see flushWrites). */
+    private readonly fileQueues = new Map<string, SerialQueue>();
+
+    /** Resolves once saves already queued for `uri` have finished (used before a rename moves its state). */
+    async flushWrites(uri: vscode.Uri): Promise<void> {
+        await this.fileQueues.get(uri.fsPath.toLowerCase())?.run(async () => { });
+    }
     constructor(private readonly context: vscode.ExtensionContext) {
         this.styleStorage = new StyleStorageService(context);
     }
@@ -41,7 +47,10 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
     ): Promise<void> {
         const webview = webviewPanel.webview;
         // Typed send: the compiler checks every host-to-webview message against src/protocol/spreadsheet.ts.
-        const post = (message: HostToSpreadsheetWebview) => webview.postMessage(message);
+        const { post, sent } = recordSentInTests<HostToSpreadsheetWebview>(
+            this.context.extensionMode === vscode.ExtensionMode.Test,
+            (message) => webview.postMessage(message),
+        );
 
         webview.options = {
             enableScripts: true,
@@ -66,6 +75,9 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
         let currentIsPlainView = false;
         // Save and restore both read-modify-write the file; run them one at a time (see serialQueue.ts).
         const fileQueue = createSerialQueue();
+        const fileQueueKey = document.uri.fsPath.toLowerCase();
+        this.fileQueues.set(fileQueueKey, fileQueue);
+        webviewPanel.onDidDispose(() => this.fileQueues.delete(fileQueueKey));
         let lastSaveTime = 0;
 
         type VersionHistoryEntry = {
@@ -1614,7 +1626,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
             queuedCommands: SPREADSHEET_FILE_WRITING_COMMANDS,
         });
         webview.onDidReceiveMessage(dispatch);
-        trackOpenEditor(this.openEditors, { panel: webviewPanel, uri: () => currentUri, dispatch });
+        trackOpenEditor(this.openEditors, { panel: webviewPanel, uri: () => currentUri, dispatch, sent });
 
         // Forward settings changes made outside the webview
         const configChangeDisposable = vscode.workspace.onDidChangeConfiguration(e => {
@@ -1628,32 +1640,6 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
             }
         });
         webviewPanel.onDidDispose(() => configChangeDisposable.dispose());
-
-        // Queued behind any in-flight save so the save finishes at the old path and later saves use the new one.
-        const handleMove = (newUri: vscode.Uri) => fileQueue.run(async () => {
-            const oldUri = currentUri;
-            currentUri = newUri;
-            filePath = newUri.fsPath;
-            const detectedType = detectTabularFileType(filePath);
-            if (detectedType) {
-                currentFileType = detectedType;
-            }
-
-            await migrateFileUriState(this.context, oldUri, newUri, {
-                kind: currentFileType,
-                isSpreadsheet: true,
-                styleStorage: this.styleStorage,
-            });
-
-            externalFileWatcher.repoint(filePath, currentUri);
-
-            try {
-                post({
-                    command: 'diskMovedExternally',
-                    fileName: vscode.workspace.asRelativePath(newUri),
-                });
-            } catch { }
-        });
 
         const externalFileWatcher = createExternalFileChangeWatcher({
             filePath,
@@ -1677,7 +1663,6 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                     post({ command: 'diskDeletedExternally' });
                 } catch { }
             },
-            onMove: (newUri) => { void handleMove(newUri); },
         });
         webviewPanel.onDidDispose(() => externalFileWatcher.dispose());
 

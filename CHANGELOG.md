@@ -8,6 +8,7 @@
 - Spreadsheets: copying cells that contain line breaks (Shift+Enter) and pasting them back, or into Excel or Google Sheets, keeps each multi-line cell as one cell instead of splitting it into extra rows. Copied rich-text cells paste as plain text, without HTML tags.
 - CSV/TSV: "Convert to XLSX" from the Command Palette now keeps font size and text wrap, matching the toolbar's Convert button.
 - CSV/TSV: every save is now kept in version history, so you can roll back edits; before, history only held the file as it was when opened.
+- Renaming or moving a file in VS Code now keeps its Markdown column widths and YAML card state, CSV/TSV styling and view mode, and version history. Before, the editor VS Code reopens at the new path loaded too early and showed the defaults.
 - Requires VS Code 1.67 or newer (the previous "1.60" minimum was never accurate).
 
 ## v1.5.0 — 2026-09-05

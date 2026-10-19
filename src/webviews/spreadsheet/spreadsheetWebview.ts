@@ -7550,11 +7550,6 @@ import { parseTsv } from './components/tsvClipboard';
             return;
         }
 
-        if (message.command === 'diskMovedExternally') {
-            showToast(`File moved to ${message.fileName || 'new location'}`, false, 10000);
-            return;
-        }
-
         if (message.command === 'diskDeletedExternally') {
             showToast('File deleted from disk', false, 10000);
             return;

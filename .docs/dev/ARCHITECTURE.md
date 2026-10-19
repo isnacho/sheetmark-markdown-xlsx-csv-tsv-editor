@@ -139,7 +139,7 @@ Persisted outside the `.md` bytes by `createMarkdownPreferences` in
 | `mermaidPreviewMode` | global | Mermaid diagram vs code preview |
 | `calloutDefaultType` | global | Default callout type slug |
 
-Per-file preferences listed in `perFile` move with the file in `migrateFileUriState`.
+Per-file preferences listed in `perFile` move with the file on rename (see Renames below).
 
 Loaded into `initMarkdown` / `diskChangedExternally`; webview persists edits via
 `saveTableColumnWidths`, `saveFrontmatterPanelCollapsed`, `saveMermaidPreviewMode`,
@@ -148,15 +148,20 @@ Loaded into `initMarkdown` / `diskChangedExternally`; webview persists edits via
 ### External disk changes
 **Markdown:** `createExternalFileChangeWatcher` in
 [fileExternalChangeWatcher.ts](../../src/shared/fileExternalChangeWatcher.ts): change →
-`diskChangedExternally`; debounced delete → `diskDeletedExternally`; rename (`onDidRenameFiles`) →
-`migrateFileUriState` + `diskMovedExternally` + watcher `repoint`. The webview shows persistent
+`diskChangedExternally`; debounced delete → `diskDeletedExternally`. The webview shows persistent
 toasts; dirty edits require confirm before reload. With the diff-review setting on, the change opens
 a disk-vs-editor diff instead (see the disk-diff cluster in [MAP-mdWebview.md](MAP-mdWebview.md) and
 the UX flowchart in [flow.md](../flow.md)). `saveMarkdown` has a host-side conflict check →
 `saveConflict`. `requestFreshData` triggers a manual re-read.
 
 **Spreadsheet:** same watcher: change reloads and re-sends `initVirtualTable`; delete →
-`diskDeletedExternally`; move → `migrateFileUriState` + `diskMovedExternally`.
+`diskDeletedExternally`.
+
+**Renames (both editors):** VS Code closes the open editor and opens a new one at the new path.
+`registerRenameStateMigration` ([renameStateMigration.ts](../../src/shared/renameStateMigration.ts))
+handles `onWillRenameFiles`: it waits for the panel's queued saves, then moves styles, view mode,
+Markdown preferences and version history via `migrateFileUriState`, before VS Code renames, so the
+new editor loads them. Renames outside VS Code aren't reported and look like a delete.
 
 ### Theme, settings, feedback (shared)
 Handled in `src/webviews/shared/**` and reused by both editors (file list:

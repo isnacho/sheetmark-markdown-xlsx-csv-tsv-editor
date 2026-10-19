@@ -4,7 +4,7 @@
 //
 // To add a Markdown preference: add one entry to createMarkdownPreferences below, then read and
 // write it from MDEditorProvider. Per-file entries listed in `perFile` move with the file
-// automatically (migrateFileUriState).
+// automatically on rename (renameStateMigration.ts).
 
 import type * as vscode from 'vscode';
 import type { MermaidPreviewMode } from '../protocol/markdown';

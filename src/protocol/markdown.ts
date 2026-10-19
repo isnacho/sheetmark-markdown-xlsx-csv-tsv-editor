@@ -63,7 +63,6 @@ export type HostToMarkdownWebview =
     | { command: 'versionPreviewMd'; versionId: string; timestamp: number }
     | { command: 'versionPreviewCancelledMd' }
     | { command: 'versionRestoredMd'; versionId: string; timestamp: number }
-    | { command: 'diskMovedExternally'; fileName: string; documentUri: string; documentDirUri: string }
     | { command: 'reloadFromDiskError'; message: string }
     | { command: 'openRelativeFileFailed'; message: string }
     | { command: 'acceptAllDiskChanges' }

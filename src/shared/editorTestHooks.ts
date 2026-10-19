@@ -10,6 +10,21 @@ export interface OpenEditorHandle {
     uri(): vscode.Uri;
     /** Deliver `message` as if the webview posted it; resolves once the host handled it. */
     dispatch(message: unknown): Promise<void>;
+    /** Messages the host posted to this webview, oldest first (recorded in test mode only). */
+    sent(): readonly unknown[];
+}
+
+/**
+ * Wraps a provider's typed `post` so test runs can read back what the webview was sent. Outside
+ * test mode it returns `post` unchanged and records nothing.
+ */
+export function recordSentInTests<M>(isTestMode: boolean, post: (message: M) => Thenable<boolean>): { post: (message: M) => Thenable<boolean>; sent: () => readonly M[] } {
+    if (!isTestMode) { return { post, sent: () => [] }; }
+    const log: M[] = [];
+    return {
+        post: (message) => { log.push(message); return post(message); },
+        sent: () => log,
+    };
 }
 
 /** Registers `handle` in `registry` until the panel is disposed. */

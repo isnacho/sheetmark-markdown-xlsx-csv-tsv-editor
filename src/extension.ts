@@ -5,6 +5,8 @@ import { SpreadsheetEditorProvider } from './spreadsheetEditorProvider';
 import { MDEditorProvider } from './mdEditorProvider';
 import { StyleStorageService } from './shared/styleStorageService';
 import { applyStoredStylesToWorksheet } from './spreadsheet/excelStyle';
+import { registerRenameStateMigration } from './shared/renameStateMigration';
+import { createMarkdownPreferences } from './shared/preferenceStore';
 import type { OpenEditorHandle } from './shared/editorTestHooks';
 import {
     convertTabularFile,
@@ -123,6 +125,13 @@ export function activate(context: vscode.ExtensionContext): SheetmarkTestApi | u
 
     context.subscriptions.push(new vscode.Disposable(() => {
         clearInterval(stylePruneTimer);
+    }));
+
+    // Move per-file state before VS Code renames a file, so the reopened editor finds it.
+    context.subscriptions.push(registerRenameStateMigration(context, {
+        styleStorage,
+        markdownPreferences: createMarkdownPreferences(context.workspaceState, context.globalState),
+        flushWrites: (uri) => Promise.all([spreadsheetProvider.flushWrites(uri), mdProvider.flushWrites(uri)]).then(() => undefined),
     }));
 
     void reconcileAllOpenByDefaultSettings().catch(() => {

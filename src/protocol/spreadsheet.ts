@@ -81,5 +81,4 @@ export type HostToSpreadsheetWebview =
     | { command: 'showStyleModeNotice' }
     | { command: 'styleModeCancelled' }
     | { command: 'versionRestoredXlsx'; versionId: string; timestamp: number }
-    | { command: 'versionPreviewCancelledXlsx' }
-    | { command: 'diskMovedExternally'; fileName: string };
+    | { command: 'versionPreviewCancelledXlsx' };

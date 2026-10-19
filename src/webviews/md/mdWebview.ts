@@ -2103,18 +2103,6 @@ window.addEventListener('message', (event) => {
             updateEditToolbarButtons();
             break;
 
-        case 'diskMovedExternally':
-            pendingDiskDeleted = false;
-            if (typeof m.documentUri === 'string') {
-                documentUri = m.documentUri;
-            }
-            if (typeof m.documentDirUri === 'string') {
-                documentDirUri = m.documentDirUri;
-            }
-            showToast(`File moved to ${m.fileName || 'new location'}`, undefined, { persistent: true });
-            updateEditToolbarButtons();
-            break;
-
         case 'initSettings':
             hostSettingsLoaded = true;
             applySettings(m.settings, false);

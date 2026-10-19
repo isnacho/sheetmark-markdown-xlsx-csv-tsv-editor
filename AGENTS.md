@@ -82,7 +82,8 @@ is untrusted. Details: [.docs/dev/MESSAGE-PROTOCOL.md](.docs/dev/MESSAGE-PROTOCO
 | Markdown shell: toolbar, save, disk sync UI, settings (browser) | `src/webviews/md/mdWebview.ts` (see [MAP](.docs/dev/MAP-mdWebview.md)) |
 | Markdown CM6 live preview + widgets | `src/webviews/md/livePreview/**`, one module per feature, wired in `livePreviewEditor.ts` |
 | Markdown file I/O, save, disk sync (host) | [src/mdEditorProvider.ts](src/mdEditorProvider.ts) |
-| External file watch + move detection | [fileExternalChangeWatcher.ts](src/shared/fileExternalChangeWatcher.ts), [migrateFileUriState.ts](src/shared/migrateFileUriState.ts) |
+| External file watch (change, delete) | [fileExternalChangeWatcher.ts](src/shared/fileExternalChangeWatcher.ts) |
+| Per-file state following a rename/move | [renameStateMigration.ts](src/shared/renameStateMigration.ts), [migrateFileUriState.ts](src/shared/migrateFileUriState.ts) |
 | Markdown prefs kept outside the file (column widths, YAML card, mermaid mode, callout default) | [src/shared/preferenceStore.ts](src/shared/preferenceStore.ts) (`createMarkdownPreferences`) |
 | CSV/TSV style persistence | [src/shared/styleStorageService.ts](src/shared/styleStorageService.ts) |
 | File conversion csv ↔ tsv ↔ xlsx | [src/shared/fileConversionService.ts](src/shared/fileConversionService.ts) |
@@ -164,9 +165,11 @@ npm run package           # production build (also runs unit tests); used by vsc
   `SpreadsheetEditorProvider` serves `xlsxViewer.xlsx/.csv/.tsv`; `MDEditorProvider` serves `xlsxViewer.md`.
 - **Markdown editing** is CM6 live preview only. `currentContent` in `mdWebview.ts` is the single
   source of truth for save and disk reload.
-- **External disk sync** uses `fileExternalChangeWatcher.ts` (change, debounced delete, rename via
-  `onDidRenameFiles`). Moves migrate URI-keyed state via `migrateFileUriState.ts` and post
-  `diskMovedExternally` to the webview.
+- **External disk sync** uses `fileExternalChangeWatcher.ts` (change, debounced delete).
+- **Renames:** VS Code closes an open Sheetmark editor when its file is renamed and opens a new one
+  at the new path. Per-file state (styles, view mode, Markdown prefs, version history) moves in
+  `onWillRenameFiles` (`renameStateMigration.ts`), which VS Code waits for, so the new editor finds
+  it. Don't add in-panel move handling: that panel is already closing.
 - **Large tables are virtualized**: the webview requests row windows (`getRows` → `rowsData`) and
   never holds the whole file. Tunables are in `VirtualScrollConfig` ([common.ts](src/webviews/shared/common.ts)).
 - **CSV/TSV can't store styles**, so styled mode persists formatting in extension state via

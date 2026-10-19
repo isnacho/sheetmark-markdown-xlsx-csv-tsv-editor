@@ -54,6 +54,6 @@ matched on `type` in `ThemeManager.init`.
   is focused") rather than through the webview's own message flow. UX flow: [flow.md](../flow.md).
 - **External file watching.** Both providers use `createExternalFileChangeWatcher` from
   [fileExternalChangeWatcher.ts](../../src/shared/fileExternalChangeWatcher.ts) (VS Code watcher +
-  `fs.watch` fallback, debounced delete, `onDidRenameFiles` for moves). URI-keyed extension state
-  migrates via `migrateFileUriState` ([migrateFileUriState.ts](../../src/shared/migrateFileUriState.ts))
-  on move.
+  `fs.watch` fallback, debounced delete). Renames send no message: VS Code reopens the editor at the
+  new path, and per-file state moves first in
+  [renameStateMigration.ts](../../src/shared/renameStateMigration.ts).

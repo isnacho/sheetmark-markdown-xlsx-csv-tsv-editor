@@ -4,14 +4,13 @@ import * as path from 'path';
 import { VERSION_HISTORY_RETENTION_MS, VERSION_HISTORY_SNAPSHOT_DEBOUNCE_MS, getVersionHistoryFile, pickVersionHistoryEntry } from './shared/versionHistory';
 import { createMarkdownPreferences, type MarkdownPreferences } from './shared/preferenceStore';
 import { createCspNonce, markdownCsp } from './shared/webviewCsp';
-import { createSerialQueue } from './shared/serialQueue';
+import { createSerialQueue, type SerialQueue } from './shared/serialQueue';
 import { createMessageDispatcher, MARKDOWN_FILE_WRITING_COMMANDS } from './shared/messageDispatch';
-import { trackOpenEditor, type OpenEditorHandle } from './shared/editorTestHooks';
+import { recordSentInTests, trackOpenEditor, type OpenEditorHandle } from './shared/editorTestHooks';
 import { handleSharedHostMessage, isSharedHostMessage, syncColorTheme, type SharedHostContext } from './shared/commonHostMessages';
 import type { MessageOf } from './protocol/common';
 import type { HostToMarkdownWebview, MarkdownSettings, MarkdownWebviewToHost } from './protocol/markdown';
 import { createExternalFileChangeWatcher } from './shared/fileExternalChangeWatcher';
-import { migrateFileUriState } from './shared/migrateFileUriState';
 import { isSheetmarkConfiguredAsDefault } from './shared/editorAssociationUtils';
 
 function buildMdWebviewSettings(): MarkdownSettings {
@@ -49,6 +48,13 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
     private activePanel: vscode.WebviewPanel | null = null;
     /** Open panels, for the integration tests only (see editorTestHooks.ts). */
     readonly openEditors = new Set<OpenEditorHandle>();
+    /** Each open panel's write queue, keyed by lowercased path (see flushWrites). */
+    private readonly fileQueues = new Map<string, SerialQueue>();
+
+    /** Resolves once saves already queued for `uri` have finished (used before a rename moves its state). */
+    async flushWrites(uri: vscode.Uri): Promise<void> {
+        await this.fileQueues.get(uri.fsPath.toLowerCase())?.run(async () => { });
+    }
 
     constructor(private readonly context: vscode.ExtensionContext) {
         this.prefs = createMarkdownPreferences(context.workspaceState, context.globalState);
@@ -76,7 +82,10 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
         token: vscode.CancellationToken
     ): Promise<void> {
         // Typed send: the compiler checks every host-to-webview message against src/protocol/markdown.ts.
-        const post = (message: HostToMarkdownWebview) => webviewPanel.webview.postMessage(message);
+        const { post, sent } = recordSentInTests<HostToMarkdownWebview>(
+            this.context.extensionMode === vscode.ExtensionMode.Test,
+            (message) => webviewPanel.webview.postMessage(message),
+        );
         try {
             let filePath = document.uri.fsPath;
             let currentUri = document.uri;
@@ -114,6 +123,9 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
             let restoredVersionId: string | null = null;
             // Save and restore write the file; run them one at a time (see serialQueue.ts).
             const fileQueue = createSerialQueue();
+            const fileQueueKey = document.uri.fsPath.toLowerCase();
+            this.fileQueues.set(fileQueueKey, fileQueue);
+            webviewPanel.onDidDispose(() => this.fileQueues.delete(fileQueueKey));
             let lastSaveTime = 0;
 
             const getHistoryFilePath = () => {
@@ -600,7 +612,7 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                 queuedCommands: MARKDOWN_FILE_WRITING_COMMANDS,
             });
             webviewPanel.webview.onDidReceiveMessage(dispatch);
-            trackOpenEditor(this.openEditors, { panel: webviewPanel, uri: () => currentUri, dispatch });
+            trackOpenEditor(this.openEditors, { panel: webviewPanel, uri: () => currentUri, dispatch, sent });
 
             // Forward settings changes
             const configChangeDisposable = vscode.workspace.onDidChangeConfiguration(e => {
@@ -615,33 +627,6 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                 }
             });
 
-
-            // Queued behind any in-flight save so the save finishes at the old path and later saves use the new one.
-            const handleMove = (newUri: vscode.Uri) => fileQueue.run(async () => {
-                const oldUri = currentUri;
-                currentUri = newUri;
-                filePath = newUri.fsPath;
-                documentDirUri = vscode.Uri.file(path.dirname(filePath));
-
-                await migrateFileUriState(this.context, oldUri, newUri, {
-                    kind: 'md',
-                    isSpreadsheet: false,
-                    filePreferences: this.prefs.perFile,
-                });
-
-                externalFileWatcher.repoint(filePath, currentUri);
-                // Rebuild roots for the new folder, or local images next to the moved file are blocked.
-                refreshMarkdownLocalResourceRoots();
-
-                try {
-                    post({
-                        command: 'diskMovedExternally',
-                        fileName: vscode.workspace.asRelativePath(newUri),
-                        documentUri: newUri.toString(),
-                        documentDirUri: documentDirUri.toString(),
-                    });
-                } catch { }
-            });
 
             const externalFileWatcher = createExternalFileChangeWatcher({
                 filePath,
@@ -669,7 +654,6 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                     }
                     post({ command: 'diskDeletedExternally' });
                 },
-                onMove: (newUri) => { void handleMove(newUri); },
             });
 
             const workspaceFoldersDisposable = vscode.workspace.onDidChangeWorkspaceFolders(() => {

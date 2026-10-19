@@ -41,6 +41,8 @@ const MUTATIONS = [
       find: '    applyStoredStylesToWorksheet(worksheet, storedStyles);\n', replace: '    void applyStoredStylesToWorksheet;\n' },
     { id: 'csv-version-history', file: 'src/spreadsheetEditorProvider.ts',
       find: '                        await persistVersionSnapshot();\n                        return;', replace: '                        return;' },
+    { id: 'rename-state-before-reopen', file: 'src/shared/renameStateMigration.ts',
+      find: 'return vscode.workspace.onWillRenameFiles((event) => {\n        event.waitUntil(', replace: 'return vscode.workspace.onDidRenameFiles((event) => {\n        void (' },
     { id: 'resize-listeners-once', knownGap: 'resize wiring lives in the spreadsheetWebview.ts closure; no test reaches it', file: 'src/webviews/spreadsheet/spreadsheetWebview.ts',
       find: 'if (!resizeGlobalListenersAttached) {', replace: 'if (!resizeGlobalListenersAttached || document.body !== null) {' },
 ];

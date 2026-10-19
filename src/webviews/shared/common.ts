@@ -1,12 +1,24 @@
  
 
-declare function acquireVsCodeApi(): any;
+import type { SpreadsheetWebviewToHost } from '../../protocol/spreadsheet';
+import type { MarkdownWebviewToHost } from '../../protocol/markdown';
 
-export const vscode = (function () {
+/** Any message a Sheetmark webview may send. Each editor narrows this with its own `post` helper. */
+export type AnyWebviewToHost = SpreadsheetWebviewToHost | MarkdownWebviewToHost;
+
+interface VsCodeWebviewApi {
+    postMessage(message: AnyWebviewToHost): void;
+    getState(): unknown;
+    setState(state: unknown): void;
+}
+
+declare function acquireVsCodeApi(): VsCodeWebviewApi;
+
+export const vscode: VsCodeWebviewApi = (function () {
     if (typeof acquireVsCodeApi === 'function') {
         return acquireVsCodeApi();
     }
-    return { postMessage: () => { } };
+    return { postMessage: () => { }, getState: () => undefined, setState: () => { } };
 })();
 
 export const VirtualScrollConfig = {

@@ -1,3 +1,4 @@
+import type { CommonHostToWebview } from '../../protocol/common';
 import { vscode } from './common';
 import { Utils } from './utils';
 import { Icons } from './icons';
@@ -90,19 +91,21 @@ export class FeedbackModal {
 
         // Listen for system details from extension
         window.addEventListener('message', (event) => {
-            if (event.data.command === 'systemDetails') {
+            const message = event.data as CommonHostToWebview;
+            if (!('command' in message)) { return; }
+            if (message.command === 'systemDetails') {
                 const detailsArea = document.getElementById('feedbackSystemDetails') as HTMLTextAreaElement;
                 if (detailsArea) {
-                    const editorName = event.data.editorName || 'VS Code';
-                    detailsArea.value = `Editor: ${editorName}\nVersion: ${event.data.vscodeVersion}\nExtension: ${event.data.extensionVersion}\nOS: ${event.data.osInfo}`;
+                    const editorName = message.editorName || 'VS Code';
+                    detailsArea.value = `Editor: ${editorName}\nVersion: ${message.vscodeVersion}\nExtension: ${message.extensionVersion}\nOS: ${message.osInfo}`;
                 }
-            } else if (event.data.command === 'feedbackResult') {
+            } else if (message.command === 'feedbackResult') {
                 const submitBtn = document.getElementById('feedbackSubmitBtn') as HTMLButtonElement;
                 if (submitBtn) {
                     submitBtn.disabled = false;
                     submitBtn.textContent = 'Submit';
                 }
-                if (event.data.ok) {
+                if (message.ok) {
                     Utils.showToast('Feedback submitted successfully!');
                     this.hide();
                     const form = document.getElementById('feedbackForm') as HTMLFormElement;

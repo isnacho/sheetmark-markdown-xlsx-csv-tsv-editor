@@ -10,6 +10,8 @@ import { Utils } from '../shared/utils';
 import { Icons } from '../shared/icons';
 import { vscode, VirtualScrollConfig, debounce } from '../shared/common';
 import { VirtualLoader } from '../shared/virtualLoader';
+import type { HostToSpreadsheetWebview, SpreadsheetWebviewToHost } from '../../protocol/spreadsheet';
+import type { HandledByFeedbackModal } from '../../protocol/common';
 import { htmlToPlainText } from '../shared/sanitizeHtml';
 import { createXlsxRowHtml, getExcelColumnLabel, renderDropdownCellContent } from './components/spreadsheetRenderComponent';
 import { XlsxSelectionManager } from './components/spreadsheetSelectionComponent';
@@ -71,6 +73,9 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
 import { parseTsv } from './components/tsvClipboard';
 
 (function () {
+    // Typed send: the compiler checks every webview-to-host message against src/protocol/spreadsheet.ts.
+    const post = (message: SpreadsheetWebviewToHost) => vscode.postMessage(message);
+
     // ===== Virtual Scrolling Configuration =====
     const { ROW_HEIGHT, BUFFER_ROWS, CHUNK_SIZE } = VirtualScrollConfig;
     const textColorIcon = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16"/><path d="M8.5 16h7"/><path d="M12 4l4 12"/><path d="M12 4L8 16"/></svg>';
@@ -945,7 +950,7 @@ import { parseTsv } from './components/tsvClipboard';
         if (!styleModeRequestPending) {
             return;
         }
-        vscode.postMessage({ command: 'styleModeDecision', decision });
+        post({ command: 'styleModeDecision', decision });
     }
 
     function ensureStyleModeNoticePopup() {
@@ -2091,7 +2096,7 @@ import { parseTsv } from './components/tsvClipboard';
         pendingStyleModeAction = nextAction ?? null;
         if (!styleModeRequestPending) {
             styleModeRequestPending = true;
-            vscode.postMessage({ command: 'requestStyleMode' });
+            post({ command: 'requestStyleMode' });
         }
         return true;
     }
@@ -2103,7 +2108,7 @@ import { parseTsv } from './components/tsvClipboard';
         syncPlainViewUiState();
         syncTemporaryFileToolbarActions();
         if (isTemporaryStyleFile) {
-            vscode.postMessage({ command: 'setPreferredViewMode', mode: 'styled' });
+            post({ command: 'setPreferredViewMode', mode: 'styled' });
         }
         applySettingsForScope('styled');
 
@@ -4360,7 +4365,7 @@ import { parseTsv } from './components/tsvClipboard';
         }
 
         removePendingOutsideControlEdit(row, col);
-        vscode.postMessage({
+        post({
             command: 'saveXlsxEdits',
             sheetIndex: currentWorksheet,
             edits: [{ row, col, value }],
@@ -4390,7 +4395,7 @@ import { parseTsv } from './components/tsvClipboard';
         }
 
         removePendingOutsideControlEdit(row, col);
-        vscode.postMessage({
+        post({
             command: 'saveXlsxEdits',
             sheetIndex: currentWorksheet,
             edits: [{ row, col, value }],
@@ -5121,10 +5126,10 @@ import { parseTsv } from './components/tsvClipboard';
             const cancelBtn = document.getElementById('cancelVersionPreviewButton') as HTMLButtonElement | null;
             restoreBtn?.addEventListener('click', () => {
                 if (!previewVersionId) {return;}
-                vscode.postMessage({ command: 'restoreVersion', versionId: previewVersionId });
+                post({ command: 'restoreVersion', versionId: previewVersionId });
             });
             cancelBtn?.addEventListener('click', () => {
-                vscode.postMessage({ command: 'cancelVersionPreview' });
+                post({ command: 'cancelVersionPreview' });
             });
         }
         return banner;
@@ -5614,7 +5619,7 @@ import { parseTsv } from './components/tsvClipboard';
             } else {
                 if (currentSettings.autoSave) {
                     editsList.forEach(e => removePendingOutsideControlEdit(e.row, e.col));
-                    vscode.postMessage({
+                    post({
                         command: 'saveXlsxEdits',
                         sheetIndex: currentWorksheet,
                         edits: editsList,
@@ -6315,7 +6320,7 @@ import { parseTsv } from './components/tsvClipboard';
 
                 if (e.key === 'Escape') {
                     e.preventDefault();
-                    vscode.postMessage({ command: 'cancelVersionPreview' });
+                    post({ command: 'cancelVersionPreview' });
                     return;
                 }
 
@@ -6567,7 +6572,7 @@ import { parseTsv } from './components/tsvClipboard';
             openBtn.onclick = (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                vscode.postMessage({ command: 'openExternal', url });
+                post({ command: 'openExternal', url });
                 hideLinkTooltip();
             };
         }
@@ -6788,7 +6793,7 @@ import { parseTsv } from './components/tsvClipboard';
     }
 
     function postSettings() {
-        vscode.postMessage({
+        post({
             command: 'updateSettings',
             settingsScope: getCurrentSettingsScope(),
             settings: currentSettings
@@ -7261,7 +7266,7 @@ import { parseTsv } from './components/tsvClipboard';
             setLoadingText('Saving worksheet...');
             showLoading();
         }
-        vscode.postMessage({ command: 'saveXlsxEdits', sheetIndex: currentWorksheet, edits, richEdits, styleEdits, operations, isAutosave });
+        post({ command: 'saveXlsxEdits', sheetIndex: currentWorksheet, edits, richEdits, styleEdits, operations, isAutosave });
     }
 
     function setExpandedMode(isExpanded: boolean) {
@@ -7290,7 +7295,7 @@ import { parseTsv } from './components/tsvClipboard';
             {
                 fileExtension: currentAssociationFileType,
                 onOpenByDefaultChange: (enabled: boolean) => {
-                    vscode.postMessage({ command: enabled ? 'enableAsDefault' : 'disableDefaultEditor' });
+                    post({ command: enabled ? 'enableAsDefault' : 'disableDefaultEditor' });
                 }
             }
         );
@@ -7386,7 +7391,7 @@ import { parseTsv } from './components/tsvClipboard';
                 syncPlainViewUiState();
                 syncTemporaryFileToolbarActions();
                 // Always notify the provider so it stays in sync for all file types
-                vscode.postMessage({ command: 'setPreferredViewMode', mode: isPlainView ? 'plain' : 'styled' });
+                post({ command: 'setPreferredViewMode', mode: isPlainView ? 'plain' : 'styled' });
                 applySettingsForScope(getCurrentSettingsScope());
 
                 rowCache.clear();
@@ -7396,7 +7401,7 @@ import { parseTsv } from './components/tsvClipboard';
             },
             onVersionHistory: () => {
                 if (isEditMode) {return;}
-                vscode.postMessage({ command: 'showVersionHistory' });
+                post({ command: 'showVersionHistory' });
             },
             onOpenSettings: () => { },
             onHelp: () => {
@@ -7404,11 +7409,11 @@ import { parseTsv } from './components/tsvClipboard';
             },
             onConvertFile: () => {
                 if (isEditMode) {return;}
-                vscode.postMessage({ command: 'convertFile' });
+                post({ command: 'convertFile' });
             },
             onRefresh: () => {
                 if (isEditMode) {return;}
-                vscode.postMessage({ command: 'requestFreshData' });
+                post({ command: 'requestFreshData' });
             }
         }));
 
@@ -7472,8 +7477,8 @@ import { parseTsv } from './components/tsvClipboard';
     }
 
     window.addEventListener('message', (event) => {
-        const message = event.data;
-        if (!message || typeof message !== 'object') {return;}
+        const message = event.data as HostToSpreadsheetWebview;
+        if (!message || typeof message !== 'object' || !('command' in message)) {return;}
 
         if (message.command === 'initSettings') {
             consumeIncomingSettingsPayload(message);
@@ -7601,9 +7606,14 @@ import { parseTsv } from './components/tsvClipboard';
             renderWorksheet(currentWorksheet);
             return;
         }
+
+        // Compile-time check that every host message has a handler: only the feedback modal's
+        // messages may reach here. A new HostToSpreadsheetWebview member fails to compile until handled.
+        const handledByFeedbackModal: HandledByFeedbackModal = message;
+        void handledByFeedbackModal;
     });
 
     document.addEventListener('DOMContentLoaded', () => {
-        vscode.postMessage({ command: 'webviewReady' });
+        post({ command: 'webviewReady' });
     });
 })();

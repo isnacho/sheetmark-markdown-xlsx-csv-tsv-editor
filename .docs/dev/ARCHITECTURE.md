@@ -19,7 +19,7 @@ for the message inventory see [MESSAGE-PROTOCOL.md](MESSAGE-PROTOCOL.md).
 │  Has: fs, path, exceljs, the real `vscode` module, globalStorage, settings      │
 └───────────────┬─────────────────────────────────────────────────────────────┘
                 │  webview.postMessage(...)  ▲   ▼  onDidReceiveMessage(...)
-                │  ( untyped {command,...}; see MESSAGE-PROTOCOL.md )
+                │  ( typed in src/protocol/; see MESSAGE-PROTOCOL.md )
 ┌───────────────▼─────────────────────────── WEBVIEW (browser sandbox) ──────────┐
 │ dist/spreadsheet/spreadsheetWebview.js   dist/md/mdWebview.js  (platform:browser)│
 │                                                                                 │
@@ -198,8 +198,6 @@ see [AGENTS.md](../../AGENTS.md) for when to run what.
   `livePreview/tableWidget.ts`, and `spreadsheetEditorProvider.ts`. Don't read them end-to-end; use
   [MAP-spreadsheetWebview.md](MAP-spreadsheetWebview.md) and [MAP-mdWebview.md](MAP-mdWebview.md)
   and grep for symbols.
-- The message protocol is stringly-typed across the boundary (see MESSAGE-PROTOCOL.md); a shared
-  typed union would make it compiler-checked.
 - Internal IDs still carry upstream `xlsxViewer` / `xlsx-viewer` branding; renaming is deferred
   because the strings are load-bearing across `package.json` + `extension.ts` (and users' settings).
 - External-file watching is centralized in `fileExternalChangeWatcher.ts`; extend there when

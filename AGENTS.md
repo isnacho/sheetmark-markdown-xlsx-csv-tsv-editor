@@ -35,22 +35,20 @@ runtime's APIs is a compile error, not a runtime surprise.
 | Can use | Node APIs, `exceljs`, the `vscode` module | DOM, CodeMirror 6, `markdown-it` (TOC, inactive table cells), `mermaid`, `js-yaml`, `typo-js` |
 
 The two sides talk **only** by message passing (`postMessage` ⇄ `onDidReceiveMessage`). Never
-import across the boundary (`src/webviews/**` must not import from `src/shared/**` and vice versa).
+import across the boundary (`src/webviews/**` must not import from `src/shared/**` and vice versa);
+the one exception is `import type` from `src/protocol/` (§2).
 
-## 2. The message protocol is untyped strings: wire BOTH sides
+## 2. Messages are typed: change `src/protocol/` first
 
-Every host ⇄ webview interaction is `postMessage({ command: 'x', ... })` matched on the other end
-by a string compare. **The compiler does not check these yet.** A typo or a one-sided edit is a
-silent no-op, the most common bug class here.
+Every host ⇄ webview message is a member of a union in [src/protocol/](src/protocol/)
+(`common.ts`, `spreadsheet.ts`, `markdown.ts`). Both runtimes import these with `import type`;
+the files hold types only, the one allowed cross-boundary import. Sends go through typed `post(...)`
+helpers and handlers end in exhaustiveness checks, so a typo, a wrong field or a one-sided message
+is a compile error.
 
-When you add or change a message:
-1. Add the sender (`vscode.postMessage(...)` in the webview, `webview.postMessage(...)` in the provider).
-2. Add the handler on the other side, matching the exact string.
-3. Keep payload field names identical on both ends.
-4. Update [.docs/dev/MESSAGE-PROTOCOL.md](.docs/dev/MESSAGE-PROTOCOL.md).
-
-Senders and handlers live in files thousands of lines apart: grep for the counterpart before
-assuming it exists.
+To add or change a message: edit the union, run `npm run check-types`, and fix every error it
+lists (sender, handler, payload). Keep runtime payload validation in host handlers: webview input
+is untrusted. Details: [.docs/dev/MESSAGE-PROTOCOL.md](.docs/dev/MESSAGE-PROTOCOL.md).
 
 ## 3. Hard DO-NOTs
 
@@ -89,6 +87,7 @@ assuming it exists.
 | CSV/TSV style persistence | [src/shared/styleStorageService.ts](src/shared/styleStorageService.ts) |
 | File conversion csv ↔ tsv ↔ xlsx | [src/shared/fileConversionService.ts](src/shared/fileConversionService.ts) |
 | Version history / rollback | [src/shared/versionHistory.ts](src/shared/versionHistory.ts) |
+| Any host ⇄ webview message | [src/protocol/](src/protocol/) first, then the errors `check-types` reports |
 | Commands, activation, provider registration | [src/extension.ts](src/extension.ts) |
 | User-visible settings | `contributes.configuration` in [package.json](package.json) |
 | Shared webview building blocks (theme, toolbar, settings, menus, virtual scroll) | `src/webviews/shared/**` (see [guide.md](src/webviews/shared/guide.md)) |

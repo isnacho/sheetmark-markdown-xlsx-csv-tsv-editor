@@ -13,6 +13,7 @@ import { isAllowedExternalUrl } from './shared/externalLinks';
 import { createSerialQueue } from './shared/serialQueue';
 import { createMessageDispatcher, SPREADSHEET_FILE_WRITING_COMMANDS } from './shared/messageDispatch';
 import { trackOpenEditor, type OpenEditorHandle } from './shared/editorTestHooks';
+import type { HostToSpreadsheetWebview, SpreadsheetSettings, SpreadsheetSettingsPayload, SpreadsheetWebviewToHost } from './protocol/spreadsheet';
 import { createExternalFileChangeWatcher } from './shared/fileExternalChangeWatcher';
 import { migrateFileUriState } from './shared/migrateFileUriState';
 import { enableOpenByDefault, disableOpenByDefault, isSheetmarkConfiguredAsDefault } from './shared/editorAssociationUtils';
@@ -39,6 +40,8 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
         token: vscode.CancellationToken
     ): Promise<void> {
         const webview = webviewPanel.webview;
+        // Typed send: the compiler checks every host-to-webview message against src/protocol/spreadsheet.ts.
+        const post = (message: HostToSpreadsheetWebview) => webview.postMessage(message);
 
         webview.options = {
             enableScripts: true,
@@ -586,7 +589,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
             }
 
             try {
-                webview.postMessage({ command: 'saveResult', ok: true, isAutosave });
+                post({ command: 'saveResult', ok: true, isAutosave });
             } catch {
                 // ignore
             }
@@ -731,26 +734,8 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
         };
 
         type SettingsScope = 'plain' | 'styled';
-        type PersistedSpreadsheetSettings = {
-            firstRowIsHeader: boolean;
-            stickyToolbar: boolean;
-            stickyHeader: boolean;
-            autoSave: boolean;
-            autoSaveMode: 'all' | 'controlsOnly';
-            showManualSavePopup: boolean;
-            allowInteractiveControlsOutsideEditMode: boolean;
-            hyperlinkPreview: boolean;
-            spaciousCells: boolean;
-            mergeWarningEnabled: boolean;
-            isDefaultEditor: boolean;
-            textWrap: boolean;
-        };
-        type PersistedSettingsPayload = {
-            settings: PersistedSpreadsheetSettings;
-            plainSettings: PersistedSpreadsheetSettings;
-            styledSettings: PersistedSpreadsheetSettings;
-            settingsScope: SettingsScope;
-        };
+        type PersistedSpreadsheetSettings = SpreadsheetSettings;
+        type PersistedSettingsPayload = SpreadsheetSettingsPayload;
 
         const getAssociationType = (): 'xlsx' | 'csv' | 'tsv' =>
             currentFileType === 'csv' || currentFileType === 'tsv' ? currentFileType : 'xlsx';
@@ -830,7 +815,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
             if (!isWebviewReady) {return;}
             try {
                 const persisted = getPersistedSettings();
-                webview.postMessage({
+                post({
                     command: 'initSettings',
                     ...persisted
                 });
@@ -841,7 +826,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
 
         // Sync VS Code theme changes to the webview
         const themeChangeDisposable = vscode.window.onDidChangeActiveColorTheme(() => {
-            try { webview.postMessage({ type: 'setTheme', kind: vscode.window.activeColorTheme.kind }); } catch { }
+            try { post({ type: 'setTheme', kind: vscode.window.activeColorTheme.kind }); } catch { }
         });
 
         webviewPanel.onDidDispose(() => themeChangeDisposable.dispose());
@@ -860,7 +845,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                     mergedCells: ws.data.mergedCells,
                     rowHeights: ws.data.rows.map((row: any) => row.height || 21)
                 }));
-                webview.postMessage({
+                post({
                     command: 'initVirtualTable',
                     worksheets: worksheetsMeta,
                     rowHeaderWidth,
@@ -1014,7 +999,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
         };
 
         // Listen for messages
-        const handleMessage = async (message: any) => {
+        const handleMessage = async (message: SpreadsheetWebviewToHost) => {
             if (message?.command === 'webviewReady') {
                 isWebviewReady = true;
                 await pruneHistory();
@@ -1023,7 +1008,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                 trySendInit();
                 // Send current theme info to webview
                 try {
-                    webview.postMessage({ type: 'setTheme', kind: vscode.window.activeColorTheme.kind });
+                    post({ type: 'setTheme', kind: vscode.window.activeColorTheme.kind });
                 } catch { }
                 return;
             }
@@ -1032,7 +1017,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                 try {
                     const history = await pruneHistory();
                     if (!history.length) {
-                        webview.postMessage({
+                        post({
                             command: 'versionHistoryError',
                             message: 'No saved versions available'
                         });
@@ -1069,7 +1054,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                     previewVersionTimestamp = picked.entry.timestamp;
                     trySendInit();
                 } catch (err) {
-                    webview.postMessage({
+                    post({
                         command: 'versionHistoryError',
                         message: `Version history failed: ${String(err)}`
                     });
@@ -1084,7 +1069,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                     restoredVersionId = null;
                     await loadWorkbookPayload(filePath, currentFileType);
                     trySendInit();
-                    webview.postMessage({ command: 'versionPreviewCancelledXlsx' });
+                    post({ command: 'versionPreviewCancelledXlsx' });
                 }
                 return;
             }
@@ -1099,7 +1084,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                     const history = await pruneHistory();
                     const entry = history.find(item => item.id === versionId);
                     if (!entry) {
-                        webview.postMessage({
+                        post({
                             command: 'versionHistoryError',
                             message: 'Selected version is no longer available'
                         });
@@ -1116,13 +1101,13 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                     trySendInit();
                     await persistVersionSnapshot();
 
-                    webview.postMessage({
+                    post({
                         command: 'versionRestoredXlsx',
                         versionId: entry.id,
                         timestamp: entry.timestamp
                     });
                 } catch (err) {
-                    webview.postMessage({
+                    post({
                         command: 'versionHistoryError',
                         message: `Restore failed: ${String(err)}`
                     });
@@ -1200,7 +1185,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                 const wsIndex = typeof sheetIndex === 'number' ? sheetIndex : 0;
                 const ws = worksheetsData[wsIndex];
                 if (!ws) {
-                    webview.postMessage({
+                    post({
                         command: 'rowsData',
                         rows: [],
                         start,
@@ -1214,7 +1199,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                 const clampedEnd = Math.min(ws.data.rows.length, end);
                 const rows = ws.data.rows.slice(clampedStart, clampedEnd);
 
-                webview.postMessage({
+                post({
                     command: 'rowsData',
                     rows,
                     start: clampedStart,
@@ -1241,7 +1226,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
             if (message?.command === 'getSystemDetails') {
                 const ext = vscode.extensions.getExtension('iggyinc.sheetmark');
                 const editorName = vscode.env.appName || 'VS Code';
-                webview.postMessage({
+                post({
                     command: 'systemDetails',
                     vscodeVersion: vscode.version,
                     extensionVersion: ext?.packageJSON?.version ?? 'unknown',
@@ -1269,9 +1254,9 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                         req.write(body);
                         req.end();
                     });
-                    webview.postMessage({ command: 'feedbackResult', ok: result });
+                    post({ command: 'feedbackResult', ok: result });
                 } catch {
-                    webview.postMessage({ command: 'feedbackResult', ok: false });
+                    post({ command: 'feedbackResult', ok: false });
                 }
                 return;
             }
@@ -1313,12 +1298,12 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
             if (message?.command === 'requestStyleMode') {
                 try {
                     if (currentFileType === 'xlsx') {
-                        webview.postMessage({ command: 'styleModeActivated' });
+                        post({ command: 'styleModeActivated' });
                         return;
                     }
-                    webview.postMessage({ command: 'showStyleModeNotice' });
+                    post({ command: 'showStyleModeNotice' });
                 } catch (err) {
-                    webview.postMessage({ command: 'styleModeCancelled' });
+                    post({ command: 'styleModeCancelled' });
                     vscode.window.showErrorMessage(`Unable to switch to styled mode: ${String(err)}`);
                 }
                 return;
@@ -1329,7 +1314,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                     const decision = typeof message?.decision === 'string' ? message.decision : 'cancel';
 
                     if (decision === 'continue') {
-                        webview.postMessage({ command: 'styleModeActivated' });
+                        post({ command: 'styleModeActivated' });
                         return;
                     }
 
@@ -1338,9 +1323,9 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                         return;
                     }
 
-                    webview.postMessage({ command: 'styleModeCancelled' });
+                    post({ command: 'styleModeCancelled' });
                 } catch (err) {
-                    webview.postMessage({ command: 'styleModeCancelled' });
+                    post({ command: 'styleModeCancelled' });
                     vscode.window.showErrorMessage(`Unable to process style mode selection: ${String(err)}`);
                 }
                 return;
@@ -1349,7 +1334,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
             if (message?.command === 'saveXlsxEdits') {
                 try {
                     if (previewVersionId) {
-                        webview.postMessage({ command: 'saveResult', ok: false, error: 'Preview mode is read-only' });
+                        post({ command: 'saveResult', ok: false, error: 'Preview mode is read-only' });
                         return;
                     }
 
@@ -1361,7 +1346,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                     const isAutosave = !!message.isAutosave;
 
                     if (!edits.length && !operations.length && !styleEdits.length && !richEdits.length) {
-                        try { webview.postMessage({ command: 'saveResult', ok: true, isAutosave }); } catch { }
+                        try { post({ command: 'saveResult', ok: true, isAutosave }); } catch { }
                         return;
                     }
 
@@ -1824,11 +1809,16 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                         // For pure text/style edits, update worksheetsData internally but don't force a full webview re-render
                         await loadWorkbookPayload();
                     }
-                    try { webview.postMessage({ command: 'saveResult', ok: true, isAutosave }); } catch { }
+                    try { post({ command: 'saveResult', ok: true, isAutosave }); } catch { }
                 } catch (err) {
-                    try { webview.postMessage({ command: 'saveResult', ok: false, error: String(err), isAutosave: !!message?.isAutosave }); } catch { }
+                    try { post({ command: 'saveResult', ok: false, error: String(err), isAutosave: !!message?.isAutosave }); } catch { }
                 }
+                return;
             }
+
+            // Compile-time check that every SpreadsheetWebviewToHost command has a handler above.
+            const unhandled: never = message;
+            void unhandled;
         };
 
         const dispatch = createMessageDispatcher({
@@ -1844,7 +1834,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
             if (e.affectsConfiguration('xlsxViewer.xlsx') || e.affectsConfiguration('xlsxViewer') || e.affectsConfiguration('workbench.editorAssociations')) {
                 try {
                     const persisted = getPersistedSettings();
-                    webview.postMessage({ command: 'settingsUpdated', ...persisted });
+                    post({ command: 'settingsUpdated', ...persisted });
                 } catch {
                     // ignore
                 }
@@ -1871,7 +1861,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
             externalFileWatcher.repoint(filePath, currentUri);
 
             try {
-                webview.postMessage({
+                post({
                     command: 'diskMovedExternally',
                     fileName: vscode.workspace.asRelativePath(newUri),
                 });
@@ -1897,7 +1887,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                     return;
                 }
                 try {
-                    webview.postMessage({ command: 'diskDeletedExternally' });
+                    post({ command: 'diskDeletedExternally' });
                 } catch { }
             },
             onMove: (newUri) => { void handleMove(newUri); },

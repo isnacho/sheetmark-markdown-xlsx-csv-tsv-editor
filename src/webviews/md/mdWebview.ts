@@ -55,6 +55,11 @@ import { markdownBodyWithoutFrontmatter, frontmatterBodyStartLine } from './fron
 import { stripMarkdownToPlainText, computeTextStats } from './markdownStats';
 import type { TextStats } from './markdownStats';
 import type { Cm6Match } from './livePreview/livePreviewSearch';
+import type { HostToMarkdownWebview, MarkdownWebviewToHost } from '../../protocol/markdown';
+import type { HandledByFeedbackModal } from '../../protocol/common';
+
+// Typed send: the compiler checks every webview-to-host message against src/protocol/markdown.ts.
+const post = (message: MarkdownWebviewToHost) => vscode.postMessage(message);
 
 // ===== Throttle Utility =====
 function throttleRAF(fn: () => void): () => void {
@@ -256,12 +261,12 @@ function wireImageUriResolver() {
                 .map(s => s.trim())
                 .filter(s => s && !resolvedImageUriCache.has(s));
             if (pending.length === 0) { return; }
-            vscode.postMessage({ command: 'resolveImageUris', sources: pending });
+            post({ command: 'resolveImageUris', sources: pending });
         },
         openLightbox: (src, alt) => showLightbox(src, alt),
         requestLightbox: (src, alt) => {
             pendingCm6LightboxSrc = src;
-            vscode.postMessage({ command: 'resolveImageUris', sources: [src] });
+            post({ command: 'resolveImageUris', sources: [src] });
             void alt;
         },
     });
@@ -386,17 +391,17 @@ const debouncedCm6TocRefresh = debounce((content: string) => refreshCm6Toc(conte
 
 function persistFrontmatterPanelCollapsed(collapsed: boolean) {
     frontmatterPanelCollapsed = collapsed;
-    vscode.postMessage({ command: 'saveFrontmatterPanelCollapsed', collapsed });
+    post({ command: 'saveFrontmatterPanelCollapsed', collapsed });
 }
 
 function persistMermaidPreviewMode(mode: 'diagram' | 'code') {
     mermaidPreviewMode = mode;
-    vscode.postMessage({ command: 'saveMermaidPreviewMode', mode });
+    post({ command: 'saveMermaidPreviewMode', mode });
 }
 
 function persistCalloutDefaultType(type: string) {
     calloutDefaultType = type;
-    vscode.postMessage({ command: 'saveCalloutDefaultType', type });
+    post({ command: 'saveCalloutDefaultType', type });
 }
 
 
@@ -510,7 +515,7 @@ function enterPreviewEditMode() {
             columnWidths: currentTableColumnWidths,
             onColumnWidthsChanged: (widths) => {
                 currentTableColumnWidths = widths;
-                vscode.postMessage({ command: 'saveTableColumnWidths', widths });
+                post({ command: 'saveTableColumnWidths', widths });
             },
             frontmatterCollapsed: frontmatterPanelCollapsed,
             onFrontmatterCollapsedChanged: (collapsed) => {
@@ -553,7 +558,7 @@ function executeLivePreviewLinkAction(href: string): void {
             showToast('Section not found', undefined, { icon: 'warning' });
         }
     } else if (href.startsWith('http://') || href.startsWith('https://') || href.startsWith('mailto:')) {
-        vscode.postMessage({ command: 'openExternal', url: href });
+        post({ command: 'openExternal', url: href });
     } else if (href) {
         const hashIdx = href.indexOf('#');
         if (hashIdx >= 0 && href.slice(0, hashIdx).trim() === '') {
@@ -562,7 +567,7 @@ function executeLivePreviewLinkAction(href: string): void {
             }
             return;
         }
-        vscode.postMessage({ command: 'openRelativeFile', href, documentUri });
+        post({ command: 'openRelativeFile', href, documentUri });
     }
 }
 
@@ -595,7 +600,7 @@ function handleLivePreviewModifierClick(pos: number) {
             showLightbox(resolved, '');
         } else {
             pendingCm6LightboxSrc = src;
-            vscode.postMessage({ command: 'resolveImageUris', sources: [src] });
+            post({ command: 'resolveImageUris', sources: [src] });
         }
         return;
     }
@@ -656,10 +661,10 @@ function ensureVersionPreviewBanner(): HTMLElement {
         const restoreBtn = $('restoreVersionButton') as HTMLButtonElement | null;
         const cancelBtn = $('cancelVersionPreviewButton') as HTMLButtonElement | null;
         restoreBtn?.addEventListener('click', () => {
-            vscode.postMessage({ command: 'restoreVersion' });
+            post({ command: 'restoreVersion' });
         });
         cancelBtn?.addEventListener('click', () => {
-            vscode.postMessage({ command: 'cancelVersionPreview' });
+            post({ command: 'cancelVersionPreview' });
         });
     }
 
@@ -720,7 +725,7 @@ function doSave(force = false, isAutosave = false) {
     setButtonsEnabled(false);
     currentContent = getActiveEditorContent();
     pendingSaveContent = currentContent;
-    vscode.postMessage({ command: 'saveMarkdown', text: currentContent, force, isAutosave });
+    post({ command: 'saveMarkdown', text: currentContent, force, isAutosave });
 }
 
 let autoSaveTimer: number | null = null;
@@ -858,7 +863,7 @@ function showInitialLoadError(message: string): void {
         loading.textContent = 'Loading Markdown...';
         loading.style.flexDirection = '';
         loading.style.gap = '';
-        vscode.postMessage({ command: 'webviewReady' });
+        post({ command: 'webviewReady' });
     });
 
     loading.append(text, retryBtn);
@@ -882,7 +887,7 @@ async function requestReloadFromDisk() {
     }
     isReloadingFromDisk = true;
     setButtonsEnabled(false);
-    vscode.postMessage({ command: 'requestFreshData' });
+    post({ command: 'requestFreshData' });
 }
 
 function applyFormat(action: string) {
@@ -1629,7 +1634,7 @@ function applySettings(settings: any, persist = false) {
     }
 
     if (persist) {
-        vscode.postMessage({ command: 'updateSettings', settings: currentSettings });
+        post({ command: 'updateSettings', settings: currentSettings });
     }
 
     updateStatusInfo();
@@ -1654,7 +1659,7 @@ function initializeSettings() {
             tooltip: 'When enabled, VS Code opens .md files in Sheetmark automatically.',
             defaultValue: !!currentSettings.isDefaultEditor,
             onChange: (val: boolean) => {
-                vscode.postMessage({ command: val ? 'enableAsDefault' : 'disableDefaultEditor' });
+                post({ command: val ? 'enableAsDefault' : 'disableDefaultEditor' });
             }
         },
         {
@@ -1829,7 +1834,7 @@ function initializeSettings() {
     const versionHistoryBtn = $('openVersionHistorySetting');
     if (versionHistoryBtn) {
         versionHistoryBtn.addEventListener('click', () => {
-            vscode.postMessage({ command: 'showVersionHistory' });
+            post({ command: 'showVersionHistory' });
         });
     }
 
@@ -1906,7 +1911,8 @@ function updateHeaderHeight() {
 
 // ===== Message Handler =====
 window.addEventListener('message', (event) => {
-    const m = event.data;
+    const m = event.data as HostToMarkdownWebview;
+    if (!m || typeof m !== 'object' || !('command' in m)) { return; }
 
     switch (m.command) {
         case 'initMarkdown':
@@ -2175,7 +2181,7 @@ window.addEventListener('message', (event) => {
         case 'restoreConflict':
             confirmRestoreConflict().then((confirmed) => {
                 if (confirmed) {
-                    vscode.postMessage({ command: 'restoreVersion', versionId: m.versionId, force: true });
+                    post({ command: 'restoreVersion', versionId: m.versionId, force: true });
                 }
             });
             break;
@@ -2188,6 +2194,13 @@ window.addEventListener('message', (event) => {
         case 'resolvedImageUris':
             applyResolvedImageUris(m.resolved || {});
             break;
+
+        default: {
+            // Compile-time check that every host message has a handler: only the feedback modal's
+            // messages may reach here. A new HostToMarkdownWebview member fails to compile until handled.
+            const handledByFeedbackModal: HandledByFeedbackModal = m;
+            void handledByFeedbackModal;
+        }
     }
 });
 
@@ -2550,4 +2563,4 @@ if (currentSettings) {
     applySettings(currentSettings);
 }
 
-vscode.postMessage({ command: 'webviewReady' });
+post({ command: 'webviewReady' });

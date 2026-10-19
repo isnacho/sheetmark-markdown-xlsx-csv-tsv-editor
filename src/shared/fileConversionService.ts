@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as Excel from 'exceljs';
 
-export type TabularFileType = string;
+export type TabularFileType = 'csv' | 'tsv' | 'xlsx';
 
 export interface TabularSheetData {
     name: string;
@@ -25,7 +25,7 @@ const convertersByType = new Map<TabularFileType, TabularFileConverter>();
 const convertersByExtension = new Map<string, TabularFileType>();
 let builtInConvertersRegistered = false;
 
-const BUILT_IN_TYPES = ['csv', 'tsv', 'xlsx'];
+const BUILT_IN_TYPES: TabularFileType[] = ['csv', 'tsv', 'xlsx'];
 
 function normalizeExtension(extension: string): string {
     const trimmed = extension.trim().toLowerCase();
@@ -206,7 +206,7 @@ function sanitizeWorksheetName(name: string, index: number, usedNames: Set<strin
     return candidate;
 }
 
-function createDelimitedConverter(type: string, label: string, delimiter: string): TabularFileConverter {
+function createDelimitedConverter(type: 'csv' | 'tsv', label: string, delimiter: string): TabularFileConverter {
     return {
         type,
         label,

@@ -29,7 +29,7 @@ export class TableColumnWidthStorageService {
         return this.context.workspaceState.get<Record<number, number[]>>(this.getStorageKey(uri)) ?? {};
     }
 
-    public async saveWidths(uri: vscode.Uri, widths: Record<number, number[]>): Promise<void> {
+    public async saveWidths(uri: vscode.Uri, widths: Record<number, readonly number[]>): Promise<void> {
         await this.context.workspaceState.update(this.getStorageKey(uri), widths);
     }
 

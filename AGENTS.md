@@ -100,32 +100,42 @@ assuming it exists.
 ## 5. Build and verify
 
 ```bash
-npm install            # once
-npm run verify         # REQUIRED before calling work done: check-types + lint + test:unit + bundle
-npm run test:unit      # unit tests only (node:test through tsx)
+npm install               # once
+npm run verify            # REQUIRED before calling work done: check-types + lint + test:unit + bundle
+npm run test:integration  # REQUIRED when you touch src/*.ts, src/shared/** or src/spreadsheet/** (real VS Code, ~30 s)
+npm run test:unit         # unit tests only (node:test through tsx)
 node --import tsx --test src/webviews/md/livePreview/tableWidget.test.mts   # one test file
-npm run watch          # watch build; what F5 uses
-npm run package        # production build (also runs tests); used by vsce on release
+npm run test:regressions  # re-breaks each past fix and checks a test fails (slow; run after fixing a bug)
+npm run watch             # watch build; what F5 uses
+npm run package           # production build (also runs unit tests); used by vsce on release
 ```
 
-- `check-types` runs three projects: `tsconfig.json` (host), `src/webviews/tsconfig.json`
-  (webviews), `tsconfig.test.json` (tests), all with `noUnusedLocals`: delete dead code instead of
-  leaving it. Lint has zero warnings today; keep it that way.
-- **Unit tests** are co-located `*.test.mts` files. They test pure functions headlessly: build a
-  CM6 `EditorState`, call the `computeXxx` function, assert on the result. No DOM, no
-  `EditorView`, no VS Code. New logic should be written as a pure function with a test next to it.
-  Wrap test states in `fullyParsed(...)` from `livePreview/testState.ts`: CM6 only parses for 20 ms
-  per state, so a cold parse can return a partial tree and make tree-based tests flaky. Tests that
-  need a DOM use `linkedom` (see `src/webviews/shared/sanitizeHtml.test.mts`).
-  Today tests cover only the Markdown webview; host and spreadsheet logic have none.
-- **There is no extension-host integration test.** After `verify`, smoke-test webview or provider
-  changes manually: **F5** opens an Extension Development Host on [samples/](samples/) → open
-  `test.xlsx` / `.csv` / `.tsv` / `.md` → exercise the change → `Cmd+R` to reload after edits.
-  A broken message (rule 2) compiles clean and does nothing, so confirm the behavior actually happens.
-- When reporting results, say exactly what ran ("verify green, smoke-tested table paste") rather
-  than "all tests pass".
-- CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs `npm run verify` on every push to
-  `main` and every PR.
+- `check-types` runs four projects: `tsconfig.json` (host), `src/webviews/tsconfig.json`
+  (webviews), `tsconfig.test.json` (unit tests), `src/test/integration/tsconfig.json`, all with
+  `noUnusedLocals`: delete dead code instead of leaving it. Lint has zero warnings; keep it that way.
+- **Unit tests** are co-located `*.test.mts` files testing pure functions headlessly (node:test, no
+  VS Code). For CM6 code, build an `EditorState`, call the `computeXxx` function, assert on the
+  result, and wrap states in `fullyParsed(...)` from `livePreview/testState.ts` (CM6 only parses
+  for 20 ms per state, so a cold parse can return a partial tree and flake). For DOM-producing code,
+  set `globalThis.document` from `linkedom` before importing (see
+  `spreadsheetRenderComponent.test.mts`). New logic should be a pure function with a test next to it.
+- **Integration tests** (`src/test/integration/*.test.ts`, mocha `suite`/`test`) run in a real
+  VS Code via `@vscode/test-cli` (`.vscode-test.mjs`; the first run downloads VS Code into
+  `.vscode-test/`). `activate()` returns a test API (`SheetmarkTestApi` in `extension.ts`):
+  `openEditors()` gives each open panel plus `dispatch(message)`, which delivers a message to the
+  host exactly as the webview would and resolves when it is handled. Use it to test saves, history,
+  links, CSP and commands against real files (see `helpers.ts`). Webview DOM behavior can't be
+  reached from there: cover it with unit tests on extracted pure functions.
+- **Every bug fix gets a test that fails without the fix**, plus an entry in
+  [scripts/check-regression-tests.mjs](scripts/check-regression-tests.mjs) that re-breaks it.
+  Untestable fixes are listed there as `knownGap` so the gap stays visible.
+- **Manual smoke test** for anything the tests can't see (webview UI): **F5** opens an Extension
+  Development Host on [samples/](samples/) → open `test.xlsx` / `.csv` / `.tsv` / `.md` → exercise
+  the change → `Cmd+R` to reload after edits.
+- When reporting results, say exactly what ran ("verify + integration green, smoke-tested table
+  paste") rather than "all tests pass".
+- CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs `verify` and the integration tests
+  on every push to `main` and every PR.
 
 ## 6. Workflow conventions
 

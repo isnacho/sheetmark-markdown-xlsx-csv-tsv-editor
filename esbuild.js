@@ -2,6 +2,7 @@ const esbuild = require("esbuild");
 
 const production = process.argv.includes('--production');
 const watch = process.argv.includes('--watch');
+const integration = process.argv.includes('--integration');
 
 /**
  * @type {import('esbuild').Plugin}
@@ -24,6 +25,23 @@ const esbuildProblemMatcherPlugin = {
 };
 
 async function main() {
+	if (integration) {
+		// Integration tests (src/test/integration) run inside a VS Code extension host via @vscode/test-cli.
+		// Clear stale bundles so a deleted test file doesn't keep running.
+		require('fs').rmSync('out/integration', { recursive: true, force: true });
+		await esbuild.build({
+			entryPoints: ['src/test/integration/*.test.ts'],
+			bundle: true,
+			format: 'cjs',
+			platform: 'node',
+			sourcemap: true,
+			outdir: 'out/integration',
+			external: ['vscode', 'mocha'],
+			logLevel: 'warning',
+		});
+		return;
+	}
+
 	const extensionCtx = await esbuild.context({
 		entryPoints: [
 			'src/extension.ts'

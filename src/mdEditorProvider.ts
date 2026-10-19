@@ -2,14 +2,16 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { IncomingMessage } from 'http';
-import { randomBytes } from 'crypto';
 import { VERSION_HISTORY_RETENTION_MS, VERSION_HISTORY_SNAPSHOT_DEBOUNCE_MS, buildGroupedVersionHistoryItems, formatVersionHistoryTimestamp, getVersionHistoryFile } from './shared/versionHistory';
 import { TableColumnWidthStorageService } from './shared/tableColumnWidthStorageService';
 import { FrontmatterPanelStorageService } from './shared/frontmatterPanelStorageService';
 import { MermaidPreviewModeStorageService } from './shared/mermaidPreviewModeStorageService';
 import { CalloutDefaultTypeStorageService } from './shared/calloutDefaultTypeStorageService';
 import { isAllowedExternalUrl } from './shared/externalLinks';
+import { createCspNonce, markdownCsp } from './shared/webviewCsp';
 import { createSerialQueue } from './shared/serialQueue';
+import { createMessageDispatcher, MARKDOWN_FILE_WRITING_COMMANDS } from './shared/messageDispatch';
+import { trackOpenEditor, type OpenEditorHandle } from './shared/editorTestHooks';
 import { createExternalFileChangeWatcher } from './shared/fileExternalChangeWatcher';
 import { migrateFileUriState } from './shared/migrateFileUriState';
 import { disableOpenByDefault, enableOpenByDefault, isSheetmarkConfiguredAsDefault } from './shared/editorAssociationUtils';
@@ -50,6 +52,8 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
     // keybindings) — there's no API to ask "which custom editor is focused",
     // so this is kept in sync via onDidChangeViewState/onDidDispose below.
     private activePanel: vscode.WebviewPanel | null = null;
+    /** Open panels, for the integration tests only (see editorTestHooks.ts). */
+    readonly openEditors = new Set<OpenEditorHandle>();
 
     constructor(private readonly context: vscode.ExtensionContext) {
         this.tableColumnWidthStorage = new TableColumnWidthStorageService(context);
@@ -678,12 +682,13 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                 }
             };
 
-            const FILE_WRITING_COMMANDS = new Set(['saveMarkdown', 'restoreVersion']);
-            webviewPanel.webview.onDidReceiveMessage(message => {
-                const run = () => handleMessage(message);
-                const done = FILE_WRITING_COMMANDS.has(message?.command) ? fileQueue.run(run) : run();
-                done.catch(err => console.error(`[Sheetmark md] '${message?.command}' handler failed:`, err));
+            const dispatch = createMessageDispatcher({
+                handle: handleMessage,
+                queue: fileQueue,
+                queuedCommands: MARKDOWN_FILE_WRITING_COMMANDS,
             });
+            webviewPanel.webview.onDidReceiveMessage(dispatch);
+            trackOpenEditor(this.openEditors, { panel: webviewPanel, uri: () => currentUri, dispatch });
 
             // Forward settings changes
             const configChangeDisposable = vscode.workspace.onDidChangeConfiguration(e => {
@@ -814,14 +819,14 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
         const cspSource = webview.cspSource;
         // Only scripts carrying this nonce (plus bundled files) may run: inline handlers smuggled in
         // through document content (<img onerror>, javascript: links) are blocked by the CSP.
-        const nonce = randomBytes(16).toString('base64');
+        const nonce = createCspNonce();
 
         return `
         <!DOCTYPE html>
         <html lang="en">
         <head>
             <meta charset="UTF-8">
-            <meta http-equiv="Content-Security-Policy" content="default-src 'none'; connect-src ${cspSource}; img-src ${cspSource} https: data:; style-src ${cspSource} https: 'unsafe-inline'; font-src ${cspSource} https:; script-src ${cspSource} 'nonce-${nonce}';">
+            <meta http-equiv="Content-Security-Policy" content="${markdownCsp(cspSource, nonce)}">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <title>Sheetmark</title>
             <link href="${themeUri}" rel="stylesheet" />

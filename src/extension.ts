@@ -5,6 +5,7 @@ import { SpreadsheetEditorProvider } from './spreadsheetEditorProvider';
 import { MDEditorProvider } from './mdEditorProvider';
 import { StyleStorageService } from './shared/styleStorageService';
 import { applyStoredStylesToWorksheet } from './spreadsheet/excelStyle';
+import type { OpenEditorHandle } from './shared/editorTestHooks';
 import {
     convertTabularFile,
     detectTabularFileType,
@@ -97,7 +98,14 @@ async function applyStoredStylesToXlsxFile(filePath: string, storedStyles: Recor
     await workbook.xlsx.writeFile(filePath);
 }
 
-export function activate(context: vscode.ExtensionContext) {
+/** Returned from `activate` for the integration tests (src/test/integration); not a public API. */
+export interface SheetmarkTestApi {
+    openEditors(): OpenEditorHandle[];
+    styleStorage: StyleStorageService;
+    globalStoragePath: string;
+}
+
+export function activate(context: vscode.ExtensionContext): SheetmarkTestApi {
     const spreadsheetProvider = new SpreadsheetEditorProvider(context);
     const mdProvider = new MDEditorProvider(context);
     const styleStorage = new StyleStorageService(context);
@@ -391,6 +399,12 @@ export function activate(context: vscode.ExtensionContext) {
             }
         })
     );
+
+    return {
+        openEditors: () => [...spreadsheetProvider.openEditors, ...mdProvider.openEditors],
+        styleStorage,
+        globalStoragePath: context.globalStorageUri.fsPath,
+    };
 }
 
 export function deactivate() { }

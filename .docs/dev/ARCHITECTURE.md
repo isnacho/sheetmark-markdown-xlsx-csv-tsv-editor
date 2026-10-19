@@ -183,11 +183,12 @@ Type checking is split by runtime so the boundary above is compiler-enforced:
 | [tsconfig.json](../../tsconfig.json) | Host: everything in `src/` except `src/webviews/` | Node, no DOM |
 | [src/webviews/tsconfig.json](../../src/webviews/tsconfig.json) | Both webviews and `src/webviews/shared/` | DOM, no Node |
 | [tsconfig.test.json](../../tsconfig.test.json) | `*.test.mts` unit tests | DOM + Node (`node:test`) |
+| [src/test/integration/tsconfig.json](../../src/test/integration/tsconfig.json) | Integration tests (run in a real VS Code) | Node + mocha |
 
-`npm run verify` runs all three, eslint, the unit tests (`node:test` through tsx) and the bundle; CI
-runs it on every push and PR. There is **no extension-host integration test**; see
-[AGENTS.md](../../AGENTS.md) for the manual smoke test. Unit tests exist only for Markdown webview
-modules today.
+`npm run verify` runs the type checks, eslint, the unit tests (`node:test` through tsx) and the
+bundle. `npm run test:integration` runs the mocha suites in a real VS Code extension host, driving
+the providers through the test API that `activate()` returns. CI runs both on every push and PR;
+see [AGENTS.md](../../AGENTS.md) for when to run what.
 
 ---
 

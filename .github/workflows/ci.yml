@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   verify:
-    name: Types, lint, unit tests, build
+    name: Types, lint, unit + integration tests, build
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
@@ -32,3 +32,7 @@ jobs:
 
       - name: Verify
         run: npm run verify
+
+      # Real VS Code extension host (downloaded by @vscode/test-electron); xvfb provides a display.
+      - name: Integration tests
+        run: xvfb-run -a npm run test:integration

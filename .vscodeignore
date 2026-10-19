@@ -22,3 +22,5 @@ tsconfig*.json
 .gitignore
 **/.DS_Store
 .gitmodules
+.vscode-test.mjs
+scripts/**

@@ -11,12 +11,16 @@ import { convertTabularFile, readTabularFile, detectTabularFileType, writeTabula
 import { StyleStorageService } from './shared/styleStorageService';
 import { isAllowedExternalUrl } from './shared/externalLinks';
 import { createSerialQueue } from './shared/serialQueue';
+import { createMessageDispatcher, SPREADSHEET_FILE_WRITING_COMMANDS } from './shared/messageDispatch';
+import { trackOpenEditor, type OpenEditorHandle } from './shared/editorTestHooks';
 import { createExternalFileChangeWatcher } from './shared/fileExternalChangeWatcher';
 import { migrateFileUriState } from './shared/migrateFileUriState';
 import { enableOpenByDefault, disableOpenByDefault, isSheetmarkConfiguredAsDefault } from './shared/editorAssociationUtils';
 
 export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorProvider {
     private readonly styleStorage: StyleStorageService;
+    /** Open panels, for the integration tests only (see editorTestHooks.ts). */
+    readonly openEditors = new Set<OpenEditorHandle>();
     constructor(private readonly context: vscode.ExtensionContext) {
         this.styleStorage = new StyleStorageService(context);
     }
@@ -1827,12 +1831,13 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
             }
         };
 
-        const FILE_WRITING_COMMANDS = new Set(['saveXlsxEdits', 'restoreVersion']);
-        webview.onDidReceiveMessage(message => {
-            const run = () => handleMessage(message);
-            const done = FILE_WRITING_COMMANDS.has(message?.command) ? fileQueue.run(run) : run();
-            done.catch(err => console.error(`[Sheetmark spreadsheet] '${message?.command}' handler failed:`, err));
+        const dispatch = createMessageDispatcher({
+            handle: handleMessage,
+            queue: fileQueue,
+            queuedCommands: SPREADSHEET_FILE_WRITING_COMMANDS,
         });
+        webview.onDidReceiveMessage(dispatch);
+        trackOpenEditor(this.openEditors, { panel: webviewPanel, uri: () => currentUri, dispatch });
 
         // Forward settings changes made outside the webview
         const configChangeDisposable = vscode.workspace.onDidChangeConfiguration(e => {

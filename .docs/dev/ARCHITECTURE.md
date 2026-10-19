@@ -128,15 +128,18 @@ callback and `getActiveEditorContent()` reads it. Outline/TOC still uses markdow
 document rendering is CM6, not a static HTML preview.
 
 ### Markdown per-file / global preferences (extension state)
-Persisted outside the `.md` bytes via small storage services keyed by document URI (or global for
-editor-wide defaults):
+Persisted outside the `.md` bytes by `createMarkdownPreferences` in
+[preferenceStore.ts](../../src/shared/preferenceStore.ts) (generic `filePreference` /
+`globalPreference` stores; storage keys are persisted user data and must not change):
 
-| Service | Keyed by | Stores |
+| Preference | Keyed by | Stores |
 |---|---|---|
-| [tableColumnWidthStorageService.ts](../../src/shared/tableColumnWidthStorageService.ts) | file URI | Table column widths (order-index → px) |
-| [frontmatterPanelStorageService.ts](../../src/shared/frontmatterPanelStorageService.ts) | file URI | YAML card collapsed state |
-| [mermaidPreviewModeStorageService.ts](../../src/shared/mermaidPreviewModeStorageService.ts) | global | Mermaid diagram vs code preview |
-| [calloutDefaultTypeStorageService.ts](../../src/shared/calloutDefaultTypeStorageService.ts) | global | Default callout type slug |
+| `tableColumnWidths` | file (lowercased path) | Table column widths (order-index → px) |
+| `frontmatterPanelCollapsed` | file | YAML card collapsed state |
+| `mermaidPreviewMode` | global | Mermaid diagram vs code preview |
+| `calloutDefaultType` | global | Default callout type slug |
+
+Per-file preferences listed in `perFile` move with the file in `migrateFileUriState`.
 
 Loaded into `initMarkdown` / `diskChangedExternally`; webview persists edits via
 `saveTableColumnWidths`, `saveFrontmatterPanelCollapsed`, `saveMermaidPreviewMode`,

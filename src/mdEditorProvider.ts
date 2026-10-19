@@ -2,10 +2,7 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import { VERSION_HISTORY_RETENTION_MS, VERSION_HISTORY_SNAPSHOT_DEBOUNCE_MS, getVersionHistoryFile, pickVersionHistoryEntry } from './shared/versionHistory';
-import { TableColumnWidthStorageService } from './shared/tableColumnWidthStorageService';
-import { FrontmatterPanelStorageService } from './shared/frontmatterPanelStorageService';
-import { MermaidPreviewModeStorageService } from './shared/mermaidPreviewModeStorageService';
-import { CalloutDefaultTypeStorageService } from './shared/calloutDefaultTypeStorageService';
+import { createMarkdownPreferences, type MarkdownPreferences } from './shared/preferenceStore';
 import { createCspNonce, markdownCsp } from './shared/webviewCsp';
 import { createSerialQueue } from './shared/serialQueue';
 import { createMessageDispatcher, MARKDOWN_FILE_WRITING_COMMANDS } from './shared/messageDispatch';
@@ -45,10 +42,7 @@ function normalizeDiffLayout(value: unknown): 'inline' | 'sideBySide' {
 }
 
 export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
-    private readonly tableColumnWidthStorage: TableColumnWidthStorageService;
-    private readonly frontmatterPanelStorage: FrontmatterPanelStorageService;
-    private readonly mermaidPreviewModeStorage: MermaidPreviewModeStorageService;
-    private readonly calloutDefaultTypeStorage: CalloutDefaultTypeStorageService;
+    private readonly prefs: MarkdownPreferences;
     // Backs the Accept All/Reject All Disk Changes commands (package.json
     // keybindings) — there's no API to ask "which custom editor is focused",
     // so this is kept in sync via onDidChangeViewState/onDidDispose below.
@@ -57,10 +51,7 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
     readonly openEditors = new Set<OpenEditorHandle>();
 
     constructor(private readonly context: vscode.ExtensionContext) {
-        this.tableColumnWidthStorage = new TableColumnWidthStorageService(context);
-        this.frontmatterPanelStorage = new FrontmatterPanelStorageService(context);
-        this.mermaidPreviewModeStorage = new MermaidPreviewModeStorageService(context);
-        this.calloutDefaultTypeStorage = new CalloutDefaultTypeStorageService(context);
+        this.prefs = createMarkdownPreferences(context.workspaceState, context.globalState);
     }
 
     /** Used by the Accept All/Reject All Disk Changes commands. No-op if no Sheetmark Markdown editor is focused. */
@@ -231,10 +222,10 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                 documentUri: currentUri.toString(),
                 documentDirUri: documentDirUri.toString(),
                 workspaceFolderUri: workspaceFolderUri(),
-                tableColumnWidths: this.tableColumnWidthStorage.getWidths(currentUri),
-                frontmatterPanelCollapsed: this.frontmatterPanelStorage.getCollapsed(currentUri),
-                mermaidPreviewMode: this.mermaidPreviewModeStorage.getMode(),
-                calloutDefaultType: this.calloutDefaultTypeStorage.getType(),
+                tableColumnWidths: this.prefs.tableColumnWidths.get(currentUri),
+                frontmatterPanelCollapsed: this.prefs.frontmatterPanelCollapsed.get(currentUri),
+                mermaidPreviewMode: this.prefs.mermaidPreviewMode.get(),
+                calloutDefaultType: this.prefs.calloutDefaultType.get(),
             });
 
             // Set up webview
@@ -412,7 +403,7 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                     case 'saveTableColumnWidths':
                         try {
                             const widths = message.widths && typeof message.widths === 'object' ? message.widths : {};
-                            await this.tableColumnWidthStorage.saveWidths(currentUri, widths);
+                            await this.prefs.tableColumnWidths.set(currentUri, widths);
                         } catch (err) {
                             vscode.window.showErrorMessage(`Error saving table column widths: ${err}`);
                         }
@@ -420,7 +411,7 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
 
                     case 'saveFrontmatterPanelCollapsed':
                         try {
-                            await this.frontmatterPanelStorage.saveCollapsed(currentUri, !!message.collapsed);
+                            await this.prefs.frontmatterPanelCollapsed.set(currentUri, !!message.collapsed);
                         } catch (err) {
                             vscode.window.showErrorMessage(`Error saving frontmatter panel state: ${err}`);
                         }
@@ -428,8 +419,7 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
 
                     case 'saveMermaidPreviewMode':
                         try {
-                            const mode = message.mode === 'code' ? 'code' : 'diagram';
-                            await this.mermaidPreviewModeStorage.saveMode(mode);
+                            await this.prefs.mermaidPreviewMode.set(message.mode);
                         } catch (err) {
                             vscode.window.showErrorMessage(`Error saving Mermaid preview mode: ${err}`);
                         }
@@ -437,8 +427,7 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
 
                     case 'saveCalloutDefaultType':
                         try {
-                            const type = typeof message.type === 'string' ? message.type : '';
-                            await this.calloutDefaultTypeStorage.saveType(type);
+                            await this.prefs.calloutDefaultType.set(message.type);
                         } catch (err) {
                             vscode.window.showErrorMessage(`Error saving callout default type: ${err}`);
                         }
@@ -637,8 +626,7 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                 await migrateFileUriState(this.context, oldUri, newUri, {
                     kind: 'md',
                     isSpreadsheet: false,
-                    tableColumnWidthStorage: this.tableColumnWidthStorage,
-                    frontmatterPanelStorage: this.frontmatterPanelStorage,
+                    filePreferences: this.prefs.perFile,
                 });
 
                 externalFileWatcher.repoint(filePath, currentUri);

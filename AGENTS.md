@@ -83,7 +83,7 @@ is untrusted. Details: [.docs/dev/MESSAGE-PROTOCOL.md](.docs/dev/MESSAGE-PROTOCO
 | Markdown CM6 live preview + widgets | `src/webviews/md/livePreview/**`, one module per feature, wired in `livePreviewEditor.ts` |
 | Markdown file I/O, save, disk sync (host) | [src/mdEditorProvider.ts](src/mdEditorProvider.ts) |
 | External file watch + move detection | [fileExternalChangeWatcher.ts](src/shared/fileExternalChangeWatcher.ts), [migrateFileUriState.ts](src/shared/migrateFileUriState.ts) |
-| Per-file / global prefs (column widths, YAML card, mermaid mode, callout default) | `src/shared/*StorageService.ts` |
+| Markdown prefs kept outside the file (column widths, YAML card, mermaid mode, callout default) | [src/shared/preferenceStore.ts](src/shared/preferenceStore.ts) (`createMarkdownPreferences`) |
 | CSV/TSV style persistence | [src/shared/styleStorageService.ts](src/shared/styleStorageService.ts) |
 | File conversion csv ↔ tsv ↔ xlsx | [src/shared/fileConversionService.ts](src/shared/fileConversionService.ts) |
 | Version history / rollback | [src/shared/versionHistory.ts](src/shared/versionHistory.ts) |

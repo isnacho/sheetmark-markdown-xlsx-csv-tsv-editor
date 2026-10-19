@@ -130,7 +130,7 @@ let documentDirUri = '';
 let workspaceFolderUri: string | null = null;
 // Persisted table column widths (table order-index -> px per column), read
 // once from the host on load and kept in sync locally after every resize —
-// see tableColumnWidthStorageService.ts on the host side for why this can't
+// see tableColumnWidths in src/shared/preferenceStore.ts for why this can't
 // live in the .md file's own table syntax.
 let currentTableColumnWidths: Record<number, readonly number[]> = {};
 let frontmatterPanelCollapsed = false;

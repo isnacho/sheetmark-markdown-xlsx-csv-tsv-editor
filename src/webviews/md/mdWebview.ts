@@ -407,6 +407,7 @@ function enterPreviewEditMode() {
             onDiffChunkResolved: handleDiffChunkResolved,
             onModifierClick: handleLivePreviewModifierClick,
             onLinkClick: handleLivePreviewLinkClick,
+            onTableLinkClick: executeLivePreviewLinkAction,
             reveal: state.currentSettings.livePreviewReveal,
             showLineNumbers: livePreviewGutterLineNumbersEnabled(),
             onSelectionChange: updateStatusInfo,

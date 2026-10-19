@@ -47,6 +47,10 @@ const MUTATIONS = [
       find: "import { Icons } from '../../shared/icons';", replace: "import { Icons } from '../../shared/icons';\nimport * as eagerMermaid from 'mermaid';\nvoid eagerMermaid;" },
     { id: 'resize-listeners-once', file: 'src/webviews/spreadsheet/spreadsheetWebview.ts',
       find: 'if (!state.resizeGlobalListenersAttached) {', replace: 'if (!state.resizeGlobalListenersAttached || document.body !== null) {' },
+    { id: 'md-table-link-no-navigation', file: 'src/webviews/md/livePreview/tableWidget.ts',
+      find: "            if (!href) { return; }\n            event.preventDefault();\n", replace: "            if (!href) { return; }\n" },
+    { id: 'md-table-right-click-no-edit', file: 'src/webviews/md/livePreview/tableWidget.ts',
+      find: "if (!cellEl.classList.contains('cm-md-table-cell-editing')) { event.preventDefault(); }", replace: 'void 0;' },
 ];
 
 const repo = execSync('git rev-parse --show-toplevel', { encoding: 'utf8' }).trim();

@@ -13,7 +13,11 @@ import { VirtualLoader } from '../shared/virtualLoader';
 import { state, MIN_ROW_HEADER_WIDTH } from './state';
 import { filterAndSortRows } from './dataOps';
 import { buildRowOffsetPrefix, rowIndexAtOffset, rowRangeHeight, rowTopOffset } from './rowMetrics';
-import type { HostToSpreadsheetWebview, SpreadsheetWebviewToHost } from '../../protocol/spreadsheet';
+import { post } from './messaging';
+import { captureOriginalCellValues, hideLoading, setLoadingText, showLoading } from './ui';
+import { getCellNormalizedValue, getCellType, getOrCreateRowCellData, normalizeCellText, normalizeDateInputValue, normalizeRatingValue, parseBooleanCellValue } from './cellValues';
+import { clearAutoSaveTimer, hasPendingXlsxEdits, initPersistence, onSaveResult, persistInteractiveControlEdit, persistPlainTextEdit, removePendingOutsideControlEdit, saveEdits, scheduleAutoSave, showManualSaveReminderIfNeeded, syncLocalSnapshotValue, upsertPendingOutsideControlEdit } from './persistence';
+import type { HostToSpreadsheetWebview } from '../../protocol/spreadsheet';
 import type { HandledByFeedbackModal } from '../../protocol/common';
 import { createXlsxRowHtml, getExcelColumnLabel, renderDropdownCellContent } from './components/spreadsheetRenderComponent';
 import { XlsxSelectionManager } from './components/spreadsheetSelectionComponent';
@@ -45,7 +49,6 @@ import type {
     WrapMode,
     StructuralOp,
     BorderStyleEdit,
-    WorksheetOp,
     CellStyleEdit,
     CellUndoState,
     WorksheetStateSnapshot,
@@ -60,22 +63,18 @@ import {
 } from './components/spreadsheetSheetDataComponent';
 import {
     normalizeColorToHex,
-    getCellRichRuns,
-    hasRunFormatting
 } from './components/spreadsheetRichTextComponent';
 import {
     formatCellTextHtml,
     insertLineBreakAtCaret,
-    loadEditableCellContent,
-    serializeEditableCellText
+    loadEditableCellContent
 } from './components/spreadsheetCellTextComponent';
 import { XlsxFindManager } from './components/spreadsheetFindComponent';
 import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClipboardAsync } from './components/spreadsheetCopyComponent';
 import { parseTsv } from './components/tsvClipboard';
 
 (function () {
-    // Typed send: the compiler checks every webview-to-host message against src/protocol/spreadsheet.ts.
-    const post = (message: SpreadsheetWebviewToHost) => vscode.postMessage(message);
+    initPersistence({ setEditMode });
 
     // ===== Virtual Scrolling Configuration =====
     const { ROW_HEIGHT, BUFFER_ROWS, CHUNK_SIZE } = VirtualScrollConfig;
@@ -113,14 +112,6 @@ import { parseTsv } from './components/tsvClipboard';
 
     const MAX_ROWS_FOR_CLIENT_DATA_OPS = 120000;
 
-    type XlsxAutoSaveChangeKind = 'text' | 'control' | 'format' | 'structure';
-
-    function setButtonsEnabled(enabled: boolean) {
-        const saveBtn = document.getElementById('saveTableEditsButton') as HTMLButtonElement;
-        const cancelBtn = document.getElementById('cancelTableEditsButton') as HTMLButtonElement;
-        if (saveBtn) {saveBtn.disabled = !enabled;}
-        if (cancelBtn) {cancelBtn.disabled = !enabled;}
-    }
 
     function updateColorPreview(target: 'text' | 'background' | 'border', color: string) {
         const ids = target === 'text'
@@ -493,53 +484,6 @@ import { parseTsv } from './components/tsvClipboard';
         pushSheetUndoEntry(beforeSnapshot, afterSnapshot);
         scheduleAutoSave('control');
         showToast('Dropdown options updated');
-    }
-
-    function getOrCreateRowCellData(rowIndex: number, colIndex: number): any {
-        const rowNumber = rowIndex + 1;
-        const colNumber = colIndex + 1;
-
-        const rowData = state.rowCache.get(rowIndex) || {
-            rowNumber,
-            cells: [],
-            height: state.allRowHeights[rowIndex] || ROW_HEIGHT
-        };
-
-        if (!Array.isArray(rowData.cells)) {
-            rowData.cells = [];
-        }
-
-        let cellData = rowData.cells.find((cell: any) => cell.colNumber === colNumber);
-        if (!cellData) {
-            cellData = {
-                value: '',
-                hyperlink: '',
-                style: {},
-                colNumber,
-                rowNumber,
-                isDefaultColor: true,
-                hasDefaultBg: true,
-                hasWhiteBackground: false,
-                hasBlackBorder: false,
-                hasWhiteBorder: false,
-                hasBlackBackground: false,
-                hasDefaultBorder: true,
-                originalColor: 'rgb(0, 0, 0)',
-                isEmpty: false,
-                rowspan: 1,
-                colspan: 1,
-                isMerged: false,
-                isMaster: false,
-                isMergeCovered: false,
-                masterRow: rowNumber,
-                masterCol: colNumber
-            };
-            rowData.cells.push(cellData);
-            rowData.cells.sort((a: any, b: any) => (a.colNumber || 0) - (b.colNumber || 0));
-        }
-
-        state.rowCache.set(rowIndex, rowData);
-        return cellData;
     }
 
     function getTodayIsoDate(): string {
@@ -3942,49 +3886,6 @@ import { parseTsv } from './components/tsvClipboard';
         }
     }
 
-    function normalizeCellText(text: string | null | undefined): string {
-        if (!text) {return '';}
-        return String(text).replace(/\u00a0/g, '').replace(/\r\n?/g, '\n').trimEnd();
-    }
-
-    function getCellType(cell: HTMLElement | null): string {
-        if (!cell) {return 'text';}
-        const raw = (cell.getAttribute('data-cell-type') || 'text').trim().toLowerCase();
-        if (raw === 'checkbox' || raw === 'dropdown' || raw === 'image' || raw === 'rating' || raw === 'date') {
-            return raw;
-        }
-        return 'text';
-    }
-
-    function normalizeDateInputValue(value: string | null | undefined): string {
-        const raw = (value || '').trim();
-        if (!raw) {return '';}
-
-        const isoMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-        if (isoMatch) {return raw;}
-
-        const parsed = new Date(raw);
-        if (Number.isNaN(parsed.getTime())) {
-            return '';
-        }
-
-        const yyyy = parsed.getFullYear();
-        const mm = String(parsed.getMonth() + 1).padStart(2, '0');
-        const dd = String(parsed.getDate()).padStart(2, '0');
-        return `${yyyy}-${mm}-${dd}`;
-    }
-
-    function normalizeRatingValue(value: string | number | null | undefined): number {
-        const parsed = typeof value === 'number' ? value : parseInt(String(value || ''), 10);
-        if (!Number.isFinite(parsed)) {return 0;}
-        return Math.max(0, Math.min(5, parsed));
-    }
-
-    function parseBooleanCellValue(value: string | null | undefined): boolean {
-        const normalized = String(value || '').trim().toLowerCase();
-        return normalized === 'true' || normalized === 'yes' || normalized === '1' || normalized === 'y';
-    }
-
     function updateCheckboxCellPresentation(cell: HTMLElement, checked: boolean) {
         cell.setAttribute('data-checkbox-checked', checked ? 'true' : 'false');
         const checkbox = cell.querySelector('.xlsx-cell-checkbox') as HTMLInputElement | null;
@@ -4041,45 +3942,6 @@ import { parseTsv } from './components/tsvClipboard';
         pushEditUndoEntry({ before: [before], after: [after] });
     }
 
-    function getCellNormalizedValue(cell: HTMLElement): string {
-        const type = getCellType(cell);
-
-        if (type === 'checkbox') {
-            const checkbox = cell.querySelector('.xlsx-cell-checkbox') as HTMLInputElement | null;
-            if (checkbox) {
-                return checkbox.checked ? 'TRUE' : 'FALSE';
-            }
-            return parseBooleanCellValue(cell.getAttribute('data-checkbox-checked')) ? 'TRUE' : 'FALSE';
-        }
-
-        if (type === 'dropdown') {
-            const select = cell.querySelector('.xlsx-cell-dropdown') as HTMLSelectElement | null;
-            if (select) {
-                return normalizeCellText(select.value || '');
-            }
-            return normalizeCellText(cell.getAttribute('data-dropdown-value') || '');
-        }
-
-        if (type === 'rating') {
-            const content = cell.querySelector('.cell-rating-content') as HTMLElement | null;
-            if (content) {
-                const current = normalizeRatingValue(content.getAttribute('data-rating-value'));
-                return String(current);
-            }
-            return String(normalizeRatingValue(cell.getAttribute('data-rating-value')));
-        }
-
-        if (type === 'date') {
-            const dateInput = cell.querySelector('.xlsx-cell-date') as HTMLInputElement | null;
-            if (dateInput) {
-                return normalizeDateInputValue(dateInput.value);
-            }
-            return normalizeDateInputValue(cell.getAttribute('data-date-value'));
-        }
-
-        return normalizeCellText(serializeEditableCellText(cell));
-    }
-
     function canUseInteractiveControlsOutsideEditMode(): boolean {
         return !!state.currentSettings.allowInteractiveControlsOutsideEditMode && !state.isVersionPreviewMode;
     }
@@ -4119,198 +3981,6 @@ import { parseTsv } from './components/tsvClipboard';
             const button = el as HTMLButtonElement;
             button.disabled = !state.isEditMode;
         });
-    }
-
-    function showManualSaveReminderIfNeeded() {
-        const isAutosaveOff = !state.currentSettings.autoSave;
-        const shouldShowForPlain = state.isPlainView && !state.isVersionPreviewMode && isAutosaveOff;
-        const shouldShowForStyled = !state.isPlainView && !state.isEditMode && !state.isVersionPreviewMode && isAutosaveOff && state.currentSettings.showManualSavePopup;
-
-        if (!shouldShowForPlain && !shouldShowForStyled) {
-            return;
-        }
-
-        const now = Date.now();
-        if (now < state.manualSaveReminderUntil) {
-            return;
-        }
-
-        state.manualSaveReminderUntil = now + 2500;
-        showToast('Autosave is off. Press Ctrl/Cmd+S to save or enable it in settings', false, 1800);
-    }
-
-    function upsertPendingOutsideControlEdit(row: number, col: number, value: string) {
-        const existingIndex = state.pendingOutsideControlEdits.findIndex((edit) => edit.row === row && edit.col === col);
-        const next = { row, col, value };
-
-        if (existingIndex >= 0) {
-            state.pendingOutsideControlEdits[existingIndex] = next;
-            return;
-        }
-
-        state.pendingOutsideControlEdits.push(next);
-    }
-
-    function removePendingOutsideControlEdit(row: number, col: number) {
-        state.pendingOutsideControlEdits = state.pendingOutsideControlEdits.filter((edit) => edit.row !== row || edit.col !== col);
-    }
-
-    function clearPendingOutsideControlEdits() {
-        state.pendingOutsideControlEdits = [];
-    }
-
-    function shouldScheduleAutosaveForChange(kind: XlsxAutoSaveChangeKind): boolean {
-        if (state.isTemporaryStyleFile && (kind === 'format' || kind === 'structure')) {
-            return true;
-        }
-
-        if (!state.currentSettings.autoSave) {
-            return false;
-        }
-
-        const mode = state.currentSettings.autoSaveMode === 'controlsOnly' ? 'controlsOnly' : 'all';
-        if (mode === 'all') {
-            return true;
-        }
-
-        return kind === 'control';
-    }
-
-    function persistInteractiveControlEdit(cell: HTMLElement) {
-        if (state.isVersionPreviewMode || state.isEditMode) {return;}
-
-        const row = parseInt(cell.getAttribute('data-rownum') || '0', 10);
-        const col = parseInt(cell.getAttribute('data-colnum') || '0', 10);
-        if (!row || !col) {return;}
-
-        const value = getCellNormalizedValue(cell).replace(/\u00a0/g, '');
-        syncLocalSnapshotValue(row, col, value);
-
-        if (!state.currentSettings.autoSave) {
-            upsertPendingOutsideControlEdit(row, col, value);
-            showManualSaveReminderIfNeeded();
-            return;
-        }
-
-        removePendingOutsideControlEdit(row, col);
-        post({
-            command: 'saveXlsxEdits',
-            sheetIndex: state.currentWorksheet,
-            edits: [{ row, col, value }],
-            richEdits: [],
-            styleEdits: [],
-            operations: [],
-            isAutosave: true
-        });
-    }
-
-    function persistPlainTextEdit(cell: HTMLElement) {
-        if (state.isVersionPreviewMode || state.isEditMode) {return;}
-
-        const row = parseInt(cell.getAttribute('data-rownum') || '0', 10);
-        const col = parseInt(cell.getAttribute('data-colnum') || '0', 10);
-        if (!row || !col) {return;}
-
-        const value = getCellNormalizedValue(cell).replace(/\u00a0/g, '');
-        syncLocalSnapshotValue(row, col, value);
-        cell.dataset.originalText = value;
-        cell.dataset.originalHtml = cell.innerHTML;
-
-        if (!state.currentSettings.autoSave) {
-            upsertPendingOutsideControlEdit(row, col, value);
-            showManualSaveReminderIfNeeded();
-            return;
-        }
-
-        removePendingOutsideControlEdit(row, col);
-        post({
-            command: 'saveXlsxEdits',
-            sheetIndex: state.currentWorksheet,
-            edits: [{ row, col, value }],
-            richEdits: [],
-            styleEdits: [],
-            operations: [],
-            isAutosave: true
-        });
-    }
-
-    function syncLocalSnapshotValue(rowNumber: number, colNumber: number, value: string) {
-        const applyValue = (rows: any[] | null) => {
-            if (!rows || rowNumber <= 0 || colNumber <= 0) {return;}
-            const row = rows.find((entry) => Number(entry?.rowNumber) === rowNumber);
-            if (!row) {return;}
-
-            const existing = getCellFromRow(row, colNumber);
-            if (existing) {
-                existing.value = value;
-                return;
-            }
-
-            if (!Array.isArray(row.cells)) {
-                row.cells = [];
-            }
-            row.cells.push({ rowNumber, colNumber, value });
-            row.cells.sort((a: any, b: any) => (a.colNumber || 0) - (b.colNumber || 0));
-        };
-
-        applyValue(state.sourceRowsSnapshot);
-        applyValue(state.transformedRowsSnapshot);
-    }
-
-    function hasPendingXlsxEdits(): boolean {
-        if (state.pendingOutsideControlEdits.length > 0) {
-            return true;
-        }
-
-        if (state.pendingWorksheetOps.length > 0 || state.pendingCellStyleEdits.size > 0) {
-            return true;
-        }
-
-        const table = document.querySelector('#tableContainer table');
-        if (!table) {return false;}
-
-        const editedCell = Array.from(table.querySelectorAll('td.editable-cell')).find((td) => {
-            const htmlTd = td as HTMLElement;
-            const original = (htmlTd.dataset.originalText || '').replace(/\u00a0/g, '');
-            const current = getCellNormalizedValue(htmlTd).replace(/\u00a0/g, '');
-            return current !== original;
-        });
-
-        return !!editedCell;
-    }
-
-    function clearAutoSaveTimer() {
-        if (state.autoSaveTimer) {
-            clearTimeout(state.autoSaveTimer);
-            state.autoSaveTimer = null;
-        }
-    }
-
-    function scheduleAutoSave(kind: XlsxAutoSaveChangeKind = 'text') {
-        if (!state.isEditMode || state.isVersionPreviewMode || state.isSaving) {
-            if (state.isPlainView && !state.isVersionPreviewMode && !state.currentSettings.autoSave) {
-                showManualSaveReminderIfNeeded();
-            }
-            return;
-        }
-        if (!shouldScheduleAutosaveForChange(kind)) {
-            if (!state.currentSettings.autoSave) {
-                showManualSaveReminderIfNeeded();
-            }
-            return;
-        }
-
-        clearAutoSaveTimer();
-        state.autoSaveTimer = setTimeout(() => {
-            state.autoSaveTimer = null;
-            if ((!state.currentSettings.autoSave && !(state.isTemporaryStyleFile && (kind === 'format' || kind === 'structure'))) || !state.isEditMode || state.isVersionPreviewMode || state.isSaving) {
-                return;
-            }
-            if (!hasPendingXlsxEdits()) {
-                return;
-            }
-            saveEdits(false, true);
-        }, 1100);
     }
 
     function getTableContainer(): HTMLElement | null {
@@ -4828,21 +4498,6 @@ import { parseTsv } from './components/tsvClipboard';
             banner.classList.add('hidden');
             state.previewVersionId = null;
         }
-    }
-
-    function setLoadingText(text: string) {
-        const el = document.querySelector('.loading-text');
-        if (el) {el.textContent = text;}
-    }
-
-    function showLoading() {
-        const el = document.getElementById('loadingOverlay');
-        if (el) {el.classList.remove('hidden');}
-    }
-
-    function hideLoading() {
-        const el = document.getElementById('loadingOverlay');
-        if (el) {el.classList.add('hidden');}
     }
 
     function renderWorksheet(index: number) {
@@ -6820,129 +6475,6 @@ import { parseTsv } from './components/tsvClipboard';
         captureOriginalCellValues();
     }
 
-    function captureOriginalCellValues() {
-        const table = document.querySelector('#tableContainer table');
-        if (!table) {return;}
-        table.querySelectorAll('td.editable-cell').forEach(td => {
-            const htmlTd = td as HTMLElement;
-            const currentText = getCellNormalizedValue(htmlTd);
-            htmlTd.dataset.originalText = currentText;
-            htmlTd.dataset.originalHtml = htmlTd.innerHTML;
-        });
-    }
-
-    function saveEdits(shouldExit = false, isAutosave = false) {
-        if (state.isSaving) {return;}
-        if (isAutosave && !state.currentSettings.autoSave) {return;}
-
-        const table = document.querySelector('#tableContainer table');
-        const hasPendingStyleOrStructureChanges = state.pendingCellStyleEdits.size > 0 || state.pendingWorksheetOps.length > 0;
-        const canSaveFromEditMode = state.isEditMode && !!table;
-        const canSaveOutsideEditMode = !state.isEditMode && (state.pendingOutsideControlEdits.length > 0 || hasPendingStyleOrStructureChanges);
-
-        if (!canSaveFromEditMode && !canSaveOutsideEditMode) {
-            return;
-        }
-
-        clearAutoSaveTimer();
-        state.isSaving = true;
-        state.exitAfterSave = canSaveFromEditMode && !isAutosave ? !!shouldExit : false;
-        if (canSaveFromEditMode) {
-            if (!isAutosave) {
-                setButtonsEnabled(false);
-
-                if (document.activeElement && document.activeElement.tagName === 'TD') {
-                    (document.activeElement as HTMLElement).blur();
-                }
-                // Don't clear the logical cell selection on save; keep selected cells highlighted.
-                if (window.getSelection) {
-                    window.getSelection()!.removeAllRanges();
-                }
-            }
-        }
-
-        const edits: any[] = [];
-        const richEdits: any[] = [];
-        let styleEdits: CellStyleEdit[] = [];
-        let operations: WorksheetOp[] = [];
-
-        if (canSaveFromEditMode && table) {
-            table.querySelectorAll('td.editable-cell').forEach(td => {
-                const htmlTd = td as HTMLElement;
-                const row = parseInt(htmlTd.getAttribute('data-rownum') || '0', 10);
-                const col = parseInt(htmlTd.getAttribute('data-colnum') || '0', 10);
-                if (!row || !col) {return;}
-
-                const cellType = getCellType(htmlTd);
-                const original = (htmlTd.dataset.originalText || '').replace(/\u00a0/g, '');
-                const current = getCellNormalizedValue(htmlTd).replace(/\u00a0/g, '');
-                const originalHtml = (htmlTd.dataset.originalHtml || '').trim();
-                const currentHtml = (htmlTd.innerHTML || '').trim();
-
-                const runs = cellType === 'text' ? getCellRichRuns(htmlTd) : [];
-                const shouldSaveRuns = cellType === 'text' && (hasRunFormatting(runs) || currentHtml !== originalHtml);
-
-                if (shouldSaveRuns) {
-                    richEdits.push({ row, col, runs });
-                }
-
-                if (current !== original) {
-                    edits.push({ row, col, value: current });
-                    const cellData = getOrCreateRowCellData(row - 1, col - 1);
-                    if (cellData) {
-                        cellData.value = current;
-                        if (cellType === 'checkbox') {
-                            cellData.checkboxChecked = parseBooleanCellValue(current) === true;
-                        }
-                    }
-                }
-            });
-
-            styleEdits = Array.from(state.pendingCellStyleEdits.values());
-            operations = state.pendingWorksheetOps;
-        } else {
-            state.pendingOutsideControlEdits.forEach((edit) => {
-                const cellData = getOrCreateRowCellData(edit.row - 1, edit.col - 1);
-                if (cellData) {
-                    cellData.value = edit.value;
-                }
-                edits.push({ row: edit.row, col: edit.col, value: edit.value });
-            });
-
-            styleEdits = Array.from(state.pendingCellStyleEdits.values());
-            operations = state.pendingWorksheetOps;
-        }
-
-        if (canSaveFromEditMode && state.pendingOutsideControlEdits.length > 0) {
-            state.pendingOutsideControlEdits.forEach((edit) => {
-                const cellData = getOrCreateRowCellData(edit.row - 1, edit.col - 1);
-                if (cellData) {
-                    cellData.value = edit.value;
-                }
-                const existingIndex = edits.findIndex((candidate) => candidate.row === edit.row && candidate.col === edit.col);
-                if (existingIndex >= 0) {
-                    edits[existingIndex].value = edit.value;
-                    return;
-                }
-                edits.push({ row: edit.row, col: edit.col, value: edit.value });
-            });
-        }
-
-        if (!edits.length && !richEdits.length && !styleEdits.length && !operations.length) {
-            state.isSaving = false;
-            if (canSaveFromEditMode) {
-                setButtonsEnabled(true);
-            }
-            return;
-        }
-
-        if (!isAutosave) {
-            setLoadingText('Saving worksheet...');
-            showLoading();
-        }
-        post({ command: 'saveXlsxEdits', sheetIndex: state.currentWorksheet, edits, richEdits, styleEdits, operations, isAutosave });
-    }
-
     function setExpandedMode(isExpanded: boolean) {
         document.body.classList.toggle('expanded-mode', !!isExpanded);
 
@@ -7165,32 +6697,7 @@ import { parseTsv } from './components/tsvClipboard';
         }
 
         if (message.command === 'saveResult') {
-            hideLoading();
-            setLoadingText('Rendering worksheet...');
-            state.isSaving = false;
-            setButtonsEnabled(true);
-            if (message.ok) {
-                const thead = document.querySelector('#xlsxTable thead') as HTMLElement | null;
-                if (thead) {thead.style.display = 'table-header-group';}
-                const isAutosaveResult = !!message.isAutosave;
-                showToast(isAutosaveResult ? 'Autosaved' : 'Saved', isAutosaveResult, 1000);
-                state.pendingWorksheetOps = [];
-                state.pendingCellStyleEdits.clear();
-                clearPendingOutsideControlEdits();
-                state.manualSaveReminderUntil = 0;
-
-                const shouldExitAfterManualSave = !isAutosaveResult || state.exitAfterSave;
-                if (shouldExitAfterManualSave) {
-                    state.exitAfterSave = false;
-                    // Preserve selection when save requests exit so user doesn't lose context
-                    setEditMode(false, true);
-                } else if (state.isEditMode) {
-                    captureOriginalCellValues();
-                }
-            } else {
-                const isAutosaveResult = !!message.isAutosave;
-                showToast(isAutosaveResult ? 'Autosave failed' : 'Error saving', isAutosaveResult, 1000);
-            }
+            onSaveResult(message);
             return;
         }
 

@@ -77,7 +77,8 @@ is untrusted. Details: [.docs/dev/MESSAGE-PROTOCOL.md](.docs/dev/MESSAGE-PROTOCO
 
 | Want to change… | File(s) |
 |---|---|
-| Spreadsheet grid UI / behavior (browser) | `src/webviews/spreadsheet/spreadsheetWebview.ts` + `components/` (see [MAP](.docs/dev/MAP-spreadsheetWebview.md)) |
+| Spreadsheet save / autosave payloads (browser) | `src/webviews/spreadsheet/persistence.ts` (shared state in `state.ts`) |
+| Spreadsheet grid UI / behavior (browser) | `src/webviews/spreadsheet/spreadsheetWebview.ts` + its split-out modules + `components/` (see [MAP](.docs/dev/MAP-spreadsheetWebview.md)) |
 | Spreadsheet file I/O, save, conversion, versions (host) | [src/spreadsheetEditorProvider.ts](src/spreadsheetEditorProvider.ts) |
 | Markdown save, autosave, reload, disk-change decisions, version preview (browser) | `src/webviews/md/saveSync.ts` (shared state in `state.ts`) |
 | Markdown shell: toolbar, outline, settings, disk diff (browser) | `src/webviews/md/mdWebview.ts` (see [MAP](.docs/dev/MAP-mdWebview.md)) |

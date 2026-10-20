@@ -10,11 +10,14 @@ around it. This map anchors on names, not line numbers, because names don't drif
 
 | Area | What lives there |
 |---|---|
-| [mdWebview.ts](../../src/webviews/md/mdWebview.ts) | Shell: toolbar, TOC, settings, toasts, disk sync and disk diff, search overlay, message handler, bootstrap |
+| [mdWebview.ts](../../src/webviews/md/mdWebview.ts) | Shell: toolbar, TOC, settings, disk diff, search overlay, message handler (routes save/sync messages to `saveSync.ts`), bootstrap |
+| [state.ts](../../src/webviews/md/state.ts) | The shared mutable state (`state.currentContent`, `state.isSaving`, `state.currentSettings`, ...). Every module reads and writes it here |
+| [saveSync.ts](../../src/webviews/md/saveSync.ts) | Save, autosave, reload from disk, external-change decisions (`onDiskChangedExternally`), save/restore conflicts, version preview. Gets UI callbacks via `initSaveSync(hooks)`. Pinned by `src/test/webview/markdownSaveSync.spec.mts` |
+| [toast.ts](../../src/webviews/md/toast.ts), [dialogs.ts](../../src/webviews/md/dialogs.ts), [messaging.ts](../../src/webviews/md/messaging.ts), [copyLinkArtifacts.ts](../../src/webviews/md/copyLinkArtifacts.ts) | `showToast` / `hideToast`; confirm dialogs (`confirmModal`, `confirmDiscardAndReload`, ...); the typed `post` to the host; heading copy-link cleanup |
 | [livePreview/](../../src/webviews/md/livePreview/) | CodeMirror 6 (CM6) editor plus widgets and keymaps: the only document surface |
 | `frontmatter.ts`, `frontmatterCardUi.ts`, `diffStats.ts`, `markdownStats.ts` | Small pure helpers next to `mdWebview.ts` (see table at the end) |
 
-**Content contract:** `currentContent` (in `mdWebview.ts`) is the single source of truth. The CM6
+**Content contract:** `state.currentContent` (in `state.ts`) is the single source of truth. The CM6
 editor writes into it from its `updateListener` (the `onDocChanged` callback passed to
 `mountLivePreview`); `getActiveEditorContent()` is the only reader. Dirty tracking compares
 `currentContent` to `originalContent`. There is no split, raw-textarea, or reading view any more:
@@ -33,16 +36,13 @@ Section headers in the file look like `// ===== Name =====`. Grep for the header
 |---|---|---|
 | Imports | (top of file) | the `livePreviewEditor` import list is the full public CM6 API used by the shell |
 | rAF throttle | `Throttle Utility` | `throttleRAF`, `throttleRAFEvent` |
-| Module state | `State`, then `// Settings` | `currentContent`, `originalContent`, `isEditMode`, `isVersionPreviewMode`, `isSaving`, `isReloadingFromDisk`, `pendingDiskDeleted`, `diffVisible`, `diffBaseline`, `documentUri`, `documentDirUri`, `currentSettings` |
 | Small utilities | `Utilities` | `livePreviewGutterLineNumbersEnabled`, `slugify`, `escapeHtmlAttr`, `isRemoteOrInlineUri`, `shouldResolveLocalImage` |
 | markdown-it (TOC only) | `Markdown-it (TOC parse only` | `md`, `addHeadingIds`, `buildToc`, `updateToc`, `refreshCm6Toc`, `tocIdToLine`, `tocLineToId`, `resolveTocLineForAnchor`, `scrollToAnchor`. CM6 renders the document; markdown-it only builds the outline |
 | Image URI resolution | (same section) | `wireImageUriResolver`, `applyResolvedImageUris`, `resolvedImageUriCache` (sends `resolveImageUris`) |
 | Per-file / global prefs | (same section) | `persistFrontmatterPanelCollapsed`, `persistMermaidPreviewMode`, `persistCalloutDefaultType`, `applyFrontmatterBlockToDocument` |
-| Edit toolbar state | (same section) | `setButtonsEnabled`, `isEditorDirty`, `canReloadFromDisk`, `updateEditToolbarButtons` |
+| Edit toolbar state | (same section) | `updateEditToolbarButtons` (uses `isEditorDirty` / `canReloadFromDisk` from `saveSync.ts`) |
 | CM6 mount and link clicks | `Preview Edit Mode (CM6 live preview)` | `enterPreviewEditMode` (calls `mountLivePreview` with all callbacks), `updateVersionPreviewChrome`, `executeLivePreviewLinkAction` (sends `openExternal` / `openRelativeFile`), `handleLivePreviewLinkClick`, `handleLivePreviewModifierClick` |
-| Content, save, reload | `Active editor content` | `getActiveEditorContent`, `cancelEdit`, `ensureVersionPreviewBanner`, `setVersionPreviewMode`, `performSave`, `doSave` (sends `saveMarkdown`), `scheduleAutosave`, `applyReloadedContent`, `requestReloadFromDisk` (sends `requestFreshData`), `showInitialLoadError`, `applyFormat` |
-| Confirm modals | (same section) | `confirmModal`, `confirmDiscardAndReload`, `confirmOverwriteConflict`, `confirmRestoreConflict`, `confirmOverwriteWithLocal` |
-| Toasts | `UI Helpers` | `showToast`, `hideToast` |
+| Formatting | (before `Disk-vs-editor diff`) | `applyFormat` |
 | Disk-vs-editor diff | `Disk-vs-editor diff` | `hasDiskDiffBaseline`, `showDiskDiff`, `hideDiskDiff`, `toggleDiskDiff`, `revealDiskChanges`, `acceptAllDiskChanges`, `rejectAllDiskChanges`, `handleDiffChunkResolved`, `diffResolutionSummary`, `syncDiskDiffAfterDocChange`, `updateDiffChrome`, `updateDiffChunkRuler`, `wireDiskDiffBulkActions`. UX flow: [flow.md](../flow.md) |
 | Status bar and stats | (same section) | `getCurrentCursorPosition`, `getCurrentSelectionStats`, `getWholeDocumentStats`, `updateStatusInfo` |
 | Progress bar | `Reading Progress Bar` | `updateProgressBar` (the bar is a scroll indicator, not a reading mode) |

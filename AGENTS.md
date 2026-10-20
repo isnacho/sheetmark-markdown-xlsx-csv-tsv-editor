@@ -79,7 +79,8 @@ is untrusted. Details: [.docs/dev/MESSAGE-PROTOCOL.md](.docs/dev/MESSAGE-PROTOCO
 |---|---|
 | Spreadsheet grid UI / behavior (browser) | `src/webviews/spreadsheet/spreadsheetWebview.ts` + `components/` (see [MAP](.docs/dev/MAP-spreadsheetWebview.md)) |
 | Spreadsheet file I/O, save, conversion, versions (host) | [src/spreadsheetEditorProvider.ts](src/spreadsheetEditorProvider.ts) |
-| Markdown shell: toolbar, save, disk sync UI, settings (browser) | `src/webviews/md/mdWebview.ts` (see [MAP](.docs/dev/MAP-mdWebview.md)) |
+| Markdown save, autosave, reload, disk-change decisions, version preview (browser) | `src/webviews/md/saveSync.ts` (shared state in `state.ts`) |
+| Markdown shell: toolbar, outline, settings, disk diff (browser) | `src/webviews/md/mdWebview.ts` (see [MAP](.docs/dev/MAP-mdWebview.md)) |
 | Markdown CM6 live preview + widgets | `src/webviews/md/livePreview/**`, one module per feature, wired in `livePreviewEditor.ts` |
 | Markdown file I/O, save, disk sync (host) | [src/mdEditorProvider.ts](src/mdEditorProvider.ts) |
 | External file watch (change, delete) | [fileExternalChangeWatcher.ts](src/shared/fileExternalChangeWatcher.ts) |
@@ -170,8 +171,8 @@ npm run package           # production build (also runs unit tests); used by vsc
 - **Two providers, both `CustomReadonlyEditorProvider`**: they open and save themselves through
   `resolveCustomEditor` / `vscode.workspace.fs.writeFile`, not `CustomTextEditor`.
   `SpreadsheetEditorProvider` serves `xlsxViewer.xlsx/.csv/.tsv`; `MDEditorProvider` serves `xlsxViewer.md`.
-- **Markdown editing** is CM6 live preview only. `currentContent` in `mdWebview.ts` is the single
-  source of truth for save and disk reload.
+- **Markdown editing** is CM6 live preview only. `state.currentContent` (`src/webviews/md/state.ts`)
+  is the single source of truth for save and disk reload.
 - **External disk sync** uses `fileExternalChangeWatcher.ts` (change, debounced delete).
 - **Renames:** VS Code closes an open Sheetmark editor when its file is renamed and opens a new one
   at the new path. Per-file state (styles, view mode, Markdown prefs, version history) moves in

@@ -13,9 +13,6 @@ import { FeedbackModal } from '../shared/feedbackModal';
 import {
     mountLivePreview,
     isLivePreviewActive,
-    getLivePreviewContent,
-    setLivePreviewContent,
-    setLivePreviewReadOnly,
     focusLivePreview,
     getLivePreviewScrollMetrics,
     getLivePreviewTopLine,
@@ -55,12 +52,34 @@ import { markdownBodyWithoutFrontmatter, frontmatterBodyStartLine } from './fron
 import { stripMarkdownToPlainText, computeTextStats } from './markdownStats';
 import type { TextStats } from './markdownStats';
 import type { Cm6Match } from './livePreview/livePreviewSearch';
-import type { HostToMarkdownWebview, MarkdownWebviewToHost } from '../../protocol/markdown';
+import type { HostToMarkdownWebview } from '../../protocol/markdown';
 import type { HandledByFeedbackModal } from '../../protocol/common';
 import { state } from './state';
+import { post } from './messaging';
+import { hideToast, showToast } from './toast';
+import { confirmDiscardAndReload } from './dialogs';
+import { sanitizeMarkdownCopyLinkArtifacts, stripHeadingCopyLinkArtifacts } from './copyLinkArtifacts';
+import {
+    applyReloadedContent,
+    cancelEdit,
+    canReloadFromDisk,
+    doSave,
+    getActiveEditorContent,
+    initSaveSync,
+    isEditorDirty,
+    onDiskChangedExternally,
+    onReloadFromDiskError,
+    onRestoreConflict,
+    onSaveConflict,
+    onSaveResult,
+    onVersionPreview,
+    onVersionPreviewCancelled,
+    onVersionRestored,
+    performSave,
+    requestReloadFromDisk,
+    scheduleAutosave,
+} from './saveSync';
 
-// Typed send: the compiler checks every webview-to-host message against src/protocol/markdown.ts.
-const post = (message: MarkdownWebviewToHost) => vscode.postMessage(message);
 
 // ===== Throttle Utility =====
 function throttleRAF(fn: () => void): () => void {
@@ -111,14 +130,6 @@ function slugify(text: string) {
         .replace(/-+/g, '-');
 }
 
-function escapeHtmlAttr(value: string) {
-    return value
-        .replace(/&/g, '&amp;')
-        .replace(/"/g, '&quot;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;');
-}
-
 function isRemoteOrInlineUri(value: string): boolean {
     return /^(https?:|data:|mailto:|#)/i.test(value);
 }
@@ -136,26 +147,6 @@ const md = new MarkdownIt({
     html: true,
     linkify: true,
 });
-
-function setButtonsEnabled(enabled: boolean) {
-    const ids = ['openSettingsButton'];
-    ids.forEach((id) => {
-        const el = $(id) as HTMLButtonElement;
-        if (el) {el.disabled = !enabled;}
-    });
-    updateEditToolbarButtons();
-}
-
-function isEditorDirty(): boolean {
-    return state.currentContent !== state.originalContent;
-}
-
-function canReloadFromDisk(): boolean {
-    if (!state.isEditMode || state.isSaving || state.isReloadingFromDisk) {
-        return false;
-    }
-    return state.pendingDiskContent !== null || state.pendingDiskDeleted || isEditorDirty();
-}
 
 function updateEditToolbarButtons() {
     if (!state.toolbarManager || !state.isEditMode) {
@@ -243,33 +234,9 @@ function addHeadingIds(tokens: any[]) {
     }
 }
 
-function stripHeadingCopyLinkArtifacts(text: string): string {
-    if (!text) {
-        return '';
-    }
-
-    return text
-        .replace(/\s*\[#\]\(#[^)\s]+(?:\s+"Copy link")?\)/g, '')
-        .replace(/\s+/g, ' ')
-        .trim();
-}
-
 function normalizeHeadingText(text: string): string {
     const stripped = stripHeadingCopyLinkArtifacts(text);
     return md.utils.unescapeAll(stripped);
-}
-
-function sanitizeMarkdownCopyLinkArtifacts(markdown: string): string {
-    if (!markdown) {
-        return '';
-    }
-
-    return markdown.split('\n').map((line) => {
-        if (!/^\s{0,3}#{1,6}\s+/.test(line)) {
-            return line;
-        }
-        return stripHeadingCopyLinkArtifacts(line);
-    }).join('\n');
 }
 
 // id <-> CM6 line number (1-indexed), refreshed every buildToc() call.
@@ -550,385 +517,9 @@ function handleLivePreviewModifierClick(pos: number) {
     }
 }
 
-// ===== Active editor content =====
-// The single reader over the editing surfaces.
-function getActiveEditorContent(): string {
-    if (isLivePreviewActive()) {
-        const cm6 = getLivePreviewContent();
-        if (cm6 !== null) {
-            return sanitizeMarkdownCopyLinkArtifacts(cm6);
-        }
-    }
-    return state.currentContent;
-}
-
-function cancelEdit() {
-    state.currentContent = state.originalContent;
-    if (isLivePreviewActive()) {
-        setLivePreviewContent(state.originalContent);
-        refreshCm6Toc(state.originalContent);
-        reapplySearch();
-        updateStatusInfo();
-    }
-    updateEditToolbarButtons();
-}
-
-function ensureVersionPreviewBanner(): HTMLElement {
-    let banner = $('versionPreviewBanner');
-    if (!banner) {
-        banner = document.createElement('div');
-        banner.id = 'versionPreviewBanner';
-        banner.className = 'version-preview-banner hidden';
-        banner.innerHTML = `
-            <span id="versionPreviewText" class="version-preview-text"></span>
-            <div class="version-preview-actions">
-                <button id="restoreVersionButton" class="toggle-button" type="button">Restore</button>
-                <button id="cancelVersionPreviewButton" class="toggle-button" type="button">Cancel</button>
-            </div>
-        `;
-
-        const target = $('content') || document.body;
-        target.insertBefore(banner, target.firstChild || null);
-
-        const restoreBtn = $('restoreVersionButton') as HTMLButtonElement | null;
-        const cancelBtn = $('cancelVersionPreviewButton') as HTMLButtonElement | null;
-        restoreBtn?.addEventListener('click', () => {
-            post({ command: 'restoreVersion' });
-        });
-        cancelBtn?.addEventListener('click', () => {
-            post({ command: 'cancelVersionPreview' });
-        });
-    }
-
-    return banner;
-}
-
-function setVersionPreviewMode(enabled: boolean, label?: string) {
-    // Version preview swaps displayed content through its own pipeline; running
-    // the diff overlay at the same time would leave two systems fighting over
-    // the same document.
-    if (enabled && state.diffVisible) {
-        hideDiskDiff(true);
-    }
-    state.isVersionPreviewMode = enabled;
-    document.body.classList.toggle('version-preview-mode', enabled);
-    if (enabled) {
-        setLivePreviewReadOnly(true);
-        updateVersionPreviewChrome();
-        const banner = ensureVersionPreviewBanner();
-        const text = $('versionPreviewText');
-        if (text) {
-            text.textContent = label || 'Previewing selected version (read-only)';
-        }
-        banner.classList.remove('hidden');
-    } else {
-        setLivePreviewReadOnly(false);
-        const banner = $('versionPreviewBanner');
-        if (banner) {
-            banner.classList.add('hidden');
-        }
-        updateVersionPreviewChrome();
-    }
-}
-
-function performSave(isAutosave = false) {
-    if (state.isSaving || !state.isEditMode || state.isVersionPreviewMode) {return;}
-    if (!isEditorDirty()) {return;}
-    if (state.pendingDiskContent !== null) {
-        // Autosave never interrupts with a dialog over an unresolved conflict — it
-        // just skips this tick; the next edit reschedules and tries again.
-        if (isAutosave) {return;}
-        confirmOverwriteConflict().then((confirmed) => {
-            if (!confirmed) {return;}
-            state.pendingDiskContent = null;
-            hideToast();
-            doSave(false, isAutosave);
-        });
-        return;
-    }
-    doSave(false, isAutosave);
-}
-
-let lastSaveWasAutosave = false;
-
-function doSave(force = false, isAutosave = false) {
-    state.isSaving = true;
-    lastSaveWasAutosave = isAutosave;
-    setButtonsEnabled(false);
-    state.currentContent = getActiveEditorContent();
-    state.pendingSaveContent = state.currentContent;
-    post({ command: 'saveMarkdown', text: state.currentContent, force, isAutosave });
-}
-
-let autoSaveTimer: number | null = null;
-
-function scheduleAutosave() {
-    if (!state.currentSettings.autoSave || !state.isEditMode || state.isVersionPreviewMode) {return;}
-    if (autoSaveTimer !== null) {window.clearTimeout(autoSaveTimer);}
-    autoSaveTimer = window.setTimeout(() => {
-        autoSaveTimer = null;
-        if (!state.currentSettings.autoSave || !state.isEditMode || state.isSaving) {return;}
-        if (getActiveEditorContent() === state.originalContent) {return;}
-        performSave(true);
-    }, 1200);
-}
-
-// Pushes freshly-read disk content into whichever surface is currently active.
-function applyReloadedContent(text: string) {
-    state.currentContent = text;
-    state.originalContent = text;
-    state.resolvedImageUriCache.clear();
-
-    if (isLivePreviewActive()) {
-        setLivePreviewContent(text);
-        refreshLivePreviewImages();
-        refreshCm6Toc(text);
-        reapplySearch();
-    }
-
-    updateStatusInfo();
-    updateEditToolbarButtons();
-}
-
-// VS Code webviews are sandboxed without `allow-modals` — window.confirm()/alert()/
-// prompt() are silently blocked, so a real dialog is built here reusing the shared
-// .feedback-overlay/.feedback-modal pattern (same one FeedbackModal uses).
-type ModalOutcome = 'confirm' | 'secondary' | 'cancel';
-
-function confirmModal(
-    title: string,
-    message: string,
-    confirmLabel: string,
-    secondaryLabel?: string
-): Promise<ModalOutcome> {
-    return new Promise((resolve) => {
-        const overlay = document.createElement('div');
-        overlay.className = 'feedback-overlay reload-confirm-overlay';
-        const modal = document.createElement('div');
-        modal.className = 'feedback-modal';
-        modal.innerHTML = `
-            <div class="feedback-header">
-                <h2>${escapeHtmlAttr(title)}</h2>
-            </div>
-            <div class="feedback-body" style="padding: 20px 24px 24px 24px; gap: 20px;">
-                <p style="margin: 0; font-size: 13.5px; color: var(--color-text-primary); line-height: 1.5;">
-                    ${escapeHtmlAttr(message)}
-                </p>
-                <div style="display: flex; justify-content: flex-end; gap: 8px;">
-                    <button class="reload-confirm-cancel" type="button" style="background: none; border: 1px solid var(--color-border-default); border-radius: 6px; color: var(--color-text-primary); font-size: 13px; font-weight: 500; padding: 6px 14px; cursor: pointer;">${escapeHtmlAttr(secondaryLabel ?? 'Cancel')}</button>
-                    <button class="reload-confirm-ok" type="button" style="background: var(--color-status-warning); border: none; border-radius: 6px; color: var(--color-text-on-action); font-size: 13px; font-weight: 600; padding: 6px 14px; cursor: pointer;">${escapeHtmlAttr(confirmLabel)}</button>
-                </div>
-            </div>
-        `;
-        document.body.appendChild(overlay);
-        document.body.appendChild(modal);
-        requestAnimationFrame(() => {
-            overlay.classList.add('active');
-            modal.classList.add('active');
-        });
-
-        const finish = (result: ModalOutcome) => {
-            overlay.remove();
-            modal.remove();
-            resolve(result);
-        };
-        overlay.addEventListener('click', () => finish('cancel'));
-        modal.querySelector('.reload-confirm-cancel')?.addEventListener('click', () => finish(secondaryLabel ? 'secondary' : 'cancel'));
-        modal.querySelector('.reload-confirm-ok')?.addEventListener('click', () => finish('confirm'));
-    });
-}
-
-type ReloadDecision = 'reload' | 'keepLocal' | 'cancel';
-
-// 'keepLocal' is a real action (force-write to disk) distinct from 'cancel', which
-// stays the passive backdrop/click-outside no-op it always was.
-function confirmDiscardAndReload(): Promise<ReloadDecision> {
-    return confirmModal(
-        'Reload from Disk',
-        'Discard unsaved changes and reload from disk?',
-        'Discard & Reload',
-        'Keep mine, ignore disk'
-    ).then((r) => (r === 'confirm' ? 'reload' : r === 'secondary' ? 'keepLocal' : 'cancel'));
-}
-
-function confirmOverwriteConflict(): Promise<boolean> {
-    return confirmModal(
-        'File Changed on Disk',
-        'This file changed on disk since you opened it. Overwrite it with your local changes anyway?',
-        'Overwrite'
-    ).then((r) => r === 'confirm');
-}
-
-function confirmRestoreConflict(): Promise<boolean> {
-    return confirmModal(
-        'File Changed on Disk',
-        'This file changed on disk since you opened it. Restore the selected version anyway? Your disk changes will be lost.',
-        'Restore Anyway'
-    ).then((r) => r === 'confirm');
-}
-
-function confirmOverwriteWithLocal(): Promise<boolean> {
-    return confirmModal('Keep Local Version', 'Overwrite disk with your version?', 'Overwrite disk')
-        .then((r) => r === 'confirm');
-}
-
-function showInitialLoadError(message: string): void {
-    const loading = $('loadingIndicator');
-    if (!loading) { return; }
-    loading.style.display = 'flex';
-    loading.style.flexDirection = 'column';
-    loading.style.gap = '12px';
-    loading.replaceChildren();
-
-    const text = document.createElement('p');
-    text.style.margin = '0';
-    text.style.textAlign = 'center';
-    text.style.maxWidth = '420px';
-    text.style.lineHeight = '1.5';
-    text.textContent = message;
-
-    const retryBtn = document.createElement('button');
-    retryBtn.type = 'button';
-    retryBtn.textContent = 'Retry';
-    retryBtn.style.cssText = 'background:var(--color-action);border:none;border-radius:6px;color:var(--color-text-on-action);font-size:13px;font-weight:600;padding:6px 14px;cursor:pointer;';
-    retryBtn.addEventListener('click', () => {
-        loading.textContent = 'Loading Markdown...';
-        loading.style.flexDirection = '';
-        loading.style.gap = '';
-        post({ command: 'webviewReady' });
-    });
-
-    loading.append(text, retryBtn);
-}
-
-// Manual "Reload from disk" toolbar button handler.
-async function requestReloadFromDisk() {
-    if (state.isSaving || state.isReloadingFromDisk || !state.isEditMode || !canReloadFromDisk()) {return;}
-    state.currentContent = getActiveEditorContent();
-    const dirty = state.currentContent !== state.originalContent;
-    if (dirty) {
-        const decision = await confirmDiscardAndReload();
-        if (decision === 'cancel') {return;}
-        if (decision === 'keepLocal') {
-            if (state.isSaving) {return;}
-            state.pendingDiskContent = null;
-            hideToast();
-            doSave(true);
-            return;
-        }
-    }
-    state.isReloadingFromDisk = true;
-    setButtonsEnabled(false);
-    post({ command: 'requestFreshData' });
-}
-
 function applyFormat(action: string) {
     if (!isLivePreviewActive() || state.isVersionPreviewMode) {return;}
     applyLivePreviewFormat(action);
-}
-
-// ===== UI Helpers =====
-let toastDismissTimer: number | null = null;
-let toastOnDismiss: (() => void) | null = null;
-
-// Same outline/gray style for both — only the shape differs. Success: plain
-// checkmark for positive acknowledgements (Saved, Copied, Reloaded, ...).
-// Warning: caution triangle for anything the user should pay attention to
-// (disk conflicts/deletions, failures).
-const TOAST_ICON_SUCCESS = '<polyline points="20 6 9 17 4 12"></polyline>';
-const TOAST_ICON_WARNING = '<path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>'
-    + '<line x1="12" y1="9" x2="12" y2="13"></line>'
-    + '<line x1="12" y1="17" x2="12.01" y2="17"></line>';
-
-function hideToast() {
-    const toast = $('toastNotification');
-    if (toastDismissTimer !== null) {
-        window.clearTimeout(toastDismissTimer);
-        toastDismissTimer = null;
-    }
-    toast?.classList.remove('show');
-    toastOnDismiss = null;
-}
-
-interface ToastAction {
-    label: string;
-    onClick: () => void;
-}
-
-function showToast(
-    message: string,
-    action?: ToastAction | ToastAction[],
-    opts?: { persistent?: boolean; onDismiss?: () => void; icon?: 'success' | 'warning'; hideCloseButton?: boolean }
-) {
-    // Three slots: the disk-change toast carries Load disk changes, Review changes,
-    // and Keep local version.
-    const actions = action ? (Array.isArray(action) ? action : [action]) : [];
-    let toast = $('toastNotification');
-    if (!toast) {
-        toast = document.createElement('div');
-        toast.id = 'toastNotification';
-        toast.className = 'toast-notification';
-        toast.innerHTML = `
-            <div class="toast-header">
-                <div class="toast-icon-wrapper">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></svg>
-                </div>
-                <span class="toast-text"></span>
-                <button class="toast-close" type="button" aria-label="Dismiss">&times;</button>
-            </div>
-            <div class="toast-actions">
-                <button class="toast-action hidden" type="button"></button>
-                <button class="toast-action hidden" type="button"></button>
-                <button class="toast-action hidden" type="button"></button>
-            </div>
-        `;
-        document.body.appendChild(toast);
-
-        toast.querySelector('.toast-close')?.addEventListener('click', () => {
-            const onDismiss = toastOnDismiss;
-            hideToast();
-            onDismiss?.();
-        });
-    }
-    if (toast) {
-        const toastText = toast.querySelector('.toast-text') || $('toastText');
-        if (toastText) {toastText.textContent = message;}
-
-        const iconSvg = toast.querySelector('.toast-icon-wrapper svg');
-        if (iconSvg) {iconSvg.innerHTML = opts?.icon === 'warning' ? TOAST_ICON_WARNING : TOAST_ICON_SUCCESS;}
-
-        const actionBtns = Array.from(toast.querySelectorAll('.toast-action')) as HTMLButtonElement[];
-        actionBtns.forEach((btn, i) => {
-            const slot = actions[i];
-            if (slot) {
-                btn.textContent = slot.label;
-                btn.classList.remove('hidden');
-                btn.onclick = slot.onClick;
-            } else {
-                btn.textContent = '';
-                btn.classList.add('hidden');
-                btn.onclick = null;
-            }
-        });
-        // The row itself still takes up a flex gap even with every button hidden.
-        toast.querySelector('.toast-actions')?.classList.toggle('hidden', actions.length === 0);
-
-        toastOnDismiss = opts?.onDismiss || null;
-
-        toast.querySelector('.toast-close')?.classList.toggle('hidden', !!opts?.hideCloseButton);
-
-        toast.classList.add('show');
-        if (toastDismissTimer !== null) {window.clearTimeout(toastDismissTimer);}
-        if (opts?.persistent) {
-            toastDismissTimer = null;
-        } else {
-            toastDismissTimer = window.setTimeout(() => {
-                toast!.classList.remove('show');
-                toastDismissTimer = null;
-                toastOnDismiss = null;
-            }, actions.length ? 8000 : 6000);
-        }
-    }
 }
 
 // ===== Disk-vs-editor diff =====
@@ -1842,6 +1433,20 @@ function updateHeaderHeight() {
 }
 
 // ===== Message Handler =====
+initSaveSync({
+    updateEditToolbarButtons,
+    updateVersionPreviewChrome,
+    updateStatusInfo,
+    refreshOutline: (content) => refreshCm6Toc(content),
+    reapplySearch,
+    diff: {
+        show: showDiskDiff,
+        hide: hideDiskDiff,
+        hasBaseline: hasDiskDiffBaseline,
+        updateChrome: updateDiffChrome,
+    },
+});
+
 window.addEventListener('message', (event) => {
     const m = event.data as HostToMarkdownWebview;
     if (!m || typeof m !== 'object' || !('command' in m)) { return; }
@@ -1873,134 +1478,9 @@ window.addEventListener('message', (event) => {
             updateEditToolbarButtons();
             break;
 
-        case 'diskChangedExternally': {
-            state.documentUri = m.documentUri || state.documentUri;
-            state.documentDirUri = m.documentDirUri || state.documentDirUri;
-            state.workspaceFolderUri = m.workspaceFolderUri || state.workspaceFolderUri;
-            state.currentTableColumnWidths = m.tableColumnWidths || state.currentTableColumnWidths;
-            state.mermaidPreviewMode = m.mermaidPreviewMode === 'code' ? 'code' : state.mermaidPreviewMode;
-            if (typeof m.calloutDefaultType === 'string' && /^[\w-]*$/.test(m.calloutDefaultType)) {
-                state.calloutDefaultType = m.calloutDefaultType.toLowerCase();
-            }
-            if (isLivePreviewActive()) {
-                setLivePreviewMermaidMode(state.mermaidPreviewMode);
-                setLivePreviewCalloutDefaultType(state.calloutDefaultType);
-            }
-
-            const wasManualReload = state.isReloadingFromDisk;
-            if (state.isReloadingFromDisk) {
-                state.isReloadingFromDisk = false;
-                setButtonsEnabled(true);
-            }
-
-            // A real change supersedes any prior "deleted" notification.
-            state.pendingDiskDeleted = false;
-
-            const incomingContent = m.content || '';
-
-            // Own-save echoes and other redundant watcher ticks — disk matches what
-            // is already in the editor, so there is nothing to reload or diff.
-            if (!wasManualReload && incomingContent === getActiveEditorContent()) {
-                break;
-            }
-
-            // Capture what is on screen right now as the diff baseline, but only
-            // if no comparison is already pending — a burst of external writes
-            // should still diff against what the user last actually saw.
-            if (state.diffBaseline === null) {
-                state.diffBaseline = state.currentContent;
-                state.diffAcceptedCount = 0;
-                state.diffRejectedCount = 0;
-            }
-            const incomingLabel = formatDiffLineStats(diffLineStats(state.diffBaseline, incomingContent));
-
-            // An explicit reload request applies directly — the persistent toast
-            // below is only for unprompted watcher-detected changes.
-            if (wasManualReload || !state.isEditMode) {
-                state.pendingDiskContent = null;
-                applyReloadedContent(incomingContent);
-                showToast(
-                    incomingLabel ? `Reloaded from disk \u00B7 ${incomingLabel}` : 'Reloaded from disk',
-                    hasDiskDiffBaseline() && state.currentSettings.diffReviewEnabled
-                        ? { label: 'Review changes', onClick: () => showDiskDiff() }
-                        : undefined
-                );
-                updateEditToolbarButtons();
-                updateDiffChrome();
-                break;
-            }
-
-            // Diffing is non-destructive — local edits become the rejectable
-            // side of the comparison rather than being discarded — so this path
-            // never needs a "you have unsaved edits" confirm. It replaces the
-            // toast decision entirely: the diff HUD (itself a toast — "File
-            // changed on disk" header, Accept All/Reject All in its actions
-            // row) is what the old "Load disk changes"/"Keep local version"
-            // toast used to be.
-            if (state.currentSettings.diffReviewEnabled) {
-                applyReloadedContent(incomingContent);
-                state.pendingDiskContent = null;
-                showDiskDiff();
-                updateEditToolbarButtons();
-                break;
-            }
-
-            // Diff review disabled: the only two ways to resolve are a full
-            // reload or a full overwrite, each with its own confirm dialog
-            // since — unlike the diff — either one can genuinely discard work.
-            state.pendingDiskContent = incomingContent;
-
-            const applyPending = () => {
-                if (state.pendingDiskContent === null) {return;}
-                applyReloadedContent(state.pendingDiskContent);
-                state.pendingDiskContent = null;
-                showToast('Reloaded from disk');
-            };
-            const reloadPending = () => {
-                // Never dead-end: if the queued content was already consumed (a
-                // second watcher event) ask the host for a fresh read instead of
-                // silently doing nothing.
-                if (state.pendingDiskContent === null) {
-                    void requestReloadFromDisk();
-                    return;
-                }
-                const dirty = state.isEditMode && getActiveEditorContent() !== state.originalContent;
-                if (dirty) {
-                    confirmDiscardAndReload().then((decision) => {
-                        if (decision === 'reload') {
-                            applyPending();
-                        } else if (decision === 'keepLocal' && !state.isSaving) {
-                            state.pendingDiskContent = null;
-                            hideToast();
-                            doSave(true);
-                        }
-                    });
-                } else {
-                    applyPending();
-                }
-            };
-            const keepLocalVersion = () => {
-                confirmOverwriteWithLocal().then((confirmed) => {
-                    if (!confirmed || state.isSaving) {return;}
-                    state.pendingDiskContent = null;
-                    hideToast();
-                    doSave(true);
-                });
-            };
-
-            showToast(
-                incomingLabel ? `File changed on disk \u00B7 ${incomingLabel}` : 'File changed on disk',
-                [
-                    { label: 'Load disk changes', onClick: reloadPending },
-                    { label: 'Keep local version', onClick: keepLocalVersion },
-                ],
-                // No close button: the user has to make a decision, not dismiss it.
-                { persistent: true, icon: 'warning', hideCloseButton: true }
-            );
-            updateEditToolbarButtons();
-            updateDiffChrome();
+        case 'diskChangedExternally':
+            onDiskChangedExternally(m);
             break;
-        }
 
         // From the xlsx-viewer.md.{accept,reject}AllDiskChanges commands (package.json
         // keybindings / Command Palette) — no-ops via the guard already in each function
@@ -2014,15 +1494,7 @@ window.addEventListener('message', (event) => {
             break;
 
         case 'reloadFromDiskError':
-            if (state.isReloadingFromDisk) {
-                state.isReloadingFromDisk = false;
-                setButtonsEnabled(true);
-                showToast('Error reloading from disk', undefined, { icon: 'warning' });
-            } else if (!state.hasEnteredPreviewEdit) {
-                showInitialLoadError(m.message || 'Failed to load Markdown file');
-            } else {
-                showToast(m.message || 'Error reloading from disk', undefined, { icon: 'warning' });
-            }
+            onReloadFromDiskError(m);
             break;
 
         case 'openRelativeFileFailed':
@@ -2050,38 +1522,11 @@ window.addEventListener('message', (event) => {
             break;
 
         case 'saveResult':
-            state.isSaving = false;
-            setButtonsEnabled(true);
-            if (m.ok) {
-                showToast(m.isAutosave ? 'Autosaved' : 'Saved');
-                if (state.pendingSaveContent !== null) {
-                    state.originalContent = state.pendingSaveContent;
-                }
-                state.pendingSaveContent = null;
-                // A successful save recreates the file if it had been deleted externally.
-                state.pendingDiskDeleted = false;
-                // The saved document is the new reference point; the old baseline
-                // no longer describes anything the user can act on.
-                hideDiskDiff(true);
-            } else {
-                state.pendingSaveContent = null;
-                showToast(m.isAutosave ? 'Autosave failed' : 'Error saving', undefined, { icon: 'warning' });
-            }
-            updateEditToolbarButtons();
+            onSaveResult(m);
             break;
 
         case 'saveConflict':
-            state.isSaving = false;
-            state.pendingSaveContent = null;
-            setButtonsEnabled(true);
-            if (lastSaveWasAutosave) {
-                // Autosave never interrupts with a dialog; the file watcher will
-                // independently surface the usual "file changed on disk" toast.
-                break;
-            }
-            confirmOverwriteConflict().then((confirmed) => {
-                if (confirmed) {doSave(true);}
-            });
+            onSaveConflict();
             break;
 
         case 'versionHistoryError':
@@ -2089,26 +1534,19 @@ window.addEventListener('message', (event) => {
             break;
 
         case 'versionPreviewMd':
-            setVersionPreviewMode(true, m.timestamp ? `Previewing ${new Date(m.timestamp).toLocaleString()} (read-only)` : 'Previewing selected version (read-only)');
-            showToast('Previewing version');
+            onVersionPreview(m);
             break;
 
         case 'versionPreviewCancelledMd':
-            setVersionPreviewMode(false);
-            showToast('Preview canceled');
+            onVersionPreviewCancelled();
             break;
 
         case 'restoreConflict':
-            confirmRestoreConflict().then((confirmed) => {
-                if (confirmed) {
-                    post({ command: 'restoreVersion', versionId: m.versionId, force: true });
-                }
-            });
+            onRestoreConflict(m);
             break;
 
         case 'versionRestoredMd':
-            setVersionPreviewMode(false);
-            showToast('Version restored');
+            onVersionRestored();
             break;
 
         case 'resolvedImageUris':

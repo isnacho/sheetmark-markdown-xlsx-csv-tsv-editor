@@ -46,7 +46,7 @@ const MUTATIONS = [
     { id: 'mermaid-lazy-load', file: 'src/webviews/md/livePreview/mermaidWidget.ts',
       find: "import { Icons } from '../../shared/icons';", replace: "import { Icons } from '../../shared/icons';\nimport * as eagerMermaid from 'mermaid';\nvoid eagerMermaid;" },
     { id: 'resize-listeners-once', file: 'src/webviews/spreadsheet/spreadsheetWebview.ts',
-      find: 'if (!resizeGlobalListenersAttached) {', replace: 'if (!resizeGlobalListenersAttached || document.body !== null) {' },
+      find: 'if (!state.resizeGlobalListenersAttached) {', replace: 'if (!state.resizeGlobalListenersAttached || document.body !== null) {' },
 ];
 
 const repo = execSync('git rev-parse --show-toplevel', { encoding: 'utf8' }).trim();

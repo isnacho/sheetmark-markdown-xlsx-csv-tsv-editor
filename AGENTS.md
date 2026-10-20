@@ -151,8 +151,9 @@ npm run package           # production build (also runs unit tests); used by vsc
   `3-to-implement` → `4-to-qa` → `5-completed`, driven by the `mii-idea-lab` skill. When you ship
   an idea, move its file forward.
 - **Skills** live in `.agents/skills/` (`.claude/skills` and `.codex/skills` are symlinks to it).
-  `mii-idea-lab` is a symlink into the `.docs/mii-ai` git submodule: edits there must be
-  committed and pushed inside the submodule (GitHub account `isnacho`), then the submodule pointer
+  `mii-idea-lab` is a symlink into the `.docs/mii-ai` git submodule (`isnacho/mii-ai-resources`):
+  edits there must be committed and pushed inside the submodule (GitHub account `isnacho`; locally
+  `gh auth switch --user nachosdesign`), then the submodule pointer
   bumped in this repo.
 - **Docs:** point at symbols (function, class, handler names), never line numbers, and don't
   record file sizes. Both drift within weeks. When you add a file or a message, update the MAP or

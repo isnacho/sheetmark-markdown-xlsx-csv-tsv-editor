@@ -110,3 +110,13 @@ test('version preview: the banner offers Restore and Cancel, and Escape also can
     await sheet.page.waitForSelector('#versionPreviewBanner.hidden', { state: 'attached' });
     await sheet.stop();
 });
+
+test('header menu Sort A to Z reorders rows (requestAllRows + filterAndSortRows)', async () => {
+    const sheet = await bootSpreadsheet({ values: [['pear', '1'], ['Apple', '2'], ['banana', '3']] });
+    await sheet.page.click('th.col-header[data-col="0"]', { button: 'right' });
+    await sheet.page.click('text=Sort A to Z');
+    await sheet.page.waitForFunction(() => document.querySelector('td[data-row="0"][data-col="0"]')?.textContent === 'Apple');
+    const column = await sheet.page.$$eval('td[data-col="0"]', tds => tds.map(td => td.textContent));
+    assert.deepEqual(column, ['Apple', 'banana', 'pear']);
+    await sheet.stop();
+});

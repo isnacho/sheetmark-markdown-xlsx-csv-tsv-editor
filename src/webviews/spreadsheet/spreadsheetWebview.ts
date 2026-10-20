@@ -11,9 +11,10 @@ import { Icons } from '../shared/icons';
 import { vscode, VirtualScrollConfig, debounce } from '../shared/common';
 import { VirtualLoader } from '../shared/virtualLoader';
 import { state, MIN_ROW_HEADER_WIDTH } from './state';
+import { filterAndSortRows } from './dataOps';
+import { buildRowOffsetPrefix, rowIndexAtOffset, rowRangeHeight, rowTopOffset } from './rowMetrics';
 import type { HostToSpreadsheetWebview, SpreadsheetWebviewToHost } from '../../protocol/spreadsheet';
 import type { HandledByFeedbackModal } from '../../protocol/common';
-import { htmlToPlainText } from '../shared/sanitizeHtml';
 import { createXlsxRowHtml, getExcelColumnLabel, renderDropdownCellContent } from './components/spreadsheetRenderComponent';
 import { XlsxSelectionManager } from './components/spreadsheetSelectionComponent';
 import { createXlsxToolbarButtons } from './components/spreadsheetToolbarComponent';
@@ -48,8 +49,7 @@ import type {
     CellStyleEdit,
     CellUndoState,
     WorksheetStateSnapshot,
-    FilterMode,
-    SortDirection
+    FilterMode
 } from './components/spreadsheetTypes';
 import {
     cloneCellData,
@@ -1012,50 +1012,24 @@ import { parseTsv } from './components/tsvClipboard';
             return;
         }
 
-        state.rowOffsetPrefix = new Array(state.totalRows + 1);
-        state.rowOffsetPrefix[0] = 0;
-
-        for (let i = 0; i < state.totalRows; i++) {
-            state.rowOffsetPrefix[i + 1] = state.rowOffsetPrefix[i] + getEffectiveRowHeightByIndex(i);
-        }
-
+        state.rowOffsetPrefix = buildRowOffsetPrefix(state.totalRows, getEffectiveRowHeightByIndex);
         state.totalContentHeight = state.rowOffsetPrefix[state.totalRows] || 0;
         state.rowOffsetPrefixVersion = state.rowMetricsVersion;
     }
 
     function getRowTopOffset(rowIndex: number): number {
-        if (state.totalRows <= 0) {return 0;}
         ensureRowOffsetPrefix();
-        const clamped = Math.max(0, Math.min(rowIndex, state.totalRows));
-        return state.rowOffsetPrefix[clamped] || 0;
+        return rowTopOffset(state.rowOffsetPrefix, state.totalRows, rowIndex);
     }
 
     function getRowHeightRange(startIndex: number, endIndex: number): number {
-        if (state.totalRows <= 0) {return 0;}
         ensureRowOffsetPrefix();
-        const safeStart = Math.max(0, Math.min(startIndex, state.totalRows));
-        const safeEnd = Math.max(safeStart, Math.min(endIndex, state.totalRows));
-        return Math.max(0, (state.rowOffsetPrefix[safeEnd] || 0) - (state.rowOffsetPrefix[safeStart] || 0));
+        return rowRangeHeight(state.rowOffsetPrefix, state.totalRows, startIndex, endIndex);
     }
 
     function findRowIndexByOffset(offset: number): number {
-        if (state.totalRows <= 0) {return 0;}
         ensureRowOffsetPrefix();
-
-        const target = Math.max(0, Math.min(offset, state.totalContentHeight));
-        let low = 0;
-        let high = state.totalRows;
-
-        while (low < high) {
-            const mid = Math.floor((low + high + 1) / 2);
-            if ((state.rowOffsetPrefix[mid] || 0) <= target) {
-                low = mid;
-            } else {
-                high = mid - 1;
-            }
-        }
-
-        return Math.min(Math.max(low, 0), Math.max(state.totalRows - 1, 0));
+        return rowIndexAtOffset(state.rowOffsetPrefix, state.totalRows, offset);
     }
 
     function rerenderCurrentSheetFromLocalState() {
@@ -4368,116 +4342,6 @@ import { parseTsv } from './components/tsvClipboard';
         return null;
     }
 
-    function stripHtmlForDataOps(value: string): string {
-        if (!/[<&]/.test(value)) {
-            return value;
-        }
-
-        return htmlToPlainText(value).replace(/\u00a0/g, ' ');
-    }
-
-    function readCellTextForDataOps(rowData: any, colZeroBased: number): string {
-        const cell = getCellFromRow(rowData, colZeroBased + 1);
-        if (!cell) {return '';}
-
-        const value = cell.value;
-        if (value === null || value === undefined) {
-            return '';
-        }
-
-        if (typeof value === 'string') {
-            return stripHtmlForDataOps(value);
-        }
-
-        if (typeof value === 'number' || typeof value === 'boolean') {
-            return String(value);
-        }
-
-        if (value instanceof Date) {
-            return value.toISOString();
-        }
-
-        if (typeof value === 'object') {
-            const richRuns = Array.isArray((value as any).richText) ? (value as any).richText : [];
-            if (richRuns.length > 0) {
-                return richRuns.map((run: any) => String(run?.text ?? '')).join('');
-            }
-
-            const hyperlinkText = typeof (value as any).text === 'string' ? (value as any).text : '';
-            if (hyperlinkText) {
-                return hyperlinkText;
-            }
-        }
-
-        return stripHtmlForDataOps(String(value));
-    }
-
-    function parseSortableNumber(value: string): number | null {
-        const trimmed = value.trim();
-        if (!trimmed) {return null;}
-
-        const negativeByParens = /^\(.*\)$/.test(trimmed);
-        const normalized = trimmed
-            .replace(/^\((.*)\)$/, '$1')
-            .replace(/[%,$\s]/g, '')
-            .replace(/,/g, '');
-        if (!normalized || normalized === '-' || normalized === '.') {return null;}
-
-        const parsed = Number(normalized);
-        if (!Number.isFinite(parsed)) {return null;}
-        return negativeByParens ? -parsed : parsed;
-    }
-
-    function parseSortableBoolean(value: string): number | null {
-        const normalized = value.trim().toLowerCase();
-        if (normalized === 'true' || normalized === 'yes' || normalized === '1' || normalized === 'y') {return 1;}
-        if (normalized === 'false' || normalized === 'no' || normalized === '0' || normalized === 'n') {return 0;}
-        return null;
-    }
-
-    function parseSortableDate(value: string): number | null {
-        const trimmed = value.trim();
-        if (!trimmed) {return null;}
-        if (!/^\d{4}-\d{1,2}-\d{1,2}/.test(trimmed) && !/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}$/.test(trimmed)) {
-            return null;
-        }
-
-        const timestamp = Date.parse(trimmed);
-        return Number.isFinite(timestamp) ? timestamp : null;
-    }
-
-    function compareDataOpValues(aText: string, bText: string, direction: SortDirection): number {
-        const factor = direction === 'asc' ? 1 : -1;
-        const a = aText.trim();
-        const b = bText.trim();
-
-        const aEmpty = a === '';
-        const bEmpty = b === '';
-        if (aEmpty && !bEmpty) {return 1;}
-        if (!aEmpty && bEmpty) {return -1;}
-        if (aEmpty && bEmpty) {return 0;}
-
-        const aBool = parseSortableBoolean(a);
-        const bBool = parseSortableBoolean(b);
-        if (aBool !== null && bBool !== null) {
-            return (aBool - bBool) * factor;
-        }
-
-        const aNum = parseSortableNumber(a);
-        const bNum = parseSortableNumber(b);
-        if (aNum !== null && bNum !== null) {
-            return (aNum - bNum) * factor;
-        }
-
-        const aDate = parseSortableDate(a);
-        const bDate = parseSortableDate(b);
-        if (aDate !== null && bDate !== null) {
-            return (aDate - bDate) * factor;
-        }
-
-        return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }) * factor;
-    }
-
     function applyDataOpsRowsToViewport(rows: any[] | null) {
         if (rows) {
             state.transformedRowsSnapshot = rows;
@@ -4537,47 +4401,7 @@ import { parseTsv } from './components/tsvClipboard';
             rowsToProcess = state.sourceRowsSnapshot.slice(1);
         }
 
-        let nextRows = rowsToProcess;
-        if (state.activeColumnFilters.size > 0) {
-            nextRows = nextRows.filter((rowData) => {
-                for (const filter of state.activeColumnFilters.values()) {
-                    const raw = readCellTextForDataOps(rowData, filter.columnIndex);
-                    const cellText = filter.caseSensitive ? raw : raw.toLowerCase();
-                    const query = filter.caseSensitive ? filter.query : filter.query.toLowerCase();
-
-                    if (filter.mode === 'nonEmpty') {
-                        if (!raw.trim()) {
-                            return false;
-                        }
-                        continue;
-                    }
-
-                    if (!query) {
-                        continue;
-                    }
-
-                    if (filter.mode === 'contains' && !cellText.includes(query)) {
-                        return false;
-                    }
-                    if (filter.mode === 'equals' && cellText !== query) {
-                        return false;
-                    }
-                    if (filter.mode === 'startsWith' && !cellText.startsWith(query)) {
-                        return false;
-                    }
-                }
-                return true;
-            });
-        }
-
-        if (state.activeSortState) {
-            const { columnIndex, direction } = state.activeSortState;
-            nextRows = [...nextRows].sort((a, b) => {
-                const aText = readCellTextForDataOps(a, columnIndex);
-                const bText = readCellTextForDataOps(b, columnIndex);
-                return compareDataOpValues(aText, bText, direction);
-            });
-        }
+        const nextRows = filterAndSortRows(rowsToProcess, [...state.activeColumnFilters.values()], state.activeSortState);
 
         if (headerRow) {
             state.transformedRowsSnapshot = [headerRow, ...nextRows];

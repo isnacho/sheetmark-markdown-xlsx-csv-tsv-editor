@@ -57,6 +57,7 @@ import type { TextStats } from './markdownStats';
 import type { Cm6Match } from './livePreview/livePreviewSearch';
 import type { HostToMarkdownWebview, MarkdownWebviewToHost } from '../../protocol/markdown';
 import type { HandledByFeedbackModal } from '../../protocol/common';
+import { state } from './state';
 
 // Typed send: the compiler checks every webview-to-host message against src/protocol/markdown.ts.
 const post = (message: MarkdownWebviewToHost) => vscode.postMessage(message);
@@ -90,78 +91,9 @@ function throttleRAFEvent(fn: (event: MouseEvent) => void): (event: MouseEvent) 
     };
 }
 
-// ===== State =====
-let isEditMode = false;
-let isVersionPreviewMode = false;
-let isSaving = false;
-/** Exact text sent with the in-flight `saveMarkdown` — used to stamp `originalContent` on success. */
-let pendingSaveContent: string | null = null;
-let isReloadingFromDisk = false;
-let pendingDiskContent: string | null = null;
-// Set when the watcher reports the file was deleted externally; cleared by a
-// subsequent real disk change, a manual reload, or a save that recreates the file.
-let pendingDiskDeleted = false;
-// Outline visibility waits for host `initSettings` — defaults would flash the
-// panel (and peek at the bottom) while "Loading Markdown..." is still shown.
-let hostSettingsLoaded = false;
-
-// Mount CM6 preview edit exactly once on the panel's first `initSettings`.
-let hasEnteredPreviewEdit = false;
-// Content the user was last looking at before an external write — the baseline
-// the disk diff compares against. Captured on the FIRST external change and
-// held until the diff is dismissed or the document is saved, so a burst of
-// external writes still diffs against what was actually on screen. Survives
-// applyReloadedContent() on purpose.
-let diffBaseline: string | null = null;
-let diffVisible = false;
-// Tallied per diff session (reset alongside diffBaseline) so the closing
-// toast can report what actually happened instead of just "resolved".
-let diffAcceptedCount = 0;
-let diffRejectedCount = 0;
-let originalContent = '';
-let currentContent = '';
-let toolbarManager: ToolbarManager | null = null;
-const resolvedImageUriCache = new Map<string, string>();
-// Set while a CM6 Ctrl/Cmd+Click image lightbox is waiting on an async 'resolveImageUris'
-// round-trip (see handleLivePreviewModifierClick / applyResolvedImageUris).
-let pendingCm6LightboxSrc: string | null = null;
-let documentUri = '';
-let documentDirUri = '';
-let workspaceFolderUri: string | null = null;
-// Persisted table column widths (table order-index -> px per column), read
-// once from the host on load and kept in sync locally after every resize —
-// see tableColumnWidths in src/shared/preferenceStore.ts for why this can't
-// live in the .md file's own table syntax.
-let currentTableColumnWidths: Record<number, readonly number[]> = {};
-let frontmatterPanelCollapsed = false;
-let mermaidPreviewMode: 'diagram' | 'code' = 'diagram';
-let calloutDefaultType = 'info';
-
-// Turndown removed — Preview Edit uses CM6 raw markdown only.
-
-// Settings
-let currentSettings = {
-    stickyToolbar: true,
-    wordWrap: true,
-    showOutline: true,
-    showLineNumbers: true,
-    livePreviewReveal: true,
-    livePreviewLineNumbers: false,
-    autoSave: false,
-    isDefaultEditor: true,
-    showStats: true,
-    statsShowLines: true,
-    statsShowWords: true,
-    statsShowChars: true,
-    statsShowReadingTime: true,
-    showCursorPosition: true,
-    diffReviewEnabled: false,
-    diffLayout: 'inline' as 'inline' | 'sideBySide'
-};
-
 /** Preview Edit gutter — single user-facing "Line Numbers" toggle (see settings panel). */
 function livePreviewGutterLineNumbersEnabled(): boolean {
-    return !!currentSettings.livePreviewLineNumbers;
+    return !!state.currentSettings.livePreviewLineNumbers;
 }
 
 let cm6SearchMatches: Cm6Match[] = [];
@@ -215,57 +147,57 @@ function setButtonsEnabled(enabled: boolean) {
 }
 
 function isEditorDirty(): boolean {
-    return currentContent !== originalContent;
+    return state.currentContent !== state.originalContent;
 }
 
 function canReloadFromDisk(): boolean {
-    if (!isEditMode || isSaving || isReloadingFromDisk) {
+    if (!state.isEditMode || state.isSaving || state.isReloadingFromDisk) {
         return false;
     }
-    return pendingDiskContent !== null || pendingDiskDeleted || isEditorDirty();
+    return state.pendingDiskContent !== null || state.pendingDiskDeleted || isEditorDirty();
 }
 
 function updateEditToolbarButtons() {
-    if (!toolbarManager || !isEditMode) {
+    if (!state.toolbarManager || !state.isEditMode) {
         return;
     }
 
-    if (isVersionPreviewMode) {
-        toolbarManager.setButtonEnabled('saveEditsButton', false);
-        toolbarManager.setButtonEnabled('reloadFromDiskButton', false);
-        toolbarManager.setButtonEnabled('undoEditsButton', false);
-        toolbarManager.setButtonEnabled('redoEditsButton', false);
-        toolbarManager.setButtonEnabled('toggleDiffButton', false);
+    if (state.isVersionPreviewMode) {
+        state.toolbarManager.setButtonEnabled('saveEditsButton', false);
+        state.toolbarManager.setButtonEnabled('reloadFromDiskButton', false);
+        state.toolbarManager.setButtonEnabled('undoEditsButton', false);
+        state.toolbarManager.setButtonEnabled('redoEditsButton', false);
+        state.toolbarManager.setButtonEnabled('toggleDiffButton', false);
         return;
     }
 
-    const blocked = isSaving || isReloadingFromDisk;
+    const blocked = state.isSaving || state.isReloadingFromDisk;
     const dirty = isEditorDirty();
 
-    toolbarManager.setButtonEnabled('saveEditsButton', !blocked && dirty);
-    toolbarManager.setButtonEnabled('reloadFromDiskButton', !blocked && canReloadFromDisk());
-    toolbarManager.setButtonEnabled('undoEditsButton', !blocked && isLivePreviewActive() && canLivePreviewUndo());
-    toolbarManager.setButtonEnabled('redoEditsButton', !blocked && isLivePreviewActive() && canLivePreviewRedo());
-    toolbarManager.setButtonEnabled(
+    state.toolbarManager.setButtonEnabled('saveEditsButton', !blocked && dirty);
+    state.toolbarManager.setButtonEnabled('reloadFromDiskButton', !blocked && canReloadFromDisk());
+    state.toolbarManager.setButtonEnabled('undoEditsButton', !blocked && isLivePreviewActive() && canLivePreviewUndo());
+    state.toolbarManager.setButtonEnabled('redoEditsButton', !blocked && isLivePreviewActive() && canLivePreviewRedo());
+    state.toolbarManager.setButtonEnabled(
         'toggleDiffButton',
-        !blocked && (diffVisible || hasDiskDiffBaseline() || pendingDiskContent !== null)
+        !blocked && (state.diffVisible || hasDiskDiffBaseline() || state.pendingDiskContent !== null)
     );
 }
 
 
 function wireImageUriResolver() {
     setImageUriResolver({
-        getResolved: (src) => resolvedImageUriCache.get(src.trim()),
+        getResolved: (src) => state.resolvedImageUriCache.get(src.trim()),
         requestResolve: (sources) => {
             const pending = sources
                 .map(s => s.trim())
-                .filter(s => s && !resolvedImageUriCache.has(s));
+                .filter(s => s && !state.resolvedImageUriCache.has(s));
             if (pending.length === 0) { return; }
             post({ command: 'resolveImageUris', sources: pending });
         },
         openLightbox: (src, alt) => showLightbox(src, alt),
         requestLightbox: (src, alt) => {
-            pendingCm6LightboxSrc = src;
+            state.pendingCm6LightboxSrc = src;
             post({ command: 'resolveImageUris', sources: [src] });
             void alt;
         },
@@ -281,12 +213,12 @@ function applyResolvedImageUris(resolved: Record<string, string>) {
         if (!source || !uri) {
             return;
         }
-        resolvedImageUriCache.set(source, uri);
+        state.resolvedImageUriCache.set(source, uri);
     });
 
-    if (pendingCm6LightboxSrc && resolved[pendingCm6LightboxSrc]) {
-        showLightbox(resolved[pendingCm6LightboxSrc], '');
-        pendingCm6LightboxSrc = null;
+    if (state.pendingCm6LightboxSrc && resolved[state.pendingCm6LightboxSrc]) {
+        showLightbox(resolved[state.pendingCm6LightboxSrc], '');
+        state.pendingCm6LightboxSrc = null;
     }
 
     refreshLivePreviewImages();
@@ -390,17 +322,17 @@ const debouncedCm6TocRefresh = debounce((content: string) => refreshCm6Toc(conte
 
 
 function persistFrontmatterPanelCollapsed(collapsed: boolean) {
-    frontmatterPanelCollapsed = collapsed;
+    state.frontmatterPanelCollapsed = collapsed;
     post({ command: 'saveFrontmatterPanelCollapsed', collapsed });
 }
 
 function persistMermaidPreviewMode(mode: 'diagram' | 'code') {
-    mermaidPreviewMode = mode;
+    state.mermaidPreviewMode = mode;
     post({ command: 'saveMermaidPreviewMode', mode });
 }
 
 function persistCalloutDefaultType(type: string) {
-    calloutDefaultType = type;
+    state.calloutDefaultType = type;
     post({ command: 'saveCalloutDefaultType', type });
 }
 
@@ -430,7 +362,7 @@ function scrollToAnchor(href: string): boolean {
 
 // ===== Preview Edit Mode (CM6 live preview) =====
 function updateVersionPreviewChrome() {
-    const hideEdit = isVersionPreviewMode;
+    const hideEdit = state.isVersionPreviewMode;
     const saveBtn = $('saveEditsButton');
     const undoBtn = $('undoEditsButton');
     const redoBtn = $('redoEditsButton');
@@ -457,11 +389,11 @@ function updateVersionPreviewChrome() {
 }
 
 function enterPreviewEditMode() {
-    isEditMode = true;
+    state.isEditMode = true;
     document.body.classList.toggle('edit-mode', true);
     document.body.classList.toggle('preview-edit-mode', true);
     document.body.classList.toggle('cm6-preview-active', true);
-    document.body.classList.toggle('cm6-word-wrap', currentSettings.wordWrap);
+    document.body.classList.toggle('cm6-word-wrap', state.currentSettings.wordWrap);
 
     const saveBtn = $('saveEditsButton');
     const undoBtn = $('undoEditsButton');
@@ -484,7 +416,7 @@ function enterPreviewEditMode() {
     const fmtToolbar = $('formattingToolbar');
     if (fmtToolbar) {fmtToolbar.classList.toggle('hidden', false);}
 
-    originalContent = currentContent;
+    state.originalContent = state.currentContent;
 
     container?.classList.add('preview-edit');
 
@@ -492,11 +424,11 @@ function enterPreviewEditMode() {
         preview.contentEditable = 'false';
         mountLivePreview({
             parent: preview,
-            doc: currentContent,
-            lineWrapping: currentSettings.wordWrap,
+            doc: state.currentContent,
+            lineWrapping: state.currentSettings.wordWrap,
             onDocChanged: (doc) => {
-                if (isVersionPreviewMode) { return; }
-                currentContent = doc;
+                if (state.isVersionPreviewMode) { return; }
+                state.currentContent = doc;
                 updateStatusInfo();
                 syncDiskDiffAfterDocChange();
                 debouncedCm6TocRefresh(doc);
@@ -508,24 +440,24 @@ function enterPreviewEditMode() {
             onDiffChunkResolved: handleDiffChunkResolved,
             onModifierClick: handleLivePreviewModifierClick,
             onLinkClick: handleLivePreviewLinkClick,
-            reveal: currentSettings.livePreviewReveal,
+            reveal: state.currentSettings.livePreviewReveal,
             showLineNumbers: livePreviewGutterLineNumbersEnabled(),
             onSelectionChange: updateStatusInfo,
             onHistoryChange: updateEditToolbarButtons,
-            columnWidths: currentTableColumnWidths,
+            columnWidths: state.currentTableColumnWidths,
             onColumnWidthsChanged: (widths) => {
-                currentTableColumnWidths = widths;
+                state.currentTableColumnWidths = widths;
                 post({ command: 'saveTableColumnWidths', widths });
             },
-            frontmatterCollapsed: frontmatterPanelCollapsed,
+            frontmatterCollapsed: state.frontmatterPanelCollapsed,
             onFrontmatterCollapsedChanged: (collapsed) => {
                 persistFrontmatterPanelCollapsed(collapsed);
             },
-            mermaidPreviewMode,
+            mermaidPreviewMode: state.mermaidPreviewMode,
             onMermaidPreviewModeChanged: (mode) => {
                 persistMermaidPreviewMode(mode);
             },
-            calloutDefaultType,
+            calloutDefaultType: state.calloutDefaultType,
             onCalloutDefaultTypeChanged: (type) => {
                 persistCalloutDefaultType(type);
             },
@@ -536,12 +468,12 @@ function enterPreviewEditMode() {
         // mountLivePreview unmounts first and clears the resolver — wire after mount.
         wireImageUriResolver();
         refreshLivePreviewImages();
-        refreshCm6Toc(currentContent);
+        refreshCm6Toc(state.currentContent);
         focusLivePreview();
     }
 
-    applyToolbarLayout(toolbarManager, {
-        stickyToolbar: currentSettings.stickyToolbar,
+    applyToolbarLayout(state.toolbarManager, {
+        stickyToolbar: state.currentSettings.stickyToolbar,
         scrollTarget: '#content'
     });
     applyFormattingToolbarLayout();
@@ -567,7 +499,7 @@ function executeLivePreviewLinkAction(href: string): void {
             }
             return;
         }
-        post({ command: 'openRelativeFile', href, documentUri });
+        post({ command: 'openRelativeFile', href, documentUri: state.documentUri });
     }
 }
 
@@ -595,11 +527,11 @@ function handleLivePreviewModifierClick(pos: number) {
             showLightbox(src, '');
             return;
         }
-        const resolved = resolvedImageUriCache.get(src);
+        const resolved = state.resolvedImageUriCache.get(src);
         if (resolved) {
             showLightbox(resolved, '');
         } else {
-            pendingCm6LightboxSrc = src;
+            state.pendingCm6LightboxSrc = src;
             post({ command: 'resolveImageUris', sources: [src] });
         }
         return;
@@ -627,14 +559,14 @@ function getActiveEditorContent(): string {
             return sanitizeMarkdownCopyLinkArtifacts(cm6);
         }
     }
-    return currentContent;
+    return state.currentContent;
 }
 
 function cancelEdit() {
-    currentContent = originalContent;
+    state.currentContent = state.originalContent;
     if (isLivePreviewActive()) {
-        setLivePreviewContent(originalContent);
-        refreshCm6Toc(originalContent);
+        setLivePreviewContent(state.originalContent);
+        refreshCm6Toc(state.originalContent);
         reapplySearch();
         updateStatusInfo();
     }
@@ -675,10 +607,10 @@ function setVersionPreviewMode(enabled: boolean, label?: string) {
     // Version preview swaps displayed content through its own pipeline; running
     // the diff overlay at the same time would leave two systems fighting over
     // the same document.
-    if (enabled && diffVisible) {
+    if (enabled && state.diffVisible) {
         hideDiskDiff(true);
     }
-    isVersionPreviewMode = enabled;
+    state.isVersionPreviewMode = enabled;
     document.body.classList.toggle('version-preview-mode', enabled);
     if (enabled) {
         setLivePreviewReadOnly(true);
@@ -700,15 +632,15 @@ function setVersionPreviewMode(enabled: boolean, label?: string) {
 }
 
 function performSave(isAutosave = false) {
-    if (isSaving || !isEditMode || isVersionPreviewMode) {return;}
+    if (state.isSaving || !state.isEditMode || state.isVersionPreviewMode) {return;}
     if (!isEditorDirty()) {return;}
-    if (pendingDiskContent !== null) {
+    if (state.pendingDiskContent !== null) {
         // Autosave never interrupts with a dialog over an unresolved conflict — it
         // just skips this tick; the next edit reschedules and tries again.
         if (isAutosave) {return;}
         confirmOverwriteConflict().then((confirmed) => {
             if (!confirmed) {return;}
-            pendingDiskContent = null;
+            state.pendingDiskContent = null;
             hideToast();
             doSave(false, isAutosave);
         });
@@ -720,32 +652,32 @@ function performSave(isAutosave = false) {
 let lastSaveWasAutosave = false;
 
 function doSave(force = false, isAutosave = false) {
-    isSaving = true;
+    state.isSaving = true;
     lastSaveWasAutosave = isAutosave;
     setButtonsEnabled(false);
-    currentContent = getActiveEditorContent();
-    pendingSaveContent = currentContent;
-    post({ command: 'saveMarkdown', text: currentContent, force, isAutosave });
+    state.currentContent = getActiveEditorContent();
+    state.pendingSaveContent = state.currentContent;
+    post({ command: 'saveMarkdown', text: state.currentContent, force, isAutosave });
 }
 
 let autoSaveTimer: number | null = null;
 
 function scheduleAutosave() {
-    if (!currentSettings.autoSave || !isEditMode || isVersionPreviewMode) {return;}
+    if (!state.currentSettings.autoSave || !state.isEditMode || state.isVersionPreviewMode) {return;}
     if (autoSaveTimer !== null) {window.clearTimeout(autoSaveTimer);}
     autoSaveTimer = window.setTimeout(() => {
         autoSaveTimer = null;
-        if (!currentSettings.autoSave || !isEditMode || isSaving) {return;}
-        if (getActiveEditorContent() === originalContent) {return;}
+        if (!state.currentSettings.autoSave || !state.isEditMode || state.isSaving) {return;}
+        if (getActiveEditorContent() === state.originalContent) {return;}
         performSave(true);
     }, 1200);
 }
 
 // Pushes freshly-read disk content into whichever surface is currently active.
 function applyReloadedContent(text: string) {
-    currentContent = text;
-    originalContent = text;
-    resolvedImageUriCache.clear();
+    state.currentContent = text;
+    state.originalContent = text;
+    state.resolvedImageUriCache.clear();
 
     if (isLivePreviewActive()) {
         setLivePreviewContent(text);
@@ -871,27 +803,27 @@ function showInitialLoadError(message: string): void {
 
 // Manual "Reload from disk" toolbar button handler.
 async function requestReloadFromDisk() {
-    if (isSaving || isReloadingFromDisk || !isEditMode || !canReloadFromDisk()) {return;}
-    currentContent = getActiveEditorContent();
-    const dirty = currentContent !== originalContent;
+    if (state.isSaving || state.isReloadingFromDisk || !state.isEditMode || !canReloadFromDisk()) {return;}
+    state.currentContent = getActiveEditorContent();
+    const dirty = state.currentContent !== state.originalContent;
     if (dirty) {
         const decision = await confirmDiscardAndReload();
         if (decision === 'cancel') {return;}
         if (decision === 'keepLocal') {
-            if (isSaving) {return;}
-            pendingDiskContent = null;
+            if (state.isSaving) {return;}
+            state.pendingDiskContent = null;
             hideToast();
             doSave(true);
             return;
         }
     }
-    isReloadingFromDisk = true;
+    state.isReloadingFromDisk = true;
     setButtonsEnabled(false);
     post({ command: 'requestFreshData' });
 }
 
 function applyFormat(action: string) {
-    if (!isLivePreviewActive() || isVersionPreviewMode) {return;}
+    if (!isLivePreviewActive() || state.isVersionPreviewMode) {return;}
     applyLivePreviewFormat(action);
 }
 
@@ -1003,15 +935,15 @@ function showToast(
 
 /** True when there is a captured baseline that actually differs from the document. */
 function hasDiskDiffBaseline(): boolean {
-    return diffBaseline !== null && diffBaseline !== currentContent;
+    return state.diffBaseline !== null && state.diffBaseline !== state.currentContent;
 }
 
 /** Reflects the current diff state onto the badge and the nav buttons. */
 function updateDiffChrome() {
     const badge = $('diffBadge');
     if (badge) {
-        const stats = diffVisible && diffBaseline !== null
-            ? diffLineStats(diffBaseline, currentContent)
+        const stats = state.diffVisible && state.diffBaseline !== null
+            ? diffLineStats(state.diffBaseline, state.currentContent)
             : null;
         const label = stats ? formatDiffLineStats(stats) : null;
         if (stats && label) {
@@ -1030,17 +962,17 @@ function updateDiffChrome() {
     // Uses .toast-notification's own opacity/visibility transition (the
     // "show" class), not the generic .hidden utility — same fade as every
     // other toast, since this element now IS one, just externally driven.
-    $('diskDiffBulkActions')?.classList.toggle('show', diffVisible);
+    $('diskDiffBulkActions')?.classList.toggle('show', state.diffVisible);
     const indicator = $('diskDiffChunkIndicator');
     if (indicator) {
         const total = getLivePreviewDiffChunkCount();
-        indicator.textContent = diffVisible && total > 0 ? `${getLivePreviewDiffChunkIndex()} of ${total}` : '';
+        indicator.textContent = state.diffVisible && total > 0 ? `${getLivePreviewDiffChunkIndex()} of ${total}` : '';
     }
-    toolbarManager?.setButtonTooltip(
+    state.toolbarManager?.setButtonTooltip(
         'toggleDiffButton',
-        diffVisible
+        state.diffVisible
             ? 'Hide Changes from Disk'
-            : (hasDiskDiffBaseline() || pendingDiskContent !== null)
+            : (hasDiskDiffBaseline() || state.pendingDiskContent !== null)
                 ? 'Show Changes from Disk'
                 : 'No external changes to compare'
     );
@@ -1057,7 +989,7 @@ function updateDiffChrome() {
 function updateDiffChunkRuler() {
     const ruler = $('diskDiffChunkRuler');
     if (!ruler) {return;}
-    if (!diffVisible) {
+    if (!state.diffVisible) {
         ruler.classList.add('hidden');
         ruler.innerHTML = '';
         return;
@@ -1080,16 +1012,16 @@ function updateDiffChunkRuler() {
  * check.
  */
 function showDiskDiff() {
-    if (!currentSettings.diffReviewEnabled
-        || !isEditMode || isVersionPreviewMode || !isLivePreviewActive() || diffBaseline === null) {
+    if (!state.currentSettings.diffReviewEnabled
+        || !state.isEditMode || state.isVersionPreviewMode || !isLivePreviewActive() || state.diffBaseline === null) {
         return;
     }
     if (!hasDiskDiffBaseline()) {
         showToast('No changes to compare');
         return;
     }
-    diffVisible = true;
-    setLivePreviewDiff(diffBaseline);
+    state.diffVisible = true;
+    setLivePreviewDiff(state.diffBaseline);
     updateDiffChrome();
     updateEditToolbarButtons();
     // The decision toast (Load/Review/Keep local) has served its purpose once
@@ -1104,12 +1036,12 @@ function showDiskDiff() {
  * (saved, all chunks resolved, version preview taking over).
  */
 function hideDiskDiff(forget = false) {
-    diffVisible = false;
+    state.diffVisible = false;
     if (isLivePreviewActive()) {
         setLivePreviewDiff(null);
     }
     if (forget) {
-        diffBaseline = null;
+        state.diffBaseline = null;
     }
     updateDiffChrome();
     updateEditToolbarButtons();
@@ -1122,24 +1054,24 @@ function hideDiskDiff(forget = false) {
  * goes through the same discard confirmation as the plain Reload action.
  */
 function revealDiskChanges() {
-    if (pendingDiskContent === null) {
+    if (state.pendingDiskContent === null) {
         showDiskDiff();
         return;
     }
 
     const applyAndShow = () => {
-        if (pendingDiskContent === null) { return; }
-        applyReloadedContent(pendingDiskContent);
-        pendingDiskContent = null;
+        if (state.pendingDiskContent === null) { return; }
+        applyReloadedContent(state.pendingDiskContent);
+        state.pendingDiskContent = null;
         showDiskDiff();
     };
 
-    if (isEditMode && getActiveEditorContent() !== originalContent) {
+    if (state.isEditMode && getActiveEditorContent() !== state.originalContent) {
         confirmDiscardAndReload().then((decision) => {
             if (decision === 'reload') {
                 applyAndShow();
-            } else if (decision === 'keepLocal' && !isSaving) {
-                pendingDiskContent = null;
+            } else if (decision === 'keepLocal' && !state.isSaving) {
+                state.pendingDiskContent = null;
                 hideToast();
                 doSave(true);
             }
@@ -1156,7 +1088,7 @@ function revealDiskChanges() {
  * which stay rejected because those chunks are already gone from the set.
  */
 function acceptAllDiskChanges() {
-    if (!diffVisible) {
+    if (!state.diffVisible) {
         return;
     }
     const accepted = acceptAllLivePreviewDiffChunks();
@@ -1170,7 +1102,7 @@ function acceptAllDiskChanges() {
     // runs via the onDiffChunkResolved hook; call through explicitly so the
     // retire-and-toast path is guaranteed even if the hook is ever detached.
     syncDiskDiffAfterDocChange();
-    if (diffVisible) {
+    if (state.diffVisible) {
         hideDiskDiff(true);
         showToast(`Accepted ${accepted} change${accepted === 1 ? '' : 's'} from disk`);
     }
@@ -1184,7 +1116,7 @@ function acceptAllDiskChanges() {
  * against it.
  */
 function rejectAllDiskChanges() {
-    if (!diffVisible) {
+    if (!state.diffVisible) {
         return;
     }
     const rejected = rejectAllLivePreviewDiffChunks();
@@ -1197,14 +1129,14 @@ function rejectAllDiskChanges() {
     // chunk during the loop above — this call is a safety net in case that
     // hook is ever detached.
     syncDiskDiffAfterDocChange();
-    if (diffVisible) {
+    if (state.diffVisible) {
         hideDiskDiff(true);
         showToast(`Rejected ${rejected} change${rejected === 1 ? '' : 's'} from disk`);
     }
 }
 
 function toggleDiskDiff() {
-    if (diffVisible) {
+    if (state.diffVisible) {
         hideDiskDiff();
     } else {
         revealDiskChanges();
@@ -1213,15 +1145,15 @@ function toggleDiskDiff() {
 
 /** Tallies one chunk resolution — per-chunk clicks and bulk actions both flow through here. */
 function handleDiffChunkResolved(kind: 'accept' | 'reject') {
-    if (kind === 'accept') { diffAcceptedCount++; } else { diffRejectedCount++; }
+    if (kind === 'accept') { state.diffAcceptedCount++; } else { state.diffRejectedCount++; }
     syncDiskDiffAfterDocChange();
 }
 
 /** "3 accepted", "2 rejected", or "1 accepted, 1 rejected" — whichever categories are non-zero. */
 function diffResolutionSummary(): string {
     const parts: string[] = [];
-    if (diffAcceptedCount > 0) { parts.push(`${diffAcceptedCount} accepted`); }
-    if (diffRejectedCount > 0) { parts.push(`${diffRejectedCount} rejected`); }
+    if (state.diffAcceptedCount > 0) { parts.push(`${state.diffAcceptedCount} accepted`); }
+    if (state.diffRejectedCount > 0) { parts.push(`${state.diffRejectedCount} rejected`); }
     return parts.length ? `Resolved: ${parts.join(', ')}` : 'All external changes resolved';
 }
 
@@ -1230,7 +1162,7 @@ function diffResolutionSummary(): string {
  * counts and retires the diff once the last chunk has been accepted/rejected.
  */
 function syncDiskDiffAfterDocChange() {
-    if (!diffVisible) {
+    if (!state.diffVisible) {
         return;
     }
     if (isLivePreviewDiffActive() && getLivePreviewDiffChunkCount() === 0) {
@@ -1263,9 +1195,9 @@ function getCurrentSelectionStats() {
 let cachedWholeDocStatsContent: string | null = null;
 let cachedWholeDocStats: TextStats = { lines: 0, words: 0, chars: 0 };
 function getWholeDocumentStats(): TextStats {
-    if (cachedWholeDocStatsContent !== currentContent) {
-        cachedWholeDocStatsContent = currentContent;
-        cachedWholeDocStats = computeTextStats(stripMarkdownToPlainText(currentContent));
+    if (cachedWholeDocStatsContent !== state.currentContent) {
+        cachedWholeDocStatsContent = state.currentContent;
+        cachedWholeDocStats = computeTextStats(stripMarkdownToPlainText(state.currentContent));
     }
     return cachedWholeDocStats;
 }
@@ -1274,21 +1206,21 @@ function updateStatusInfo() {
     const statusInfo = $('statusInfo');
     if (!statusInfo) {return;}
 
-    if (!currentSettings.showStats) {
+    if (!state.currentSettings.showStats) {
         statusInfo.textContent = '';
         statusInfo.style.display = 'none';
         return;
     }
 
-    const cursor = currentSettings.showCursorPosition ? getCurrentCursorPosition() : null;
+    const cursor = state.currentSettings.showCursorPosition ? getCurrentCursorPosition() : null;
     const cursorPrefix = cursor ? `Ln ${cursor.line}, Col ${cursor.col}` : '';
 
     const parts: string[] = [];
     const stats = getCurrentSelectionStats() ?? getWholeDocumentStats();
-    if (currentSettings.statsShowLines) {parts.push(`${stats.lines} lines`);}
-    if (currentSettings.statsShowWords) {parts.push(`${stats.words} words`);}
-    if (currentSettings.statsShowChars) {parts.push(`${stats.chars} chars`);}
-    if (currentSettings.statsShowReadingTime && stats.words > 0) {
+    if (state.currentSettings.statsShowLines) {parts.push(`${stats.lines} lines`);}
+    if (state.currentSettings.statsShowWords) {parts.push(`${stats.words} words`);}
+    if (state.currentSettings.statsShowChars) {parts.push(`${stats.chars} chars`);}
+    if (state.currentSettings.statsShowReadingTime && stats.words > 0) {
         const readingTime = Math.max(1, Math.ceil(stats.words / 200));
         parts.push(`~${readingTime} min read`);
     }
@@ -1552,26 +1484,26 @@ function wireDiskDiffBulkActions() {
 // ===== Settings =====
 function applySettings(settings: any, persist = false) {
     if (!settings) {return;}
-    currentSettings = { ...currentSettings, ...settings };
+    state.currentSettings = { ...state.currentSettings, ...settings };
 
     const container = $('markdownContainer');
 
     // Word wrap
     if (container) {
-        container.classList.toggle('word-wrap', currentSettings.wordWrap);
+        container.classList.toggle('word-wrap', state.currentSettings.wordWrap);
     }
 
     if (isLivePreviewActive()) {
-        setLivePreviewReveal(currentSettings.livePreviewReveal);
-        setLivePreviewLineWrapping(currentSettings.wordWrap);
+        setLivePreviewReveal(state.currentSettings.livePreviewReveal);
+        setLivePreviewLineWrapping(state.currentSettings.wordWrap);
         setLivePreviewLineNumbers(livePreviewGutterLineNumbersEnabled());
     }
 
-    document.body.classList.toggle('cm6-word-wrap', isLivePreviewActive() && currentSettings.wordWrap);
+    document.body.classList.toggle('cm6-word-wrap', isLivePreviewActive() && state.currentSettings.wordWrap);
 
     // Sticky toolbar
-    applyToolbarLayout(toolbarManager, {
-        stickyToolbar: currentSettings.stickyToolbar,
+    applyToolbarLayout(state.toolbarManager, {
+        stickyToolbar: state.currentSettings.stickyToolbar,
         scrollTarget: '#content'
     });
 
@@ -1594,22 +1526,22 @@ function applySettings(settings: any, persist = false) {
     const chkStatsReadingTime = $('chkStatsReadingTime') as HTMLInputElement;
     const chkDiffReviewEnabled = $('chkDiffReviewEnabled') as HTMLInputElement;
 
-    if (chkWordWrap) {chkWordWrap.checked = currentSettings.wordWrap;}
-    if (chkStickyToolbar) {chkStickyToolbar.checked = currentSettings.stickyToolbar;}
-    if (chkShowOutline) {chkShowOutline.checked = currentSettings.showOutline;}
+    if (chkWordWrap) {chkWordWrap.checked = state.currentSettings.wordWrap;}
+    if (chkStickyToolbar) {chkStickyToolbar.checked = state.currentSettings.stickyToolbar;}
+    if (chkShowOutline) {chkShowOutline.checked = state.currentSettings.showOutline;}
     if (chkShowLineNumbers) {chkShowLineNumbers.checked = livePreviewGutterLineNumbersEnabled();}
-    if (chkLivePreviewReveal) {chkLivePreviewReveal.checked = currentSettings.livePreviewReveal;}
-    if (chkAutoSave) {chkAutoSave.checked = currentSettings.autoSave;}
-    if (chkOpenByDefault) {chkOpenByDefault.checked = !!currentSettings.isDefaultEditor;}
-    if (chkShowStats) {chkShowStats.checked = !!currentSettings.showStats;}
-    if (chkShowCursorPosition) {chkShowCursorPosition.checked = !!currentSettings.showCursorPosition;}
-    if (chkStatsLines) {chkStatsLines.checked = !!currentSettings.statsShowLines;}
-    if (chkStatsWords) {chkStatsWords.checked = !!currentSettings.statsShowWords;}
-    if (chkStatsChars) {chkStatsChars.checked = !!currentSettings.statsShowChars;}
-    if (chkStatsReadingTime) {chkStatsReadingTime.checked = !!currentSettings.statsShowReadingTime;}
-    if (chkDiffReviewEnabled) {chkDiffReviewEnabled.checked = !!currentSettings.diffReviewEnabled;}
+    if (chkLivePreviewReveal) {chkLivePreviewReveal.checked = state.currentSettings.livePreviewReveal;}
+    if (chkAutoSave) {chkAutoSave.checked = state.currentSettings.autoSave;}
+    if (chkOpenByDefault) {chkOpenByDefault.checked = !!state.currentSettings.isDefaultEditor;}
+    if (chkShowStats) {chkShowStats.checked = !!state.currentSettings.showStats;}
+    if (chkShowCursorPosition) {chkShowCursorPosition.checked = !!state.currentSettings.showCursorPosition;}
+    if (chkStatsLines) {chkStatsLines.checked = !!state.currentSettings.statsShowLines;}
+    if (chkStatsWords) {chkStatsWords.checked = !!state.currentSettings.statsShowWords;}
+    if (chkStatsChars) {chkStatsChars.checked = !!state.currentSettings.statsShowChars;}
+    if (chkStatsReadingTime) {chkStatsReadingTime.checked = !!state.currentSettings.statsShowReadingTime;}
+    if (chkDiffReviewEnabled) {chkDiffReviewEnabled.checked = !!state.currentSettings.diffReviewEnabled;}
 
-    const statsEnabled = !!currentSettings.showStats;
+    const statsEnabled = !!state.currentSettings.showStats;
     [chkShowCursorPosition, chkStatsLines, chkStatsWords, chkStatsChars, chkStatsReadingTime].forEach((el) => {
         const item = el?.closest('.setting-item') as HTMLElement | null;
         if (item) {item.style.display = statsEnabled ? 'flex' : 'none';}
@@ -1619,22 +1551,22 @@ function applySettings(settings: any, persist = false) {
     document.body.classList.toggle('show-line-numbers', livePreviewGutterLineNumbersEnabled());
 
     const tocPanel = $('tocPanel');
-    if (hostSettingsLoaded) {
-        if (container) {container.classList.toggle('toc-open', !!currentSettings.showOutline);}
-        if (tocPanel) {tocPanel.classList.toggle('hidden', !currentSettings.showOutline);}
+    if (state.hostSettingsLoaded) {
+        if (container) {container.classList.toggle('toc-open', !!state.currentSettings.showOutline);}
+        if (tocPanel) {tocPanel.classList.toggle('hidden', !state.currentSettings.showOutline);}
     }
 
     // The whole diff-review affordance (toolbar icon, HUD, overlay) hinges on
     // this setting — hide the entry point and tear down anything already
     // showing rather than leaving an inert button or an overlay the setting
     // says shouldn't exist.
-    toolbarManager?.setButtonVisibility('toggleDiffButton', !!currentSettings.diffReviewEnabled);
-    if (!currentSettings.diffReviewEnabled && diffVisible) {
+    state.toolbarManager?.setButtonVisibility('toggleDiffButton', !!state.currentSettings.diffReviewEnabled);
+    if (!state.currentSettings.diffReviewEnabled && state.diffVisible) {
         hideDiskDiff(true);
     }
 
     if (persist) {
-        post({ command: 'updateSettings', settings: currentSettings });
+        post({ command: 'updateSettings', settings: state.currentSettings });
     }
 
     updateStatusInfo();
@@ -1657,7 +1589,7 @@ function initializeSettings() {
             section: 'General',
             label: 'Open .md files with Sheetmark by default',
             tooltip: 'When enabled, VS Code opens .md files in Sheetmark automatically.',
-            defaultValue: !!currentSettings.isDefaultEditor,
+            defaultValue: !!state.currentSettings.isDefaultEditor,
             onChange: (val: boolean) => {
                 post({ command: val ? 'enableAsDefault' : 'disableDefaultEditor' });
             }
@@ -1667,10 +1599,10 @@ function initializeSettings() {
             section: 'General',
             label: 'Show Outline',
             tooltip: 'Display the document outline panel for heading navigation.',
-            defaultValue: currentSettings.showOutline,
+            defaultValue: state.currentSettings.showOutline,
             onChange: (val: boolean) => {
-                currentSettings.showOutline = val;
-                applySettings(currentSettings, true);
+                state.currentSettings.showOutline = val;
+                applySettings(state.currentSettings, true);
             }
         },
         {
@@ -1678,10 +1610,10 @@ function initializeSettings() {
             section: 'General',
             label: 'Enable Autosave',
             tooltip: 'Automatically save Markdown edits after a short debounce.',
-            defaultValue: currentSettings.autoSave,
+            defaultValue: state.currentSettings.autoSave,
             onChange: (val: boolean) => {
-                currentSettings.autoSave = val;
-                applySettings(currentSettings, true);
+                state.currentSettings.autoSave = val;
+                applySettings(state.currentSettings, true);
             }
         },
         {
@@ -1689,10 +1621,10 @@ function initializeSettings() {
             section: 'General',
             label: 'Review External Changes as a Diff',
             tooltip: 'When the file changes outside the editor, show what changed as a diff you can accept or reject piece by piece. Turn off to just choose between loading the disk version or keeping yours, with no diff view.',
-            defaultValue: currentSettings.diffReviewEnabled,
+            defaultValue: state.currentSettings.diffReviewEnabled,
             onChange: (val: boolean) => {
-                currentSettings.diffReviewEnabled = val;
-                applySettings(currentSettings, true);
+                state.currentSettings.diffReviewEnabled = val;
+                applySettings(state.currentSettings, true);
             }
         },
         {
@@ -1714,10 +1646,10 @@ function initializeSettings() {
             section: 'Layout',
             label: 'Enable Sticky Toolbar',
             tooltip: 'Keep the Markdown toolbar pinned at the top while you scroll.',
-            defaultValue: currentSettings.stickyToolbar,
+            defaultValue: state.currentSettings.stickyToolbar,
             onChange: (val: boolean) => {
-                currentSettings.stickyToolbar = val;
-                applySettings(currentSettings, true);
+                state.currentSettings.stickyToolbar = val;
+                applySettings(state.currentSettings, true);
             }
         },
         {
@@ -1725,10 +1657,10 @@ function initializeSettings() {
             section: 'Layout',
             label: 'Enable Line Wrap',
             tooltip: 'Wrap long lines in the editor to the pane width instead of horizontal scrolling.',
-            defaultValue: currentSettings.wordWrap,
+            defaultValue: state.currentSettings.wordWrap,
             onChange: (val: boolean) => {
-                currentSettings.wordWrap = val;
-                applySettings(currentSettings, true);
+                state.currentSettings.wordWrap = val;
+                applySettings(state.currentSettings, true);
             }
         },
         {
@@ -1738,9 +1670,9 @@ function initializeSettings() {
             tooltip: 'Show line numbers in the editor gutter. Click a number to select that line.',
             defaultValue: livePreviewGutterLineNumbersEnabled(),
             onChange: (val: boolean) => {
-                currentSettings.livePreviewLineNumbers = val;
-                currentSettings.showLineNumbers = val;
-                applySettings(currentSettings, true);
+                state.currentSettings.livePreviewLineNumbers = val;
+                state.currentSettings.showLineNumbers = val;
+                applySettings(state.currentSettings, true);
             }
         },
         {
@@ -1748,10 +1680,10 @@ function initializeSettings() {
             section: 'Layout',
             label: 'Enable Live Preview Reveal',
             tooltip: 'In Preview Edit mode, reveal raw markdown syntax (##, **, *) near the cursor and hide it elsewhere.',
-            defaultValue: currentSettings.livePreviewReveal,
+            defaultValue: state.currentSettings.livePreviewReveal,
             onChange: (val: boolean) => {
-                currentSettings.livePreviewReveal = val;
-                applySettings(currentSettings, true);
+                state.currentSettings.livePreviewReveal = val;
+                applySettings(state.currentSettings, true);
             }
         },
         {
@@ -1759,10 +1691,10 @@ function initializeSettings() {
             section: 'Document Stats',
             label: 'Show Document Stats',
             tooltip: 'Show document stats and cursor position in the status bar.',
-            defaultValue: currentSettings.showStats,
+            defaultValue: state.currentSettings.showStats,
             onChange: (val: boolean) => {
-                currentSettings.showStats = val;
-                applySettings(currentSettings, true);
+                state.currentSettings.showStats = val;
+                applySettings(state.currentSettings, true);
             }
         },
         {
@@ -1771,10 +1703,10 @@ function initializeSettings() {
             label: 'Show Current Line',
             tooltip: 'Show the current line and column position (Ln X, Col Y) in the status bar.',
             className: 'setting-dependent setting-stats-dependent',
-            defaultValue: currentSettings.showCursorPosition,
+            defaultValue: state.currentSettings.showCursorPosition,
             onChange: (val: boolean) => {
-                currentSettings.showCursorPosition = val;
-                applySettings(currentSettings, true);
+                state.currentSettings.showCursorPosition = val;
+                applySettings(state.currentSettings, true);
             }
         },
         {
@@ -1783,10 +1715,10 @@ function initializeSettings() {
             label: 'Show Lines',
             tooltip: 'Show the line count in the status bar.',
             className: 'setting-dependent setting-stats-dependent',
-            defaultValue: currentSettings.statsShowLines,
+            defaultValue: state.currentSettings.statsShowLines,
             onChange: (val: boolean) => {
-                currentSettings.statsShowLines = val;
-                applySettings(currentSettings, true);
+                state.currentSettings.statsShowLines = val;
+                applySettings(state.currentSettings, true);
             }
         },
         {
@@ -1795,10 +1727,10 @@ function initializeSettings() {
             label: 'Show Words',
             tooltip: 'Show the word count in the status bar.',
             className: 'setting-dependent setting-stats-dependent',
-            defaultValue: currentSettings.statsShowWords,
+            defaultValue: state.currentSettings.statsShowWords,
             onChange: (val: boolean) => {
-                currentSettings.statsShowWords = val;
-                applySettings(currentSettings, true);
+                state.currentSettings.statsShowWords = val;
+                applySettings(state.currentSettings, true);
             }
         },
         {
@@ -1807,10 +1739,10 @@ function initializeSettings() {
             label: 'Show Characters',
             tooltip: 'Show the character count in the status bar.',
             className: 'setting-dependent setting-stats-dependent',
-            defaultValue: currentSettings.statsShowChars,
+            defaultValue: state.currentSettings.statsShowChars,
             onChange: (val: boolean) => {
-                currentSettings.statsShowChars = val;
-                applySettings(currentSettings, true);
+                state.currentSettings.statsShowChars = val;
+                applySettings(state.currentSettings, true);
             }
         },
         {
@@ -1819,10 +1751,10 @@ function initializeSettings() {
             label: 'Show Reading Time',
             tooltip: 'Show estimated reading time in the status bar.',
             className: 'setting-dependent setting-stats-dependent',
-            defaultValue: currentSettings.statsShowReadingTime,
+            defaultValue: state.currentSettings.statsShowReadingTime,
             onChange: (val: boolean) => {
-                currentSettings.statsShowReadingTime = val;
-                applySettings(currentSettings, true);
+                state.currentSettings.statsShowReadingTime = val;
+                applySettings(state.currentSettings, true);
             }
         }
     ];
@@ -1851,7 +1783,7 @@ function applyFormattingToolbarLayout() {
     const mainToolbar = $('toolbar');
     if (!fmtToolbar || !contentArea) {return;}
 
-    if (currentSettings.stickyToolbar) {
+    if (state.currentSettings.stickyToolbar) {
         const toolbarWrapper = mainToolbar?.closest('.toolbar-wrapper') as HTMLElement | null;
         const anchor = toolbarWrapper && toolbarWrapper.parentNode === document.body
             ? toolbarWrapper
@@ -1902,8 +1834,8 @@ function syncMdHeaderHeight() {
 }
 
 function updateHeaderHeight() {
-    if (toolbarManager) {
-        toolbarManager.updateHeaderHeight();
+    if (state.toolbarManager) {
+        state.toolbarManager.updateHeaderHeight();
     } else {
         syncMdHeaderHeight();
     }
@@ -1920,49 +1852,49 @@ window.addEventListener('message', (event) => {
             const loading = $('loadingIndicator');
             if (loading) {loading.style.display = 'none';}
 
-            currentContent = m.content || '';
-            originalContent = currentContent;
-            documentUri = m.documentUri || '';
-            documentDirUri = m.documentDirUri || '';
-            workspaceFolderUri = m.workspaceFolderUri || null;
-            currentTableColumnWidths = m.tableColumnWidths || {};
-            frontmatterPanelCollapsed = !!m.frontmatterPanelCollapsed;
-            mermaidPreviewMode = m.mermaidPreviewMode === 'code' ? 'code' : 'diagram';
-            calloutDefaultType = typeof m.calloutDefaultType === 'string' && /^[\w-]*$/.test(m.calloutDefaultType)
+            state.currentContent = m.content || '';
+            state.originalContent = state.currentContent;
+            state.documentUri = m.documentUri || '';
+            state.documentDirUri = m.documentDirUri || '';
+            state.workspaceFolderUri = m.workspaceFolderUri || null;
+            state.currentTableColumnWidths = m.tableColumnWidths || {};
+            state.frontmatterPanelCollapsed = !!m.frontmatterPanelCollapsed;
+            state.mermaidPreviewMode = m.mermaidPreviewMode === 'code' ? 'code' : 'diagram';
+            state.calloutDefaultType = typeof m.calloutDefaultType === 'string' && /^[\w-]*$/.test(m.calloutDefaultType)
                 ? m.calloutDefaultType.toLowerCase()
                 : 'info';
-            resolvedImageUriCache.clear();
+            state.resolvedImageUriCache.clear();
             if (isLivePreviewActive()) {
-                setLivePreviewMermaidMode(mermaidPreviewMode);
-                setLivePreviewCalloutDefaultType(calloutDefaultType);
-                applyReloadedContent(currentContent);
+                setLivePreviewMermaidMode(state.mermaidPreviewMode);
+                setLivePreviewCalloutDefaultType(state.calloutDefaultType);
+                applyReloadedContent(state.currentContent);
             }
             updateStatusInfo();
             updateEditToolbarButtons();
             break;
 
         case 'diskChangedExternally': {
-            documentUri = m.documentUri || documentUri;
-            documentDirUri = m.documentDirUri || documentDirUri;
-            workspaceFolderUri = m.workspaceFolderUri || workspaceFolderUri;
-            currentTableColumnWidths = m.tableColumnWidths || currentTableColumnWidths;
-            mermaidPreviewMode = m.mermaidPreviewMode === 'code' ? 'code' : mermaidPreviewMode;
+            state.documentUri = m.documentUri || state.documentUri;
+            state.documentDirUri = m.documentDirUri || state.documentDirUri;
+            state.workspaceFolderUri = m.workspaceFolderUri || state.workspaceFolderUri;
+            state.currentTableColumnWidths = m.tableColumnWidths || state.currentTableColumnWidths;
+            state.mermaidPreviewMode = m.mermaidPreviewMode === 'code' ? 'code' : state.mermaidPreviewMode;
             if (typeof m.calloutDefaultType === 'string' && /^[\w-]*$/.test(m.calloutDefaultType)) {
-                calloutDefaultType = m.calloutDefaultType.toLowerCase();
+                state.calloutDefaultType = m.calloutDefaultType.toLowerCase();
             }
             if (isLivePreviewActive()) {
-                setLivePreviewMermaidMode(mermaidPreviewMode);
-                setLivePreviewCalloutDefaultType(calloutDefaultType);
+                setLivePreviewMermaidMode(state.mermaidPreviewMode);
+                setLivePreviewCalloutDefaultType(state.calloutDefaultType);
             }
 
-            const wasManualReload = isReloadingFromDisk;
-            if (isReloadingFromDisk) {
-                isReloadingFromDisk = false;
+            const wasManualReload = state.isReloadingFromDisk;
+            if (state.isReloadingFromDisk) {
+                state.isReloadingFromDisk = false;
                 setButtonsEnabled(true);
             }
 
             // A real change supersedes any prior "deleted" notification.
-            pendingDiskDeleted = false;
+            state.pendingDiskDeleted = false;
 
             const incomingContent = m.content || '';
 
@@ -1975,21 +1907,21 @@ window.addEventListener('message', (event) => {
             // Capture what is on screen right now as the diff baseline, but only
             // if no comparison is already pending — a burst of external writes
             // should still diff against what the user last actually saw.
-            if (diffBaseline === null) {
-                diffBaseline = currentContent;
-                diffAcceptedCount = 0;
-                diffRejectedCount = 0;
+            if (state.diffBaseline === null) {
+                state.diffBaseline = state.currentContent;
+                state.diffAcceptedCount = 0;
+                state.diffRejectedCount = 0;
             }
-            const incomingLabel = formatDiffLineStats(diffLineStats(diffBaseline, incomingContent));
+            const incomingLabel = formatDiffLineStats(diffLineStats(state.diffBaseline, incomingContent));
 
             // An explicit reload request applies directly — the persistent toast
             // below is only for unprompted watcher-detected changes.
-            if (wasManualReload || !isEditMode) {
-                pendingDiskContent = null;
+            if (wasManualReload || !state.isEditMode) {
+                state.pendingDiskContent = null;
                 applyReloadedContent(incomingContent);
                 showToast(
                     incomingLabel ? `Reloaded from disk \u00B7 ${incomingLabel}` : 'Reloaded from disk',
-                    hasDiskDiffBaseline() && currentSettings.diffReviewEnabled
+                    hasDiskDiffBaseline() && state.currentSettings.diffReviewEnabled
                         ? { label: 'Review changes', onClick: () => showDiskDiff() }
                         : undefined
                 );
@@ -2005,9 +1937,9 @@ window.addEventListener('message', (event) => {
             // changed on disk" header, Accept All/Reject All in its actions
             // row) is what the old "Load disk changes"/"Keep local version"
             // toast used to be.
-            if (currentSettings.diffReviewEnabled) {
+            if (state.currentSettings.diffReviewEnabled) {
                 applyReloadedContent(incomingContent);
-                pendingDiskContent = null;
+                state.pendingDiskContent = null;
                 showDiskDiff();
                 updateEditToolbarButtons();
                 break;
@@ -2016,29 +1948,29 @@ window.addEventListener('message', (event) => {
             // Diff review disabled: the only two ways to resolve are a full
             // reload or a full overwrite, each with its own confirm dialog
             // since — unlike the diff — either one can genuinely discard work.
-            pendingDiskContent = incomingContent;
+            state.pendingDiskContent = incomingContent;
 
             const applyPending = () => {
-                if (pendingDiskContent === null) {return;}
-                applyReloadedContent(pendingDiskContent);
-                pendingDiskContent = null;
+                if (state.pendingDiskContent === null) {return;}
+                applyReloadedContent(state.pendingDiskContent);
+                state.pendingDiskContent = null;
                 showToast('Reloaded from disk');
             };
             const reloadPending = () => {
                 // Never dead-end: if the queued content was already consumed (a
                 // second watcher event) ask the host for a fresh read instead of
                 // silently doing nothing.
-                if (pendingDiskContent === null) {
+                if (state.pendingDiskContent === null) {
                     void requestReloadFromDisk();
                     return;
                 }
-                const dirty = isEditMode && getActiveEditorContent() !== originalContent;
+                const dirty = state.isEditMode && getActiveEditorContent() !== state.originalContent;
                 if (dirty) {
                     confirmDiscardAndReload().then((decision) => {
                         if (decision === 'reload') {
                             applyPending();
-                        } else if (decision === 'keepLocal' && !isSaving) {
-                            pendingDiskContent = null;
+                        } else if (decision === 'keepLocal' && !state.isSaving) {
+                            state.pendingDiskContent = null;
                             hideToast();
                             doSave(true);
                         }
@@ -2049,8 +1981,8 @@ window.addEventListener('message', (event) => {
             };
             const keepLocalVersion = () => {
                 confirmOverwriteWithLocal().then((confirmed) => {
-                    if (!confirmed || isSaving) {return;}
-                    pendingDiskContent = null;
+                    if (!confirmed || state.isSaving) {return;}
+                    state.pendingDiskContent = null;
                     hideToast();
                     doSave(true);
                 });
@@ -2082,11 +2014,11 @@ window.addEventListener('message', (event) => {
             break;
 
         case 'reloadFromDiskError':
-            if (isReloadingFromDisk) {
-                isReloadingFromDisk = false;
+            if (state.isReloadingFromDisk) {
+                state.isReloadingFromDisk = false;
                 setButtonsEnabled(true);
                 showToast('Error reloading from disk', undefined, { icon: 'warning' });
-            } else if (!hasEnteredPreviewEdit) {
+            } else if (!state.hasEnteredPreviewEdit) {
                 showInitialLoadError(m.message || 'Failed to load Markdown file');
             } else {
                 showToast(m.message || 'Error reloading from disk', undefined, { icon: 'warning' });
@@ -2098,49 +2030,49 @@ window.addEventListener('message', (event) => {
             break;
 
         case 'diskDeletedExternally':
-            pendingDiskDeleted = true;
+            state.pendingDiskDeleted = true;
             showToast('File deleted from disk', undefined, { persistent: true, icon: 'warning' });
             updateEditToolbarButtons();
             break;
 
         case 'initSettings':
-            hostSettingsLoaded = true;
+            state.hostSettingsLoaded = true;
             applySettings(m.settings, false);
-            if (!hasEnteredPreviewEdit) {
-                hasEnteredPreviewEdit = true;
+            if (!state.hasEnteredPreviewEdit) {
+                state.hasEnteredPreviewEdit = true;
                 enterPreviewEditMode();
             }
             break;
 
         case 'settingsUpdated':
-            hostSettingsLoaded = true;
+            state.hostSettingsLoaded = true;
             applySettings(m.settings, false);
             break;
 
         case 'saveResult':
-            isSaving = false;
+            state.isSaving = false;
             setButtonsEnabled(true);
             if (m.ok) {
                 showToast(m.isAutosave ? 'Autosaved' : 'Saved');
-                if (pendingSaveContent !== null) {
-                    originalContent = pendingSaveContent;
+                if (state.pendingSaveContent !== null) {
+                    state.originalContent = state.pendingSaveContent;
                 }
-                pendingSaveContent = null;
+                state.pendingSaveContent = null;
                 // A successful save recreates the file if it had been deleted externally.
-                pendingDiskDeleted = false;
+                state.pendingDiskDeleted = false;
                 // The saved document is the new reference point; the old baseline
                 // no longer describes anything the user can act on.
                 hideDiskDiff(true);
             } else {
-                pendingSaveContent = null;
+                state.pendingSaveContent = null;
                 showToast(m.isAutosave ? 'Autosave failed' : 'Error saving', undefined, { icon: 'warning' });
             }
             updateEditToolbarButtons();
             break;
 
         case 'saveConflict':
-            isSaving = false;
-            pendingSaveContent = null;
+            state.isSaving = false;
+            state.pendingSaveContent = null;
             setButtonsEnabled(true);
             if (lastSaveWasAutosave) {
                 // Autosave never interrupts with a dialog; the file watcher will
@@ -2194,10 +2126,10 @@ window.addEventListener('message', (event) => {
 
 // ===== Button Handlers =====
 function wireButtons() {
-    toolbarManager = new ToolbarManager('toolbar');
-    toolbarManager.setHeaderHeightHook(() => syncMdHeaderHeight());
+    state.toolbarManager = new ToolbarManager('toolbar');
+    state.toolbarManager.setHeaderHeightHook(() => syncMdHeaderHeight());
 
-    toolbarManager.setButtons(buildToolbarButtons());
+    state.toolbarManager.setButtons(buildToolbarButtons());
 }
 
 function copyMarkdownToClipboard() {
@@ -2294,7 +2226,7 @@ document.addEventListener('keydown', (e) => {
 
     if (isCmdOrCtrl && e.key.toLowerCase() === 's') {
         e.preventDefault();
-        if (isEditMode) {
+        if (state.isEditMode) {
             performSave();
         }
         return;
@@ -2306,7 +2238,7 @@ document.addEventListener('keydown', (e) => {
         return;
     }
 
-    if (e.key === 'F7' && diffVisible) {
+    if (e.key === 'F7' && state.diffVisible) {
         e.preventDefault();
         if (e.shiftKey) {
             goToPrevLivePreviewDiffChunk();
@@ -2317,7 +2249,7 @@ document.addEventListener('keydown', (e) => {
         return;
     }
 
-    if (isCmdOrCtrl && e.key.toLowerCase() === 'a' && isEditMode && isLivePreviewActive()) {
+    if (isCmdOrCtrl && e.key.toLowerCase() === 'a' && state.isEditMode && isLivePreviewActive()) {
         const target = e.target;
         if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
             return;
@@ -2341,7 +2273,7 @@ document.addEventListener('keydown', (e) => {
             closeSearch();
             return;
         }
-        if (isEditMode) {
+        if (state.isEditMode) {
             e.preventDefault();
             cancelEdit();
             return;
@@ -2419,8 +2351,8 @@ function wireTocPanel() {
 
     if (closeBtn) {
         closeBtn.addEventListener('click', () => {
-            currentSettings.showOutline = false;
-            applySettings(currentSettings, true);
+            state.currentSettings.showOutline = false;
+            applySettings(state.currentSettings, true);
         });
     }
 }
@@ -2547,8 +2479,8 @@ initResizeHandles();
 updateHeaderHeight();
 
 // Ensure settings are applied once toolbar is ready
-if (currentSettings) {
-    applySettings(currentSettings);
+if (state.currentSettings) {
+    applySettings(state.currentSettings);
 }
 
 post({ command: 'webviewReady' });

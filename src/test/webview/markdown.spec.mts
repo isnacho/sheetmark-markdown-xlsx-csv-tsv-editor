@@ -2,7 +2,8 @@
 
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { statSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { closeHarness, openWebview, type WebviewHarness } from './harness.mts';
 import type { HostToMarkdownWebview, MarkdownSettings } from '../../protocol/markdown.ts';
 
@@ -30,10 +31,23 @@ before(async () => {
 });
 after(closeHarness);
 
-test('mermaid is not in the initial bundle', () => {
-    // Eager mermaid made this file about 10 MB (dev build); lazy-loaded it is under 2 MB.
-    const size = statSync('dist/md/mdWebview.js').size;
-    assert.ok(size < 3_000_000, `dist/md/mdWebview.js is ${(size / 1e6).toFixed(1)} MB; did mermaid get imported statically?`);
+/** Bytes the browser must load before the editor runs: the entry plus its static chunk imports. */
+function initialLoadBytes(file: string, seen = new Set<string>()): number {
+    if (seen.has(file)) { return 0; }
+    seen.add(file);
+    const source = readFileSync(file, 'utf8');
+    let total = statSync(file).size;
+    // Static imports only (`from "./chunks/x.js"` / `import "./chunks/x.js"`); `import("...")` is lazy.
+    for (const match of source.matchAll(/(?:from|import)\s*"(\.\/[^"]+\.js)"/g)) {
+        total += initialLoadBytes(join(dirname(file), match[1]), seen);
+    }
+    return total;
+}
+
+test('mermaid is not part of the initial load', () => {
+    // Eager mermaid made the initial load about 10 MB (dev build); lazy-loaded it is about 2 MB.
+    const bytes = initialLoadBytes('dist/md/mdWebview.js');
+    assert.ok(bytes < 3_000_000, `initial Markdown webview load is ${(bytes / 1e6).toFixed(1)} MB; did mermaid get imported statically?`);
 });
 
 test('renders a document and loads the mermaid chunk on demand', async () => {

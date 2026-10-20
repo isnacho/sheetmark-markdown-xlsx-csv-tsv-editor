@@ -1,60 +1,10 @@
-import { spreadsheetCsp } from '../shared/webviewCsp';
 import * as vscode from 'vscode';
+import { renderSpreadsheetHtml } from '../shared/webviewHtml';
 
 export function getWebviewContent(webviewPanel: vscode.WebviewPanel, context: vscode.ExtensionContext): string {
-        const webview = webviewPanel.webview;
-
-        const scriptUri = webview.asWebviewUri(
-            vscode.Uri.joinPath(context.extensionUri, 'dist', 'spreadsheet', 'spreadsheetWebview.js')
-        );
-        const themeStyleUri = webview.asWebviewUri(
-            vscode.Uri.joinPath(context.extensionUri, 'resources', 'shared', 'theme.css')
-        );
-        const menuPanelStyleUri = webview.asWebviewUri(
-            vscode.Uri.joinPath(context.extensionUri, 'resources', 'shared', 'menuPanel.css')
-        );
-        const styleUri = webview.asWebviewUri(
-            vscode.Uri.joinPath(context.extensionUri, 'resources', 'spreadsheet', 'spreadsheetWebview.css')
-        );
-        const feedbackStyleUri = webview.asWebviewUri(
-            vscode.Uri.joinPath(context.extensionUri, 'resources', 'shared', 'feedback.css')
-        );
-        const cspSource = webview.cspSource;
-
-        return `<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta http-equiv="Content-Security-Policy" content="${spreadsheetCsp(cspSource)}">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sheetmark</title>
-    <link href="${themeStyleUri}" rel="stylesheet" />
-    <link href="${menuPanelStyleUri}" rel="stylesheet" />
-    <link href="${styleUri}" rel="stylesheet" />
-    <link href="${feedbackStyleUri}" rel="stylesheet" />
-</head>
-<body>
-    <div class="header-background"></div>
-
-    <div class="loading-overlay" id="loadingOverlay">
-        <div class="spinner"></div>
-        <div class="loading-text">Rendering worksheet...</div>
-    </div>
-
-    <div class="toolbar-wrapper"><div class="toolbar" id="toolbar"></div></div>
-    <div id="content">
-        <div id="tableContainer"></div>
-    </div>
-    <div class="selection-info" id="selectionInfo"></div>
-    <div class="resize-indicator" id="resizeIndicator"></div>
-
-    <noscript>
-        <div style="padding: 8px; margin-top: 10px; background: #fff3cd; border: 1px solid #ffeeba;">
-            JavaScript is disabled in this webview, so the spreadsheet table cannot load.
-        </div>
-    </noscript>
-
-    <script src="${scriptUri}"></script>
-</body>
-</html>`;
-    }
+    const webview = webviewPanel.webview;
+    return renderSpreadsheetHtml({
+        cspSource: webview.cspSource,
+        asset: (relativePath) => webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, ...relativePath.split('/'))).toString(),
+    });
+}

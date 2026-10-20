@@ -1,7 +1,7 @@
 {
     "name": "sheetmark",
     "displayName": "Sheetmark: XLSX, CSV, TSV & Markdown",
-    "description": "Sheetmark — view and edit XLSX, CSV, TSV, and Markdown files in VS Code. Rich spreadsheet formatting, live-preview Markdown editing, and a native theme-aware UI.",
+    "description": "Sheetmark \u2014 view and edit XLSX, CSV, TSV, and Markdown files in VS Code. Rich spreadsheet formatting, live-preview Markdown editing, and a native theme-aware UI.",
     "version": "1.5.0",
     "publisher": "iggyinc",
     "engines": {
@@ -53,7 +53,7 @@
         "customEditors": [
             {
                 "viewType": "xlsxViewer.xlsx",
-                "displayName": "Sheetmark — XLSX",
+                "displayName": "Sheetmark \u2014 XLSX",
                 "selector": [
                     {
                         "filenamePattern": "*.xlsx"
@@ -62,7 +62,7 @@
             },
             {
                 "viewType": "xlsxViewer.csv",
-                "displayName": "Sheetmark — CSV",
+                "displayName": "Sheetmark \u2014 CSV",
                 "selector": [
                     {
                         "filenamePattern": "*.csv"
@@ -71,7 +71,7 @@
             },
             {
                 "viewType": "xlsxViewer.tsv",
-                "displayName": "Sheetmark — TSV",
+                "displayName": "Sheetmark \u2014 TSV",
                 "selector": [
                     {
                         "filenamePattern": "*.tsv"
@@ -80,7 +80,7 @@
             },
             {
                 "viewType": "xlsxViewer.md",
-                "displayName": "Sheetmark — Markdown",
+                "displayName": "Sheetmark \u2014 Markdown",
                 "priority": "option",
                 "selector": [
                     {
@@ -457,7 +457,7 @@
     "scripts": {
         "build": "npm run compile",
         "vscode:prepublish": "npm run package",
-        "verify": "npm run check-types && npm run lint && npm run test:unit && node esbuild.js",
+        "verify": "npm run check-types && npm run lint && npm run test:unit && node esbuild.js && npm run test:webview:run",
         "compile": "npm run check-types && npm run lint && node esbuild.js",
         "watch": "npm-run-all -p watch:*",
         "watch:esbuild": "node esbuild.js --watch",
@@ -467,6 +467,8 @@
         "check-types": "tsc -p tsconfig.json && tsc -p src/webviews/tsconfig.json && tsc -p tsconfig.test.json && tsc -p src/test/integration/tsconfig.json",
         "lint": "eslint \"src/**/*.{ts,mts}\"",
         "test:unit": "node --import tsx --test \"src/**/*.test.mts\"",
+        "test:webview": "node esbuild.js && npm run test:webview:run",
+        "test:webview:run": "node --import tsx --test \"src/test/webview/*.spec.mts\"",
         "test:integration": "node esbuild.js && node esbuild.js --integration && vscode-test",
         "test:regressions": "node scripts/check-regression-tests.mjs"
     },
@@ -484,6 +486,7 @@
         "eslint": "^9.24.0",
         "linkedom": "^0.18.13",
         "npm-run-all": "^4.1.5",
+        "playwright-core": "^1.63.0",
         "tsx": "^4.23.15",
         "typescript": "^5.4.5"
     },

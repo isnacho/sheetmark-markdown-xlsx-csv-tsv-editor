@@ -30,6 +30,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # verify includes the webview tests, which drive the runner's preinstalled Google Chrome.
       - name: Verify
         run: npm run verify
 

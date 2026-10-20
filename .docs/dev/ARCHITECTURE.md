@@ -30,7 +30,9 @@ for the message inventory see [MESSAGE-PROTOCOL.md](MESSAGE-PROTOCOL.md).
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-Two esbuild builds ([esbuild.js](../../esbuild.js)) produce these bundles. `resources/**` (CSS, SVG,
+esbuild ([esbuild.js](../../esbuild.js)) produces these bundles: the host (CJS), the spreadsheet
+webview (IIFE) and the Markdown webview (ES module with code splitting: mermaid and its diagram
+types load from `dist/md/chunks/` on first use; the shell loads it with `<script type="module">`). `resources/**` (CSS, SVG,
 PNG) are static, loaded into the webview via `asWebviewUri` under the CSP. The boundary is a hard
 process boundary: **no shared mutable state, no cross-calls, only messages.**
 
@@ -179,9 +181,11 @@ Handled in `src/webviews/shared/**` and reused by both editors (file list:
 
 ## Build
 
-[esbuild.js](../../esbuild.js): two contexts, the extension (node, `external:['vscode']`,
-`dist/extension.js`) and the webviews (browser IIFE, `dist/spreadsheet/` + `dist/md/`). markdown-it,
-mermaid, CodeMirror 6, Typo.js, exceljs, and the rest are bundled in. tsc only type-checks;
+[esbuild.js](../../esbuild.js): three contexts: the extension (node CJS, `external:['vscode']`,
+`dist/extension.js`), the spreadsheet webview (browser IIFE, `dist/spreadsheet/`) and the Markdown
+webview (browser ESM with splitting, `dist/md/mdWebview.js` + `dist/md/chunks/`). A non-watch build
+empties `dist/` first, so stale files never ship in the VSIX. markdown-it, mermaid, CodeMirror 6,
+Typo.js, exceljs and the rest are bundled in. tsc only type-checks;
 esbuild does the transpile.
 
 Type checking is split by runtime so the boundary above is compiler-enforced:
@@ -193,8 +197,8 @@ Type checking is split by runtime so the boundary above is compiler-enforced:
 | [tsconfig.test.json](../../tsconfig.test.json) | `*.test.mts` unit tests | DOM + Node (`node:test`) |
 | [src/test/integration/tsconfig.json](../../src/test/integration/tsconfig.json) | Integration tests (run in a real VS Code) | Node + mocha |
 
-`npm run verify` runs the type checks, eslint, the unit tests (`node:test` through tsx) and the
-bundle. `npm run test:integration` runs the mocha suites in a real VS Code extension host, driving
+`npm run verify` runs the type checks, eslint, the unit tests (`node:test` through tsx), the
+bundle, and the webview tests (built bundles in headless Chrome, `src/test/webview/`). `npm run test:integration` runs the mocha suites in a real VS Code extension host, driving
 the providers through the test API that `activate()` returns. CI runs both on every push and PR;
 see [AGENTS.md](../../AGENTS.md) for when to run what.
 

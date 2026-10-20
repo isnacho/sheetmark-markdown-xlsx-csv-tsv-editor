@@ -25,7 +25,7 @@ const MUTATIONS = [
       find: 'if (!ALLOWED_ATTRS.has(name)) {', replace: 'if (!ALLOWED_ATTRS.has(name) && name === "__never__") {' },
     { id: 'csp-spreadsheet-inline', file: 'src/shared/webviewCsp.ts',
       find: '`script-src ${cspSource}`,', replace: "`script-src ${cspSource} 'unsafe-inline'`," },
-    { id: 'csp-markdown-nonce-tag', file: 'src/mdEditorProvider.ts',
+    { id: 'csp-markdown-nonce-tag', file: 'src/shared/webviewHtml.ts',
       find: '<script nonce="${nonce}">window.__SPELL_DICT__', replace: '<script>window.__SPELL_DICT__' },
     { id: 'links-any-scheme', file: 'src/shared/commonHostMessages.ts',
       find: 'if (url && isAllowedExternalUrl(url)) {', replace: 'if (url && (isAllowedExternalUrl(url) || url.length > 0)) {' },
@@ -35,7 +35,7 @@ const MUTATIONS = [
       find: 'queuedCommands: SPREADSHEET_FILE_WRITING_COMMANDS,', replace: 'queuedCommands: new Set([...SPREADSHEET_FILE_WRITING_COMMANDS].filter(() => false)),' },
     { id: 'copy-multiline', file: 'src/webviews/spreadsheet/components/spreadsheetCopyComponent.ts',
       find: 'return { text: serializeTsv(outputRows), cellCount: cellsArray.length };', replace: "void serializeTsv; return { text: outputRows.map(r => r.join('\\t')).join('\\n'), cellCount: cellsArray.length };" },
-    { id: 'paste-multiline', knownGap: 'paste lives in the spreadsheetWebview.ts closure; no test reaches it', file: 'src/webviews/spreadsheet/spreadsheetWebview.ts',
+    { id: 'paste-multiline', file: 'src/webviews/spreadsheet/spreadsheetWebview.ts',
       find: 'const grid = parseTsv(text);', replace: "void parseTsv; const grid = text.split(/\\r?\\n/).filter(Boolean).map(l => l.split('\\t'));" },
     { id: 'convert-styles', file: 'src/extension.ts',
       find: '    applyStoredStylesToWorksheet(worksheet, storedStyles);\n', replace: '    void applyStoredStylesToWorksheet;\n' },
@@ -43,7 +43,9 @@ const MUTATIONS = [
       find: '                        await persistVersionSnapshot();\n                        return;', replace: '                        return;' },
     { id: 'rename-state-before-reopen', file: 'src/shared/renameStateMigration.ts',
       find: 'return vscode.workspace.onWillRenameFiles((event) => {\n        event.waitUntil(', replace: 'return vscode.workspace.onDidRenameFiles((event) => {\n        void (' },
-    { id: 'resize-listeners-once', knownGap: 'resize wiring lives in the spreadsheetWebview.ts closure; no test reaches it', file: 'src/webviews/spreadsheet/spreadsheetWebview.ts',
+    { id: 'mermaid-lazy-load', file: 'src/webviews/md/livePreview/mermaidWidget.ts',
+      find: "import { Icons } from '../../shared/icons';", replace: "import { Icons } from '../../shared/icons';\nimport * as eagerMermaid from 'mermaid';\nvoid eagerMermaid;" },
+    { id: 'resize-listeners-once', file: 'src/webviews/spreadsheet/spreadsheetWebview.ts',
       find: 'if (!resizeGlobalListenersAttached) {', replace: 'if (!resizeGlobalListenersAttached || document.body !== null) {' },
 ];
 

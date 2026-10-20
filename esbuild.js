@@ -61,16 +61,15 @@ async function main() {
 		],
 	});
 
-	const webviewCtx = await esbuild.context({
-		entryPoints: [
-			'src/webviews/md/mdWebview.ts',
-			'src/webviews/spreadsheet/spreadsheetWebview.ts'
-		],
+	// Spreadsheet webview: one IIFE bundle.
+	const spreadsheetCtx = await esbuild.context({
+		entryPoints: ['src/webviews/spreadsheet/spreadsheetWebview.ts'],
 		bundle: true,
 		format: 'iife',
 		minify: production,
 		sourcemap: !production,
 		platform: 'browser',
+		outbase: 'src/webviews',
 		outdir: 'dist',
 		logLevel: 'silent',
 		plugins: [
@@ -78,14 +77,34 @@ async function main() {
 		],
 	});
 
+	// Markdown webview: an ES module with code splitting, so dynamic import()s (mermaid) become
+	// separate chunks in dist/md/ that load on first use. Loaded with <script type="module">.
+	const markdownCtx = await esbuild.context({
+		entryPoints: ['src/webviews/md/mdWebview.ts'],
+		bundle: true,
+		format: 'esm',
+		splitting: true,
+		chunkNames: 'chunks/[name]-[hash]',
+		minify: production,
+		sourcemap: !production,
+		platform: 'browser',
+		outbase: 'src/webviews/md',
+		outdir: 'dist/md',
+		logLevel: 'silent',
+		plugins: [
+			esbuildProblemMatcherPlugin,
+		],
+	});
+
+	const contexts = [extensionCtx, spreadsheetCtx, markdownCtx];
+
 	if (watch) {
-		await extensionCtx.watch();
-		await webviewCtx.watch();
+		await Promise.all(contexts.map(ctx => ctx.watch()));
 	} else {
-		await extensionCtx.rebuild();
-		await webviewCtx.rebuild();
-		await extensionCtx.dispose();
-		await webviewCtx.dispose();
+		// Start from an empty dist/: stale chunks or stray files would otherwise ship in the VSIX.
+		require('fs').rmSync('dist', { recursive: true, force: true });
+		await Promise.all(contexts.map(ctx => ctx.rebuild()));
+		await Promise.all(contexts.map(ctx => ctx.dispose()));
 	}
 }
 

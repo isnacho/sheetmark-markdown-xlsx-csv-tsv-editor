@@ -10,6 +10,7 @@ import { Utils } from '../shared/utils';
 import { Icons } from '../shared/icons';
 import { vscode, VirtualScrollConfig, debounce } from '../shared/common';
 import { VirtualLoader } from '../shared/virtualLoader';
+import { state, MIN_ROW_HEADER_WIDTH } from './state';
 import type { HostToSpreadsheetWebview, SpreadsheetWebviewToHost } from '../../protocol/spreadsheet';
 import type { HandledByFeedbackModal } from '../../protocol/common';
 import { htmlToPlainText } from '../shared/sanitizeHtml';
@@ -19,7 +20,6 @@ import { createXlsxToolbarButtons } from './components/spreadsheetToolbarCompone
 import { FeedbackModal } from '../shared/feedbackModal';
 import {
     XlsxViewSettings,
-    defaultXlsxViewSettings,
     normalizeXlsxSettings,
     syncSettingsCheckboxes,
     createXlsxSettingsDefinitions
@@ -47,8 +47,9 @@ import type {
     WorksheetOp,
     CellStyleEdit,
     CellUndoState,
-    EditUndoEntry,
-    WorksheetStateSnapshot
+    WorksheetStateSnapshot,
+    FilterMode,
+    SortDirection
 } from './components/spreadsheetTypes';
 import {
     cloneCellData,
@@ -80,184 +81,37 @@ import { parseTsv } from './components/tsvClipboard';
     const { ROW_HEIGHT, BUFFER_ROWS, CHUNK_SIZE } = VirtualScrollConfig;
     const textColorIcon = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16"/><path d="M8.5 16h7"/><path d="M12 4l4 12"/><path d="M12 4L8 16"/></svg>';
     const bgColorIcon = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4l8 8-6 6-8-8z"/><path d="M2 20h20"/></svg>';
-
-    // Data injected from the extension via postMessage
-    let worksheetsMeta: any[] = [];
-    let currentWorksheet = 0;
-
-    // Virtual scrolling state
-    let totalRows = 0;
-    let columnCount = 0;
-    let columnWidths: number[] = [];
-    let mergedCells: any[] = [];
-    let allRowHeights: number[] = []; // Pre-loaded row heights from extension
-    let totalContentHeight = 0; // Pre-calculated total height
-    let rowOffsetPrefix: number[] = [0]; // Prefix sum: offset at row i
-    let rowMetricsVersion = 0;
-    let rowOffsetPrefixVersion = -1;
-    let rowCache = new Map<number, any>();
     const virtualLoader = new VirtualLoader<any[]>('getRows');
-    const MIN_ROW_HEADER_WIDTH = 40;
-    let currentRowHeaderWidth = MIN_ROW_HEADER_WIDTH;
-    let currentVisibleStart = 0;
-    let currentVisibleEnd = 0;
-    let isRequestingRows = false;
-    let isRendering = false; // Prevent re-render during render
-
-    // Selection state
-    const selectedCells = new Set<HTMLElement>();
-    let activeCell: HTMLElement | null = null;
-    let isSelecting = false;
-    let selectionStart: { row: number, col: number } | null = null;
-    let selectionEnd: { row: number, col: number } | null = null;
-    let pendingEditCell: HTMLElement | null = null;
-    let pendingEditDrag = false;
-    const selectedRows = new Set<number>();
-    const selectedColumns = new Set<number>();
-    let lastSelectedRow: number | null = null;
-    let lastSelectedColumn: number | null = null;
-
-    // Track selected row/column indices for full copy (virtualization support)
-    const selectedRowIndices = new Set<number>();
-    const selectedColumnIndices = new Set<number>();
 
     const selectionManager = new XlsxSelectionManager({
-        selectedCells,
-        selectedRows,
-        selectedColumns,
-        selectedRowIndices,
-        selectedColumnIndices,
-        getActiveCell: () => activeCell,
+        selectedCells: state.selectedCells,
+        selectedRows: state.selectedRows,
+        selectedColumns: state.selectedColumns,
+        selectedRowIndices: state.selectedRowIndices,
+        selectedColumnIndices: state.selectedColumnIndices,
+        getActiveCell: () => state.activeCell,
         setActiveCell: (cell) => {
-            activeCell = cell;
+            state.activeCell = cell;
         },
-        getLastSelectedRow: () => lastSelectedRow,
+        getLastSelectedRow: () => state.lastSelectedRow,
         setLastSelectedRow: (value) => {
-            lastSelectedRow = value;
+            state.lastSelectedRow = value;
         },
-        getLastSelectedColumn: () => lastSelectedColumn,
+        getLastSelectedColumn: () => state.lastSelectedColumn,
         setLastSelectedColumn: (value) => {
-            lastSelectedColumn = value;
+            state.lastSelectedColumn = value;
         },
-        getTotalRows: () => totalRows,
-        getColumnCount: () => columnCount
-    });
-
-    // Resize state
-    let isResizing = false;
-    let resizeType: 'column' | 'row' | null = null; // 'column' or 'row'
-    let resizeIndex = -1;
-    let resizeStartPos = 0;
-    let resizeStartSize = 0;
-
-    // Auto-scroll while dragging selection
-    let autoScrollRequest: any = null;
-    let lastMousePos: { x: number, y: number } | null = null; // { x, y }
+        getTotalRows: () => state.totalRows,
+        getColumnCount: () => state.columnCount
+    }); // { x, y }
     const AUTO_SCROLL_THRESHOLD = 40; // px
-    const AUTO_SCROLL_STEP = 20; // px per frame
-
-    let handlersAttached = false;
-    let selectionGlobalListenersAttached = false;
-    let resizeGlobalListenersAttached = false;
-    let toolbarManager: ToolbarManager | null = null;
+    const AUTO_SCROLL_STEP = 20;
 
     type SettingsScope = 'plain' | 'styled';
-
-    const defaultPlainViewSettings: XlsxViewSettings = {
-        ...defaultXlsxViewSettings,
-        autoSave: true,
-        autoSaveMode: 'all',
-        showManualSavePopup: false
-    };
-
-    // Settings (persisted by extension)
-    let currentSettings: XlsxViewSettings = { ...defaultXlsxViewSettings };
-    let plainModeSettings: XlsxViewSettings = { ...defaultPlainViewSettings };
-    let styledModeSettings: XlsxViewSettings = { ...defaultXlsxViewSettings };
-    let hasVirtualTableInit = false;
-
-    // Table edit mode (text-only)
-    let isEditMode = false;
-    let isCellEditing = false;
-    let activeTextEditBeforeState: CellUndoState | null = null;
-    let lastEditRange: Range | null = null;
-
-    let pendingWorksheetOps: WorksheetOp[] = [];
-    const pendingCellStyleEdits = new Map<string, CellStyleEdit>();
-    let headerContextMenuEl: HTMLElement | null = null;
-    let colorPaletteEl: HTMLElement | null = null;
-    let activeColorTarget: 'text' | 'background' | 'border' | null = null;
-    let selectedTextColor = '#202124';
-    let selectedBgColor = '#ffffff';
-    let selectedBorderColor = '#202124';
-    let selectedBorderLineStyle: BorderLineStyle = 'thin';
-    let selectedBorderThickness: BorderThickness = 'thin';
-    let selectedBorderPattern: BorderPattern = 'solid';
-    let selectedBorderMode: BorderMode = 'all';
-    let editFormattingStripEl: HTMLElement | null = null;
-    let borderPopupEl: HTMLElement | null = null;
-    let insertControlPopupEl: HTMLElement | null = null;
-    let dropdownOptionsPopupEl: HTMLElement | null = null;
-    let dropdownOptionsResolver: ((options: string[] | null) => void) | null = null;
-    let mergeWarningPopupEl: HTMLElement | null = null;
-    let mergeWarningResolver: ((confirmed: boolean) => void) | null = null;
-    let styleModeNoticePopupEl: HTMLElement | null = null;
-    let formatPainterStyle: Partial<CellStyleEdit> | null = null;
-    let formatPainterArmed = false;
-    let formatPainterExecuting = false;
     const MERGE_WARNING_SUPPRESS_UNTIL_KEY = 'xlsx.mergeWarningSuppressUntil';
-
-    const editUndoStack: EditUndoEntry[] = [];
-    const editRedoStack: EditUndoEntry[] = [];
-    const pendingControlUndoState = new WeakMap<HTMLElement, CellUndoState>();
     const DEFAULT_DROPDOWN_OPTIONS_TEMPLATE = 'Option 1\nOption 2\nOption 3';
 
-    let findManager: XlsxFindManager | null = null;
-
-    // Save state (CSV-parity)
-    let isSaving = false;
-    let exitAfterSave = false;
-    let autoSaveTimer: any = null;
-    let manualSaveReminderUntil = 0;
-    let pendingOutsideControlEdits: Array<{ row: number; col: number; value: string }> = [];
-    let isVersionPreviewMode = false;
-    let previewVersionId: string | null = null;
-    let imagePreviewOverlayEl: HTMLElement | null = null;
-
-    // Plain view mode (removes all XLSX styling)
-    let isPlainView = false;
-    let isTemporaryStyleFile = false;
-    let currentAssociationFileType = 'xlsx';
-    let styleModeRequestPending = false;
-    let pendingStyleModeAction: (() => void) | null = null;
-
-    type FilterMode = 'contains' | 'equals' | 'startsWith' | 'nonEmpty';
-    type SortDirection = 'asc' | 'desc';
-
-    interface ColumnFilterState {
-        columnIndex: number;
-        mode: FilterMode;
-        query: string;
-        caseSensitive: boolean;
-    }
-
     const MAX_ROWS_FOR_CLIENT_DATA_OPS = 120000;
-    let baseTotalRows = 0;
-    let baseRowHeights: number[] = [];
-    let sourceRowsSnapshot: any[] | null = null;
-    let transformedRowsSnapshot: any[] | null = null;
-    const activeColumnFilters = new Map<number, ColumnFilterState>();
-    let activeSortState: { columnIndex: number; direction: SortDirection } | null = null;
-
-    // Hyperlink hover tooltip
-    let linkTooltip: HTMLElement | null = null;
-    let linkTooltipHideTimer: any = null;
-
-    // Toast
-
-    // Copy state (CSV-parity: avoid concurrent copies)
-    let isCopying = false;
-    let pasteListenerAttached = false;
 
     type XlsxAutoSaveChangeKind = 'text' | 'control' | 'format' | 'structure';
 
@@ -282,29 +136,29 @@ import { parseTsv } from './components/tsvClipboard';
 
     function buildBorderCss(enabled: boolean, style?: BorderLineStyle, color?: string) {
         if (!enabled) {return '';}
-        const nextStyle = style || selectedBorderLineStyle;
-        const nextColor = color || selectedBorderColor;
+        const nextStyle = style || state.selectedBorderLineStyle;
+        const nextColor = color || state.selectedBorderColor;
         return buildBorderCssValue(true, nextStyle, nextColor);
     }
 
     function syncBorderStyleFromControls() {
-        selectedBorderLineStyle = composeBorderLineStyle(selectedBorderThickness, selectedBorderPattern);
+        state.selectedBorderLineStyle = composeBorderLineStyle(state.selectedBorderThickness, state.selectedBorderPattern);
     }
 
     function syncBorderControlsFromStyle(style: BorderLineStyle) {
         const decomposed = decomposeBorderLineStyle(style);
-        selectedBorderThickness = decomposed.thickness;
-        selectedBorderPattern = decomposed.pattern;
+        state.selectedBorderThickness = decomposed.thickness;
+        state.selectedBorderPattern = decomposed.pattern;
     }
 
     function getSelectedBorderMode(): BorderMode {
-        return selectedBorderMode;
+        return state.selectedBorderMode;
     }
 
     function updateBorderPopupActiveButtons(border?: BorderStyleEdit) {
-        if (!borderPopupEl) {return;}
+        if (!state.borderPopupEl) {return;}
         const activeModes = getActiveBorderModes(border);
-        borderPopupEl.querySelectorAll('.border-mode-btn').forEach((btn) => {
+        state.borderPopupEl.querySelectorAll('.border-mode-btn').forEach((btn) => {
             const mode = (btn as HTMLElement).getAttribute('data-mode') as BorderMode | null;
             if (!mode) {return;}
             btn.classList.toggle('active', activeModes.has(mode));
@@ -313,12 +167,12 @@ import { parseTsv } from './components/tsvClipboard';
 
     function syncBorderControlsToUi() {
         const thicknessEl = document.getElementById('editBorderThickness') as HTMLSelectElement | null;
-        if (thicknessEl) {thicknessEl.value = selectedBorderThickness;}
+        if (thicknessEl) {thicknessEl.value = state.selectedBorderThickness;}
 
         const patternEl = document.getElementById('editBorderPattern') as HTMLSelectElement | null;
-        if (patternEl) {patternEl.value = selectedBorderPattern;}
+        if (patternEl) {patternEl.value = state.selectedBorderPattern;}
 
-        updateColorPreview('border', selectedBorderColor);
+        updateColorPreview('border', state.selectedBorderColor);
     }
 
     function syncBorderSelectionFromCell(cell: HTMLElement | null) {
@@ -327,19 +181,19 @@ import { parseTsv } from './components/tsvClipboard';
         const rowNum = parseInt(cell.getAttribute('data-rownum') || '0', 10);
         const colNum = parseInt(cell.getAttribute('data-colnum') || '0', 10);
         const key = rowNum > 0 && colNum > 0 ? `${rowNum}:${colNum}` : '';
-        const pending = key ? pendingCellStyleEdits.get(key) : undefined;
+        const pending = key ? state.pendingCellStyleEdits.get(key) : undefined;
 
         const copied = copyFormattingFromCell(cell);
         const border = (pending?.border || copied.border) as BorderStyleEdit | undefined;
         if (!border) {return;}
 
-        selectedBorderMode = inferBorderModeFromStyle(border, selectedBorderMode);
+        state.selectedBorderMode = inferBorderModeFromStyle(border, state.selectedBorderMode);
         if (border.style) {
-            selectedBorderLineStyle = border.style;
+            state.selectedBorderLineStyle = border.style;
             syncBorderControlsFromStyle(border.style);
         }
         if (border.color) {
-            selectedBorderColor = border.color;
+            state.selectedBorderColor = border.color;
         }
 
         syncBorderControlsToUi();
@@ -347,14 +201,14 @@ import { parseTsv } from './components/tsvClipboard';
     }
 
     function hideBorderPopup() {
-        if (borderPopupEl) {
-            borderPopupEl.classList.add('hidden');
+        if (state.borderPopupEl) {
+            state.borderPopupEl.classList.add('hidden');
         }
     }
 
     function ensureBorderPopup() {
-        if (borderPopupEl) {
-            return borderPopupEl;
+        if (state.borderPopupEl) {
+            return state.borderPopupEl;
         }
 
         const popup = document.createElement('div');
@@ -378,16 +232,16 @@ import { parseTsv } from './components/tsvClipboard';
             btn.addEventListener('click', () => {
                 const mode = (btn as HTMLElement).getAttribute('data-mode') as BorderMode | null;
                 if (!mode) {return;}
-                selectedBorderMode = mode;
+                state.selectedBorderMode = mode;
                 applyBorderPreset(mode);
-                if (activeCell) {
-                    syncBorderSelectionFromCell(activeCell);
+                if (state.activeCell) {
+                    syncBorderSelectionFromCell(state.activeCell);
                 }
             });
         });
 
         document.body.appendChild(popup);
-        borderPopupEl = popup;
+        state.borderPopupEl = popup;
         return popup;
     }
 
@@ -404,8 +258,8 @@ import { parseTsv } from './components/tsvClipboard';
     }
 
     function ensureInsertControlPopup() {
-        if (insertControlPopupEl) {
-            return insertControlPopupEl;
+        if (state.insertControlPopupEl) {
+            return state.insertControlPopupEl;
         }
 
         const popup = document.createElement('div');
@@ -430,17 +284,17 @@ import { parseTsv } from './components/tsvClipboard';
         });
 
         document.body.appendChild(popup);
-        insertControlPopupEl = popup;
+        state.insertControlPopupEl = popup;
         return popup;
     }
 
     function hideInsertControlPopup() {
-        if (!insertControlPopupEl) {return;}
-        insertControlPopupEl.classList.add('hidden');
+        if (!state.insertControlPopupEl) {return;}
+        state.insertControlPopupEl.classList.add('hidden');
     }
 
     function showInsertControlPopup(anchor: HTMLElement) {
-        if (!isEditMode) {
+        if (!state.isEditMode) {
             showToast('Enter edit mode to insert controls');
             return;
         }
@@ -465,19 +319,19 @@ import { parseTsv } from './components/tsvClipboard';
     }
 
     function hideDropdownOptionsPopup(options: string[] | null = null) {
-        if (!dropdownOptionsPopupEl) {return;}
-        dropdownOptionsPopupEl.classList.add('hidden');
+        if (!state.dropdownOptionsPopupEl) {return;}
+        state.dropdownOptionsPopupEl.classList.add('hidden');
 
-        const resolver = dropdownOptionsResolver;
-        dropdownOptionsResolver = null;
+        const resolver = state.dropdownOptionsResolver;
+        state.dropdownOptionsResolver = null;
         if (resolver) {
             resolver(options);
         }
     }
 
     function ensureDropdownOptionsPopup() {
-        if (dropdownOptionsPopupEl) {
-            return dropdownOptionsPopupEl;
+        if (state.dropdownOptionsPopupEl) {
+            return state.dropdownOptionsPopupEl;
         }
 
         const popup = document.createElement('div');
@@ -527,14 +381,14 @@ import { parseTsv } from './components/tsvClipboard';
         });
 
         document.body.appendChild(popup);
-        dropdownOptionsPopupEl = popup;
+        state.dropdownOptionsPopupEl = popup;
         return popup;
     }
 
     async function promptDropdownOptions(initialOptions: string[] = [], confirmLabel: string = 'Insert'): Promise<string[] | null> {
-        if (dropdownOptionsResolver) {
-            dropdownOptionsResolver(null);
-            dropdownOptionsResolver = null;
+        if (state.dropdownOptionsResolver) {
+            state.dropdownOptionsResolver(null);
+            state.dropdownOptionsResolver = null;
         }
 
         const popup = ensureDropdownOptionsPopup();
@@ -560,7 +414,7 @@ import { parseTsv } from './components/tsvClipboard';
         });
 
         return await new Promise<string[] | null>((resolve) => {
-            dropdownOptionsResolver = resolve;
+            state.dropdownOptionsResolver = resolve;
         });
     }
 
@@ -581,7 +435,7 @@ import { parseTsv } from './components/tsvClipboard';
     }
 
     async function editDropdownOptionsForCell(cell: HTMLElement) {
-        if (!isEditMode) {
+        if (!state.isEditMode) {
             showToast('Enter edit mode to edit dropdown options');
             return;
         }
@@ -617,7 +471,7 @@ import { parseTsv } from './components/tsvClipboard';
         const rowNumber = row + 1;
         const colNumber = col + 1;
 
-        pendingWorksheetOps.push({
+        state.pendingWorksheetOps.push({
             type: 'insertControl',
             row: rowNumber,
             col: colNumber,
@@ -630,7 +484,7 @@ import { parseTsv } from './components/tsvClipboard';
             options: configuredOptions,
             selectedValue: nextValue,
             allowInteractiveControls: areInteractiveControlsEnabled(),
-            showEditButton: isEditMode
+            showEditButton: state.isEditMode
         });
         updateDropdownCellPresentation(cell, nextValue);
         applyInteractiveControlState(cell);
@@ -645,10 +499,10 @@ import { parseTsv } from './components/tsvClipboard';
         const rowNumber = rowIndex + 1;
         const colNumber = colIndex + 1;
 
-        const rowData = rowCache.get(rowIndex) || {
+        const rowData = state.rowCache.get(rowIndex) || {
             rowNumber,
             cells: [],
-            height: allRowHeights[rowIndex] || ROW_HEIGHT
+            height: state.allRowHeights[rowIndex] || ROW_HEIGHT
         };
 
         if (!Array.isArray(rowData.cells)) {
@@ -684,7 +538,7 @@ import { parseTsv } from './components/tsvClipboard';
             rowData.cells.sort((a: any, b: any) => (a.colNumber || 0) - (b.colNumber || 0));
         }
 
-        rowCache.set(rowIndex, rowData);
+        state.rowCache.set(rowIndex, rowData);
         return cellData;
     }
 
@@ -708,7 +562,7 @@ import { parseTsv } from './components/tsvClipboard';
                 options: dropdownOptions,
                 selectedValue: safeDefault,
                 allowInteractiveControls: true,
-                showEditButton: isEditMode
+                showEditButton: state.isEditMode
             });
         }
 
@@ -760,7 +614,7 @@ import { parseTsv } from './components/tsvClipboard';
     async function insertControlIntoSelection(controlType: InsertControlType) {
         hideInsertControlPopup();
 
-        if (!isEditMode) {
+        if (!state.isEditMode) {
             showToast('Enter edit mode to insert controls');
             return;
         }
@@ -827,7 +681,7 @@ import { parseTsv } from './components/tsvClipboard';
                     cellData.value = defaultValue;
                 }
 
-                pendingWorksheetOps.push({
+                state.pendingWorksheetOps.push({
                     type: 'insertControl',
                     row: rowNumber,
                     col: colNumber,
@@ -875,21 +729,21 @@ import { parseTsv } from './components/tsvClipboard';
     }
 
     function hideMergeWarningPopup(confirmed: boolean) {
-        if (!mergeWarningPopupEl || !mergeWarningResolver) {return;}
+        if (!state.mergeWarningPopupEl || !state.mergeWarningResolver) {return;}
 
-        const skip = mergeWarningPopupEl.querySelector('#mergeWarningSkipDay') as HTMLInputElement | null;
+        const skip = state.mergeWarningPopupEl.querySelector('#mergeWarningSkipDay') as HTMLInputElement | null;
         if (confirmed && skip?.checked) {
             suppressMergeWarningForOneDay();
         }
 
-        mergeWarningPopupEl.classList.add('hidden');
-        const resolver = mergeWarningResolver;
-        mergeWarningResolver = null;
+        state.mergeWarningPopupEl.classList.add('hidden');
+        const resolver = state.mergeWarningResolver;
+        state.mergeWarningResolver = null;
         resolver(confirmed);
     }
 
     function ensureMergeWarningPopup() {
-        if (mergeWarningPopupEl) {return mergeWarningPopupEl;}
+        if (state.mergeWarningPopupEl) {return state.mergeWarningPopupEl;}
 
         const popup = document.createElement('div');
         popup.id = 'xlsxMergeWarningPopup';
@@ -922,12 +776,12 @@ import { parseTsv } from './components/tsvClipboard';
         confirmBtn?.addEventListener('click', () => hideMergeWarningPopup(true));
 
         document.body.appendChild(popup);
-        mergeWarningPopupEl = popup;
+        state.mergeWarningPopupEl = popup;
         return popup;
     }
 
     async function confirmMergePreserveTopLeftContent() {
-        if (!currentSettings.mergeWarningEnabled) {return true;}
+        if (!state.currentSettings.mergeWarningEnabled) {return true;}
         if (isMergeWarningSuppressedForToday()) {return true;}
 
         const popup = ensureMergeWarningPopup();
@@ -936,25 +790,25 @@ import { parseTsv } from './components/tsvClipboard';
         popup.classList.remove('hidden');
 
         return await new Promise<boolean>((resolve) => {
-            mergeWarningResolver = resolve;
+            state.mergeWarningResolver = resolve;
         });
     }
 
     function hideStyleModeNoticePopup() {
-        if (!styleModeNoticePopupEl) {return;}
-        styleModeNoticePopupEl.classList.add('hidden');
+        if (!state.styleModeNoticePopupEl) {return;}
+        state.styleModeNoticePopupEl.classList.add('hidden');
     }
 
     function submitStyleModeDecision(decision: 'continue' | 'convert' | 'cancel') {
         hideStyleModeNoticePopup();
-        if (!styleModeRequestPending) {
+        if (!state.styleModeRequestPending) {
             return;
         }
         post({ command: 'styleModeDecision', decision });
     }
 
     function ensureStyleModeNoticePopup() {
-        if (styleModeNoticePopupEl) {return styleModeNoticePopupEl;}
+        if (state.styleModeNoticePopupEl) {return state.styleModeNoticePopupEl;}
 
         const popup = document.createElement('div');
         popup.id = 'xlsxStyleModeNoticePopup';
@@ -997,7 +851,7 @@ import { parseTsv } from './components/tsvClipboard';
         });
 
         document.body.appendChild(popup);
-        styleModeNoticePopupEl = popup;
+        state.styleModeNoticePopupEl = popup;
         return popup;
     }
 
@@ -1020,17 +874,17 @@ import { parseTsv } from './components/tsvClipboard';
     }
 
     function getFindManager(): XlsxFindManager {
-        if (!findManager) {
-            findManager = new XlsxFindManager({
+        if (!state.findManager) {
+            state.findManager = new XlsxFindManager({
                 normalizeCellText,
                 requestAllRows,
                 getFallbackRows: getMutableRowsSnapshot,
                 focusCellByPosition,
-                isCellEditing: () => isCellEditing,
+                isCellEditing: () => state.isCellEditing,
                 tableSelector: '#xlsxTable'
             });
         }
-        return findManager;
+        return state.findManager;
     }
 
     function applyFindHighlightsInVisibleCells() {
@@ -1038,8 +892,8 @@ import { parseTsv } from './components/tsvClipboard';
     }
 
     async function focusCellByPosition(row: number, col: number) {
-        const boundedRow = Math.max(0, Math.min(totalRows - 1, row));
-        const boundedCol = Math.max(0, Math.min(columnCount - 1, col));
+        const boundedRow = Math.max(0, Math.min(state.totalRows - 1, row));
+        const boundedCol = Math.max(0, Math.min(state.columnCount - 1, col));
 
         let cell = document.querySelector(`td[data-row="${boundedRow}"][data-col="${boundedCol}"]`) as HTMLElement | null;
 
@@ -1058,8 +912,8 @@ import { parseTsv } from './components/tsvClipboard';
             return;
         }
 
-        selectionStart = { row: boundedRow, col: boundedCol };
-        selectionEnd = { row: boundedRow, col: boundedCol };
+        state.selectionStart = { row: boundedRow, col: boundedCol };
+        state.selectionEnd = { row: boundedRow, col: boundedCol };
         selectCell(cell);
 
         const container = getTableContainer();
@@ -1086,7 +940,7 @@ import { parseTsv } from './components/tsvClipboard';
     }
 
     async function ensureAllRowsLoadedForStructureEdits(withOverlay = true) {
-        if (rowCache.size >= totalRows && totalRows > 0) {return true;}
+        if (state.rowCache.size >= state.totalRows && state.totalRows > 0) {return true;}
 
         if (withOverlay) {
             setLoadingText('Preparing full sheet for structure changes...');
@@ -1100,13 +954,13 @@ import { parseTsv } from './components/tsvClipboard';
                 return false;
             }
 
-            rowCache.clear();
+            state.rowCache.clear();
             for (let i = 0; i < allRows.length; i++) {
-                rowCache.set(i, allRows[i] || { cells: [], rowNumber: i + 1, height: allRowHeights[i] || ROW_HEIGHT });
+                state.rowCache.set(i, allRows[i] || { cells: [], rowNumber: i + 1, height: state.allRowHeights[i] || ROW_HEIGHT });
             }
 
-            if (allRows.length > totalRows) {
-                totalRows = allRows.length;
+            if (allRows.length > state.totalRows) {
+                state.totalRows = allRows.length;
             }
 
             return true;
@@ -1120,8 +974,8 @@ import { parseTsv } from './components/tsvClipboard';
 
     function getMutableRowsSnapshot(): any[] {
         const rows: any[] = [];
-        for (let i = 0; i < totalRows; i++) {
-            rows.push(rowCache.get(i) || { cells: [], rowNumber: i + 1, height: allRowHeights[i] || ROW_HEIGHT });
+        for (let i = 0; i < state.totalRows; i++) {
+            rows.push(state.rowCache.get(i) || { cells: [], rowNumber: i + 1, height: state.allRowHeights[i] || ROW_HEIGHT });
         }
         return rows;
     }
@@ -1130,11 +984,11 @@ import { parseTsv } from './components/tsvClipboard';
         const normalized = Number.isFinite(height) && height > 0 ? height : ROW_HEIGHT;
 
         // Plain view follows CSV/TSV row metrics exactly.
-        if (isPlainView) {
+        if (state.isPlainView) {
             return 24;
         }
 
-        if (!currentSettings.spaciousCells) {
+        if (!state.currentSettings.spaciousCells) {
             return Math.max(normalized, 24);
         }
 
@@ -1142,75 +996,75 @@ import { parseTsv } from './components/tsvClipboard';
     }
 
     function getEffectiveRowHeightByIndex(rowIndex: number): number {
-        const base = allRowHeights[rowIndex] || ROW_HEIGHT;
+        const base = state.allRowHeights[rowIndex] || ROW_HEIGHT;
         return getEffectiveRowHeightFromValue(base);
     }
 
     function invalidateRowMetrics() {
-        rowMetricsVersion += 1;
-        rowOffsetPrefixVersion = -1;
-        rowOffsetPrefix = [0];
-        totalContentHeight = 0;
+        state.rowMetricsVersion += 1;
+        state.rowOffsetPrefixVersion = -1;
+        state.rowOffsetPrefix = [0];
+        state.totalContentHeight = 0;
     }
 
     function ensureRowOffsetPrefix() {
-        if (rowOffsetPrefixVersion === rowMetricsVersion && rowOffsetPrefix.length === totalRows + 1) {
+        if (state.rowOffsetPrefixVersion === state.rowMetricsVersion && state.rowOffsetPrefix.length === state.totalRows + 1) {
             return;
         }
 
-        rowOffsetPrefix = new Array(totalRows + 1);
-        rowOffsetPrefix[0] = 0;
+        state.rowOffsetPrefix = new Array(state.totalRows + 1);
+        state.rowOffsetPrefix[0] = 0;
 
-        for (let i = 0; i < totalRows; i++) {
-            rowOffsetPrefix[i + 1] = rowOffsetPrefix[i] + getEffectiveRowHeightByIndex(i);
+        for (let i = 0; i < state.totalRows; i++) {
+            state.rowOffsetPrefix[i + 1] = state.rowOffsetPrefix[i] + getEffectiveRowHeightByIndex(i);
         }
 
-        totalContentHeight = rowOffsetPrefix[totalRows] || 0;
-        rowOffsetPrefixVersion = rowMetricsVersion;
+        state.totalContentHeight = state.rowOffsetPrefix[state.totalRows] || 0;
+        state.rowOffsetPrefixVersion = state.rowMetricsVersion;
     }
 
     function getRowTopOffset(rowIndex: number): number {
-        if (totalRows <= 0) {return 0;}
+        if (state.totalRows <= 0) {return 0;}
         ensureRowOffsetPrefix();
-        const clamped = Math.max(0, Math.min(rowIndex, totalRows));
-        return rowOffsetPrefix[clamped] || 0;
+        const clamped = Math.max(0, Math.min(rowIndex, state.totalRows));
+        return state.rowOffsetPrefix[clamped] || 0;
     }
 
     function getRowHeightRange(startIndex: number, endIndex: number): number {
-        if (totalRows <= 0) {return 0;}
+        if (state.totalRows <= 0) {return 0;}
         ensureRowOffsetPrefix();
-        const safeStart = Math.max(0, Math.min(startIndex, totalRows));
-        const safeEnd = Math.max(safeStart, Math.min(endIndex, totalRows));
-        return Math.max(0, (rowOffsetPrefix[safeEnd] || 0) - (rowOffsetPrefix[safeStart] || 0));
+        const safeStart = Math.max(0, Math.min(startIndex, state.totalRows));
+        const safeEnd = Math.max(safeStart, Math.min(endIndex, state.totalRows));
+        return Math.max(0, (state.rowOffsetPrefix[safeEnd] || 0) - (state.rowOffsetPrefix[safeStart] || 0));
     }
 
     function findRowIndexByOffset(offset: number): number {
-        if (totalRows <= 0) {return 0;}
+        if (state.totalRows <= 0) {return 0;}
         ensureRowOffsetPrefix();
 
-        const target = Math.max(0, Math.min(offset, totalContentHeight));
+        const target = Math.max(0, Math.min(offset, state.totalContentHeight));
         let low = 0;
-        let high = totalRows;
+        let high = state.totalRows;
 
         while (low < high) {
             const mid = Math.floor((low + high + 1) / 2);
-            if ((rowOffsetPrefix[mid] || 0) <= target) {
+            if ((state.rowOffsetPrefix[mid] || 0) <= target) {
                 low = mid;
             } else {
                 high = mid - 1;
             }
         }
 
-        return Math.min(Math.max(low, 0), Math.max(totalRows - 1, 0));
+        return Math.min(Math.max(low, 0), Math.max(state.totalRows - 1, 0));
     }
 
     function rerenderCurrentSheetFromLocalState() {
         const container = document.getElementById('tableContainer');
         if (!container) {return;}
 
-        currentVisibleStart = 0;
-        currentVisibleEnd = 0;
-        isRendering = false;
+        state.currentVisibleStart = 0;
+        state.currentVisibleEnd = 0;
+        state.isRendering = false;
 
         container.innerHTML = createTableShell();
         initializeSelection();
@@ -1218,9 +1072,9 @@ import { parseTsv } from './components/tsvClipboard';
         initializeHyperlinkHover();
         initializeVirtualScrolling();
 
-        if (toolbarManager) {
-            applyToolbarLayout(toolbarManager, {
-                stickyToolbar: !!currentSettings.stickyToolbar,
+        if (state.toolbarManager) {
+            applyToolbarLayout(state.toolbarManager, {
+                stickyToolbar: !!state.currentSettings.stickyToolbar,
                 scrollTarget: '#content',
                 onLayoutApplied: initializeVirtualScrolling
             });
@@ -1228,7 +1082,7 @@ import { parseTsv } from './components/tsvClipboard';
     }
 
     function canApplyStructureEdits(): boolean {
-        if (isVersionPreviewMode) {
+        if (state.isVersionPreviewMode) {
             showToast('Version preview is read-only');
             return false;
         }
@@ -1236,12 +1090,12 @@ import { parseTsv } from './components/tsvClipboard';
     }
 
     function persistStructureChange() {
-        if (isEditMode) {
+        if (state.isEditMode) {
             scheduleAutoSave('structure');
             return;
         }
 
-        if (currentSettings.autoSave) {
+        if (state.currentSettings.autoSave) {
             saveEdits(false, true);
             return;
         }
@@ -1258,11 +1112,11 @@ import { parseTsv } from './components/tsvClipboard';
         const beforeSnapshot = captureWorksheetStateSnapshot();
         const rows = getMutableRowsSnapshot();
         const target = op.index;
-        const prevSelectedRows = Array.from(selectedRowIndices.values()).sort((a, b) => a - b);
-        const prevSelectedCols = Array.from(selectedColumnIndices.values()).sort((a, b) => a - b);
+        const prevSelectedRows = Array.from(state.selectedRowIndices.values()).sort((a, b) => a - b);
+        const prevSelectedCols = Array.from(state.selectedColumnIndices.values()).sort((a, b) => a - b);
 
         if (op.type === 'insertRowAbove' || op.type === 'insertRowBelow' || op.type === 'deleteRow') {
-            if (op.type === 'deleteRow' && totalRows <= 1) {
+            if (op.type === 'deleteRow' && state.totalRows <= 1) {
                 showToast('Cannot delete the last row');
                 return;
             }
@@ -1270,17 +1124,17 @@ import { parseTsv } from './components/tsvClipboard';
             const insertAt = op.type === 'insertRowAbove' ? target - 1 : target;
             if (op.type === 'insertRowAbove' || op.type === 'insertRowBelow') {
                 rows.splice(Math.max(0, insertAt), 0, { cells: [], rowNumber: 0, height: ROW_HEIGHT });
-                allRowHeights.splice(Math.max(0, insertAt), 0, ROW_HEIGHT);
-                totalRows += 1;
+                state.allRowHeights.splice(Math.max(0, insertAt), 0, ROW_HEIGHT);
+                state.totalRows += 1;
             } else {
                 rows.splice(Math.max(0, target - 1), 1);
-                allRowHeights.splice(Math.max(0, target - 1), 1);
-                totalRows = Math.max(1, totalRows - 1);
+                state.allRowHeights.splice(Math.max(0, target - 1), 1);
+                state.totalRows = Math.max(1, state.totalRows - 1);
             }
 
             invalidateRowMetrics();
         } else {
-            if (op.type === 'deleteColumn' && columnCount <= 1) {
+            if (op.type === 'deleteColumn' && state.columnCount <= 1) {
                 showToast('Cannot delete the last column');
                 return;
             }
@@ -1306,23 +1160,23 @@ import { parseTsv } from './components/tsvClipboard';
             });
 
             if (op.type === 'deleteColumn') {
-                columnWidths.splice(Math.max(0, atCol - 1), 1);
-                columnCount = Math.max(1, columnCount - 1);
+                state.columnWidths.splice(Math.max(0, atCol - 1), 1);
+                state.columnCount = Math.max(1, state.columnCount - 1);
             } else {
-                columnWidths.splice(Math.max(0, atCol - 1), 0, 80);
-                columnCount += 1;
+                state.columnWidths.splice(Math.max(0, atCol - 1), 0, 80);
+                state.columnCount += 1;
             }
         }
 
-        pendingWorksheetOps.push(op);
-        normalizeRowsAfterStructureChange(rows, rowCache);
-        mergedCells = [];
+        state.pendingWorksheetOps.push(op);
+        normalizeRowsAfterStructureChange(rows, state.rowCache);
+        state.mergedCells = [];
 
-        selectedCells.clear();
-        activeCell = null;
+        state.selectedCells.clear();
+        state.activeCell = null;
 
         if (op.type === 'insertRowAbove' || op.type === 'insertRowBelow' || op.type === 'deleteRow') {
-            selectedRowIndices.clear();
+            state.selectedRowIndices.clear();
             const pivot = op.type === 'insertRowAbove' ? target - 1 : (op.type === 'insertRowBelow' ? target : target - 1);
             prevSelectedRows.forEach(r => {
                 let next = r;
@@ -1330,18 +1184,18 @@ import { parseTsv } from './components/tsvClipboard';
                 if (op.type === 'insertRowBelow' && r > pivot) {next = r + 1;}
                 if (op.type === 'deleteRow') {
                     if (r === pivot) {
-                        next = Math.min(pivot, totalRows - 1);
+                        next = Math.min(pivot, state.totalRows - 1);
                     } else if (r > pivot) {
                         next = r - 1;
                     }
                 }
-                next = Math.max(0, Math.min(totalRows - 1, next));
-                selectedRowIndices.add(next);
+                next = Math.max(0, Math.min(state.totalRows - 1, next));
+                state.selectedRowIndices.add(next);
             });
-            selectedRows.clear();
-            selectedRowIndices.forEach(v => selectedRows.add(v));
+            state.selectedRows.clear();
+            state.selectedRowIndices.forEach(v => state.selectedRows.add(v));
         } else {
-            selectedColumnIndices.clear();
+            state.selectedColumnIndices.clear();
             const pivot = op.type === 'insertColumnLeft' ? target - 1 : (op.type === 'insertColumnRight' ? target : target - 1);
             prevSelectedCols.forEach(c => {
                 let next = c;
@@ -1349,16 +1203,16 @@ import { parseTsv } from './components/tsvClipboard';
                 if (op.type === 'insertColumnRight' && c > pivot) {next = c + 1;}
                 if (op.type === 'deleteColumn') {
                     if (c === pivot) {
-                        next = Math.min(pivot, columnCount - 1);
+                        next = Math.min(pivot, state.columnCount - 1);
                     } else if (c > pivot) {
                         next = c - 1;
                     }
                 }
-                next = Math.max(0, Math.min(columnCount - 1, next));
-                selectedColumnIndices.add(next);
+                next = Math.max(0, Math.min(state.columnCount - 1, next));
+                state.selectedColumnIndices.add(next);
             });
-            selectedColumns.clear();
-            selectedColumnIndices.forEach(v => selectedColumns.add(v));
+            state.selectedColumns.clear();
+            state.selectedColumnIndices.forEach(v => state.selectedColumns.add(v));
         }
 
         const afterSnapshot = captureWorksheetStateSnapshot();
@@ -1383,9 +1237,9 @@ import { parseTsv } from './components/tsvClipboard';
             const row = rows[rowIndex];
             if (!row) {return;}
 
-            const previousColumnCount = columnCount;
-            columnCount += 1;
-            columnWidths.splice(Math.max(0, previousColumnCount), 0, 80);
+            const previousColumnCount = state.columnCount;
+            state.columnCount += 1;
+            state.columnWidths.splice(Math.max(0, previousColumnCount), 0, 80);
 
             for (let col = previousColumnCount + 1; col > colNumber; col--) {
                 const prevCell = getCellFromRow(row, col - 1);
@@ -1393,17 +1247,17 @@ import { parseTsv } from './components/tsvClipboard';
             }
             setCellOnRow(row, colNumber, null);
         } else {
-            const previousTotalRows = totalRows;
-            totalRows += 1;
-            allRowHeights.push(ROW_HEIGHT);
-            rows.push({ cells: [], rowNumber: totalRows, height: ROW_HEIGHT });
+            const previousTotalRows = state.totalRows;
+            state.totalRows += 1;
+            state.allRowHeights.push(ROW_HEIGHT);
+            rows.push({ cells: [], rowNumber: state.totalRows, height: ROW_HEIGHT });
             invalidateRowMetrics();
 
             for (let row = previousTotalRows; row >= rowNumber; row--) {
                 const srcRow = rows[row - 1];
                 let dstRow = rows[row];
                 if (!dstRow) {
-                    dstRow = { cells: [], rowNumber: row + 1, height: allRowHeights[row] || ROW_HEIGHT };
+                    dstRow = { cells: [], rowNumber: row + 1, height: state.allRowHeights[row] || ROW_HEIGHT };
                     rows[row] = dstRow;
                 }
                 const sourceCell = srcRow ? getCellFromRow(srcRow, colNumber) : null;
@@ -1416,14 +1270,14 @@ import { parseTsv } from './components/tsvClipboard';
             }
         }
 
-        pendingWorksheetOps.push({ type, row: rowNumber, col: colNumber });
-        normalizeRowsAfterStructureChange(rows, rowCache);
+        state.pendingWorksheetOps.push({ type, row: rowNumber, col: colNumber });
+        normalizeRowsAfterStructureChange(rows, state.rowCache);
 
         const afterSnapshot = captureWorksheetStateSnapshot();
         pushSheetUndoEntry(beforeSnapshot, afterSnapshot);
 
-        selectedCells.clear();
-        activeCell = null;
+        state.selectedCells.clear();
+        state.activeCell = null;
         hideHeaderContextMenu();
         rerenderCurrentSheetFromLocalState();
         persistStructureChange();
@@ -1444,13 +1298,13 @@ import { parseTsv } from './components/tsvClipboard';
             const row = rows[rowIndex];
             if (!row) {return;}
 
-            for (let col = colNumber; col < columnCount; col++) {
+            for (let col = colNumber; col < state.columnCount; col++) {
                 const nextCell = getCellFromRow(row, col + 1);
                 setCellOnRow(row, col, nextCell ? cloneCellData(nextCell) : null);
             }
-            setCellOnRow(row, columnCount, null);
+            setCellOnRow(row, state.columnCount, null);
         } else {
-            for (let row = rowNumber; row < totalRows; row++) {
+            for (let row = rowNumber; row < state.totalRows; row++) {
                 const srcRow = rows[row];
                 const dstRow = rows[row - 1];
                 const sourceCell = getCellFromRow(srcRow, colNumber);
@@ -1459,44 +1313,44 @@ import { parseTsv } from './components/tsvClipboard';
                 }
             }
 
-            const lastRow = rows[totalRows - 1];
+            const lastRow = rows[state.totalRows - 1];
             if (lastRow) {
                 setCellOnRow(lastRow, colNumber, null);
             }
         }
 
-        pendingWorksheetOps.push({ type, row: rowNumber, col: colNumber });
-        normalizeRowsAfterStructureChange(rows, rowCache);
+        state.pendingWorksheetOps.push({ type, row: rowNumber, col: colNumber });
+        normalizeRowsAfterStructureChange(rows, state.rowCache);
 
         const afterSnapshot = captureWorksheetStateSnapshot();
         pushSheetUndoEntry(beforeSnapshot, afterSnapshot);
 
-        selectedCells.clear();
-        activeCell = null;
+        state.selectedCells.clear();
+        state.activeCell = null;
         hideHeaderContextMenu();
         rerenderCurrentSheetFromLocalState();
         persistStructureChange();
     }
 
     function ensureHeaderContextMenu() {
-        if (headerContextMenuEl) {return headerContextMenuEl;}
+        if (state.headerContextMenuEl) {return state.headerContextMenuEl;}
 
         const menu = document.createElement('div');
         menu.id = 'headerContextMenu';
         menu.className = 'header-context-menu hidden';
         document.body.appendChild(menu);
-        headerContextMenuEl = menu;
+        state.headerContextMenuEl = menu;
         return menu;
     }
 
     function hideHeaderContextMenu() {
-        if (!headerContextMenuEl) {return;}
-        headerContextMenuEl.classList.add('hidden');
-        headerContextMenuEl.innerHTML = '';
+        if (!state.headerContextMenuEl) {return;}
+        state.headerContextMenuEl.classList.add('hidden');
+        state.headerContextMenuEl.innerHTML = '';
     }
 
     function showHeaderContextMenu(e: MouseEvent, targetType: 'row' | 'column', targetIndexZeroBased: number) {
-        if (targetType === 'row' && isVersionPreviewMode) {
+        if (targetType === 'row' && state.isVersionPreviewMode) {
             showToast('Version preview is read-only');
             return;
         }
@@ -1546,9 +1400,9 @@ import { parseTsv } from './components/tsvClipboard';
             hideHeaderContextMenu();
             const nextMode: WrapMode = isWrapped ? 'overflow' : 'wrap';
             if (targetType === 'row') {
-                applyWrapModeToRange(targetIndexZeroBased, targetIndexZeroBased, 0, columnCount - 1, nextMode);
+                applyWrapModeToRange(targetIndexZeroBased, targetIndexZeroBased, 0, state.columnCount - 1, nextMode);
             } else {
-                applyWrapModeToRange(0, totalRows - 1, targetIndexZeroBased, targetIndexZeroBased, nextMode);
+                applyWrapModeToRange(0, state.totalRows - 1, targetIndexZeroBased, targetIndexZeroBased, nextMode);
             }
         });
         menu.appendChild(wrapBtn);
@@ -1584,16 +1438,16 @@ import { parseTsv } from './components/tsvClipboard';
 
                 const trimmedQuery = query.trim();
                 if (mode === 'nonEmpty') {
-                    activeColumnFilters.set(colIndex, {
+                    state.activeColumnFilters.set(colIndex, {
                         columnIndex: colIndex,
                         mode,
                         query: '',
                         caseSensitive: false
                     });
                 } else if (!trimmedQuery) {
-                    activeColumnFilters.delete(colIndex);
+                    state.activeColumnFilters.delete(colIndex);
                 } else {
-                    activeColumnFilters.set(colIndex, {
+                    state.activeColumnFilters.set(colIndex, {
                         columnIndex: colIndex,
                         mode,
                         query: trimmedQuery,
@@ -1602,39 +1456,39 @@ import { parseTsv } from './components/tsvClipboard';
                 }
 
                 rebuildFilteredRows();
-                const hasTransforms = activeSortState || activeColumnFilters.size > 0;
-                applyDataOpsRowsToViewport(hasTransforms ? transformedRowsSnapshot : null);
+                const hasTransforms = state.activeSortState || state.activeColumnFilters.size > 0;
+                applyDataOpsRowsToViewport(hasTransforms ? state.transformedRowsSnapshot : null);
 
-                const filteredCount = hasTransforms && transformedRowsSnapshot ? transformedRowsSnapshot.length : baseTotalRows;
+                const filteredCount = hasTransforms && state.transformedRowsSnapshot ? state.transformedRowsSnapshot.length : state.baseTotalRows;
                 showToast(hasTransforms ? `Showing ${filteredCount.toLocaleString()} filtered rows` : 'Filter cleared');
             };
 
             const clearColumnFilter = async () => {
-                if (!activeColumnFilters.has(colIndex)) {
+                if (!state.activeColumnFilters.has(colIndex)) {
                     return;
                 }
 
-                activeColumnFilters.delete(colIndex);
+                state.activeColumnFilters.delete(colIndex);
 
-                if (!sourceRowsSnapshot) {
+                if (!state.sourceRowsSnapshot) {
                     applyDataOpsRowsToViewport(null);
                     return;
                 }
 
                 rebuildFilteredRows();
-                if (!activeSortState && activeColumnFilters.size === 0) {
+                if (!state.activeSortState && state.activeColumnFilters.size === 0) {
                     applyDataOpsRowsToViewport(null);
                     showToast('Filter cleared');
                     return;
                 }
 
-                applyDataOpsRowsToViewport(transformedRowsSnapshot);
-                const filteredCount = transformedRowsSnapshot ? transformedRowsSnapshot.length : baseTotalRows;
+                applyDataOpsRowsToViewport(state.transformedRowsSnapshot);
+                const filteredCount = state.transformedRowsSnapshot ? state.transformedRowsSnapshot.length : state.baseTotalRows;
                 showToast(`Showing ${filteredCount.toLocaleString()} filtered rows`);
             };
 
             const appendFilterPanel = () => {
-                const existingFilter = activeColumnFilters.get(colIndex);
+                const existingFilter = state.activeColumnFilters.get(colIndex);
                 const panel = document.createElement('div');
                 panel.className = 'header-filter-panel';
                 panel.addEventListener('click', (event) => event.stopPropagation());
@@ -1746,7 +1600,7 @@ import { parseTsv } from './components/tsvClipboard';
             const headerCheckbox = document.createElement('input');
             headerCheckbox.type = 'checkbox';
             headerCheckbox.className = 'header-context-checkbox';
-            headerCheckbox.checked = !!currentSettings.firstRowIsHeader;
+            headerCheckbox.checked = !!state.currentSettings.firstRowIsHeader;
 
             const labelText = document.createTextNode('First row as header');
 
@@ -1754,19 +1608,19 @@ import { parseTsv } from './components/tsvClipboard';
             headerCheckboxLabel.appendChild(labelText);
 
             headerCheckbox.addEventListener('change', async () => {
-                applySettings({ ...currentSettings, firstRowIsHeader: headerCheckbox.checked });
+                applySettings({ ...state.currentSettings, firstRowIsHeader: headerCheckbox.checked });
                 postSettings();
-                if (sourceRowsSnapshot) {
+                if (state.sourceRowsSnapshot) {
                     rebuildFilteredRows();
-                    applyDataOpsRowsToViewport(activeSortState || activeColumnFilters.size > 0 ? transformedRowsSnapshot : null);
+                    applyDataOpsRowsToViewport(state.activeSortState || state.activeColumnFilters.size > 0 ? state.transformedRowsSnapshot : null);
                 }
             });
 
             menu.appendChild(headerCheckboxLabel);
 
             // Show visual indicators for active sorts
-            const isAscSorted = activeSortState?.columnIndex === colIndex && activeSortState?.direction === 'asc';
-            const isDescSorted = activeSortState?.columnIndex === colIndex && activeSortState?.direction === 'desc';
+            const isAscSorted = state.activeSortState?.columnIndex === colIndex && state.activeSortState?.direction === 'asc';
+            const isDescSorted = state.activeSortState?.columnIndex === colIndex && state.activeSortState?.direction === 'desc';
 
             appendAction('Sort A to Z' + (isAscSorted ? ' ✓' : ''), async () => {
                 const ready = await ensureSourceRowsSnapshot();
@@ -1774,13 +1628,13 @@ import { parseTsv } from './components/tsvClipboard';
 
                 if (isAscSorted) {
                     // Already sorted A-Z, toggle off
-                    activeSortState = null;
+                    state.activeSortState = null;
                 } else {
-                    activeSortState = { columnIndex: colIndex, direction: 'asc' };
+                    state.activeSortState = { columnIndex: colIndex, direction: 'asc' };
                 }
 
                 rebuildFilteredRows();
-                applyDataOpsRowsToViewport(activeSortState || activeColumnFilters.size > 0 ? transformedRowsSnapshot : null);
+                applyDataOpsRowsToViewport(state.activeSortState || state.activeColumnFilters.size > 0 ? state.transformedRowsSnapshot : null);
             });
 
             appendAction('Sort Z to A' + (isDescSorted ? ' ✓' : ''), async () => {
@@ -1789,13 +1643,13 @@ import { parseTsv } from './components/tsvClipboard';
 
                 if (isDescSorted) {
                     // Already sorted Z-A, toggle off
-                    activeSortState = null;
+                    state.activeSortState = null;
                 } else {
-                    activeSortState = { columnIndex: colIndex, direction: 'desc' };
+                    state.activeSortState = { columnIndex: colIndex, direction: 'desc' };
                 }
 
                 rebuildFilteredRows();
-                applyDataOpsRowsToViewport(activeSortState || activeColumnFilters.size > 0 ? transformedRowsSnapshot : null);
+                applyDataOpsRowsToViewport(state.activeSortState || state.activeColumnFilters.size > 0 ? state.transformedRowsSnapshot : null);
             });
 
             appendSeparator();
@@ -1807,11 +1661,11 @@ import { parseTsv } from './components/tsvClipboard';
                 await clearColumnFilter();
             });
             appendAction('Clear All Filters/Sort', async () => {
-                if (!sourceRowsSnapshot && activeColumnFilters.size === 0 && !activeSortState) {
+                if (!state.sourceRowsSnapshot && state.activeColumnFilters.size === 0 && !state.activeSortState) {
                     return;
                 }
-                activeColumnFilters.clear();
-                activeSortState = null;
+                state.activeColumnFilters.clear();
+                state.activeSortState = null;
                 applyDataOpsRowsToViewport(null);
             });
         }
@@ -1826,7 +1680,7 @@ import { parseTsv } from './components/tsvClipboard';
     }
 
     function showCellContextMenu(e: MouseEvent, cell: HTMLElement) {
-        if (isVersionPreviewMode) {
+        if (state.isVersionPreviewMode) {
             showToast('Version preview is read-only');
             return;
         }
@@ -1918,7 +1772,7 @@ import { parseTsv } from './components/tsvClipboard';
     }
 
     function captureEditSelectionRange() {
-        if (!isEditMode) {return;}
+        if (!state.isEditMode) {return;}
         const selection = window.getSelection();
         if (!selection || selection.rangeCount === 0) {return;}
 
@@ -1930,13 +1784,13 @@ import { parseTsv } from './components/tsvClipboard';
         const editableCell = element.closest('td[contenteditable="true"]');
         if (!editableCell) {return;}
 
-        lastEditRange = range.cloneRange();
+        state.lastEditRange = range.cloneRange();
     }
 
     function restoreEditSelectionRange() {
-        if (!lastEditRange) {return false;}
+        if (!state.lastEditRange) {return false;}
 
-        const node = lastEditRange.commonAncestorContainer;
+        const node = state.lastEditRange.commonAncestorContainer;
         const element = (node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement) as HTMLElement | null;
         if (!element) {return false;}
 
@@ -1947,7 +1801,7 @@ import { parseTsv } from './components/tsvClipboard';
         const selection = window.getSelection();
         if (!selection) {return false;}
         selection.removeAllRanges();
-        selection.addRange(lastEditRange);
+        selection.addRange(state.lastEditRange);
         return true;
     }
 
@@ -1969,7 +1823,7 @@ import { parseTsv } from './components/tsvClipboard';
             newRange.selectNodeContents(wrapper);
             selection.removeAllRanges();
             selection.addRange(newRange);
-            lastEditRange = newRange.cloneRange();
+            state.lastEditRange = newRange.cloneRange();
         } catch {
             // Ignore range failures and keep editor functional.
         }
@@ -1981,28 +1835,28 @@ import { parseTsv } from './components/tsvClipboard';
 
         const labelSpan = btn.querySelector('.btn-label');
         if (labelSpan) {
-            labelSpan.textContent = isPlainView ? 'Styled' : 'Plain';
+            labelSpan.textContent = state.isPlainView ? 'Styled' : 'Plain';
         }
     }
 
     function syncPlainViewUiState() {
-        document.body.classList.toggle('plain-view', isPlainView);
+        document.body.classList.toggle('plain-view', state.isPlainView);
         updatePlainViewButtonLabel();
     }
 
     function isPlainDirectEditMode() {
-        return isPlainView && !isVersionPreviewMode;
+        return state.isPlainView && !state.isVersionPreviewMode;
     }
 
     function shouldShowSheetSelector() {
         // Show sheet selector if there are multiple sheets, regardless of file type
-        return worksheetsMeta && worksheetsMeta.length > 1;
+        return state.worksheetsMeta && state.worksheetsMeta.length > 1;
     }
 
     function syncSheetSelectorVisibility() {
         const selector = document.getElementById('sheetSelector');
         if (!selector) {return;}
-        selector.classList.toggle('hidden', isEditMode || !shouldShowSheetSelector());
+        selector.classList.toggle('hidden', state.isEditMode || !shouldShowSheetSelector());
     }
 
     function syncTemporaryFileToolbarActions() {
@@ -2010,17 +1864,17 @@ import { parseTsv } from './components/tsvClipboard';
         const toggleTableEditButton = document.getElementById('toggleTableEditButton');
         const hideEditTableButton = isPlainDirectEditMode();
 
-        if (toolbarManager) {
-            toolbarManager.setButtonVisibility('togglePlainViewButton', !isEditMode || isPlainView);
-            toolbarManager.setButtonVisibility('toggleTableEditButton', !isEditMode && !hideEditTableButton);
+        if (state.toolbarManager) {
+            state.toolbarManager.setButtonVisibility('togglePlainViewButton', !state.isEditMode || state.isPlainView);
+            state.toolbarManager.setButtonVisibility('toggleTableEditButton', !state.isEditMode && !hideEditTableButton);
             return;
         }
 
         if (togglePlainViewButton) {
-            togglePlainViewButton.classList.toggle('hidden', isEditMode && !isPlainView);
+            togglePlainViewButton.classList.toggle('hidden', state.isEditMode && !state.isPlainView);
         }
         if (toggleTableEditButton) {
-            toggleTableEditButton.classList.toggle('hidden', isEditMode || hideEditTableButton);
+            toggleTableEditButton.classList.toggle('hidden', state.isEditMode || hideEditTableButton);
         }
     }
 
@@ -2029,19 +1883,19 @@ import { parseTsv } from './components/tsvClipboard';
     }
 
     function getCurrentSettingsScope(): SettingsScope {
-        return isPlainView ? 'plain' : 'styled';
+        return state.isPlainView ? 'plain' : 'styled';
     }
 
     function getStoredSettingsForScope(scope: SettingsScope): XlsxViewSettings {
-        return scope === 'plain' ? plainModeSettings : styledModeSettings;
+        return scope === 'plain' ? state.plainModeSettings : state.styledModeSettings;
     }
 
     function setStoredSettingsForScope(scope: SettingsScope, settings: XlsxViewSettings) {
         if (scope === 'plain') {
-            plainModeSettings = { ...settings };
+            state.plainModeSettings = { ...settings };
             return;
         }
-        styledModeSettings = { ...settings };
+        state.styledModeSettings = { ...settings };
     }
 
     function normalizeSettingsForScope(scope: SettingsScope, incoming: any, previous: XlsxViewSettings): XlsxViewSettings {
@@ -2084,30 +1938,30 @@ import { parseTsv } from './components/tsvClipboard';
             }
         }
 
-        const scopeToApply = hasVirtualTableInit ? getCurrentSettingsScope() : incomingScope;
+        const scopeToApply = state.hasVirtualTableInit ? getCurrentSettingsScope() : incomingScope;
         applySettingsForScope(scopeToApply);
     }
 
     function requestStyledMode(nextAction?: () => void) {
-        if (!isTemporaryStyleFile || !isPlainView) {
+        if (!state.isTemporaryStyleFile || !state.isPlainView) {
             return false;
         }
 
-        pendingStyleModeAction = nextAction ?? null;
-        if (!styleModeRequestPending) {
-            styleModeRequestPending = true;
+        state.pendingStyleModeAction = nextAction ?? null;
+        if (!state.styleModeRequestPending) {
+            state.styleModeRequestPending = true;
             post({ command: 'requestStyleMode' });
         }
         return true;
     }
 
     function activateStyledMode() {
-        styleModeRequestPending = false;
+        state.styleModeRequestPending = false;
         hideStyleModeNoticePopup();
-        isPlainView = false;
+        state.isPlainView = false;
         syncPlainViewUiState();
         syncTemporaryFileToolbarActions();
-        if (isTemporaryStyleFile) {
+        if (state.isTemporaryStyleFile) {
             post({ command: 'setPreferredViewMode', mode: 'styled' });
         }
         applySettingsForScope('styled');
@@ -2115,16 +1969,16 @@ import { parseTsv } from './components/tsvClipboard';
         // Flush any pending plain-mode edits before switching so data is not lost.
         // Then request a full re-init from the provider to get fresh data (the
         // provider re-reads the file which contains the auto-saved plain edits).
-        if (pendingOutsideControlEdits.length > 0) {
+        if (state.pendingOutsideControlEdits.length > 0) {
             saveEdits(false, true);
         }
-        rowCache.clear();
-        currentVisibleStart = 0;
-        currentVisibleEnd = 0;
-        renderWorksheet(currentWorksheet);
+        state.rowCache.clear();
+        state.currentVisibleStart = 0;
+        state.currentVisibleEnd = 0;
+        renderWorksheet(state.currentWorksheet);
 
-        const nextAction = pendingStyleModeAction;
-        pendingStyleModeAction = null;
+        const nextAction = state.pendingStyleModeAction;
+        state.pendingStyleModeAction = null;
         if (nextAction) {
             setTimeout(() => {
                 try {
@@ -2137,9 +1991,9 @@ import { parseTsv } from './components/tsvClipboard';
     }
 
     function cancelStyledModeRequest() {
-        styleModeRequestPending = false;
+        state.styleModeRequestPending = false;
         hideStyleModeNoticePopup();
-        pendingStyleModeAction = null;
+        state.pendingStyleModeAction = null;
     }
 
     function applyEditFormatting(command: string, value?: string) {
@@ -2147,7 +2001,7 @@ import { parseTsv } from './components/tsvClipboard';
             return;
         }
 
-        if (!isEditMode) {return;}
+        if (!state.isEditMode) {return;}
 
         const selection = window.getSelection();
         const hasLiveSelection = !!selection && selection.rangeCount > 0 && !selection.isCollapsed;
@@ -2182,7 +2036,7 @@ import { parseTsv } from './components/tsvClipboard';
     }
 
     function getEditTargetCells(): HTMLElement[] {
-        const targets = Array.from(selectedCells)
+        const targets = Array.from(state.selectedCells)
             .filter(cell => document.contains(cell) && cell.tagName === 'TD')
             .map(cell => {
                 const row = cell.getAttribute('data-row');
@@ -2193,8 +2047,8 @@ import { parseTsv } from './components/tsvClipboard';
 
         if (targets.length > 0) {return targets;}
 
-        if (activeCell && document.contains(activeCell) && activeCell.tagName === 'TD') {
-            return [activeCell];
+        if (state.activeCell && document.contains(state.activeCell) && state.activeCell.tagName === 'TD') {
+            return [state.activeCell];
         }
 
         const focused = document.activeElement as HTMLElement | null;
@@ -2238,7 +2092,7 @@ import { parseTsv } from './components/tsvClipboard';
                 let targetStyle = { ...styleChanges };
 
                 if (mode === 'toggle' && toggleKey) {
-                    const currentPending = pendingCellStyleEdits.get(key);
+                    const currentPending = state.pendingCellStyleEdits.get(key);
                     const domCell = document.querySelector(`td[data-row="${r}"][data-col="${c}"]`) as HTMLElement | null;
                     let currentlyEnabled = false;
 
@@ -2266,7 +2120,7 @@ import { parseTsv } from './components/tsvClipboard';
                 }
 
                 // Gather before state
-                const pendingStyle = pendingCellStyleEdits.has(key) ? cloneCellStyleEdit(pendingCellStyleEdits.get(key)) : null;
+                const pendingStyle = state.pendingCellStyleEdits.has(key) ? cloneCellStyleEdit(state.pendingCellStyleEdits.get(key)) : null;
                 const domCell = document.querySelector(`td[data-row="${r}"][data-col="${c}"]`) as HTMLElement | null;
                 beforeStates.push({
                     row: r, col: c, key,
@@ -2283,14 +2137,14 @@ import { parseTsv } from './components/tsvClipboard';
                         row: r, col: c, key,
                         styleAttr: domCell.getAttribute('style') || '',
                         innerHtml: domCell.innerHTML,
-                        pendingStyle: cloneCellStyleEdit(pendingCellStyleEdits.get(key))
+                        pendingStyle: cloneCellStyleEdit(state.pendingCellStyleEdits.get(key))
                     });
                 } else {
                     afterStates.push({
                         row: r, col: c, key,
                         styleAttr: '',
                         innerHtml: '',
-                        pendingStyle: cloneCellStyleEdit(pendingCellStyleEdits.get(key))
+                        pendingStyle: cloneCellStyleEdit(state.pendingCellStyleEdits.get(key))
                     });
                 }
             }
@@ -2302,38 +2156,38 @@ import { parseTsv } from './components/tsvClipboard';
     }
 
     function getLogicalSelectionBounds(): { minRow: number, maxRow: number, minCol: number, maxCol: number } | null {
-        const hasFullColumnSelection = selectedColumnIndices.size > 0;
-        const hasFullRowSelection = selectedRowIndices.size > 0;
+        const hasFullColumnSelection = state.selectedColumnIndices.size > 0;
+        const hasFullRowSelection = state.selectedRowIndices.size > 0;
 
         if (hasFullRowSelection && hasFullColumnSelection) {
-            return { minRow: 0, maxRow: totalRows - 1, minCol: 0, maxCol: columnCount - 1 };
+            return { minRow: 0, maxRow: state.totalRows - 1, minCol: 0, maxCol: state.columnCount - 1 };
         }
 
         if (hasFullRowSelection) {
-            const minRow = Math.min(...Array.from(selectedRowIndices));
-            const maxRow = Math.max(...Array.from(selectedRowIndices));
-            return { minRow, maxRow, minCol: 0, maxCol: columnCount - 1 };
+            const minRow = Math.min(...Array.from(state.selectedRowIndices));
+            const maxRow = Math.max(...Array.from(state.selectedRowIndices));
+            return { minRow, maxRow, minCol: 0, maxCol: state.columnCount - 1 };
         }
 
         if (hasFullColumnSelection) {
-            const minCol = Math.min(...Array.from(selectedColumnIndices));
-            const maxCol = Math.max(...Array.from(selectedColumnIndices));
-            return { minRow: 0, maxRow: totalRows - 1, minCol, maxCol };
+            const minCol = Math.min(...Array.from(state.selectedColumnIndices));
+            const maxCol = Math.max(...Array.from(state.selectedColumnIndices));
+            return { minRow: 0, maxRow: state.totalRows - 1, minCol, maxCol };
         }
 
-        if (selectionStart && selectionEnd) {
+        if (state.selectionStart && state.selectionEnd) {
             return expandSelectionBoundsForMergedCells(
-                Math.min(selectionStart.row, selectionEnd.row),
-                Math.max(selectionStart.row, selectionEnd.row),
-                Math.min(selectionStart.col, selectionEnd.col),
-                Math.max(selectionStart.col, selectionEnd.col)
+                Math.min(state.selectionStart.row, state.selectionEnd.row),
+                Math.max(state.selectionStart.row, state.selectionEnd.row),
+                Math.min(state.selectionStart.col, state.selectionEnd.col),
+                Math.max(state.selectionStart.col, state.selectionEnd.col)
             );
         }
 
-        if (selectedCells.size > 0) {
+        if (state.selectedCells.size > 0) {
             const rows: number[] = [];
             const cols: number[] = [];
-            selectedCells.forEach((cell) => {
+            state.selectedCells.forEach((cell) => {
                 const row = parseInt(cell.dataset.row || '-1', 10);
                 const col = parseInt(cell.dataset.col || '-1', 10);
                 if (row >= 0 && col >= 0) {
@@ -2352,9 +2206,9 @@ import { parseTsv } from './components/tsvClipboard';
             }
         }
 
-        if (activeCell) {
-            const row = parseInt(activeCell.dataset.row || '0', 10);
-            const col = parseInt(activeCell.dataset.col || '0', 10);
+        if (state.activeCell) {
+            const row = parseInt(state.activeCell.dataset.row || '0', 10);
+            const col = parseInt(state.activeCell.dataset.col || '0', 10);
             return { minRow: row, maxRow: row, minCol: col, maxCol: col };
         }
 
@@ -2502,9 +2356,9 @@ import { parseTsv } from './components/tsvClipboard';
         const rowNum = row + 1;
         const colNum = col + 1;
         const key = rowNum + ':' + colNum;
-        const existing = pendingCellStyleEdits.get(key) || { row: rowNum, col: colNum };
+        const existing = state.pendingCellStyleEdits.get(key) || { row: rowNum, col: colNum };
         const merged = normalizeStyleForStorage({ ...existing, ...style, row: rowNum, col: colNum });
-        pendingCellStyleEdits.set(key, merged as CellStyleEdit);
+        state.pendingCellStyleEdits.set(key, merged as CellStyleEdit);
         updateRowCacheStyle(row, col, style);
         scheduleAutoSave('format');
     }
@@ -2515,9 +2369,9 @@ import { parseTsv } from './components/tsvClipboard';
         if (!rowNum || !colNum) {return;}
 
         const key = rowNum + ':' + colNum;
-        const existing = pendingCellStyleEdits.get(key) || { row: rowNum, col: colNum };
+        const existing = state.pendingCellStyleEdits.get(key) || { row: rowNum, col: colNum };
         const merged = normalizeStyleForStorage({ ...existing, ...style, row: rowNum, col: colNum });
-        pendingCellStyleEdits.set(key, merged as CellStyleEdit);
+        state.pendingCellStyleEdits.set(key, merged as CellStyleEdit);
         updateRowCacheStyle(rowNum - 1, colNum - 1, style);
         scheduleAutoSave('format');
     }
@@ -2534,8 +2388,8 @@ import { parseTsv } from './components/tsvClipboard';
         if (row < 0 || col < 0 || !rowNum || !colNum) {return null;}
 
         const key = `${rowNum}:${colNum}`;
-        const pendingStyle = pendingCellStyleEdits.has(key)
-            ? cloneCellStyleEdit(pendingCellStyleEdits.get(key) || null)
+        const pendingStyle = state.pendingCellStyleEdits.has(key)
+            ? cloneCellStyleEdit(state.pendingCellStyleEdits.get(key) || null)
             : null;
         const dropdown = cell.querySelector('.xlsx-cell-dropdown') as HTMLSelectElement | null;
         const dropdownValue = dropdown
@@ -2557,75 +2411,75 @@ import { parseTsv } from './components/tsvClipboard';
         };
     }
 
-    function applyCellUndoState(state: CellUndoState) {
-        const cell = document.querySelector(`td[data-row="${state.row}"][data-col="${state.col}"]`) as HTMLElement | null;
+    function applyCellUndoState(undoState: CellUndoState) {
+        const cell = document.querySelector(`td[data-row="${undoState.row}"][data-col="${undoState.col}"]`) as HTMLElement | null;
         if (cell) {
-            if (state.styleAttr) {
-                cell.setAttribute('style', state.styleAttr);
+            if (undoState.styleAttr) {
+                cell.setAttribute('style', undoState.styleAttr);
             } else {
                 cell.removeAttribute('style');
             }
-            cell.innerHTML = state.innerHtml;
+            cell.innerHTML = undoState.innerHtml;
 
-            cell.setAttribute('data-cell-type', state.dataCellType || 'text');
-            if (state.dataCheckboxChecked) {
-                cell.setAttribute('data-checkbox-checked', state.dataCheckboxChecked);
+            cell.setAttribute('data-cell-type', undoState.dataCellType || 'text');
+            if (undoState.dataCheckboxChecked) {
+                cell.setAttribute('data-checkbox-checked', undoState.dataCheckboxChecked);
             } else {
                 cell.removeAttribute('data-checkbox-checked');
             }
-            if (state.dataDropdownValue) {
-                cell.setAttribute('data-dropdown-value', state.dataDropdownValue);
+            if (undoState.dataDropdownValue) {
+                cell.setAttribute('data-dropdown-value', undoState.dataDropdownValue);
             } else {
                 cell.removeAttribute('data-dropdown-value');
             }
-            if (state.dataRatingValue) {
-                cell.setAttribute('data-rating-value', state.dataRatingValue);
+            if (undoState.dataRatingValue) {
+                cell.setAttribute('data-rating-value', undoState.dataRatingValue);
             } else {
                 cell.removeAttribute('data-rating-value');
             }
-            if (state.dataDateValue) {
-                cell.setAttribute('data-date-value', state.dataDateValue);
+            if (undoState.dataDateValue) {
+                cell.setAttribute('data-date-value', undoState.dataDateValue);
             } else {
                 cell.removeAttribute('data-date-value');
             }
 
             const select = cell.querySelector('.xlsx-cell-dropdown') as HTMLSelectElement | null;
             if (select) {
-                select.value = state.dataDropdownValue || '';
+                select.value = undoState.dataDropdownValue || '';
             }
 
             applyInteractiveControlState(cell);
         }
 
-        if (state.pendingStyle) {
-            pendingCellStyleEdits.set(state.key, cloneCellStyleEdit(state.pendingStyle)!);
+        if (undoState.pendingStyle) {
+            state.pendingCellStyleEdits.set(undoState.key, cloneCellStyleEdit(undoState.pendingStyle)!);
         } else {
-            pendingCellStyleEdits.delete(state.key);
+            state.pendingCellStyleEdits.delete(undoState.key);
         }
     }
 
     function captureWorksheetStateSnapshot(): WorksheetStateSnapshot {
         return {
             rows: cloneCellData(getMutableRowsSnapshot()),
-            totalRows,
-            columnCount,
-            columnWidths: cloneCellData(columnWidths),
-            allRowHeights: cloneCellData(allRowHeights),
-            mergedCells: cloneCellData(mergedCells || []),
-            pendingWorksheetOps: cloneWorksheetOps(pendingWorksheetOps)
+            totalRows: state.totalRows,
+            columnCount: state.columnCount,
+            columnWidths: cloneCellData(state.columnWidths),
+            allRowHeights: cloneCellData(state.allRowHeights),
+            mergedCells: cloneCellData(state.mergedCells || []),
+            pendingWorksheetOps: cloneWorksheetOps(state.pendingWorksheetOps)
         };
     }
 
     function restoreWorksheetStateSnapshot(snapshot: WorksheetStateSnapshot) {
-        totalRows = snapshot.totalRows;
-        columnCount = snapshot.columnCount;
-        columnWidths = cloneCellData(snapshot.columnWidths || []);
-        allRowHeights = cloneCellData(snapshot.allRowHeights || []);
+        state.totalRows = snapshot.totalRows;
+        state.columnCount = snapshot.columnCount;
+        state.columnWidths = cloneCellData(snapshot.columnWidths || []);
+        state.allRowHeights = cloneCellData(snapshot.allRowHeights || []);
         invalidateRowMetrics();
-        mergedCells = cloneCellData(snapshot.mergedCells || []);
-        pendingWorksheetOps = cloneWorksheetOps(snapshot.pendingWorksheetOps || []);
+        state.mergedCells = cloneCellData(snapshot.mergedCells || []);
+        state.pendingWorksheetOps = cloneWorksheetOps(snapshot.pendingWorksheetOps || []);
 
-        normalizeRowsAfterStructureChange(cloneCellData(snapshot.rows || []), rowCache);
+        normalizeRowsAfterStructureChange(cloneCellData(snapshot.rows || []), state.rowCache);
         clearSelection();
         hideHeaderContextMenu();
         rerenderCurrentSheetFromLocalState();
@@ -2633,35 +2487,35 @@ import { parseTsv } from './components/tsvClipboard';
 
     function pushEditUndoEntry(entry: { before: CellUndoState[]; after: CellUndoState[] }) {
         if (!entry.before.length || !entry.after.length) {return;}
-        editUndoStack.push({ kind: 'style', before: entry.before, after: entry.after });
-        if (editUndoStack.length > 100) {
-            editUndoStack.shift();
+        state.editUndoStack.push({ kind: 'style', before: entry.before, after: entry.after });
+        if (state.editUndoStack.length > 100) {
+            state.editUndoStack.shift();
         }
-        editRedoStack.length = 0;
+        state.editRedoStack.length = 0;
     }
 
     function pushSheetUndoEntry(before: WorksheetStateSnapshot, after: WorksheetStateSnapshot) {
-        editUndoStack.push({ kind: 'sheet', before, after });
-        if (editUndoStack.length > 100) {
-            editUndoStack.shift();
+        state.editUndoStack.push({ kind: 'sheet', before, after });
+        if (state.editUndoStack.length > 100) {
+            state.editUndoStack.shift();
         }
-        editRedoStack.length = 0;
+        state.editRedoStack.length = 0;
     }
 
     function undoEditAction() {
-        const entry = editUndoStack.pop();
+        const entry = state.editUndoStack.pop();
         if (!entry) {return false;}
 
         if (entry.kind === 'style') {
-            entry.before.forEach((state: CellUndoState) => applyCellUndoState(state));
+            entry.before.forEach((undoState: CellUndoState) => applyCellUndoState(undoState));
         } else {
             restoreWorksheetStateSnapshot(entry.before);
         }
 
-        editRedoStack.push(entry);
+        state.editRedoStack.push(entry);
         applyFindHighlightsInVisibleCells();
 
-        if (!isEditMode && entry.kind === 'style') {
+        if (!state.isEditMode && entry.kind === 'style') {
             syncControlEditsAfterUndoRedo(entry.before);
         }
 
@@ -2669,19 +2523,19 @@ import { parseTsv } from './components/tsvClipboard';
     }
 
     function redoEditAction() {
-        const entry = editRedoStack.pop();
+        const entry = state.editRedoStack.pop();
         if (!entry) {return false;}
 
         if (entry.kind === 'style') {
-            entry.after.forEach((state: CellUndoState) => applyCellUndoState(state));
+            entry.after.forEach((undoState: CellUndoState) => applyCellUndoState(undoState));
         } else {
             restoreWorksheetStateSnapshot(entry.after);
         }
 
-        editUndoStack.push(entry);
+        state.editUndoStack.push(entry);
         applyFindHighlightsInVisibleCells();
 
-        if (!isEditMode && entry.kind === 'style') {
+        if (!state.isEditMode && entry.kind === 'style') {
             syncControlEditsAfterUndoRedo(entry.after);
         }
 
@@ -2689,12 +2543,12 @@ import { parseTsv } from './components/tsvClipboard';
     }
 
     function syncControlEditsAfterUndoRedo(states: CellUndoState[]) {
-        if (isEditMode || isVersionPreviewMode || !Array.isArray(states) || !states.length) {
+        if (state.isEditMode || state.isVersionPreviewMode || !Array.isArray(states) || !states.length) {
             return;
         }
 
-        states.forEach((state) => {
-            const cell = document.querySelector(`td[data-row="${state.row}"][data-col="${state.col}"]`) as HTMLElement | null;
+        states.forEach((undoState) => {
+            const cell = document.querySelector(`td[data-row="${undoState.row}"][data-col="${undoState.col}"]`) as HTMLElement | null;
             if (!cell) {
                 return;
             }
@@ -2759,7 +2613,7 @@ import { parseTsv } from './components/tsvClipboard';
     }
 
     function shiftFontSize(delta: number) {
-        const sourceCell = activeCell || getEditTargetCells()[0] || null;
+        const sourceCell = state.activeCell || getEditTargetCells()[0] || null;
         if (!sourceCell) {
             showToast('Select cells to set font size');
             return;
@@ -2799,7 +2653,7 @@ import { parseTsv } from './components/tsvClipboard';
                 const colNum = c + 1;
                 const key = rowNum + ':' + colNum;
 
-                const pendingStyle = pendingCellStyleEdits.has(key) ? cloneCellStyleEdit(pendingCellStyleEdits.get(key)) : null;
+                const pendingStyle = state.pendingCellStyleEdits.has(key) ? cloneCellStyleEdit(state.pendingCellStyleEdits.get(key)) : null;
                 const domCell = document.querySelector(`td[data-row="${r}"][data-col="${c}"]`) as HTMLElement | null;
 
                 beforeStates.push({
@@ -2817,14 +2671,14 @@ import { parseTsv } from './components/tsvClipboard';
                         row: r, col: c, key,
                         styleAttr: domCell.getAttribute('style') || '',
                         innerHtml: domCell.innerHTML,
-                        pendingStyle: cloneCellStyleEdit(pendingCellStyleEdits.get(key))
+                        pendingStyle: cloneCellStyleEdit(state.pendingCellStyleEdits.get(key))
                     });
                 } else {
                     afterStates.push({
                         row: r, col: c, key,
                         styleAttr: '',
                         innerHtml: '',
-                        pendingStyle: cloneCellStyleEdit(pendingCellStyleEdits.get(key))
+                        pendingStyle: cloneCellStyleEdit(state.pendingCellStyleEdits.get(key))
                     });
                 }
             }
@@ -2893,7 +2747,7 @@ import { parseTsv } from './components/tsvClipboard';
             return;
         }
 
-        selectedBorderMode = mode;
+        state.selectedBorderMode = mode;
         const bounds = getLogicalSelectionBounds();
         if (!bounds) {
             showToast('Select cells to set borders');
@@ -2918,7 +2772,7 @@ import { parseTsv } from './components/tsvClipboard';
                 const key = rowNum + ':' + colNum;
 
                 // Gather before state
-                const pendingStyle = pendingCellStyleEdits.has(key) ? cloneCellStyleEdit(pendingCellStyleEdits.get(key)) : null;
+                const pendingStyle = state.pendingCellStyleEdits.has(key) ? cloneCellStyleEdit(state.pendingCellStyleEdits.get(key)) : null;
                 beforeStates.push({
                     row: r, col: c, key,
                     styleAttr: domCell ? (domCell.getAttribute('style') || '') : '',
@@ -2927,13 +2781,13 @@ import { parseTsv } from './components/tsvClipboard';
                 });
 
                 // Prepare border style
-                const existingBorder = pendingStyle?.border || (domCell ? copyFormattingFromCell(domCell).border : null) || { top: false, right: false, bottom: false, left: false, style: selectedBorderLineStyle, color: selectedBorderColor };
+                const existingBorder = pendingStyle?.border || (domCell ? copyFormattingFromCell(domCell).border : null) || { top: false, right: false, bottom: false, left: false, style: state.selectedBorderLineStyle, color: state.selectedBorderColor };
 
                 const border: BorderStyleEdit = {
                     ...existingBorder,
                     clear: false,
-                    color: selectedBorderColor,
-                    style: selectedBorderLineStyle
+                    color: state.selectedBorderColor,
+                    style: state.selectedBorderLineStyle
                 };
 
                 if (mode === 'none') {
@@ -2989,14 +2843,14 @@ import { parseTsv } from './components/tsvClipboard';
                         row: r, col: c, key,
                         styleAttr: domCell.getAttribute('style') || '',
                         innerHtml: domCell.innerHTML,
-                        pendingStyle: cloneCellStyleEdit(pendingCellStyleEdits.get(key))
+                        pendingStyle: cloneCellStyleEdit(state.pendingCellStyleEdits.get(key))
                     });
                 } else {
                     afterStates.push({
                         row: r, col: c, key,
                         styleAttr: '',
                         innerHtml: '',
-                        pendingStyle: cloneCellStyleEdit(pendingCellStyleEdits.get(key))
+                        pendingStyle: cloneCellStyleEdit(state.pendingCellStyleEdits.get(key))
                     });
                 }
             }
@@ -3012,7 +2866,7 @@ import { parseTsv } from './components/tsvClipboard';
             return;
         }
 
-        selectedBorderColor = color;
+        state.selectedBorderColor = color;
 
         const bounds = getLogicalSelectionBounds();
         if (!bounds) {
@@ -3030,7 +2884,7 @@ import { parseTsv } from './components/tsvClipboard';
                 const rowNum = r + 1;
                 const colNum = c + 1;
                 const key = rowNum + ':' + colNum;
-                const pendingStyle = pendingCellStyleEdits.has(key) ? cloneCellStyleEdit(pendingCellStyleEdits.get(key)) : null;
+                const pendingStyle = state.pendingCellStyleEdits.has(key) ? cloneCellStyleEdit(state.pendingCellStyleEdits.get(key)) : null;
                 const existingBorder = (pendingStyle?.border || (domCell ? copyFormattingFromCell(domCell).border : null)) as BorderStyleEdit | null;
 
                 const hasSides = !!existingBorder && !existingBorder.clear && (!!existingBorder.top || !!existingBorder.right || !!existingBorder.bottom || !!existingBorder.left);
@@ -3053,7 +2907,7 @@ import { parseTsv } from './components/tsvClipboard';
                     ...existingBorder,
                     clear: false,
                     color,
-                    style: existingBorder?.style || selectedBorderLineStyle
+                    style: existingBorder?.style || state.selectedBorderLineStyle
                 };
 
                 recordLogicalStyleEdit(r, c, { border });
@@ -3074,7 +2928,7 @@ import { parseTsv } from './components/tsvClipboard';
                     key,
                     styleAttr: domCell ? (domCell.getAttribute('style') || '') : '',
                     innerHtml: domCell ? domCell.innerHTML : '',
-                    pendingStyle: cloneCellStyleEdit(pendingCellStyleEdits.get(key))
+                    pendingStyle: cloneCellStyleEdit(state.pendingCellStyleEdits.get(key))
                 });
             }
         }
@@ -3147,7 +3001,7 @@ import { parseTsv } from './components/tsvClipboard';
     function resolveCellTypeForClear(cell: HTMLElement | null, rowIndex: number, colIndex: number): string {
         if (cell) {return getCellType(cell);}
 
-        const rowData = rowCache.get(rowIndex);
+        const rowData = state.rowCache.get(rowIndex);
         if (!rowData) {return 'text';}
 
         const cellData = getCellFromRow(rowData, colIndex + 1);
@@ -3188,7 +3042,7 @@ import { parseTsv } from './components/tsvClipboard';
     }
 
     function applyClearedValueToDomCell(cell: HTMLElement, cellType: string, value: string) {
-        if (isPlainView) {
+        if (state.isPlainView) {
             setPlainCellContent(cell, value);
         } else if (cellType === 'checkbox') {
             updateCheckboxCellPresentation(cell, false);
@@ -3240,7 +3094,7 @@ import { parseTsv } from './components/tsvClipboard';
                     if (before) {beforeStates.push(before);}
                 }
 
-                const rowData = rowCache.get(r);
+                const rowData = state.rowCache.get(r);
                 if (rowData) {
                     let cellData = getCellFromRow(rowData, colNumber);
                     if (!cellData) {
@@ -3267,12 +3121,12 @@ import { parseTsv } from './components/tsvClipboard';
 
         if (!hasChanges) {return;}
 
-        if (isEditMode) {
+        if (state.isEditMode) {
             scheduleAutoSave('text');
             return;
         }
 
-        if (currentSettings.autoSave) {
+        if (state.currentSettings.autoSave) {
             saveEdits(false, true);
             return;
         }
@@ -3395,7 +3249,7 @@ import { parseTsv } from './components/tsvClipboard';
             }
         }
 
-        normalizeRowsAfterStructureChange(rows, rowCache);
+        normalizeRowsAfterStructureChange(rows, state.rowCache);
         rerenderCurrentSheetFromLocalState();
         requestAnimationFrame(() => {
             const containerAfter = getTableContainer();
@@ -3405,7 +3259,7 @@ import { parseTsv } from './components/tsvClipboard';
             void updateVisibleRows();
         });
 
-        pendingWorksheetOps.push({
+        state.pendingWorksheetOps.push({
             type,
             startRow,
             startCol,
@@ -3446,7 +3300,7 @@ import { parseTsv } from './components/tsvClipboard';
             return {
                 width: match[1],
                 style: match[2].toLowerCase(),
-                color: normalizeColorToHex(match[3]) || selectedBorderColor
+                color: normalizeColorToHex(match[3]) || state.selectedBorderColor
             };
         };
 
@@ -3491,7 +3345,7 @@ import { parseTsv } from './components/tsvClipboard';
         };
 
         const pickBorderColor = () => {
-            if (!hasInlineBorders) {return selectedBorderColor;}
+            if (!hasInlineBorders) {return state.selectedBorderColor;}
             if (topBorderLine?.color) {return topBorderLine.color;}
             if (rightBorderLine?.color) {return rightBorderLine.color;}
             if (bottomBorderLine?.color) {return bottomBorderLine.color;}
@@ -3500,7 +3354,7 @@ import { parseTsv } from './components/tsvClipboard';
             if (rightEnabled) {return normalizeColorToHex(computed.borderRightColor);}
             if (bottomEnabled) {return normalizeColorToHex(computed.borderBottomColor);}
             if (leftEnabled) {return normalizeColorToHex(computed.borderLeftColor);}
-            return normalizeColorToHex(computed.borderColor) || selectedBorderColor;
+            return normalizeColorToHex(computed.borderColor) || state.selectedBorderColor;
         };
 
         // If no inline borders exist, the entire border object means "clear"
@@ -3662,26 +3516,26 @@ import { parseTsv } from './components/tsvClipboard';
     }
 
     function toggleFormatPainter() {
-        if (formatPainterArmed) {
-            formatPainterArmed = false;
-            formatPainterStyle = null;
+        if (state.formatPainterArmed) {
+            state.formatPainterArmed = false;
+            state.formatPainterStyle = null;
             document.body.classList.remove('format-painter-armed');
             showToast('Format painter off');
             return;
         }
 
-        const source = activeCell || getEditTargetCells()[0] || null;
+        const source = state.activeCell || getEditTargetCells()[0] || null;
         if (!source) {
             showToast('Select a source cell first');
             return;
         }
 
-        formatPainterStyle = copyFormattingFromCell(source);
-        if (formatPainterStyle.border?.style) {
-            syncBorderControlsFromStyle(formatPainterStyle.border.style);
+        state.formatPainterStyle = copyFormattingFromCell(source);
+        if (state.formatPainterStyle.border?.style) {
+            syncBorderControlsFromStyle(state.formatPainterStyle.border.style);
             syncBorderStyleFromControls();
         }
-        formatPainterArmed = true;
+        state.formatPainterArmed = true;
         document.body.classList.add('format-painter-armed');
         showToast('Format painter on: click a target cell');
     }
@@ -3706,7 +3560,7 @@ import { parseTsv } from './components/tsvClipboard';
                 const endCell = endEl ? endEl.closest('td[contenteditable="true"]') : null;
 
                 // In edit mode, text color formatting should not span across multiple cells.
-                if (!isEditMode || (startCell && endCell && startCell === endCell)) {
+                if (!state.isEditMode || (startCell && endCell && startCell === endCell)) {
                     applyEditFormatting('foreColor', color);
                     return;
                 }
@@ -3723,7 +3577,7 @@ import { parseTsv } from './components/tsvClipboard';
     }
 
     function ensureColorPalette() {
-        if (colorPaletteEl) {return colorPaletteEl;}
+        if (state.colorPaletteEl) {return state.colorPaletteEl;}
 
         const palette = document.createElement('div');
         palette.id = 'sheetsColorPalette';
@@ -3749,16 +3603,16 @@ import { parseTsv } from './components/tsvClipboard';
             sw.style.backgroundColor = color;
             sw.setAttribute('data-color', color);
             sw.addEventListener('click', () => {
-                if (activeColorTarget === 'text') {
-                    selectedTextColor = color;
+                if (state.activeColorTarget === 'text') {
+                    state.selectedTextColor = color;
                     applyTextColor(color);
                     updateColorPreview('text', color);
-                } else if (activeColorTarget === 'background') {
-                    selectedBgColor = color;
+                } else if (state.activeColorTarget === 'background') {
+                    state.selectedBgColor = color;
                     applyCellBackgroundColor(color);
                     updateColorPreview('background', color);
                 } else {
-                    selectedBorderColor = color;
+                    state.selectedBorderColor = color;
                     updateColorPreview('border', color);
                     applyBorderColorToSelection(color);
                 }
@@ -3773,19 +3627,19 @@ import { parseTsv } from './components/tsvClipboard';
         const customInput = document.createElement('input');
         customInput.type = 'color';
         customInput.id = 'sheetsCustomColorInput';
-        customInput.value = selectedTextColor;
+        customInput.value = state.selectedTextColor;
         customInput.addEventListener('input', () => {
             const color = customInput.value;
-            if (activeColorTarget === 'text') {
-                selectedTextColor = color;
+            if (state.activeColorTarget === 'text') {
+                state.selectedTextColor = color;
                 applyTextColor(color);
                 updateColorPreview('text', color);
-            } else if (activeColorTarget === 'background') {
-                selectedBgColor = color;
+            } else if (state.activeColorTarget === 'background') {
+                state.selectedBgColor = color;
                 applyCellBackgroundColor(color);
                 updateColorPreview('background', color);
             } else {
-                selectedBorderColor = color;
+                state.selectedBorderColor = color;
                 updateColorPreview('border', color);
                 applyBorderColorToSelection(color);
             }
@@ -3794,27 +3648,27 @@ import { parseTsv } from './components/tsvClipboard';
         palette.appendChild(customWrap);
 
         document.body.appendChild(palette);
-        colorPaletteEl = palette;
+        state.colorPaletteEl = palette;
         return palette;
     }
 
     function hideColorPalette() {
-        if (!colorPaletteEl) {return;}
-        colorPaletteEl.classList.add('hidden');
-        activeColorTarget = null;
+        if (!state.colorPaletteEl) {return;}
+        state.colorPaletteEl.classList.add('hidden');
+        state.activeColorTarget = null;
     }
 
     function showColorPalette(anchor: HTMLElement, target: 'text' | 'background' | 'border') {
         const palette = ensureColorPalette();
-        activeColorTarget = target;
+        state.activeColorTarget = target;
 
         const input = palette.querySelector('#sheetsCustomColorInput') as HTMLInputElement | null;
         if (input) {
             input.value = target === 'text'
-                ? selectedTextColor
+                ? state.selectedTextColor
                 : target === 'background'
-                    ? selectedBgColor
-                    : selectedBorderColor;
+                    ? state.selectedBgColor
+                    : state.selectedBorderColor;
         }
 
         palette.classList.remove('hidden');
@@ -3847,7 +3701,7 @@ import { parseTsv } from './components/tsvClipboard';
         const textColorButton = document.getElementById('formatTextColorButton') as HTMLButtonElement | null;
         if (textColorButton) {
             textColorButton.classList.add('color-format-button');
-            updateColorPreview('text', selectedTextColor);
+            updateColorPreview('text', state.selectedTextColor);
             textColorButton.addEventListener('click', () => {
                 captureEditSelectionRange();
                 showColorPalette(textColorButton, 'text');
@@ -3857,7 +3711,7 @@ import { parseTsv } from './components/tsvClipboard';
         const bgColorButton = document.getElementById('formatBackgroundColorButton') as HTMLButtonElement | null;
         if (bgColorButton) {
             bgColorButton.classList.add('color-format-button');
-            updateColorPreview('background', selectedBgColor);
+            updateColorPreview('background', state.selectedBgColor);
             bgColorButton.addEventListener('click', () => {
                 captureEditSelectionRange();
                 showColorPalette(bgColorButton, 'background');
@@ -3882,7 +3736,7 @@ import { parseTsv } from './components/tsvClipboard';
     }
 
     function ensureEditFormattingStrip() {
-        if (editFormattingStripEl) {return;}
+        if (state.editFormattingStripEl) {return;}
 
         const toolbar = document.getElementById('toolbar');
         if (!toolbar) {return;}
@@ -3962,7 +3816,7 @@ import { parseTsv } from './components/tsvClipboard';
         } else {
             toolbar.appendChild(strip);
         }
-        editFormattingStripEl = strip;
+        state.editFormattingStripEl = strip;
 
         const onKeepTextSelection = (event: Event) => {
             event.preventDefault();
@@ -4003,7 +3857,7 @@ import { parseTsv } from './components/tsvClipboard';
         const stripTextColorButton = byId<HTMLButtonElement>('stripTextColorButton');
         if (stripTextColorButton) {
             stripTextColorButton.classList.add('color-format-button');
-            stripTextColorButton.style.setProperty('--format-color-preview', selectedTextColor);
+            stripTextColorButton.style.setProperty('--format-color-preview', state.selectedTextColor);
             stripTextColorButton.addEventListener('click', () => {
                 captureEditSelectionRange();
                 showColorPalette(stripTextColorButton, 'text');
@@ -4013,7 +3867,7 @@ import { parseTsv } from './components/tsvClipboard';
         const stripBgColorButton = byId<HTMLButtonElement>('stripBgColorButton');
         if (stripBgColorButton) {
             stripBgColorButton.classList.add('color-format-button');
-            stripBgColorButton.style.setProperty('--format-color-preview', selectedBgColor);
+            stripBgColorButton.style.setProperty('--format-color-preview', state.selectedBgColor);
             stripBgColorButton.addEventListener('click', () => {
                 captureEditSelectionRange();
                 showColorPalette(stripBgColorButton, 'background');
@@ -4023,7 +3877,7 @@ import { parseTsv } from './components/tsvClipboard';
         const stripBorderColorButton = byId<HTMLButtonElement>('stripBorderColorButton');
         if (stripBorderColorButton) {
             stripBorderColorButton.classList.add('color-format-button');
-            stripBorderColorButton.style.setProperty('--format-color-preview', selectedBorderColor);
+            stripBorderColorButton.style.setProperty('--format-color-preview', state.selectedBorderColor);
             stripBorderColorButton.addEventListener('click', () => {
                 captureEditSelectionRange();
                 applyCurrentBorderMode();
@@ -4038,22 +3892,22 @@ import { parseTsv } from './components/tsvClipboard';
             applyVerticalAlign((e.target as HTMLSelectElement).value as VerticalAlign);
         });
         byId<HTMLButtonElement>('stripBordersButton')?.addEventListener('click', (e) => {
-            if (activeCell) {
-                syncBorderSelectionFromCell(activeCell);
+            if (state.activeCell) {
+                syncBorderSelectionFromCell(state.activeCell);
             } else {
                 updateBorderPopupActiveButtons({ clear: true });
             }
             showBorderPopup(e.currentTarget as HTMLElement);
         });
         byId<HTMLSelectElement>('editBorderThickness')?.addEventListener('change', (e) => {
-            selectedBorderThickness = (e.target as HTMLSelectElement).value as BorderThickness;
+            state.selectedBorderThickness = (e.target as HTMLSelectElement).value as BorderThickness;
             syncBorderStyleFromControls();
-            if (selectedBorderPattern === 'solid') {
+            if (state.selectedBorderPattern === 'solid') {
                 applyCurrentBorderMode();
             }
         });
         byId<HTMLSelectElement>('editBorderPattern')?.addEventListener('change', (e) => {
-            selectedBorderPattern = (e.target as HTMLSelectElement).value as BorderPattern;
+            state.selectedBorderPattern = (e.target as HTMLSelectElement).value as BorderPattern;
             syncBorderStyleFromControls();
             applyCurrentBorderMode();
         });
@@ -4253,17 +4107,17 @@ import { parseTsv } from './components/tsvClipboard';
     }
 
     function canUseInteractiveControlsOutsideEditMode(): boolean {
-        return !!currentSettings.allowInteractiveControlsOutsideEditMode && !isVersionPreviewMode;
+        return !!state.currentSettings.allowInteractiveControlsOutsideEditMode && !state.isVersionPreviewMode;
     }
 
     function areInteractiveControlsEnabled(): boolean {
-        return isEditMode || canUseInteractiveControlsOutsideEditMode();
+        return state.isEditMode || canUseInteractiveControlsOutsideEditMode();
     }
 
     function applyInteractiveControlState(root?: ParentNode | null) {
         const scope = root || document;
         const controlsEnabled = areInteractiveControlsEnabled();
-        const outsideEditEnabled = !isEditMode && controlsEnabled;
+        const outsideEditEnabled = !state.isEditMode && controlsEnabled;
 
         document.body.classList.toggle('controls-editable-outside-edit-mode', outsideEditEnabled);
 
@@ -4289,58 +4143,58 @@ import { parseTsv } from './components/tsvClipboard';
 
         scope.querySelectorAll('.xlsx-dropdown-edit-button').forEach((el) => {
             const button = el as HTMLButtonElement;
-            button.disabled = !isEditMode;
+            button.disabled = !state.isEditMode;
         });
     }
 
     function showManualSaveReminderIfNeeded() {
-        const isAutosaveOff = !currentSettings.autoSave;
-        const shouldShowForPlain = isPlainView && !isVersionPreviewMode && isAutosaveOff;
-        const shouldShowForStyled = !isPlainView && !isEditMode && !isVersionPreviewMode && isAutosaveOff && currentSettings.showManualSavePopup;
+        const isAutosaveOff = !state.currentSettings.autoSave;
+        const shouldShowForPlain = state.isPlainView && !state.isVersionPreviewMode && isAutosaveOff;
+        const shouldShowForStyled = !state.isPlainView && !state.isEditMode && !state.isVersionPreviewMode && isAutosaveOff && state.currentSettings.showManualSavePopup;
 
         if (!shouldShowForPlain && !shouldShowForStyled) {
             return;
         }
 
         const now = Date.now();
-        if (now < manualSaveReminderUntil) {
+        if (now < state.manualSaveReminderUntil) {
             return;
         }
 
-        manualSaveReminderUntil = now + 2500;
+        state.manualSaveReminderUntil = now + 2500;
         showToast('Autosave is off. Press Ctrl/Cmd+S to save or enable it in settings', false, 1800);
     }
 
     function upsertPendingOutsideControlEdit(row: number, col: number, value: string) {
-        const existingIndex = pendingOutsideControlEdits.findIndex((edit) => edit.row === row && edit.col === col);
+        const existingIndex = state.pendingOutsideControlEdits.findIndex((edit) => edit.row === row && edit.col === col);
         const next = { row, col, value };
 
         if (existingIndex >= 0) {
-            pendingOutsideControlEdits[existingIndex] = next;
+            state.pendingOutsideControlEdits[existingIndex] = next;
             return;
         }
 
-        pendingOutsideControlEdits.push(next);
+        state.pendingOutsideControlEdits.push(next);
     }
 
     function removePendingOutsideControlEdit(row: number, col: number) {
-        pendingOutsideControlEdits = pendingOutsideControlEdits.filter((edit) => edit.row !== row || edit.col !== col);
+        state.pendingOutsideControlEdits = state.pendingOutsideControlEdits.filter((edit) => edit.row !== row || edit.col !== col);
     }
 
     function clearPendingOutsideControlEdits() {
-        pendingOutsideControlEdits = [];
+        state.pendingOutsideControlEdits = [];
     }
 
     function shouldScheduleAutosaveForChange(kind: XlsxAutoSaveChangeKind): boolean {
-        if (isTemporaryStyleFile && (kind === 'format' || kind === 'structure')) {
+        if (state.isTemporaryStyleFile && (kind === 'format' || kind === 'structure')) {
             return true;
         }
 
-        if (!currentSettings.autoSave) {
+        if (!state.currentSettings.autoSave) {
             return false;
         }
 
-        const mode = currentSettings.autoSaveMode === 'controlsOnly' ? 'controlsOnly' : 'all';
+        const mode = state.currentSettings.autoSaveMode === 'controlsOnly' ? 'controlsOnly' : 'all';
         if (mode === 'all') {
             return true;
         }
@@ -4349,7 +4203,7 @@ import { parseTsv } from './components/tsvClipboard';
     }
 
     function persistInteractiveControlEdit(cell: HTMLElement) {
-        if (isVersionPreviewMode || isEditMode) {return;}
+        if (state.isVersionPreviewMode || state.isEditMode) {return;}
 
         const row = parseInt(cell.getAttribute('data-rownum') || '0', 10);
         const col = parseInt(cell.getAttribute('data-colnum') || '0', 10);
@@ -4358,7 +4212,7 @@ import { parseTsv } from './components/tsvClipboard';
         const value = getCellNormalizedValue(cell).replace(/\u00a0/g, '');
         syncLocalSnapshotValue(row, col, value);
 
-        if (!currentSettings.autoSave) {
+        if (!state.currentSettings.autoSave) {
             upsertPendingOutsideControlEdit(row, col, value);
             showManualSaveReminderIfNeeded();
             return;
@@ -4367,7 +4221,7 @@ import { parseTsv } from './components/tsvClipboard';
         removePendingOutsideControlEdit(row, col);
         post({
             command: 'saveXlsxEdits',
-            sheetIndex: currentWorksheet,
+            sheetIndex: state.currentWorksheet,
             edits: [{ row, col, value }],
             richEdits: [],
             styleEdits: [],
@@ -4377,7 +4231,7 @@ import { parseTsv } from './components/tsvClipboard';
     }
 
     function persistPlainTextEdit(cell: HTMLElement) {
-        if (isVersionPreviewMode || isEditMode) {return;}
+        if (state.isVersionPreviewMode || state.isEditMode) {return;}
 
         const row = parseInt(cell.getAttribute('data-rownum') || '0', 10);
         const col = parseInt(cell.getAttribute('data-colnum') || '0', 10);
@@ -4388,7 +4242,7 @@ import { parseTsv } from './components/tsvClipboard';
         cell.dataset.originalText = value;
         cell.dataset.originalHtml = cell.innerHTML;
 
-        if (!currentSettings.autoSave) {
+        if (!state.currentSettings.autoSave) {
             upsertPendingOutsideControlEdit(row, col, value);
             showManualSaveReminderIfNeeded();
             return;
@@ -4397,7 +4251,7 @@ import { parseTsv } from './components/tsvClipboard';
         removePendingOutsideControlEdit(row, col);
         post({
             command: 'saveXlsxEdits',
-            sheetIndex: currentWorksheet,
+            sheetIndex: state.currentWorksheet,
             edits: [{ row, col, value }],
             richEdits: [],
             styleEdits: [],
@@ -4425,16 +4279,16 @@ import { parseTsv } from './components/tsvClipboard';
             row.cells.sort((a: any, b: any) => (a.colNumber || 0) - (b.colNumber || 0));
         };
 
-        applyValue(sourceRowsSnapshot);
-        applyValue(transformedRowsSnapshot);
+        applyValue(state.sourceRowsSnapshot);
+        applyValue(state.transformedRowsSnapshot);
     }
 
     function hasPendingXlsxEdits(): boolean {
-        if (pendingOutsideControlEdits.length > 0) {
+        if (state.pendingOutsideControlEdits.length > 0) {
             return true;
         }
 
-        if (pendingWorksheetOps.length > 0 || pendingCellStyleEdits.size > 0) {
+        if (state.pendingWorksheetOps.length > 0 || state.pendingCellStyleEdits.size > 0) {
             return true;
         }
 
@@ -4452,30 +4306,30 @@ import { parseTsv } from './components/tsvClipboard';
     }
 
     function clearAutoSaveTimer() {
-        if (autoSaveTimer) {
-            clearTimeout(autoSaveTimer);
-            autoSaveTimer = null;
+        if (state.autoSaveTimer) {
+            clearTimeout(state.autoSaveTimer);
+            state.autoSaveTimer = null;
         }
     }
 
     function scheduleAutoSave(kind: XlsxAutoSaveChangeKind = 'text') {
-        if (!isEditMode || isVersionPreviewMode || isSaving) {
-            if (isPlainView && !isVersionPreviewMode && !currentSettings.autoSave) {
+        if (!state.isEditMode || state.isVersionPreviewMode || state.isSaving) {
+            if (state.isPlainView && !state.isVersionPreviewMode && !state.currentSettings.autoSave) {
                 showManualSaveReminderIfNeeded();
             }
             return;
         }
         if (!shouldScheduleAutosaveForChange(kind)) {
-            if (!currentSettings.autoSave) {
+            if (!state.currentSettings.autoSave) {
                 showManualSaveReminderIfNeeded();
             }
             return;
         }
 
         clearAutoSaveTimer();
-        autoSaveTimer = setTimeout(() => {
-            autoSaveTimer = null;
-            if ((!currentSettings.autoSave && !(isTemporaryStyleFile && (kind === 'format' || kind === 'structure'))) || !isEditMode || isVersionPreviewMode || isSaving) {
+        state.autoSaveTimer = setTimeout(() => {
+            state.autoSaveTimer = null;
+            if ((!state.currentSettings.autoSave && !(state.isTemporaryStyleFile && (kind === 'format' || kind === 'structure'))) || !state.isEditMode || state.isVersionPreviewMode || state.isSaving) {
                 return;
             }
             if (!hasPendingXlsxEdits()) {
@@ -4485,10 +4339,6 @@ import { parseTsv } from './components/tsvClipboard';
         }, 1100);
     }
 
-    // ===== Virtual Scrolling Core =====
-
-    let activeScrollContainer: HTMLElement | null = null;
-
     function getTableContainer(): HTMLElement | null {
         if (!document.body.classList.contains('sticky-toolbar-enabled')) {
             return document.getElementById('content');
@@ -4497,24 +4347,24 @@ import { parseTsv } from './components/tsvClipboard';
     }
 
     function requestRows(start: number, end: number, timeout = 10000): Promise<any[]> {
-        return virtualLoader.requestRows(start, end, timeout, { sheetIndex: currentWorksheet });
+        return virtualLoader.requestRows(start, end, timeout, { sheetIndex: state.currentWorksheet });
     }
 
     function requestAllRows(): Promise<any[]> {
-        const rowCount = Math.max(0, baseTotalRows || totalRows);
+        const rowCount = Math.max(0, state.baseTotalRows || state.totalRows);
         return requestRows(0, rowCount, 30000);
     }
 
     function clearDataTransforms() {
-        sourceRowsSnapshot = null;
-        transformedRowsSnapshot = null;
-        activeColumnFilters.clear();
-        activeSortState = null;
+        state.sourceRowsSnapshot = null;
+        state.transformedRowsSnapshot = null;
+        state.activeColumnFilters.clear();
+        state.activeSortState = null;
     }
 
     function getActiveRowsSnapshot(): any[] | null {
-        if (transformedRowsSnapshot) {return transformedRowsSnapshot;}
-        if (sourceRowsSnapshot) {return sourceRowsSnapshot;}
+        if (state.transformedRowsSnapshot) {return state.transformedRowsSnapshot;}
+        if (state.sourceRowsSnapshot) {return state.sourceRowsSnapshot;}
         return null;
     }
 
@@ -4630,32 +4480,32 @@ import { parseTsv } from './components/tsvClipboard';
 
     function applyDataOpsRowsToViewport(rows: any[] | null) {
         if (rows) {
-            transformedRowsSnapshot = rows;
-            totalRows = rows.length;
-            allRowHeights = rows.map((row) => {
+            state.transformedRowsSnapshot = rows;
+            state.totalRows = rows.length;
+            state.allRowHeights = rows.map((row) => {
                 const h = Number((row as any)?.height);
                 return Number.isFinite(h) && h > 0 ? h : ROW_HEIGHT;
             });
         } else {
-            transformedRowsSnapshot = null;
-            totalRows = baseTotalRows;
-            allRowHeights = [...baseRowHeights];
+            state.transformedRowsSnapshot = null;
+            state.totalRows = state.baseTotalRows;
+            state.allRowHeights = [...state.baseRowHeights];
         }
 
         invalidateRowMetrics();
-        rowCache.clear();
-        currentVisibleStart = 0;
-        currentVisibleEnd = 0;
+        state.rowCache.clear();
+        state.currentVisibleStart = 0;
+        state.currentVisibleEnd = 0;
         hideHeaderContextMenu();
-        renderWorksheet(currentWorksheet);
+        renderWorksheet(state.currentWorksheet);
     }
 
     async function ensureSourceRowsSnapshot(): Promise<boolean> {
-        if (sourceRowsSnapshot) {
+        if (state.sourceRowsSnapshot) {
             return true;
         }
 
-        if ((baseTotalRows || totalRows) > MAX_ROWS_FOR_CLIENT_DATA_OPS) {
+        if ((state.baseTotalRows || state.totalRows) > MAX_ROWS_FOR_CLIENT_DATA_OPS) {
             showToast(`Filtering is limited to ${MAX_ROWS_FOR_CLIENT_DATA_OPS.toLocaleString()} rows for performance.`);
             return false;
         }
@@ -4664,7 +4514,7 @@ import { parseTsv } from './components/tsvClipboard';
             setLoadingText('Loading rows for filtering...');
             showLoading();
             const rows = await requestAllRows();
-            sourceRowsSnapshot = Array.isArray(rows) ? rows.map((row) => cloneCellData(row)) : [];
+            state.sourceRowsSnapshot = Array.isArray(rows) ? rows.map((row) => cloneCellData(row)) : [];
             return true;
         } catch {
             showToast('Unable to load rows for filtering');
@@ -4675,22 +4525,22 @@ import { parseTsv } from './components/tsvClipboard';
     }
 
     function rebuildFilteredRows() {
-        if (!sourceRowsSnapshot) {
+        if (!state.sourceRowsSnapshot) {
             return;
         }
 
         let headerRow: any = null;
-        let rowsToProcess = [...sourceRowsSnapshot];
+        let rowsToProcess = [...state.sourceRowsSnapshot];
 
-        if (currentSettings.firstRowIsHeader && sourceRowsSnapshot.length > 0) {
-            headerRow = sourceRowsSnapshot[0];
-            rowsToProcess = sourceRowsSnapshot.slice(1);
+        if (state.currentSettings.firstRowIsHeader && state.sourceRowsSnapshot.length > 0) {
+            headerRow = state.sourceRowsSnapshot[0];
+            rowsToProcess = state.sourceRowsSnapshot.slice(1);
         }
 
         let nextRows = rowsToProcess;
-        if (activeColumnFilters.size > 0) {
+        if (state.activeColumnFilters.size > 0) {
             nextRows = nextRows.filter((rowData) => {
-                for (const filter of activeColumnFilters.values()) {
+                for (const filter of state.activeColumnFilters.values()) {
                     const raw = readCellTextForDataOps(rowData, filter.columnIndex);
                     const cellText = filter.caseSensitive ? raw : raw.toLowerCase();
                     const query = filter.caseSensitive ? filter.query : filter.query.toLowerCase();
@@ -4720,8 +4570,8 @@ import { parseTsv } from './components/tsvClipboard';
             });
         }
 
-        if (activeSortState) {
-            const { columnIndex, direction } = activeSortState;
+        if (state.activeSortState) {
+            const { columnIndex, direction } = state.activeSortState;
             nextRows = [...nextRows].sort((a, b) => {
                 const aText = readCellTextForDataOps(a, columnIndex);
                 const bText = readCellTextForDataOps(b, columnIndex);
@@ -4730,18 +4580,18 @@ import { parseTsv } from './components/tsvClipboard';
         }
 
         if (headerRow) {
-            transformedRowsSnapshot = [headerRow, ...nextRows];
+            state.transformedRowsSnapshot = [headerRow, ...nextRows];
         } else {
-            transformedRowsSnapshot = nextRows;
+            state.transformedRowsSnapshot = nextRows;
         }
     }
 
     function getHeaderIndicator(colIndex: number): string {
         const parts: string[] = [];
-        if (activeSortState?.columnIndex === colIndex) {
-            parts.push(activeSortState.direction === 'asc' ? 'A-Z' : 'Z-A');
+        if (state.activeSortState?.columnIndex === colIndex) {
+            parts.push(state.activeSortState.direction === 'asc' ? 'A-Z' : 'Z-A');
         }
-        if (activeColumnFilters.has(colIndex)) {
+        if (state.activeColumnFilters.has(colIndex)) {
             parts.push('Filtered');
         }
         return parts.join(' • ');
@@ -4754,10 +4604,10 @@ import { parseTsv } from './components/tsvClipboard';
             rowData,
             rowIndex,
             rowHeight: height,
-            columnCount,
-            columnWidths,
-            isPlainView,
-            isEditMode,
+            columnCount: state.columnCount,
+            columnWidths: state.columnWidths,
+            isPlainView: state.isPlainView,
+            isEditMode: state.isEditMode,
             allowInteractiveControls: areInteractiveControlsEnabled()
         });
     }
@@ -4797,7 +4647,7 @@ import { parseTsv } from './components/tsvClipboard';
                 const headerEl = th as HTMLElement;
                 const headerText = (headerEl.innerText || headerEl.textContent || '').trim();
 
-                const baseWidth = Math.max(40, Math.round(columnWidths[index] || 80));
+                const baseWidth = Math.max(40, Math.round(state.columnWidths[index] || 80));
                 let maxWidth = Math.max(ctx.measureText(headerText).width + 32, baseWidth);
 
                 for (let r = 0; r < limit; r++) {
@@ -4822,10 +4672,10 @@ import { parseTsv } from './components/tsvClipboard';
 
     function setRowHeaderWidth(widthPx: number, allowShrink = false) {
         const nextWidth = Math.max(MIN_ROW_HEADER_WIDTH, Math.ceil(widthPx));
-        if (!allowShrink && nextWidth <= currentRowHeaderWidth) {return;}
-        if (allowShrink && nextWidth === currentRowHeaderWidth) {return;}
+        if (!allowShrink && nextWidth <= state.currentRowHeaderWidth) {return;}
+        if (allowShrink && nextWidth === state.currentRowHeaderWidth) {return;}
 
-        currentRowHeaderWidth = nextWidth;
+        state.currentRowHeaderWidth = nextWidth;
         document.documentElement.style.setProperty('--row-header-width', `${nextWidth}px`);
     }
 
@@ -4836,62 +4686,62 @@ import { parseTsv } from './components/tsvClipboard';
     }
 
     function ensureRowHeaderWidthForVisibleRange(startRow: number, endRowExclusive: number) {
-        if (totalRows <= 0) {return;}
+        if (state.totalRows <= 0) {return;}
 
         const maxVisibleRow = Math.max(startRow, endRowExclusive - 1);
-        const clampedMaxVisibleRow = Math.max(0, Math.min(totalRows - 1, maxVisibleRow));
+        const clampedMaxVisibleRow = Math.max(0, Math.min(state.totalRows - 1, maxVisibleRow));
         const needed = estimateRowHeaderWidthForRowIndex(clampedMaxVisibleRow);
         setRowHeaderWidth(needed);
     }
 
     const syncColumnWidthsToCurrentMode = debounce(() => {
-        if (isEditMode) {return;}
+        if (state.isEditMode) {return;}
         adjustColumnWidths(document.body.classList.contains('expanded-mode') ? 'expand' : 'default');
     }, 100);
 
     function renderVirtualRows(startIndex: number, endIndex: number, rowsData: any[], cacheRows = true) {
-        if (isRendering) {return;}
-        isRendering = true;
+        if (state.isRendering) {return;}
+        state.isRendering = true;
 
         const tbody = document.querySelector('#xlsxTable tbody');
         if (!tbody) {
-            isRendering = false;
+            state.isRendering = false;
             return;
         }
 
         if (cacheRows) {
             rowsData.forEach((row, i) => {
-                rowCache.set(startIndex + i, row);
+                state.rowCache.set(startIndex + i, row);
             });
         }
 
-        const isHeaderStickyAndActive = !!currentSettings.firstRowIsHeader;
+        const isHeaderStickyAndActive = !!state.currentSettings.firstRowIsHeader;
         let topSpacerHeight = 0;
         if (isHeaderStickyAndActive && startIndex > 0) {
             topSpacerHeight = getRowHeightRange(1, startIndex);
         } else {
             topSpacerHeight = getRowTopOffset(startIndex);
         }
-        const bottomSpacerHeight = getRowHeightRange(endIndex, totalRows);
+        const bottomSpacerHeight = getRowHeightRange(endIndex, state.totalRows);
 
         let html = '';
 
         if (isHeaderStickyAndActive && startIndex > 0) {
-            const headerRowData = rowCache.get(0) || { cells: [], rowNumber: 1 };
+            const headerRowData = state.rowCache.get(0) || { cells: [], rowNumber: 1 };
             html += createRowHtml(headerRowData, 0);
         }
 
         if (topSpacerHeight > 0) {
-            html += '<tr class="virtual-spacer top-spacer"><td colspan="' + (columnCount + 1) + '" style="height: ' + topSpacerHeight + 'px; padding: 0; border: none;"></td></tr>';
+            html += '<tr class="virtual-spacer top-spacer"><td colspan="' + (state.columnCount + 1) + '" style="height: ' + topSpacerHeight + 'px; padding: 0; border: none;"></td></tr>';
         }
 
         for (let i = startIndex; i < endIndex; i++) {
-            const rowData = rowCache.get(i) || { cells: [], rowNumber: i + 1 };
+            const rowData = state.rowCache.get(i) || { cells: [], rowNumber: i + 1 };
             html += createRowHtml(rowData, i);
         }
 
         if (bottomSpacerHeight > 0) {
-            html += '<tr class="virtual-spacer bottom-spacer"><td colspan="' + (columnCount + 1) + '" style="height: ' + bottomSpacerHeight + 'px; padding: 0; border: none;"></td></tr>';
+            html += '<tr class="virtual-spacer bottom-spacer"><td colspan="' + (state.columnCount + 1) + '" style="height: ' + bottomSpacerHeight + 'px; padding: 0; border: none;"></td></tr>';
         }
 
         tbody.innerHTML = html;
@@ -4900,54 +4750,54 @@ import { parseTsv } from './components/tsvClipboard';
         reapplySelection();
         applyFindHighlightsInVisibleCells();
         syncColumnWidthsToCurrentMode();
-        if (isEditMode) {
+        if (state.isEditMode) {
             captureOriginalCellValues();
         }
-        isRendering = false;
+        state.isRendering = false;
     }
 
     async function updateVisibleRows() {
-        if (isRendering) {return;}
+        if (state.isRendering) {return;}
 
         const container = getTableContainer();
-        if (!container || totalRows === 0) {return;}
+        if (!container || state.totalRows === 0) {return;}
 
         const scrollTop = container.scrollTop;
         const clientHeight = container.clientHeight;
 
         const firstVisibleRow = findRowIndexByOffset(scrollTop);
-        const lastVisibleRow = Math.min(totalRows, findRowIndexByOffset(scrollTop + clientHeight) + 1);
+        const lastVisibleRow = Math.min(state.totalRows, findRowIndexByOffset(scrollTop + clientHeight) + 1);
 
         // Match CSV behavior: keep row headers compact and only grow when larger row numbers become visible.
         ensureRowHeaderWidthForVisibleRange(firstVisibleRow, lastVisibleRow);
 
         // Add buffer
         const bufferedStart = Math.max(0, firstVisibleRow - BUFFER_ROWS);
-        const bufferedEnd = Math.min(totalRows, lastVisibleRow + BUFFER_ROWS);
+        const bufferedEnd = Math.min(state.totalRows, lastVisibleRow + BUFFER_ROWS);
 
         // Align to chunk boundaries
         let chunkStart = Math.floor(bufferedStart / CHUNK_SIZE) * CHUNK_SIZE;
         let chunkEnd = Math.ceil(bufferedEnd / CHUNK_SIZE) * CHUNK_SIZE;
 
         // Clamp to totalRows
-        chunkEnd = Math.min(totalRows, chunkEnd);
+        chunkEnd = Math.min(state.totalRows, chunkEnd);
 
         // CRITICAL FIX: If we're within 2 chunks of the end, just render to the end
         // This prevents fluctuation at boundaries like 2224 rows (22.24 chunks)
-        const remainingRows = totalRows - chunkEnd;
+        const remainingRows = state.totalRows - chunkEnd;
         if (remainingRows > 0 && remainingRows < CHUNK_SIZE * 2) {
-            chunkEnd = totalRows;
+            chunkEnd = state.totalRows;
         }
 
         // Skip if we're already showing these rows (with some tolerance)
         // BUT only if we don't need to fetch row 0
-        const needsRowZeroFetch = !!currentSettings.firstRowIsHeader && !rowCache.has(0);
-        if (chunkStart === currentVisibleStart && chunkEnd === currentVisibleEnd && !needsRowZeroFetch) {
+        const needsRowZeroFetch = !!state.currentSettings.firstRowIsHeader && !state.rowCache.has(0);
+        if (chunkStart === state.currentVisibleStart && chunkEnd === state.currentVisibleEnd && !needsRowZeroFetch) {
             return;
         }
 
         // Check if current range still covers what we need
-        if (currentVisibleStart <= bufferedStart && currentVisibleEnd >= bufferedEnd && !needsRowZeroFetch) {
+        if (state.currentVisibleStart <= bufferedStart && state.currentVisibleEnd >= bufferedEnd && !needsRowZeroFetch) {
             return; // Current render still covers visible area
         }
 
@@ -4956,7 +4806,7 @@ import { parseTsv } from './components/tsvClipboard';
 
         let needsMainFetch = false;
         for (let i = chunkStart; i < chunkEnd; i++) {
-            if (!rowCache.has(i)) {
+            if (!state.rowCache.has(i)) {
                 needsMainFetch = true;
                 break;
             }
@@ -4965,14 +4815,14 @@ import { parseTsv } from './components/tsvClipboard';
         const needsFetch = needsMainFetch || needsRowZeroFetch;
 
         if (needsFetch && usingLocalRows) {
-            currentVisibleStart = chunkStart;
-            currentVisibleEnd = chunkEnd;
+            state.currentVisibleStart = chunkStart;
+            state.currentVisibleEnd = chunkEnd;
 
             // Ensure row 0 is cached if needed
-            if (currentSettings.firstRowIsHeader && !rowCache.has(0)) {
+            if (state.currentSettings.firstRowIsHeader && !state.rowCache.has(0)) {
                 const headerRow = activeRows[0];
                 if (headerRow) {
-                    rowCache.set(0, cloneCellData(headerRow));
+                    state.rowCache.set(0, cloneCellData(headerRow));
                 }
             }
 
@@ -4985,18 +4835,18 @@ import { parseTsv } from './components/tsvClipboard';
             return;
         }
 
-        if (needsFetch && !isRequestingRows) {
-            currentVisibleStart = chunkStart;
-            currentVisibleEnd = chunkEnd;
+        if (needsFetch && !state.isRequestingRows) {
+            state.currentVisibleStart = chunkStart;
+            state.currentVisibleEnd = chunkEnd;
 
-            isRequestingRows = true;
+            state.isRequestingRows = true;
 
             try {
                 // Fetch row 0 first if needed
                 if (needsRowZeroFetch) {
                     const zeroRowResult = await requestRows(0, 1);
                     if (zeroRowResult && zeroRowResult[0]) {
-                        rowCache.set(0, zeroRowResult[0]);
+                        state.rowCache.set(0, zeroRowResult[0]);
                     }
                 }
 
@@ -5006,25 +4856,25 @@ import { parseTsv } from './components/tsvClipboard';
                 } else {
                     // If we only needed row 0, we can construct the chunk rows from cache
                     for (let i = chunkStart; i < chunkEnd; i++) {
-                        rows.push(rowCache.get(i) || { cells: [], rowNumber: i + 1 });
+                        rows.push(state.rowCache.get(i) || { cells: [], rowNumber: i + 1 });
                     }
                 }
 
                 if (rows && rows.length > 0) {
-                    currentVisibleStart = chunkStart;
-                    currentVisibleEnd = chunkStart + rows.length;
+                    state.currentVisibleStart = chunkStart;
+                    state.currentVisibleEnd = chunkStart + rows.length;
                     renderVirtualRows(chunkStart, chunkStart + rows.length, rows);
                 }
             } finally {
-                isRequestingRows = false;
+                state.isRequestingRows = false;
             }
         } else if (!needsFetch) {
-            currentVisibleStart = chunkStart;
-            currentVisibleEnd = chunkEnd;
+            state.currentVisibleStart = chunkStart;
+            state.currentVisibleEnd = chunkEnd;
 
             const cachedRows: any[] = [];
             for (let i = chunkStart; i < chunkEnd; i++) {
-                cachedRows.push(rowCache.get(i) || { cells: [], rowNumber: i + 1 });
+                cachedRows.push(state.rowCache.get(i) || { cells: [], rowNumber: i + 1 });
             }
             renderVirtualRows(chunkStart, chunkEnd, cachedRows);
         }
@@ -5038,28 +4888,28 @@ import { parseTsv } from './components/tsvClipboard';
         const container = getTableContainer();
         if (!container) {return;}
 
-        if (activeScrollContainer && activeScrollContainer !== container) {
-            activeScrollContainer.removeEventListener('scroll', onScroll);
+        if (state.activeScrollContainer && state.activeScrollContainer !== container) {
+            state.activeScrollContainer.removeEventListener('scroll', onScroll);
         }
 
         container.removeEventListener('scroll', onScroll);
         container.addEventListener('scroll', onScroll, { passive: true });
-        activeScrollContainer = container;
-        currentVisibleStart = -1;
-        currentVisibleEnd = -1;
+        state.activeScrollContainer = container;
+        state.currentVisibleStart = -1;
+        state.currentVisibleEnd = -1;
         updateVisibleRows();
     }
 
     function reapplySelection() {
         selectionManager.reapplySelection();
 
-        if (!selectionStart || !selectionEnd) {return;}
-        if (selectedRowIndices.size > 0 || selectedColumnIndices.size > 0) {return;}
+        if (!state.selectionStart || !state.selectionEnd) {return;}
+        if (state.selectedRowIndices.size > 0 || state.selectedColumnIndices.size > 0) {return;}
 
-        const minRow = Math.min(selectionStart.row, selectionEnd.row);
-        const maxRow = Math.max(selectionStart.row, selectionEnd.row);
-        const minCol = Math.min(selectionStart.col, selectionEnd.col);
-        const maxCol = Math.max(selectionStart.col, selectionEnd.col);
+        const minRow = Math.min(state.selectionStart.row, state.selectionEnd.row);
+        const maxRow = Math.max(state.selectionStart.row, state.selectionEnd.row);
+        const minCol = Math.min(state.selectionStart.col, state.selectionEnd.col);
+        const maxCol = Math.max(state.selectionStart.col, state.selectionEnd.col);
 
         const visibleCells = document.querySelectorAll('#xlsxTable td[data-row][data-col]') as NodeListOf<HTMLElement>;
         visibleCells.forEach((cell) => {
@@ -5073,7 +4923,7 @@ import { parseTsv } from './components/tsvClipboard';
                 if (row === maxRow) {cell.classList.add('selection-bottom');}
                 if (col === minCol) {cell.classList.add('selection-left');}
                 if (col === maxCol) {cell.classList.add('selection-right');}
-                selectedCells.add(cell);
+                state.selectedCells.add(cell);
             }
         });
     }
@@ -5084,8 +4934,8 @@ import { parseTsv } from './components/tsvClipboard';
         // Header row
         html += '<thead><tr>';
         html += '<th class="corner-cell"></th>';
-        for (let c = 1; c <= columnCount; c++) {
-            const width = columnWidths[c - 1] || 80;
+        for (let c = 1; c <= state.columnCount; c++) {
+            const width = state.columnWidths[c - 1] || 80;
             html += '<th class="col-header" data-col="' + (c - 1) + '" style="width: ' + width + 'px; min-width: ' + width + 'px;">';
             const indicator = getHeaderIndicator(c - 1);
             html += '<span class="col-header-label">' + getExcelColumnLabel(c) + '</span>';
@@ -5125,8 +4975,8 @@ import { parseTsv } from './components/tsvClipboard';
             const restoreBtn = document.getElementById('restoreVersionButton') as HTMLButtonElement | null;
             const cancelBtn = document.getElementById('cancelVersionPreviewButton') as HTMLButtonElement | null;
             restoreBtn?.addEventListener('click', () => {
-                if (!previewVersionId) {return;}
-                post({ command: 'restoreVersion', versionId: previewVersionId });
+                if (!state.previewVersionId) {return;}
+                post({ command: 'restoreVersion', versionId: state.previewVersionId });
             });
             cancelBtn?.addEventListener('click', () => {
                 post({ command: 'cancelVersionPreview' });
@@ -5136,7 +4986,7 @@ import { parseTsv } from './components/tsvClipboard';
     }
 
     function setVersionPreviewMode(isPreview: boolean, label?: string) {
-        isVersionPreviewMode = isPreview;
+        state.isVersionPreviewMode = isPreview;
         document.body.classList.toggle('preview-mode', isPreview);
         applyInteractiveControlState();
         if (isPreview) {
@@ -5152,7 +5002,7 @@ import { parseTsv } from './components/tsvClipboard';
             banner.classList.remove('hidden');
         } else {
             banner.classList.add('hidden');
-            previewVersionId = null;
+            state.previewVersionId = null;
         }
     }
 
@@ -5172,32 +5022,32 @@ import { parseTsv } from './components/tsvClipboard';
     }
 
     function renderWorksheet(index: number) {
-        if (!worksheetsMeta || !worksheetsMeta.length) {return;}
+        if (!state.worksheetsMeta || !state.worksheetsMeta.length) {return;}
 
         showLoading();
 
         // Reset virtual scrolling state for new worksheet
-        rowCache.clear();
-        currentVisibleStart = 0;
-        currentVisibleEnd = 0;
+        state.rowCache.clear();
+        state.currentVisibleStart = 0;
+        state.currentVisibleEnd = 0;
         virtualLoader.clear();
-        isRendering = false;
+        state.isRendering = false;
 
-        const wsMeta = worksheetsMeta[index];
-        baseTotalRows = wsMeta.totalRows || 0;
-        baseRowHeights = wsMeta.rowHeights || [];
+        const wsMeta = state.worksheetsMeta[index];
+        state.baseTotalRows = wsMeta.totalRows || 0;
+        state.baseRowHeights = wsMeta.rowHeights || [];
 
-        totalRows = baseTotalRows;
-        columnCount = wsMeta.columnCount || 0;
-        columnWidths = wsMeta.columnWidths || [];
-        mergedCells = wsMeta.mergedCells || [];
-        allRowHeights = [...baseRowHeights];
+        state.totalRows = state.baseTotalRows;
+        state.columnCount = wsMeta.columnCount || 0;
+        state.columnWidths = wsMeta.columnWidths || [];
+        state.mergedCells = wsMeta.mergedCells || [];
+        state.allRowHeights = [...state.baseRowHeights];
 
-        if (sourceRowsSnapshot) {
+        if (state.sourceRowsSnapshot) {
             rebuildFilteredRows();
-            if (activeColumnFilters.size > 0 || activeSortState) {
-                totalRows = transformedRowsSnapshot ? transformedRowsSnapshot.length : 0;
-                allRowHeights = (transformedRowsSnapshot || []).map((row) => {
+            if (state.activeColumnFilters.size > 0 || state.activeSortState) {
+                state.totalRows = state.transformedRowsSnapshot ? state.transformedRowsSnapshot.length : 0;
+                state.allRowHeights = (state.transformedRowsSnapshot || []).map((row) => {
                     const h = Number((row as any)?.height);
                     return Number.isFinite(h) && h > 0 ? h : ROW_HEIGHT;
                 });
@@ -5226,9 +5076,9 @@ import { parseTsv } from './components/tsvClipboard';
                     toolbarEl.style.removeProperty('display');
                 }
 
-                if (toolbarManager) {
-                    applyToolbarLayout(toolbarManager, {
-                        stickyToolbar: !!currentSettings.stickyToolbar,
+                if (state.toolbarManager) {
+                    applyToolbarLayout(state.toolbarManager, {
+                        stickyToolbar: !!state.currentSettings.stickyToolbar,
                         scrollTarget: '#content',
                         onLayoutApplied: initializeVirtualScrolling
                     });
@@ -5250,13 +5100,13 @@ import { parseTsv } from './components/tsvClipboard';
                 e.preventDefault();
                 e.stopPropagation();
 
-                isResizing = true;
-                resizeType = 'column';
-                resizeIndex = parseInt(target.dataset.col!, 10);
-                resizeStartPos = e.clientX;
+                state.isResizing = true;
+                state.resizeType = 'column';
+                state.resizeIndex = parseInt(target.dataset.col!, 10);
+                state.resizeStartPos = e.clientX;
 
                 const header = target.parentElement;
-                resizeStartSize = header ? header.offsetWidth : 0;
+                state.resizeStartSize = header ? header.offsetWidth : 0;
 
                 document.body.style.cursor = 'col-resize';
                 const indicator = document.getElementById('resizeIndicator');
@@ -5265,17 +5115,17 @@ import { parseTsv } from './components/tsvClipboard';
             }
 
             if (target && target.classList && target.classList.contains('row-resize-handle')) {
-                if (isEditMode) {return;}
+                if (state.isEditMode) {return;}
                 e.preventDefault();
                 e.stopPropagation();
 
-                isResizing = true;
-                resizeType = 'row';
-                resizeIndex = parseInt(target.dataset.row!, 10);
-                resizeStartPos = e.clientY;
+                state.isResizing = true;
+                state.resizeType = 'row';
+                state.resizeIndex = parseInt(target.dataset.row!, 10);
+                state.resizeStartPos = e.clientY;
 
                 const header = target.parentElement;
-                resizeStartSize = header ? header.offsetHeight : 0;
+                state.resizeStartSize = header ? header.offsetHeight : 0;
 
                 document.body.style.cursor = 'row-resize';
                 const indicator = document.getElementById('resizeIndicator');
@@ -5285,23 +5135,23 @@ import { parseTsv } from './components/tsvClipboard';
         });
 
         // The table is rebuilt on every re-render, but document listeners must be added only once.
-        if (!resizeGlobalListenersAttached) {
-            resizeGlobalListenersAttached = true;
+        if (!state.resizeGlobalListenersAttached) {
+            state.resizeGlobalListenersAttached = true;
 
             document.addEventListener('mousemove', (e) => {
-                if (!isResizing) {return;}
+                if (!state.isResizing) {return;}
 
                 const tableEl = document.querySelector('table');
                 if (!tableEl) {return;}
 
                 const indicator = document.getElementById('resizeIndicator');
 
-                if (resizeType === 'column') {
-                    const delta = e.clientX - resizeStartPos;
-                    const newSize = Math.max(20, resizeStartSize + delta);
+                if (state.resizeType === 'column') {
+                    const delta = e.clientX - state.resizeStartPos;
+                    const newSize = Math.max(20, state.resizeStartSize + delta);
 
-                    const headers = tableEl.querySelectorAll('th.col-header[data-col="' + resizeIndex + '"]') as NodeListOf<HTMLElement>;
-                    const cells = tableEl.querySelectorAll('td[data-col="' + resizeIndex + '"]') as NodeListOf<HTMLElement>;
+                    const headers = tableEl.querySelectorAll('th.col-header[data-col="' + state.resizeIndex + '"]') as NodeListOf<HTMLElement>;
+                    const cells = tableEl.querySelectorAll('td[data-col="' + state.resizeIndex + '"]') as NodeListOf<HTMLElement>;
 
                     headers.forEach(header => {
                         header.style.width = newSize + 'px';
@@ -5320,12 +5170,12 @@ import { parseTsv } from './components/tsvClipboard';
                         indicator.style.top = e.clientY + 'px';
                         indicator.textContent = newSize + 'px';
                     }
-                } else if (resizeType === 'row') {
-                    const delta = e.clientY - resizeStartPos;
-                    const newSize = Math.max(15, resizeStartSize + delta);
+                } else if (state.resizeType === 'row') {
+                    const delta = e.clientY - state.resizeStartPos;
+                    const newSize = Math.max(15, state.resizeStartSize + delta);
 
-                    const headers = tableEl.querySelectorAll('th.row-header[data-row="' + resizeIndex + '"]') as NodeListOf<HTMLElement>;
-                    const row = tableEl.querySelectorAll('tr')[resizeIndex + 1] as HTMLElement; // +1 for header row
+                    const headers = tableEl.querySelectorAll('th.row-header[data-row="' + state.resizeIndex + '"]') as NodeListOf<HTMLElement>;
+                    const row = tableEl.querySelectorAll('tr')[state.resizeIndex + 1] as HTMLElement; // +1 for header row
 
                     headers.forEach(header => {
                         header.style.height = newSize + 'px';
@@ -5350,10 +5200,10 @@ import { parseTsv } from './components/tsvClipboard';
             });
 
             document.addEventListener('mouseup', () => {
-                if (isResizing) {
-                    isResizing = false;
-                    resizeType = null;
-                    resizeIndex = -1;
+                if (state.isResizing) {
+                    state.isResizing = false;
+                    state.resizeType = null;
+                    state.resizeIndex = -1;
                     document.body.style.cursor = '';
                     const indicator = document.getElementById('resizeIndicator');
                     if (indicator) {indicator.style.display = 'none';}
@@ -5368,10 +5218,10 @@ import { parseTsv } from './components/tsvClipboard';
                 e.preventDefault();
                 autoFitColumn(parseInt(target.dataset.col!, 10));
             } else if (target && target.classList && target.classList.contains('row-resize-handle')) {
-                if (isEditMode) {return;}
+                if (state.isEditMode) {return;}
                 e.preventDefault();
                 autoFitRow(parseInt(target.dataset.row!, 10));
-            } else if (!isVersionPreviewMode) {
+            } else if (!state.isVersionPreviewMode) {
                 const td = target.closest('td');
                 if (td) {
                     enterCellEditMode(td as HTMLElement);
@@ -5436,8 +5286,8 @@ import { parseTsv } from './components/tsvClipboard';
     }
 
     function clearSelection() {
-        selectionStart = null;
-        selectionEnd = null;
+        state.selectionStart = null;
+        state.selectionEnd = null;
         selectionManager.clearSelection();
     }
 
@@ -5446,10 +5296,10 @@ import { parseTsv } from './components/tsvClipboard';
         const row = parseInt(cell.dataset.row || '-1', 10);
         const col = parseInt(cell.dataset.col || '-1', 10);
         if (row >= 0 && col >= 0) {
-            if (!isMulti || !selectionStart) {
-                selectionStart = { row, col };
+            if (!isMulti || !state.selectionStart) {
+                state.selectionStart = { row, col };
             }
-            selectionEnd = { row, col };
+            state.selectionEnd = { row, col };
         }
         syncBorderSelectionFromCell(cell);
     }
@@ -5463,7 +5313,7 @@ import { parseTsv } from './components/tsvClipboard';
         let changed = true;
         while (changed) {
             changed = false;
-            (mergedCells || []).forEach((range: any) => {
+            (state.mergedCells || []).forEach((range: any) => {
                 const r0 = Math.max(0, (range?.startRow || 1) - 1);
                 const r1 = Math.max(r0, (range?.endRow || r0 + 1) - 1);
                 const c0 = Math.max(0, (range?.startCol || 1) - 1);
@@ -5503,41 +5353,41 @@ import { parseTsv } from './components/tsvClipboard';
             Math.max(startCol, endCol)
         );
 
-        selectionStart = { row: startRow, col: startCol };
-        selectionEnd = { row: endRow, col: endCol };
+        state.selectionStart = { row: startRow, col: startCol };
+        state.selectionEnd = { row: endRow, col: endCol };
         selectionManager.selectRange(bounds.minRow, bounds.minCol, bounds.maxRow, bounds.maxCol);
     }
 
     function selectRow(rowIndex: number, ctrlKey: boolean, shiftKey: boolean) {
-        selectionStart = null;
-        selectionEnd = null;
+        state.selectionStart = null;
+        state.selectionEnd = null;
         selectionManager.selectRow(rowIndex, ctrlKey, shiftKey);
     }
 
     function selectColumn(colIndex: number, ctrlKey: boolean, shiftKey: boolean) {
-        selectionStart = null;
-        selectionEnd = null;
+        state.selectionStart = null;
+        state.selectionEnd = null;
         selectionManager.selectColumn(colIndex, ctrlKey, shiftKey);
     }
 
     function updateSelectionInfo() {
         selectionManager.updateSelectionInfo();
-        if (activeCell) {
-            syncBorderSelectionFromCell(activeCell);
+        if (state.activeCell) {
+            syncBorderSelectionFromCell(state.activeCell);
         }
     }
 
     async function copySelectionToClipboard() {
         await copySelectionToClipboardHelper({
-            selectedCells,
-            selectedColumnIndices,
-            selectedRowIndices,
-            columnCount,
-            totalRows,
-            rowCache,
-            isCopying,
+            selectedCells: state.selectedCells,
+            selectedColumnIndices: state.selectedColumnIndices,
+            selectedRowIndices: state.selectedRowIndices,
+            columnCount: state.columnCount,
+            totalRows: state.totalRows,
+            rowCache: state.rowCache,
+            isCopying: state.isCopying,
             setIsCopying: (next: boolean) => {
-                isCopying = next;
+                state.isCopying = next;
             },
             showToast,
             requestAllRows,
@@ -5568,12 +5418,12 @@ import { parseTsv } from './components/tsvClipboard';
 
         for (let r = 0; r < grid.length; r++) {
             const rowIndex = startRow + r;
-            if (rowIndex >= totalRows) {continue;}
+            if (rowIndex >= state.totalRows) {continue;}
             const rowNumber = rowIndex + 1;
 
             for (let c = 0; c < grid[r].length; c++) {
                 const colIndex = startCol + c;
-                if (colIndex >= columnCount) {continue;}
+                if (colIndex >= state.columnCount) {continue;}
                 const colNumber = colIndex + 1;
 
                 const rawValue = grid[r][c];
@@ -5609,19 +5459,19 @@ import { parseTsv } from './components/tsvClipboard';
             rerenderCurrentSheetFromLocalState();
 
             // Re-select the pasted range
-            const endRow = Math.min(totalRows - 1, startRow + grid.length - 1);
-            const endCol = Math.min(columnCount - 1, startCol + grid[0].length - 1);
+            const endRow = Math.min(state.totalRows - 1, startRow + grid.length - 1);
+            const endCol = Math.min(state.columnCount - 1, startCol + grid[0].length - 1);
             selectRange(startRow, startCol, endRow, endCol);
 
             // Save or schedule auto-save according to settings
-            if (isEditMode) {
+            if (state.isEditMode) {
                 scheduleAutoSave('text');
             } else {
-                if (currentSettings.autoSave) {
+                if (state.currentSettings.autoSave) {
                     editsList.forEach(e => removePendingOutsideControlEdit(e.row, e.col));
                     post({
                         command: 'saveXlsxEdits',
-                        sheetIndex: currentWorksheet,
+                        sheetIndex: state.currentWorksheet,
                         edits: editsList,
                         richEdits: [],
                         styleEdits: [],
@@ -5640,10 +5490,10 @@ import { parseTsv } from './components/tsvClipboard';
         const table = tableContainer ? tableContainer.querySelector('table') : null;
         if (!table) {return;}
 
-        if (!pasteListenerAttached) {
-            pasteListenerAttached = true;
+        if (!state.pasteListenerAttached) {
+            state.pasteListenerAttached = true;
             document.addEventListener('paste', (e) => {
-                if (isCellEditing) {return;}
+                if (state.isCellEditing) {return;}
                 const activeEl = document.activeElement;
                 if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'SELECT')) {
                     if (!activeEl.closest('#xlsxTable')) {
@@ -5666,7 +5516,7 @@ import { parseTsv } from './components/tsvClipboard';
             const cell = target.closest('td') as HTMLElement | null;
             if (!rowHeader && !colHeader && !cell) {return;}
 
-            if (isVersionPreviewMode && (rowHeader || cell)) {
+            if (state.isVersionPreviewMode && (rowHeader || cell)) {
                 showToast('Version preview is read-only');
                 return;
             }
@@ -5700,7 +5550,7 @@ import { parseTsv } from './components/tsvClipboard';
             if (!rowHeader && !colHeader) {return;}
             if (e.ctrlKey || e.metaKey || e.shiftKey) {return;}
 
-            if (isVersionPreviewMode && rowHeader) {
+            if (state.isVersionPreviewMode && rowHeader) {
                 showToast('Version preview is read-only');
                 return;
             }
@@ -5718,7 +5568,7 @@ import { parseTsv } from './components/tsvClipboard';
         });
 
         table.addEventListener('selectstart', (e) => {
-            if (isEditMode) {return;}
+            if (state.isEditMode) {return;}
             e.preventDefault();
             return false;
         });
@@ -5733,9 +5583,9 @@ import { parseTsv } from './components/tsvClipboard';
             if (!cellTarget) {return;}
 
             if (cellTarget.tagName === 'TD' && target.closest('.xlsx-cell-checkbox, .xlsx-cell-dropdown, .xlsx-dropdown-edit-button, .xlsx-rating-star, .xlsx-cell-date')) {
-                const state = captureCellUndoState(cellTarget);
-                if (state) {
-                    pendingControlUndoState.set(cellTarget, state);
+                const undoState = captureCellUndoState(cellTarget);
+                if (undoState) {
+                    state.pendingControlUndoState.set(cellTarget, undoState);
                 }
             }
 
@@ -5744,7 +5594,7 @@ import { parseTsv } from './components/tsvClipboard';
                 cellTarget.classList.contains('row-header') ||
                 cellTarget.classList.contains('corner-cell');
 
-            if (!isEditMode && cellTarget.tagName === 'TD' && !isHeaderInteraction) {
+            if (!state.isEditMode && cellTarget.tagName === 'TD' && !isHeaderInteraction) {
                 const cellType = getCellType(cellTarget);
                 const controlTarget = target.closest('.xlsx-cell-checkbox, .xlsx-cell-dropdown, .xlsx-dropdown-edit-button, .xlsx-rating-star, .xlsx-cell-date') as HTMLElement | null;
                 const canEditControls = areInteractiveControlsEnabled();
@@ -5754,33 +5604,33 @@ import { parseTsv } from './components/tsvClipboard';
                     const col = parseInt(cellTarget.dataset.col!, 10);
 
                     if (e.ctrlKey || e.metaKey) {
-                        selectionStart = null;
-                        selectionEnd = null;
+                        state.selectionStart = null;
+                        state.selectionEnd = null;
                         if (cellTarget.classList.contains('selected')) {
                             cellTarget.classList.remove('selected', 'selection-top', 'selection-bottom', 'selection-left', 'selection-right');
-                            selectedCells.delete(cellTarget);
-                            if (cellTarget === activeCell) {
-                                activeCell = null;
+                            state.selectedCells.delete(cellTarget);
+                            if (cellTarget === state.activeCell) {
+                                state.activeCell = null;
                             }
                         } else {
                             cellTarget.classList.add('selected', 'selection-top', 'selection-bottom', 'selection-left', 'selection-right');
-                            selectedCells.add(cellTarget);
-                            if (activeCell) {
-                                activeCell.classList.remove('active-cell');
+                            state.selectedCells.add(cellTarget);
+                            if (state.activeCell) {
+                                state.activeCell.classList.remove('active-cell');
                             }
                             cellTarget.classList.add('active-cell');
-                            activeCell = cellTarget;
+                            state.activeCell = cellTarget;
                         }
-                    } else if (e.shiftKey && activeCell) {
-                        const startRow = parseInt(activeCell.dataset.row!, 10);
-                        const startCol = parseInt(activeCell.dataset.col!, 10);
+                    } else if (e.shiftKey && state.activeCell) {
+                        const startRow = parseInt(state.activeCell.dataset.row!, 10);
+                        const startCol = parseInt(state.activeCell.dataset.col!, 10);
                         selectRange(startRow, startCol, row, col);
                     } else {
                         clearSelection();
                         selectCell(cellTarget);
-                        isSelecting = true;
-                        selectionStart = { row, col };
-                        selectionEnd = { row, col };
+                        state.isSelecting = true;
+                        state.selectionStart = { row, col };
+                        state.selectionEnd = { row, col };
                     }
 
                     updateSelectionInfo();
@@ -5805,9 +5655,9 @@ import { parseTsv } from './components/tsvClipboard';
                 }
             }
 
-            if (!isVersionPreviewMode && !isHeaderInteraction) {
+            if (!state.isVersionPreviewMode && !isHeaderInteraction) {
                 if (cellTarget.tagName === 'TD') {
-                    if (isCellEditing && cellTarget.getAttribute('contenteditable') === 'true') {
+                    if (state.isCellEditing && cellTarget.getAttribute('contenteditable') === 'true') {
                         return;
                     }
 
@@ -5815,68 +5665,68 @@ import { parseTsv } from './components/tsvClipboard';
                     const col = parseInt(cellTarget.dataset.col!, 10);
                     const cellType = getCellType(cellTarget);
                     const controlTarget = target.closest('.xlsx-cell-checkbox, .xlsx-cell-dropdown, .xlsx-dropdown-edit-button, .xlsx-rating-star, .xlsx-cell-date') as HTMLElement | null;
-                    const wasSingleActiveCell = activeCell === cellTarget && selectedCells.size === 1;
+                    const wasSingleActiveCell = state.activeCell === cellTarget && state.selectedCells.size === 1;
 
                     // Match CSV/TSV behavior: single-cell mode should clear row/column mode selections.
-                    selectedColumnIndices.clear();
-                    selectedRowIndices.clear();
-                    selectedColumns.clear();
-                    selectedRows.clear();
+                    state.selectedColumnIndices.clear();
+                    state.selectedRowIndices.clear();
+                    state.selectedColumns.clear();
+                    state.selectedRows.clear();
 
                     if ((cellType === 'dropdown' || cellType === 'rating' || cellType === 'date') && controlTarget) {
                         if (!(e.ctrlKey || e.metaKey || e.shiftKey)) {
                             clearSelection();
                             selectCell(cellTarget);
                         }
-                        pendingEditCell = null;
-                        pendingEditDrag = false;
+                        state.pendingEditCell = null;
+                        state.pendingEditDrag = false;
                         updateSelectionInfo();
                         return;
                     }
 
-                    if (formatPainterArmed && formatPainterStyle) {
-                        formatPainterExecuting = true;
-                        pendingEditCell = null;
-                        pendingEditDrag = false;
+                    if (state.formatPainterArmed && state.formatPainterStyle) {
+                        state.formatPainterExecuting = true;
+                        state.pendingEditCell = null;
+                        state.pendingEditDrag = false;
                     }
 
                     if (e.ctrlKey || e.metaKey) {
-                        pendingEditCell = null;
-                        pendingEditDrag = false;
-                        selectionStart = null;
-                        selectionEnd = null;
+                        state.pendingEditCell = null;
+                        state.pendingEditDrag = false;
+                        state.selectionStart = null;
+                        state.selectionEnd = null;
                         if (cellTarget.classList.contains('selected')) {
                             cellTarget.classList.remove('selected', 'selection-top', 'selection-bottom', 'selection-left', 'selection-right');
-                            selectedCells.delete(cellTarget);
-                            if (cellTarget === activeCell) {
-                                activeCell = null;
+                            state.selectedCells.delete(cellTarget);
+                            if (cellTarget === state.activeCell) {
+                                state.activeCell = null;
                             }
                         } else {
                             cellTarget.classList.add('selected', 'selection-top', 'selection-bottom', 'selection-left', 'selection-right');
-                            selectedCells.add(cellTarget);
-                            if (activeCell) {
-                                activeCell.classList.remove('active-cell');
+                            state.selectedCells.add(cellTarget);
+                            if (state.activeCell) {
+                                state.activeCell.classList.remove('active-cell');
                             }
                             cellTarget.classList.add('active-cell');
-                            activeCell = cellTarget;
+                            state.activeCell = cellTarget;
                         }
-                    } else if (e.shiftKey && activeCell) {
-                        pendingEditCell = null;
-                        pendingEditDrag = false;
-                        const startRow = parseInt(activeCell.dataset.row!, 10);
-                        const startCol = parseInt(activeCell.dataset.col!, 10);
+                    } else if (e.shiftKey && state.activeCell) {
+                        state.pendingEditCell = null;
+                        state.pendingEditDrag = false;
+                        const startRow = parseInt(state.activeCell.dataset.row!, 10);
+                        const startCol = parseInt(state.activeCell.dataset.col!, 10);
                         selectRange(startRow, startCol, row, col);
                     } else {
                         clearSelection();
                         selectCell(cellTarget);
-                        isSelecting = true;
-                        selectionStart = { row, col };
-                        selectionEnd = { row, col };
-                        pendingEditCell = (wasSingleActiveCell && !formatPainterExecuting && cellType === 'text') ? cellTarget : null;
-                        pendingEditDrag = false;
+                        state.isSelecting = true;
+                        state.selectionStart = { row, col };
+                        state.selectionEnd = { row, col };
+                        state.pendingEditCell = (wasSingleActiveCell && !state.formatPainterExecuting && cellType === 'text') ? cellTarget : null;
+                        state.pendingEditDrag = false;
                     }
 
-                    if (!isCellEditing && cellType === 'text') {
+                    if (!state.isCellEditing && cellType === 'text') {
                         e.preventDefault();
                     }
 
@@ -5890,7 +5740,7 @@ import { parseTsv } from './components/tsvClipboard';
             if (cellTarget.classList.contains('col-header')) {
                 const colIndex = parseInt(cellTarget.dataset.col!, 10);
                 if (!e.shiftKey) {
-                    lastSelectedColumn = colIndex;
+                    state.lastSelectedColumn = colIndex;
                 }
                 selectColumn(colIndex, e.ctrlKey || e.metaKey, e.shiftKey);
                 return;
@@ -5899,7 +5749,7 @@ import { parseTsv } from './components/tsvClipboard';
             if (cellTarget.classList.contains('row-header')) {
                 const rowIndex = parseInt(cellTarget.dataset.row!, 10);
                 if (!e.shiftKey) {
-                    lastSelectedRow = rowIndex;
+                    state.lastSelectedRow = rowIndex;
                 }
                 selectRow(rowIndex, e.ctrlKey || e.metaKey, e.shiftKey);
                 return;
@@ -5908,13 +5758,13 @@ import { parseTsv } from './components/tsvClipboard';
             if (cellTarget.classList.contains('corner-cell')) {
                 clearSelection();
 
-                for (let c = 0; c < columnCount; c++) {
-                    selectedColumns.add(c);
-                    selectedColumnIndices.add(c);
+                for (let c = 0; c < state.columnCount; c++) {
+                    state.selectedColumns.add(c);
+                    state.selectedColumnIndices.add(c);
                 }
 
-                selectionStart = { row: 0, col: 0 };
-                selectionEnd = { row: Math.max(0, totalRows - 1), col: Math.max(0, columnCount - 1) };
+                state.selectionStart = { row: 0, col: 0 };
+                state.selectionEnd = { row: Math.max(0, state.totalRows - 1), col: Math.max(0, state.columnCount - 1) };
 
                 const allCells = table.querySelectorAll('td') as NodeListOf<HTMLElement>;
                 allCells.forEach(cell => {
@@ -5922,14 +5772,14 @@ import { parseTsv } from './components/tsvClipboard';
                     const row = parseInt(cell.dataset.row || '-1', 10);
                     const col = parseInt(cell.dataset.col || '-1', 10);
                     if (row === 0) {cell.classList.add('selection-top');}
-                    if (row === totalRows - 1) {cell.classList.add('selection-bottom');}
+                    if (row === state.totalRows - 1) {cell.classList.add('selection-bottom');}
                     if (col === 0) {cell.classList.add('selection-left');}
-                    if (col === columnCount - 1) {cell.classList.add('selection-right');}
-                    selectedCells.add(cell);
+                    if (col === state.columnCount - 1) {cell.classList.add('selection-right');}
+                    state.selectedCells.add(cell);
                 });
                 if (allCells.length > 0) {
                     allCells[0].classList.add('active-cell');
-                    activeCell = allCells[0];
+                    state.activeCell = allCells[0];
                 }
                 updateSelectionInfo();
                 return;
@@ -5940,53 +5790,53 @@ import { parseTsv } from './components/tsvClipboard';
                 const col = parseInt(cellTarget.dataset.col!, 10);
 
                 // Match CSV/TSV behavior: single-cell mode should clear row/column mode selections.
-                selectedColumnIndices.clear();
-                selectedRowIndices.clear();
-                selectedColumns.clear();
-                selectedRows.clear();
+                state.selectedColumnIndices.clear();
+                state.selectedRowIndices.clear();
+                state.selectedColumns.clear();
+                state.selectedRows.clear();
 
                 if (e.ctrlKey || e.metaKey) {
                     if (cellTarget.classList.contains('selected')) {
                         cellTarget.classList.remove('selected', 'selection-top', 'selection-bottom', 'selection-left', 'selection-right');
-                        selectedCells.delete(cellTarget);
-                        if (cellTarget === activeCell) {
+                        state.selectedCells.delete(cellTarget);
+                        if (cellTarget === state.activeCell) {
                             cellTarget.classList.remove('active-cell');
-                            activeCell = null;
+                            state.activeCell = null;
 
                             const remainingSelected = document.querySelector('td.selected') as HTMLElement;
                             if (remainingSelected) {
                                 remainingSelected.classList.add('active-cell');
-                                activeCell = remainingSelected;
+                                state.activeCell = remainingSelected;
                             }
                         }
                     } else {
                         cellTarget.classList.add('selected', 'selection-top', 'selection-bottom', 'selection-left', 'selection-right');
-                        selectedCells.add(cellTarget);
-                        if (activeCell) {
-                            activeCell.classList.remove('active-cell');
+                        state.selectedCells.add(cellTarget);
+                        if (state.activeCell) {
+                            state.activeCell.classList.remove('active-cell');
                         }
                         cellTarget.classList.add('active-cell');
-                        activeCell = cellTarget;
+                        state.activeCell = cellTarget;
                     }
                     updateSelectionInfo();
-                } else if (e.shiftKey && activeCell) {
-                    const startRow = parseInt(activeCell.dataset.row!, 10);
-                    const startCol = parseInt(activeCell.dataset.col!, 10);
+                } else if (e.shiftKey && state.activeCell) {
+                    const startRow = parseInt(state.activeCell.dataset.row!, 10);
+                    const startCol = parseInt(state.activeCell.dataset.col!, 10);
                     selectRange(startRow, startCol, row, col);
                 } else {
-                    isSelecting = true;
-                    selectionStart = { row, col };
+                    state.isSelecting = true;
+                    state.selectionStart = { row, col };
                     selectCell(cellTarget);
                 }
             }
         });
 
         table.addEventListener('mousemove', (e) => {
-            if (isCellEditing) {return;}
-            if (!isSelecting || !selectionStart) {return;}
+            if (state.isCellEditing) {return;}
+            if (!state.isSelecting || !state.selectionStart) {return;}
 
             // Track last mouse position for auto-scroll
-            lastMousePos = { x: e.clientX, y: e.clientY };
+            state.lastMousePos = { x: e.clientX, y: e.clientY };
 
             const target = (e.target as HTMLElement).closest('td') as HTMLElement;
             if (!target) {return;}
@@ -5994,10 +5844,10 @@ import { parseTsv } from './components/tsvClipboard';
             const row = parseInt(target.dataset.row!, 10);
             const col = parseInt(target.dataset.col!, 10);
 
-            if (!selectionEnd || selectionEnd.row !== row || selectionEnd.col !== col) {
-                selectionEnd = { row, col };
-                pendingEditDrag = true;
-                selectRange(selectionStart.row, selectionStart.col, row, col);
+            if (!state.selectionEnd || state.selectionEnd.row !== row || state.selectionEnd.col !== col) {
+                state.selectionEnd = { row, col };
+                state.pendingEditDrag = true;
+                selectRange(state.selectionStart.row, state.selectionStart.col, row, col);
             }
 
             // Start auto-scroll loop if needed
@@ -6005,7 +5855,7 @@ import { parseTsv } from './components/tsvClipboard';
         });
 
         table.addEventListener('input', (e) => {
-            if (!isEditMode) {return;}
+            if (!state.isEditMode) {return;}
 
             const target = e.target as HTMLElement | null;
             if (!target) {return;}
@@ -6026,9 +5876,9 @@ import { parseTsv } from './components/tsvClipboard';
             const cell = controlTarget.closest('td') as HTMLElement | null;
             if (!cell) {return;}
 
-            const state = captureCellUndoState(cell);
-            if (state) {
-                pendingControlUndoState.set(cell, state);
+            const undoState = captureCellUndoState(cell);
+            if (undoState) {
+                state.pendingControlUndoState.set(cell, undoState);
             }
         });
 
@@ -6043,12 +5893,12 @@ import { parseTsv } from './components/tsvClipboard';
             if (checkbox) {
                 const cell = checkbox.closest('td') as HTMLElement | null;
                 if (!cell) {return;}
-                const before = pendingControlUndoState.get(cell) || captureCellUndoState(cell);
-                pendingControlUndoState.delete(cell);
+                const before = state.pendingControlUndoState.get(cell) || captureCellUndoState(cell);
+                state.pendingControlUndoState.delete(cell);
                 updateCheckboxCellPresentation(cell, !!checkbox.checked);
                 const after = captureCellUndoState(cell);
                 pushSingleCellUndo(before, after);
-                if (isEditMode) {
+                if (state.isEditMode) {
                     scheduleAutoSave('control');
                 } else {
                     persistInteractiveControlEdit(cell);
@@ -6060,12 +5910,12 @@ import { parseTsv } from './components/tsvClipboard';
             if (dropdown) {
                 const cell = dropdown.closest('td') as HTMLElement | null;
                 if (!cell) {return;}
-                const before = pendingControlUndoState.get(cell) || captureCellUndoState(cell);
-                pendingControlUndoState.delete(cell);
+                const before = state.pendingControlUndoState.get(cell) || captureCellUndoState(cell);
+                state.pendingControlUndoState.delete(cell);
                 updateDropdownCellPresentation(cell, dropdown.value);
                 const after = captureCellUndoState(cell);
                 pushSingleCellUndo(before, after);
-                if (isEditMode) {
+                if (state.isEditMode) {
                     scheduleAutoSave('control');
                 } else {
                     persistInteractiveControlEdit(cell);
@@ -6077,12 +5927,12 @@ import { parseTsv } from './components/tsvClipboard';
             if (dateInput) {
                 const cell = dateInput.closest('td') as HTMLElement | null;
                 if (!cell) {return;}
-                const before = pendingControlUndoState.get(cell) || captureCellUndoState(cell);
-                pendingControlUndoState.delete(cell);
+                const before = state.pendingControlUndoState.get(cell) || captureCellUndoState(cell);
+                state.pendingControlUndoState.delete(cell);
                 updateDateCellPresentation(cell, dateInput.value);
                 const after = captureCellUndoState(cell);
                 pushSingleCellUndo(before, after);
-                if (isEditMode) {
+                if (state.isEditMode) {
                     scheduleAutoSave('control');
                 } else {
                     persistInteractiveControlEdit(cell);
@@ -6110,8 +5960,8 @@ import { parseTsv } from './components/tsvClipboard';
                 const cell = ratingStar.closest('td') as HTMLElement | null;
                 if (!cell || ratingStar.disabled) {return;}
 
-                const before = pendingControlUndoState.get(cell) || captureCellUndoState(cell);
-                pendingControlUndoState.delete(cell);
+                const before = state.pendingControlUndoState.get(cell) || captureCellUndoState(cell);
+                state.pendingControlUndoState.delete(cell);
                 const clickedValue = normalizeRatingValue(ratingStar.getAttribute('data-rating-value'));
                 const currentValue = normalizeRatingValue(cell.getAttribute('data-rating-value'));
                 const nextValue = clickedValue === currentValue ? 0 : clickedValue;
@@ -6119,7 +5969,7 @@ import { parseTsv } from './components/tsvClipboard';
                 const after = captureCellUndoState(cell);
                 pushSingleCellUndo(before, after);
 
-                if (isEditMode) {
+                if (state.isEditMode) {
                     scheduleAutoSave('control');
                 } else {
                     persistInteractiveControlEdit(cell);
@@ -6146,20 +5996,20 @@ import { parseTsv } from './components/tsvClipboard';
         });
 
         function startAutoScroll() {
-            if (autoScrollRequest) {return;}
+            if (state.autoScrollRequest) {return;}
             autoScrollLoop();
         }
 
         function stopAutoScroll() {
-            if (autoScrollRequest) {
-                cancelAnimationFrame(autoScrollRequest);
-                autoScrollRequest = null;
+            if (state.autoScrollRequest) {
+                cancelAnimationFrame(state.autoScrollRequest);
+                state.autoScrollRequest = null;
             }
         }
 
         function autoScrollLoop() {
-            autoScrollRequest = requestAnimationFrame(() => {
-                if (!isSelecting || !lastMousePos) {
+            state.autoScrollRequest = requestAnimationFrame(() => {
+                if (!state.isSelecting || !state.lastMousePos) {
                     stopAutoScroll();
                     return;
                 }
@@ -6175,25 +6025,25 @@ import { parseTsv } from './components/tsvClipboard';
                 let dx = 0;
                 let dy = 0;
 
-                if (lastMousePos.x < rect.left + AUTO_SCROLL_THRESHOLD) {dx = -AUTO_SCROLL_STEP;}
-                else if (lastMousePos.x > rect.right - AUTO_SCROLL_THRESHOLD) {dx = AUTO_SCROLL_STEP;}
+                if (state.lastMousePos.x < rect.left + AUTO_SCROLL_THRESHOLD) {dx = -AUTO_SCROLL_STEP;}
+                else if (state.lastMousePos.x > rect.right - AUTO_SCROLL_THRESHOLD) {dx = AUTO_SCROLL_STEP;}
 
-                if (lastMousePos.y < rect.top + AUTO_SCROLL_THRESHOLD) {dy = -AUTO_SCROLL_STEP;}
-                else if (lastMousePos.y > rect.bottom - AUTO_SCROLL_THRESHOLD) {dy = AUTO_SCROLL_STEP;}
+                if (state.lastMousePos.y < rect.top + AUTO_SCROLL_THRESHOLD) {dy = -AUTO_SCROLL_STEP;}
+                else if (state.lastMousePos.y > rect.bottom - AUTO_SCROLL_THRESHOLD) {dy = AUTO_SCROLL_STEP;}
 
                 if (dx !== 0 || dy !== 0) {
                     scrollArea.scrollBy({ left: dx, top: dy, behavior: 'auto' });
 
                     // After scrolling, determine the element under the pointer and update selection
-                    const el = document.elementFromPoint(lastMousePos.x, lastMousePos.y);
+                    const el = document.elementFromPoint(state.lastMousePos.x, state.lastMousePos.y);
                     const nearestCell = el ? el.closest && el.closest('td') : null;
                     if (nearestCell) {
                         const htmlCell = nearestCell as HTMLElement;
                         const r = parseInt(htmlCell.dataset.row!, 10);
                         const c = parseInt(htmlCell.dataset.col!, 10);
-                        if (!selectionEnd || selectionEnd.row !== r || selectionEnd.col !== c) {
-                            selectionEnd = { row: r, col: c };
-                            selectRange(selectionStart!.row, selectionStart!.col, r, c);
+                        if (!state.selectionEnd || state.selectionEnd.row !== r || state.selectionEnd.col !== c) {
+                            state.selectionEnd = { row: r, col: c };
+                            selectRange(state.selectionStart!.row, state.selectionStart!.col, r, c);
                         }
                     }
                 }
@@ -6203,8 +6053,8 @@ import { parseTsv } from './components/tsvClipboard';
             });
         }
 
-        if (selectionGlobalListenersAttached) {return;}
-        selectionGlobalListenersAttached = true;
+        if (state.selectionGlobalListenersAttached) {return;}
+        state.selectionGlobalListenersAttached = true;
 
         document.addEventListener('pointerdown', (e) => {
             const target = e.target as HTMLElement | null;
@@ -6236,24 +6086,24 @@ import { parseTsv } from './components/tsvClipboard';
         }, true);
 
         document.addEventListener('mouseup', () => {
-            if (formatPainterExecuting && formatPainterStyle) {
-                applyFormatToLogicalSelection(formatPainterStyle, 'set');
-                formatPainterExecuting = false;
-                formatPainterArmed = false;
-                formatPainterStyle = null;
+            if (state.formatPainterExecuting && state.formatPainterStyle) {
+                applyFormatToLogicalSelection(state.formatPainterStyle, 'set');
+                state.formatPainterExecuting = false;
+                state.formatPainterArmed = false;
+                state.formatPainterStyle = null;
                 document.body.classList.remove('format-painter-armed');
                 showToast('Formatting applied');
             }
 
-            const shouldStartEdit = !!pendingEditCell && !pendingEditDrag;
-            const targetToEdit = pendingEditCell;
-            pendingEditCell = null;
-            pendingEditDrag = false;
-            isSelecting = false;
-            lastMousePos = null;
+            const shouldStartEdit = !!state.pendingEditCell && !state.pendingEditDrag;
+            const targetToEdit = state.pendingEditCell;
+            state.pendingEditCell = null;
+            state.pendingEditDrag = false;
+            state.isSelecting = false;
+            state.lastMousePos = null;
             stopAutoScroll();
 
-            if (shouldStartEdit && targetToEdit && !isVersionPreviewMode && !isCellEditing) {
+            if (shouldStartEdit && targetToEdit && !state.isVersionPreviewMode && !state.isCellEditing) {
                 enterCellEditMode(targetToEdit);
             }
         });
@@ -6262,19 +6112,19 @@ import { parseTsv } from './components/tsvClipboard';
             const isCmdOrCtrl = e.ctrlKey || e.metaKey;
             const target = e.target as HTMLElement | null;
 
-            if (e.key === 'Escape' && imagePreviewOverlayEl && !imagePreviewOverlayEl.classList.contains('hidden')) {
+            if (e.key === 'Escape' && state.imagePreviewOverlayEl && !state.imagePreviewOverlayEl.classList.contains('hidden')) {
                 e.preventDefault();
                 hideImagePreview();
                 return;
             }
 
-            if (e.key === 'Escape' && insertControlPopupEl && !insertControlPopupEl.classList.contains('hidden')) {
+            if (e.key === 'Escape' && state.insertControlPopupEl && !state.insertControlPopupEl.classList.contains('hidden')) {
                 e.preventDefault();
                 hideInsertControlPopup();
                 return;
             }
 
-            if (e.key === 'Escape' && dropdownOptionsPopupEl && !dropdownOptionsPopupEl.classList.contains('hidden')) {
+            if (e.key === 'Escape' && state.dropdownOptionsPopupEl && !state.dropdownOptionsPopupEl.classList.contains('hidden')) {
                 e.preventDefault();
                 hideDropdownOptionsPopup(null);
                 return;
@@ -6314,7 +6164,7 @@ import { parseTsv } from './components/tsvClipboard';
                 return;
             }
 
-            if (isVersionPreviewMode) {
+            if (state.isVersionPreviewMode) {
                 const key = e.key.toLowerCase();
                 const allowNavigation = ['arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'pageup', 'pagedown', 'home', 'end'].includes(key);
 
@@ -6349,7 +6199,7 @@ import { parseTsv } from './components/tsvClipboard';
                 const active = document.activeElement as HTMLElement | null;
                 const isEditingCell = !!active && active.tagName === 'TD' && active.getAttribute('contenteditable') === 'true';
 
-                if (isEditingCell && isEditMode) {
+                if (isEditingCell && state.isEditMode) {
                     e.preventDefault();
                     exitCellEditMode();
                 }
@@ -6357,28 +6207,28 @@ import { parseTsv } from './components/tsvClipboard';
                 const handled = isRedoShortcut ? redoEditAction() : undoEditAction();
                 if (handled) {
                     e.preventDefault();
-                    if (isEditMode) {
+                    if (state.isEditMode) {
                         scheduleAutoSave('text');
                     }
                     return;
                 }
 
-                if (isEditMode) {
+                if (state.isEditMode) {
                     e.preventDefault();
                     return;
                 }
             }
 
-            if (!isCellEditing) {
-                const canDirectTextEdit = !isVersionPreviewMode;
+            if (!state.isCellEditing) {
+                const canDirectTextEdit = !state.isVersionPreviewMode;
                 const key = e.key;
                 if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab', 'Enter'].includes(key)) {
                     e.preventDefault();
 
                     if (key === 'Enter') {
-                        if (canDirectTextEdit && activeCell) {
-                            enterCellEditMode(activeCell);
-                        } else if (activeCell) {
+                        if (canDirectTextEdit && state.activeCell) {
+                            enterCellEditMode(state.activeCell);
+                        } else if (state.activeCell) {
                             moveSelection(1, 0, e.shiftKey);
                         }
                         return;
@@ -6395,14 +6245,14 @@ import { parseTsv } from './components/tsvClipboard';
                     return;
                 }
 
-                if (canDirectTextEdit && activeCell && e.key.length === 1 && !isCmdOrCtrl && !e.altKey) {
-                    enterCellEditMode(activeCell);
+                if (canDirectTextEdit && state.activeCell && e.key.length === 1 && !isCmdOrCtrl && !e.altKey) {
+                    enterCellEditMode(state.activeCell);
                     return;
                 }
 
-                if (e.key === 'F2' && canDirectTextEdit && activeCell) {
+                if (e.key === 'F2' && canDirectTextEdit && state.activeCell) {
                     e.preventDefault();
-                    enterCellEditMode(activeCell);
+                    enterCellEditMode(state.activeCell);
                     return;
                 }
             } else {
@@ -6412,7 +6262,7 @@ import { parseTsv } from './components/tsvClipboard';
                         const editableCell = document.activeElement as HTMLElement | null;
                         if (editableCell && editableCell.tagName === 'TD') {
                             insertLineBreakAtCaret(editableCell);
-                            if (isEditMode) {
+                            if (state.isEditMode) {
                                 scheduleAutoSave('text');
                             }
                         }
@@ -6435,19 +6285,19 @@ import { parseTsv } from './components/tsvClipboard';
                         active.innerHTML = active.dataset.originalHtml || '';
                     }
                     exitCellEditMode();
-                    if (activeCell) {activeCell.focus();}
+                    if (state.activeCell) {state.activeCell.focus();}
                     return;
                 }
             }
 
-            const canClearValues = isEditMode || isPlainDirectEditMode();
-            if ((e.key === 'Delete' || e.key === 'Backspace') && canClearValues && !isCellEditing) {
+            const canClearValues = state.isEditMode || isPlainDirectEditMode();
+            if ((e.key === 'Delete' || e.key === 'Backspace') && canClearValues && !state.isCellEditing) {
                 e.preventDefault();
                 clearSelectionContents();
                 return;
             }
 
-            if (isEditMode) {
+            if (state.isEditMode) {
                 if (isCmdOrCtrl && e.key.toLowerCase() === 'b') {
                     e.preventDefault();
                     applyEditFormatting('bold');
@@ -6482,27 +6332,27 @@ import { parseTsv } from './components/tsvClipboard';
                 const allCells = currentTable.querySelectorAll('td') as NodeListOf<HTMLElement>;
                 clearSelection();
 
-                for (let c = 0; c < columnCount; c++) {
-                    selectedColumns.add(c);
-                    selectedColumnIndices.add(c);
+                for (let c = 0; c < state.columnCount; c++) {
+                    state.selectedColumns.add(c);
+                    state.selectedColumnIndices.add(c);
                 }
 
-                selectionStart = { row: 0, col: 0 };
-                selectionEnd = { row: Math.max(0, totalRows - 1), col: Math.max(0, columnCount - 1) };
+                state.selectionStart = { row: 0, col: 0 };
+                state.selectionEnd = { row: Math.max(0, state.totalRows - 1), col: Math.max(0, state.columnCount - 1) };
 
                 allCells.forEach(cell => {
                     cell.classList.add('selected');
                     const row = parseInt(cell.dataset.row || '-1', 10);
                     const col = parseInt(cell.dataset.col || '-1', 10);
                     if (row === 0) {cell.classList.add('selection-top');}
-                    if (row === totalRows - 1) {cell.classList.add('selection-bottom');}
+                    if (row === state.totalRows - 1) {cell.classList.add('selection-bottom');}
                     if (col === 0) {cell.classList.add('selection-left');}
-                    if (col === columnCount - 1) {cell.classList.add('selection-right');}
-                    selectedCells.add(cell);
+                    if (col === state.columnCount - 1) {cell.classList.add('selection-right');}
+                    state.selectedCells.add(cell);
                 });
                 if (allCells.length > 0) {
                     allCells[0].classList.add('active-cell');
-                    activeCell = allCells[0];
+                    state.activeCell = allCells[0];
                 }
                 updateSelectionInfo();
             }
@@ -6510,17 +6360,17 @@ import { parseTsv } from './components/tsvClipboard';
 
         document.addEventListener('click', (e) => {
             const target = e.target as HTMLElement;
-            if (headerContextMenuEl && !headerContextMenuEl.classList.contains('hidden')) {
+            if (state.headerContextMenuEl && !state.headerContextMenuEl.classList.contains('hidden')) {
                 if (!target.closest('#headerContextMenu') && !target.closest('th.row-header') && !target.closest('th.col-header')) {
                     hideHeaderContextMenu();
                 }
             }
 
-            if (isCellEditing && !target.closest('td[contenteditable="true"]')) {
+            if (state.isCellEditing && !target.closest('td[contenteditable="true"]')) {
                 exitCellEditMode();
             }
 
-            if (isEditMode) {return;}
+            if (state.isEditMode) {return;}
             if (!target.closest('table') && !target.closest('.toolbar')) {
                 clearSelection();
             }
@@ -6528,11 +6378,11 @@ import { parseTsv } from './components/tsvClipboard';
     }
 
     function ensureLinkTooltip(): HTMLElement {
-        if (linkTooltip) {return linkTooltip;}
-        linkTooltip = document.createElement('div');
-        linkTooltip.id = 'linkTooltip';
-        linkTooltip.className = 'link-tooltip hidden';
-        linkTooltip.innerHTML = `
+        if (state.linkTooltip) {return state.linkTooltip;}
+        state.linkTooltip = document.createElement('div');
+        state.linkTooltip.id = 'linkTooltip';
+        state.linkTooltip.className = 'link-tooltip hidden';
+        state.linkTooltip.innerHTML = `
             <div class="link-tooltip-url" id="linkTooltipUrl"></div>
             <div class="link-tooltip-actions">
                 <button type="button" id="linkTooltipOpen" class="toggle-button">Open in Browser</button>
@@ -6540,23 +6390,23 @@ import { parseTsv } from './components/tsvClipboard';
             </div>
         `;
 
-        linkTooltip.addEventListener('mouseenter', () => {
-            if (linkTooltipHideTimer) {
-                clearTimeout(linkTooltipHideTimer);
-                linkTooltipHideTimer = null;
+        state.linkTooltip.addEventListener('mouseenter', () => {
+            if (state.linkTooltipHideTimer) {
+                clearTimeout(state.linkTooltipHideTimer);
+                state.linkTooltipHideTimer = null;
             }
         });
 
-        linkTooltip.addEventListener('mouseleave', () => {
+        state.linkTooltip.addEventListener('mouseleave', () => {
             scheduleHideLinkTooltip();
         });
 
-        document.body.appendChild(linkTooltip);
-        return linkTooltip;
+        document.body.appendChild(state.linkTooltip);
+        return state.linkTooltip;
     }
 
     function showLinkTooltipForCell(cellEl: HTMLElement | null) {
-        if (!currentSettings.hyperlinkPreview) {return;}
+        if (!state.currentSettings.hyperlinkPreview) {return;}
         if (!cellEl) {return;}
         const url = cellEl.getAttribute('data-hyperlink') || '';
         if (!url) {return;}
@@ -6602,22 +6452,22 @@ import { parseTsv } from './components/tsvClipboard';
     }
 
     function hideLinkTooltip() {
-        if (!linkTooltip) {return;}
-        linkTooltip.classList.add('hidden');
-        linkTooltip.style.left = '';
-        linkTooltip.style.top = '';
+        if (!state.linkTooltip) {return;}
+        state.linkTooltip.classList.add('hidden');
+        state.linkTooltip.style.left = '';
+        state.linkTooltip.style.top = '';
     }
 
     function scheduleHideLinkTooltip() {
-        if (linkTooltipHideTimer) {clearTimeout(linkTooltipHideTimer);}
-        linkTooltipHideTimer = setTimeout(() => {
+        if (state.linkTooltipHideTimer) {clearTimeout(state.linkTooltipHideTimer);}
+        state.linkTooltipHideTimer = setTimeout(() => {
             hideLinkTooltip();
-            linkTooltipHideTimer = null;
+            state.linkTooltipHideTimer = null;
         }, 120);
     }
 
     function ensureImagePreviewOverlay(): HTMLElement {
-        if (imagePreviewOverlayEl) {return imagePreviewOverlayEl;}
+        if (state.imagePreviewOverlayEl) {return state.imagePreviewOverlayEl;}
 
         const overlay = document.createElement('div');
         overlay.id = 'xlsxImagePreviewOverlay';
@@ -6639,7 +6489,7 @@ import { parseTsv } from './components/tsvClipboard';
         closeBtn?.addEventListener('click', () => hideImagePreview());
 
         document.body.appendChild(overlay);
-        imagePreviewOverlayEl = overlay;
+        state.imagePreviewOverlayEl = overlay;
         return overlay;
     }
 
@@ -6655,12 +6505,12 @@ import { parseTsv } from './components/tsvClipboard';
     }
 
     function hideImagePreview() {
-        if (!imagePreviewOverlayEl) {return;}
-        const img = imagePreviewOverlayEl.querySelector('#xlsxImagePreviewImg') as HTMLImageElement | null;
+        if (!state.imagePreviewOverlayEl) {return;}
+        const img = state.imagePreviewOverlayEl.querySelector('#xlsxImagePreviewImg') as HTMLImageElement | null;
         if (img) {
             img.removeAttribute('src');
         }
-        imagePreviewOverlayEl.classList.add('hidden');
+        state.imagePreviewOverlayEl.classList.add('hidden');
         document.body.classList.remove('image-preview-open');
     }
 
@@ -6669,20 +6519,20 @@ import { parseTsv } from './components/tsvClipboard';
         if (!table) {return;}
 
         table.addEventListener('mouseover', (e) => {
-            if (isEditMode) {return;}
+            if (state.isEditMode) {return;}
             const t = e && (e.target as HTMLElement);
             const el = t && t.nodeType === 3 ? t.parentElement : t;
             const cell = el && el.closest ? el.closest('td[data-hyperlink]') : null;
             if (!cell) {return;}
-            if (linkTooltipHideTimer) {
-                clearTimeout(linkTooltipHideTimer);
-                linkTooltipHideTimer = null;
+            if (state.linkTooltipHideTimer) {
+                clearTimeout(state.linkTooltipHideTimer);
+                state.linkTooltipHideTimer = null;
             }
             showLinkTooltipForCell(cell as HTMLElement);
         });
 
         table.addEventListener('mouseout', (e) => {
-            if (isEditMode) {return;}
+            if (state.isEditMode) {return;}
             const toEl = e.relatedTarget as HTMLElement;
             if (!toEl) {
                 scheduleHideLinkTooltip();
@@ -6697,7 +6547,7 @@ import { parseTsv } from './components/tsvClipboard';
             }
 
             // If we are moving to the tooltip itself, don't hide
-            if (linkTooltip && linkTooltip.contains(toEl)) {
+            if (state.linkTooltip && state.linkTooltip.contains(toEl)) {
                 return;
             }
 
@@ -6740,54 +6590,54 @@ import { parseTsv } from './components/tsvClipboard';
 
     function applySettings(settings: any, scopeOverride?: SettingsScope) {
         const scope = scopeOverride || getCurrentSettingsScope();
-        const previousSpacious = !!currentSettings.spaciousCells;
+        const previousSpacious = !!state.currentSettings.spaciousCells;
         const previousSettings = getStoredSettingsForScope(scope);
-        currentSettings = normalizeSettingsForScope(scope, settings, previousSettings);
-        setStoredSettingsForScope(scope, currentSettings);
+        state.currentSettings = normalizeSettingsForScope(scope, settings, previousSettings);
+        setStoredSettingsForScope(scope, state.currentSettings);
 
-        if (!currentSettings.autoSave) {
+        if (!state.currentSettings.autoSave) {
             clearAutoSaveTimer();
-            if (!isEditMode && pendingOutsideControlEdits.length > 0) {
+            if (!state.isEditMode && state.pendingOutsideControlEdits.length > 0) {
                 showManualSaveReminderIfNeeded();
             }
         } else {
-            if (isEditMode && hasPendingXlsxEdits()) {
+            if (state.isEditMode && hasPendingXlsxEdits()) {
                 scheduleAutoSave('text');
-            } else if (!isEditMode && pendingOutsideControlEdits.length > 0) {
+            } else if (!state.isEditMode && state.pendingOutsideControlEdits.length > 0) {
                 saveEdits(false, true);
             }
         }
 
-        if (currentSettings.autoSave) {
-            manualSaveReminderUntil = 0;
+        if (state.currentSettings.autoSave) {
+            state.manualSaveReminderUntil = 0;
         }
 
         resetStyledOnlySettingsVisibility();
-        syncSettingsCheckboxes(currentSettings);
+        syncSettingsCheckboxes(state.currentSettings);
         if (scope === 'plain') {
             hideStyledOnlySettingsForPlainMode();
         }
 
-        document.body.classList.toggle('sticky-header-enabled', !!currentSettings.stickyHeader);
-        document.body.classList.toggle('first-row-as-header', !!currentSettings.firstRowIsHeader);
-        document.body.classList.toggle('spacious-cells', !!currentSettings.spaciousCells);
-        document.body.classList.toggle('text-wrap-enabled', !!currentSettings.textWrap);
+        document.body.classList.toggle('sticky-header-enabled', !!state.currentSettings.stickyHeader);
+        document.body.classList.toggle('first-row-as-header', !!state.currentSettings.firstRowIsHeader);
+        document.body.classList.toggle('spacious-cells', !!state.currentSettings.spaciousCells);
+        document.body.classList.toggle('text-wrap-enabled', !!state.currentSettings.textWrap);
 
-        applyToolbarLayout(toolbarManager, {
-            stickyToolbar: !!currentSettings.stickyToolbar,
-            forceSticky: isEditMode,
+        applyToolbarLayout(state.toolbarManager, {
+            stickyToolbar: !!state.currentSettings.stickyToolbar,
+            forceSticky: state.isEditMode,
             scrollTarget: '#content',
             onLayoutApplied: initializeVirtualScrolling
         });
 
-        if (!currentSettings.hyperlinkPreview) {hideLinkTooltip();}
+        if (!state.currentSettings.hyperlinkPreview) {hideLinkTooltip();}
         applyInteractiveControlState();
 
-        const spaciousChanged = previousSpacious !== !!currentSettings.spaciousCells;
-        if (spaciousChanged && worksheetsMeta.length > 0) {
+        const spaciousChanged = previousSpacious !== !!state.currentSettings.spaciousCells;
+        if (spaciousChanged && state.worksheetsMeta.length > 0) {
             invalidateRowMetrics();
-            currentVisibleStart = 0;
-            currentVisibleEnd = 0;
+            state.currentVisibleStart = 0;
+            state.currentVisibleEnd = 0;
             rerenderCurrentSheetFromLocalState();
         }
     }
@@ -6796,12 +6646,12 @@ import { parseTsv } from './components/tsvClipboard';
         post({
             command: 'updateSettings',
             settingsScope: getCurrentSettingsScope(),
-            settings: currentSettings
+            settings: state.currentSettings
         });
     }
 
     function enterCellEditMode(cell: HTMLElement, clearContent = false) {
-        if (isVersionPreviewMode) {return;}
+        if (state.isVersionPreviewMode) {return;}
 
         const cellType = getCellType(cell);
         if (cellType === 'checkbox') {
@@ -6812,7 +6662,7 @@ import { parseTsv } from './components/tsvClipboard';
                 updateCheckboxCellPresentation(cell, next);
                 const after = captureCellUndoState(cell);
                 pushSingleCellUndo(before, after);
-                if (isEditMode) {
+                if (state.isEditMode) {
                     scheduleAutoSave('control');
                 } else {
                     persistInteractiveControlEdit(cell);
@@ -6836,7 +6686,7 @@ import { parseTsv } from './components/tsvClipboard';
             updateRatingCellPresentation(cell, next);
             const after = captureCellUndoState(cell);
             pushSingleCellUndo(before, after);
-            if (isEditMode) {
+            if (state.isEditMode) {
                 scheduleAutoSave('control');
             } else {
                 persistInteractiveControlEdit(cell);
@@ -6862,13 +6712,13 @@ import { parseTsv } from './components/tsvClipboard';
             return;
         }
 
-        if (isCellEditing) {
+        if (state.isCellEditing) {
             exitCellEditMode();
         }
         cell.dataset.originalText = getCellNormalizedValue(cell);
         cell.dataset.originalHtml = cell.innerHTML;
-        activeTextEditBeforeState = captureCellUndoState(cell);
-        isCellEditing = true;
+        state.activeTextEditBeforeState = captureCellUndoState(cell);
+        state.isCellEditing = true;
         cell.setAttribute('contenteditable', 'true');
         cell.setAttribute('spellcheck', 'false');
         cell.focus();
@@ -6886,8 +6736,8 @@ import { parseTsv } from './components/tsvClipboard';
     }
 
     function exitCellEditMode() {
-        if (!isCellEditing) {return;}
-        isCellEditing = false;
+        if (!state.isCellEditing) {return;}
+        state.isCellEditing = false;
 
         const editableCell = (document.querySelector('td[contenteditable="true"]') as HTMLElement | null)
             || ((document.activeElement as HTMLElement | null)?.tagName === 'TD' ? document.activeElement as HTMLElement : null);
@@ -6912,8 +6762,8 @@ import { parseTsv } from './components/tsvClipboard';
         });
 
         if (changed) {
-            pushSingleCellUndo(activeTextEditBeforeState, afterState);
-            if (isEditMode) {
+            pushSingleCellUndo(state.activeTextEditBeforeState, afterState);
+            if (state.isEditMode) {
                 if (editableCell) {
                     const rowNum = parseInt(editableCell.getAttribute('data-rownum') || '0', 10);
                     const colNum = parseInt(editableCell.getAttribute('data-colnum') || '0', 10);
@@ -6926,30 +6776,30 @@ import { parseTsv } from './components/tsvClipboard';
                     }
                 }
                 scheduleAutoSave('text');
-            } else if (editableCell && !isVersionPreviewMode) {
+            } else if (editableCell && !state.isVersionPreviewMode) {
                 persistPlainTextEdit(editableCell);
             }
         }
 
-        activeTextEditBeforeState = null;
+        state.activeTextEditBeforeState = null;
     }
 
     async function moveSelection(rowDelta: number, colDelta: number, shiftKey: boolean) {
-        if (!activeCell) {return;}
+        if (!state.activeCell) {return;}
 
-        let currentR = parseInt(activeCell.getAttribute('data-row') || '0', 10);
-        let currentC = parseInt(activeCell.getAttribute('data-col') || '0', 10);
+        let currentR = parseInt(state.activeCell.getAttribute('data-row') || '0', 10);
+        let currentC = parseInt(state.activeCell.getAttribute('data-col') || '0', 10);
 
-        if (shiftKey && selectionEnd) {
-            currentR = selectionEnd.row;
-            currentC = selectionEnd.col;
+        if (shiftKey && state.selectionEnd) {
+            currentR = state.selectionEnd.row;
+            currentC = state.selectionEnd.col;
         }
 
         let nextR = currentR + rowDelta;
         let nextC = currentC + colDelta;
 
-        nextR = Math.max(0, Math.min(totalRows - 1, nextR));
-        nextC = Math.max(0, Math.min(columnCount - 1, nextC));
+        nextR = Math.max(0, Math.min(state.totalRows - 1, nextR));
+        nextC = Math.max(0, Math.min(state.columnCount - 1, nextC));
 
         let nextCell = document.querySelector(`td[data-row="${nextR}"][data-col="${nextC}"]`) as HTMLElement;
 
@@ -6965,17 +6815,17 @@ import { parseTsv } from './components/tsvClipboard';
 
         if (nextCell) {
             if (shiftKey) {
-                if (!selectionStart) {
-                    selectionStart = {
-                        row: parseInt(activeCell.getAttribute('data-row') || '0', 10),
-                        col: parseInt(activeCell.getAttribute('data-col') || '0', 10)
+                if (!state.selectionStart) {
+                    state.selectionStart = {
+                        row: parseInt(state.activeCell.getAttribute('data-row') || '0', 10),
+                        col: parseInt(state.activeCell.getAttribute('data-col') || '0', 10)
                     };
                 }
-                selectionEnd = { row: nextR, col: nextC };
-                selectionManager.selectRange(selectionStart.row, selectionStart.col, selectionEnd.row, selectionEnd.col);
+                state.selectionEnd = { row: nextR, col: nextC };
+                selectionManager.selectRange(state.selectionStart.row, state.selectionStart.col, state.selectionEnd.row, state.selectionEnd.col);
             } else {
-                selectionStart = { row: nextR, col: nextC };
-                selectionEnd = { row: nextR, col: nextC };
+                state.selectionStart = { row: nextR, col: nextC };
+                state.selectionEnd = { row: nextR, col: nextC };
                 selectionManager.selectCell(nextCell);
             }
 
@@ -7002,13 +6852,13 @@ import { parseTsv } from './components/tsvClipboard';
     }
 
     function setEditMode(enabled: boolean, preserveSelection: boolean = false) {
-        if (enabled && isVersionPreviewMode) {
+        if (enabled && state.isVersionPreviewMode) {
             showToast('Version preview is read-only');
             return;
         }
 
-        isEditMode = !!enabled;
-        document.body.classList.toggle('edit-mode', isEditMode);
+        state.isEditMode = !!enabled;
+        document.body.classList.toggle('edit-mode', state.isEditMode);
         hideImagePreview();
 
         const toolbarEl = document.getElementById('toolbar') as HTMLElement | null;
@@ -7019,7 +6869,7 @@ import { parseTsv } from './components/tsvClipboard';
 
         ensureHeaderVisible();
 
-        if (isEditMode) {
+        if (state.isEditMode) {
             const globalTip = document.querySelector('.global-tooltip') as HTMLElement | null;
             if (globalTip) {
                 globalTip.style.opacity = '0';
@@ -7027,9 +6877,9 @@ import { parseTsv } from './components/tsvClipboard';
             }
         }
 
-        applyToolbarLayout(toolbarManager, {
-            stickyToolbar: !!currentSettings.stickyToolbar,
-            forceSticky: isEditMode,
+        applyToolbarLayout(state.toolbarManager, {
+            stickyToolbar: !!state.currentSettings.stickyToolbar,
+            forceSticky: state.isEditMode,
             scrollTarget: '#content',
             onLayoutApplied: initializeVirtualScrolling
         });
@@ -7051,43 +6901,43 @@ import { parseTsv } from './components/tsvClipboard';
         const formatTextColorButton = document.getElementById('formatTextColorButton');
         const formatBackgroundColorButton = document.getElementById('formatBackgroundColorButton');
 
-        if (toolbarManager) {
-            toolbarManager.setButtonVisibility('toggleTableEditButton', !isEditMode && !isPlainDirectEditMode());
-            toolbarManager.setButtonVisibility('saveTableEditsButton', isEditMode);
-            toolbarManager.setButtonVisibility('cancelTableEditsButton', isEditMode);
-            toolbarManager.setButtonVisibility('insertControlButton', isEditMode);
-            toolbarManager.setButtonVisibility('formatBoldButton', false);
-            toolbarManager.setButtonVisibility('formatItalicButton', false);
-            toolbarManager.setButtonVisibility('formatTextColorButton', false);
-            toolbarManager.setButtonVisibility('formatBackgroundColorButton', false);
-            toolbarManager.setButtonVisibility('refreshButton', !isEditMode);
+        if (state.toolbarManager) {
+            state.toolbarManager.setButtonVisibility('toggleTableEditButton', !state.isEditMode && !isPlainDirectEditMode());
+            state.toolbarManager.setButtonVisibility('saveTableEditsButton', state.isEditMode);
+            state.toolbarManager.setButtonVisibility('cancelTableEditsButton', state.isEditMode);
+            state.toolbarManager.setButtonVisibility('insertControlButton', state.isEditMode);
+            state.toolbarManager.setButtonVisibility('formatBoldButton', false);
+            state.toolbarManager.setButtonVisibility('formatItalicButton', false);
+            state.toolbarManager.setButtonVisibility('formatTextColorButton', false);
+            state.toolbarManager.setButtonVisibility('formatBackgroundColorButton', false);
+            state.toolbarManager.setButtonVisibility('refreshButton', !state.isEditMode);
         } else {
-            if (toggleTableEditButton) {toggleTableEditButton.classList.toggle('hidden', isEditMode || isPlainDirectEditMode());}
-            if (saveTableEditsButton) {saveTableEditsButton.classList.toggle('hidden', !isEditMode);}
-            if (cancelTableEditsButton) {cancelTableEditsButton.classList.toggle('hidden', !isEditMode);}
-            if (insertControlButton) {insertControlButton.classList.toggle('hidden', !isEditMode);}
+            if (toggleTableEditButton) {toggleTableEditButton.classList.toggle('hidden', state.isEditMode || isPlainDirectEditMode());}
+            if (saveTableEditsButton) {saveTableEditsButton.classList.toggle('hidden', !state.isEditMode);}
+            if (cancelTableEditsButton) {cancelTableEditsButton.classList.toggle('hidden', !state.isEditMode);}
+            if (insertControlButton) {insertControlButton.classList.toggle('hidden', !state.isEditMode);}
             if (formatBoldButton) {formatBoldButton.classList.add('hidden');}
             if (formatItalicButton) {formatItalicButton.classList.add('hidden');}
             if (formatTextColorButton) {formatTextColorButton.classList.add('hidden');}
             if (formatBackgroundColorButton) {formatBackgroundColorButton.classList.add('hidden');}
         }
 
-        if (editFormattingStripEl) {
-            editFormattingStripEl.classList.toggle('hidden', !isEditMode);
+        if (state.editFormattingStripEl) {
+            state.editFormattingStripEl.classList.toggle('hidden', !state.isEditMode);
         }
 
         syncSheetSelectorVisibility();
         if (toggleExpandButton) {toggleExpandButton.classList.remove('hidden');}
-        if (togglePlainViewButton) {togglePlainViewButton.classList.toggle('hidden', isEditMode && !isPlainView);}
-        if (versionHistoryButton) {versionHistoryButton.classList.toggle('hidden', isEditMode);}
+        if (togglePlainViewButton) {togglePlainViewButton.classList.toggle('hidden', state.isEditMode && !state.isPlainView);}
+        if (versionHistoryButton) {versionHistoryButton.classList.toggle('hidden', state.isEditMode);}
         if (openSettingsButton) {openSettingsButton.classList.remove('hidden');}
-        if (helpButton) {helpButton.classList.toggle('hidden', isEditMode);}
-        if (convertFileButton) {convertFileButton.classList.toggle('hidden', isEditMode);}
-        if (refreshButton) {refreshButton.classList.toggle('hidden', isEditMode);}
+        if (helpButton) {helpButton.classList.toggle('hidden', state.isEditMode);}
+        if (convertFileButton) {convertFileButton.classList.toggle('hidden', state.isEditMode);}
+        if (refreshButton) {refreshButton.classList.toggle('hidden', state.isEditMode);}
 
-        reorderToolbarAroundFind(isEditMode);
+        reorderToolbarAroundFind(state.isEditMode);
 
-        if (!isEditMode) {
+        if (!state.isEditMode) {
             exitCellEditMode();
             hideLinkTooltip();
             hideHeaderContextMenu();
@@ -7098,20 +6948,20 @@ import { parseTsv } from './components/tsvClipboard';
             applyInteractiveControlState();
 
             if (!preserveSelection) {clearSelection();}
-            lastEditRange = null;
-            pendingWorksheetOps = [];
-            pendingCellStyleEdits.clear();
-            editUndoStack.length = 0;
-            editRedoStack.length = 0;
-            formatPainterArmed = false;
-            formatPainterStyle = null;
+            state.lastEditRange = null;
+            state.pendingWorksheetOps = [];
+            state.pendingCellStyleEdits.clear();
+            state.editUndoStack.length = 0;
+            state.editRedoStack.length = 0;
+            state.formatPainterArmed = false;
+            state.formatPainterStyle = null;
             document.body.classList.remove('format-painter-armed');
             return;
         }
 
         if (!preserveSelection) {clearSelection();}
-        editUndoStack.length = 0;
-        editRedoStack.length = 0;
+        state.editUndoStack.length = 0;
+        state.editRedoStack.length = 0;
         hideInsertControlPopup();
 
         // Enable contenteditable for table cells
@@ -7158,21 +7008,21 @@ import { parseTsv } from './components/tsvClipboard';
     }
 
     function saveEdits(shouldExit = false, isAutosave = false) {
-        if (isSaving) {return;}
-        if (isAutosave && !currentSettings.autoSave) {return;}
+        if (state.isSaving) {return;}
+        if (isAutosave && !state.currentSettings.autoSave) {return;}
 
         const table = document.querySelector('#tableContainer table');
-        const hasPendingStyleOrStructureChanges = pendingCellStyleEdits.size > 0 || pendingWorksheetOps.length > 0;
-        const canSaveFromEditMode = isEditMode && !!table;
-        const canSaveOutsideEditMode = !isEditMode && (pendingOutsideControlEdits.length > 0 || hasPendingStyleOrStructureChanges);
+        const hasPendingStyleOrStructureChanges = state.pendingCellStyleEdits.size > 0 || state.pendingWorksheetOps.length > 0;
+        const canSaveFromEditMode = state.isEditMode && !!table;
+        const canSaveOutsideEditMode = !state.isEditMode && (state.pendingOutsideControlEdits.length > 0 || hasPendingStyleOrStructureChanges);
 
         if (!canSaveFromEditMode && !canSaveOutsideEditMode) {
             return;
         }
 
         clearAutoSaveTimer();
-        isSaving = true;
-        exitAfterSave = canSaveFromEditMode && !isAutosave ? !!shouldExit : false;
+        state.isSaving = true;
+        state.exitAfterSave = canSaveFromEditMode && !isAutosave ? !!shouldExit : false;
         if (canSaveFromEditMode) {
             if (!isAutosave) {
                 setButtonsEnabled(false);
@@ -7224,10 +7074,10 @@ import { parseTsv } from './components/tsvClipboard';
                 }
             });
 
-            styleEdits = Array.from(pendingCellStyleEdits.values());
-            operations = pendingWorksheetOps;
+            styleEdits = Array.from(state.pendingCellStyleEdits.values());
+            operations = state.pendingWorksheetOps;
         } else {
-            pendingOutsideControlEdits.forEach((edit) => {
+            state.pendingOutsideControlEdits.forEach((edit) => {
                 const cellData = getOrCreateRowCellData(edit.row - 1, edit.col - 1);
                 if (cellData) {
                     cellData.value = edit.value;
@@ -7235,12 +7085,12 @@ import { parseTsv } from './components/tsvClipboard';
                 edits.push({ row: edit.row, col: edit.col, value: edit.value });
             });
 
-            styleEdits = Array.from(pendingCellStyleEdits.values());
-            operations = pendingWorksheetOps;
+            styleEdits = Array.from(state.pendingCellStyleEdits.values());
+            operations = state.pendingWorksheetOps;
         }
 
-        if (canSaveFromEditMode && pendingOutsideControlEdits.length > 0) {
-            pendingOutsideControlEdits.forEach((edit) => {
+        if (canSaveFromEditMode && state.pendingOutsideControlEdits.length > 0) {
+            state.pendingOutsideControlEdits.forEach((edit) => {
                 const cellData = getOrCreateRowCellData(edit.row - 1, edit.col - 1);
                 if (cellData) {
                     cellData.value = edit.value;
@@ -7255,7 +7105,7 @@ import { parseTsv } from './components/tsvClipboard';
         }
 
         if (!edits.length && !richEdits.length && !styleEdits.length && !operations.length) {
-            isSaving = false;
+            state.isSaving = false;
             if (canSaveFromEditMode) {
                 setButtonsEnabled(true);
             }
@@ -7266,7 +7116,7 @@ import { parseTsv } from './components/tsvClipboard';
             setLoadingText('Saving worksheet...');
             showLoading();
         }
-        post({ command: 'saveXlsxEdits', sheetIndex: currentWorksheet, edits, richEdits, styleEdits, operations, isAutosave });
+        post({ command: 'saveXlsxEdits', sheetIndex: state.currentWorksheet, edits, richEdits, styleEdits, operations, isAutosave });
     }
 
     function setExpandedMode(isExpanded: boolean) {
@@ -7285,7 +7135,7 @@ import { parseTsv } from './components/tsvClipboard';
 
     function wireSettingsUI() {
         const settings = createXlsxSettingsDefinitions(
-            () => currentSettings,
+            () => state.currentSettings,
             (next: XlsxViewSettings) => {
                 applySettings(next);
             },
@@ -7293,7 +7143,7 @@ import { parseTsv } from './components/tsvClipboard';
                 postSettings();
             },
             {
-                fileExtension: currentAssociationFileType,
+                fileExtension: state.currentAssociationFileType,
                 onOpenByDefaultChange: (enabled: boolean) => {
                     post({ command: enabled ? 'enableAsDefault' : 'disableDefaultEditor' });
                 }
@@ -7308,22 +7158,22 @@ import { parseTsv } from './components/tsvClipboard';
         }
 
         new SettingsManager('openSettingsButton', 'settingsPanel', 'settingsCancelButton', settings, () => {
-            toolbarManager?.updateHeaderHeight();
+            state.toolbarManager?.updateHeaderHeight();
         });
 
         if (typeof ThemeManager !== 'undefined') {
             new ThemeManager('themeSelect', {
-                onBeforeCycle: () => !isEditMode
+                onBeforeCycle: () => !state.isEditMode
             }, vscode);
         }
     }
 
     function attachHandlersOnce() {
-        if (handlersAttached) {return;}
-        handlersAttached = true;
+        if (state.handlersAttached) {return;}
+        state.handlersAttached = true;
 
-        toolbarManager = new ToolbarManager('toolbar');
-        const toolbar = toolbarManager;
+        state.toolbarManager = new ToolbarManager('toolbar');
+        const toolbar = state.toolbarManager;
 
         // Sheet Selector
         const sheetSelector = document.createElement('select');
@@ -7331,11 +7181,11 @@ import { parseTsv } from './components/tsvClipboard';
         sheetSelector.className = 'sheet-selector';
         sheetSelector.title = 'Select sheet';
         sheetSelector.addEventListener('change', (e) => {
-            if (isEditMode) {return;}
-            currentWorksheet = parseInt((e.target as HTMLSelectElement).value, 10);
+            if (state.isEditMode) {return;}
+            state.currentWorksheet = parseInt((e.target as HTMLSelectElement).value, 10);
             clearDataTransforms();
             clearSelection();
-            renderWorksheet(currentWorksheet);
+            renderWorksheet(state.currentWorksheet);
         });
 
         toolbar.setButtons(createXlsxToolbarButtons({
@@ -7346,7 +7196,7 @@ import { parseTsv } from './components/tsvClipboard';
             onSaveTableEdits: () => saveEdits(true),
             onCancelTableEdits: () => {
                 setEditMode(false);
-                renderWorksheet(currentWorksheet);
+                renderWorksheet(state.currentWorksheet);
                 setTimeout(() => {
                     hideLoading();
                     ensureHeaderVisible();
@@ -7355,7 +7205,7 @@ import { parseTsv } from './components/tsvClipboard';
                         toolbarEl.classList.remove('hidden');
                         toolbarEl.style.display = 'flex';
                     }
-                    toolbarManager?.updateHeaderHeight();
+                    state.toolbarManager?.updateHeaderHeight();
                 }, 180);
             },
             onInsertControl: () => {
@@ -7370,8 +7220,8 @@ import { parseTsv } from './components/tsvClipboard';
             onFormatBackgroundColor: () => { },
             onToggleExpand: () => {
                 const btn = document.getElementById('toggleExpandButton');
-                const state = btn?.getAttribute('data-state') || 'default';
-                if (state === 'default') {
+                const buttonState = btn?.getAttribute('data-state') || 'default';
+                if (buttonState === 'default') {
                     btn?.setAttribute('data-state', 'expanded');
                     if (btn) {btn.innerHTML = Icons.Collapse;}
                     setExpandedMode(true);
@@ -7382,25 +7232,25 @@ import { parseTsv } from './components/tsvClipboard';
                 }
             },
             onTogglePlainView: () => {
-                if (isEditMode) {return;}
-                if (isPlainView && isTemporaryStyleFile) {
+                if (state.isEditMode) {return;}
+                if (state.isPlainView && state.isTemporaryStyleFile) {
                     requestStyledMode();
                     return;
                 }
-                isPlainView = !isPlainView;
+                state.isPlainView = !state.isPlainView;
                 syncPlainViewUiState();
                 syncTemporaryFileToolbarActions();
                 // Always notify the provider so it stays in sync for all file types
-                post({ command: 'setPreferredViewMode', mode: isPlainView ? 'plain' : 'styled' });
+                post({ command: 'setPreferredViewMode', mode: state.isPlainView ? 'plain' : 'styled' });
                 applySettingsForScope(getCurrentSettingsScope());
 
-                rowCache.clear();
-                currentVisibleStart = 0;
-                currentVisibleEnd = 0;
-                renderWorksheet(currentWorksheet);
+                state.rowCache.clear();
+                state.currentVisibleStart = 0;
+                state.currentVisibleEnd = 0;
+                renderWorksheet(state.currentWorksheet);
             },
             onVersionHistory: () => {
-                if (isEditMode) {return;}
+                if (state.isEditMode) {return;}
                 post({ command: 'showVersionHistory' });
             },
             onOpenSettings: () => { },
@@ -7408,11 +7258,11 @@ import { parseTsv } from './components/tsvClipboard';
                 FeedbackModal.show();
             },
             onConvertFile: () => {
-                if (isEditMode) {return;}
+                if (state.isEditMode) {return;}
                 post({ command: 'convertFile' });
             },
             onRefresh: () => {
-                if (isEditMode) {return;}
+                if (state.isEditMode) {return;}
                 post({ command: 'requestFreshData' });
             }
         }));
@@ -7440,13 +7290,13 @@ import { parseTsv } from './components/tsvClipboard';
                 hideInsertControlPopup();
             }
 
-            if (!target.closest('#xlsxDropdownOptionsPopup') && !target.closest('#xlsxInsertControlPopup') && !target.closest('#insertControlButton') && dropdownOptionsPopupEl && !dropdownOptionsPopupEl.classList.contains('hidden')) {
+            if (!target.closest('#xlsxDropdownOptionsPopup') && !target.closest('#xlsxInsertControlPopup') && !target.closest('#insertControlButton') && state.dropdownOptionsPopupEl && !state.dropdownOptionsPopupEl.classList.contains('hidden')) {
                 hideDropdownOptionsPopup(null);
             }
         });
 
         window.addEventListener('resize', () => {
-            toolbarManager?.updateHeaderHeight();
+            state.toolbarManager?.updateHeaderHeight();
         });
     }
 
@@ -7455,7 +7305,7 @@ import { parseTsv } from './components/tsvClipboard';
         if (!selector) {return;}
 
         selector.innerHTML = '';
-        worksheetsMeta.forEach((ws, i) => {
+        state.worksheetsMeta.forEach((ws, i) => {
             const opt = document.createElement('option');
             opt.value = String(i);
 
@@ -7493,24 +7343,24 @@ import { parseTsv } from './components/tsvClipboard';
         if (message.command === 'saveResult') {
             hideLoading();
             setLoadingText('Rendering worksheet...');
-            isSaving = false;
+            state.isSaving = false;
             setButtonsEnabled(true);
             if (message.ok) {
                 const thead = document.querySelector('#xlsxTable thead') as HTMLElement | null;
                 if (thead) {thead.style.display = 'table-header-group';}
                 const isAutosaveResult = !!message.isAutosave;
                 showToast(isAutosaveResult ? 'Autosaved' : 'Saved', isAutosaveResult, 1000);
-                pendingWorksheetOps = [];
-                pendingCellStyleEdits.clear();
+                state.pendingWorksheetOps = [];
+                state.pendingCellStyleEdits.clear();
                 clearPendingOutsideControlEdits();
-                manualSaveReminderUntil = 0;
+                state.manualSaveReminderUntil = 0;
 
-                const shouldExitAfterManualSave = !isAutosaveResult || exitAfterSave;
+                const shouldExitAfterManualSave = !isAutosaveResult || state.exitAfterSave;
                 if (shouldExitAfterManualSave) {
-                    exitAfterSave = false;
+                    state.exitAfterSave = false;
                     // Preserve selection when save requests exit so user doesn't lose context
                     setEditMode(false, true);
-                } else if (isEditMode) {
+                } else if (state.isEditMode) {
                     captureOriginalCellValues();
                 }
             } else {
@@ -7563,15 +7413,15 @@ import { parseTsv } from './components/tsvClipboard';
 
         // Handle initVirtualTable for virtual scrolling
         if (message.command === 'initVirtualTable') {
-            const previousWorksheet = currentWorksheet;
-            worksheetsMeta = Array.isArray(message.worksheets) ? message.worksheets : [];
-            currentWorksheet = Math.min(Math.max(previousWorksheet, 0), Math.max(worksheetsMeta.length - 1, 0));
+            const previousWorksheet = state.currentWorksheet;
+            state.worksheetsMeta = Array.isArray(message.worksheets) ? message.worksheets : [];
+            state.currentWorksheet = Math.min(Math.max(previousWorksheet, 0), Math.max(state.worksheetsMeta.length - 1, 0));
             clearDataTransforms();
 
-            hasVirtualTableInit = true;
-            isTemporaryStyleFile = message.fileType === 'csv' || message.fileType === 'tsv';
-            currentAssociationFileType = typeof message.fileType === 'string' ? message.fileType : 'xlsx';
-            isPlainView = message.isPlainView !== undefined ? !!message.isPlainView : isTemporaryStyleFile;
+            state.hasVirtualTableInit = true;
+            state.isTemporaryStyleFile = message.fileType === 'csv' || message.fileType === 'tsv';
+            state.currentAssociationFileType = typeof message.fileType === 'string' ? message.fileType : 'xlsx';
+            state.isPlainView = message.isPlainView !== undefined ? !!message.isPlainView : state.isTemporaryStyleFile;
             syncPlainViewUiState();
 
             const rowHeaderWidth = typeof message.rowHeaderWidth === 'number' ? message.rowHeaderWidth : MIN_ROW_HEADER_WIDTH;
@@ -7581,7 +7431,7 @@ import { parseTsv } from './components/tsvClipboard';
             syncTemporaryFileToolbarActions();
             populateSheetSelector();
             const selector = document.getElementById('sheetSelector') as HTMLSelectElement | null;
-            if (selector) {selector.value = String(currentWorksheet);}
+            if (selector) {selector.value = String(state.currentWorksheet);}
 
             applySettingsForScope(getCurrentSettingsScope());
             const expandBtn = document.getElementById('toggleExpandButton');
@@ -7589,7 +7439,7 @@ import { parseTsv } from './components/tsvClipboard';
             setExpandedMode(false);
 
             if (message.previewMode) {
-                previewVersionId = typeof message.versionId === 'string' ? message.versionId : null;
+                state.previewVersionId = typeof message.versionId === 'string' ? message.versionId : null;
                 const previewLabel = message.timestamp
                     ? `Previewing ${new Date(message.timestamp).toLocaleString()} (read-only)`
                     : 'Previewing selected version (read-only)';
@@ -7598,7 +7448,7 @@ import { parseTsv } from './components/tsvClipboard';
                 setVersionPreviewMode(false);
             }
 
-            renderWorksheet(currentWorksheet);
+            renderWorksheet(state.currentWorksheet);
             return;
         }
 

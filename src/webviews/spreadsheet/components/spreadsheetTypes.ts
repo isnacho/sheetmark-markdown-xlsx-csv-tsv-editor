@@ -126,3 +126,13 @@ export interface SheetEditUndoEntry {
 }
 
 export type EditUndoEntry = StyleEditUndoEntry | SheetEditUndoEntry;
+
+export type FilterMode = 'contains' | 'equals' | 'startsWith' | 'nonEmpty';
+export type SortDirection = 'asc' | 'desc';
+
+export interface ColumnFilterState {
+    columnIndex: number;
+    mode: FilterMode;
+    query: string;
+    caseSensitive: boolean;
+}

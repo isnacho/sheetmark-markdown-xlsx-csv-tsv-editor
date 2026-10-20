@@ -46,7 +46,7 @@ Then open an `.xlsx`, `.csv`, `.tsv`, or `.md` file and choose **Open with Sheet
 
 ## Feedback and support
 
-Use **Help & Feedback** in the toolbar of any supported file, or [report a bug / request a feature on GitHub](https://github.com/nachosdesign/sheetmark-markdown-xlsx-csv-tsv-editor/issues). If Sheetmark helps your workflow, a [Marketplace review](https://marketplace.visualstudio.com/items?itemName=iggyinc.sheetmark) makes it easier for others to discover.
+Use **Help & Feedback** in the toolbar of any supported file, or [report a bug / request a feature on GitHub](https://github.com/isnacho/sheetmark-markdown-xlsx-csv-tsv-editor/issues). If Sheetmark helps your workflow, a [Marketplace review](https://marketplace.visualstudio.com/items?itemName=iggyinc.sheetmark) makes it easier for others to discover.
 
 ## License
 

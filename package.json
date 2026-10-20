@@ -9,12 +9,12 @@
     },
     "repository": {
         "type": "git",
-        "url": "https://github.com/nachosdesign/sheetmark-markdown-xlsx-csv-tsv-editor"
+        "url": "https://github.com/isnacho/sheetmark-markdown-xlsx-csv-tsv-editor"
     },
     "bugs": {
-        "url": "https://github.com/nachosdesign/sheetmark-markdown-xlsx-csv-tsv-editor/issues"
+        "url": "https://github.com/isnacho/sheetmark-markdown-xlsx-csv-tsv-editor/issues"
     },
-    "homepage": "https://github.com/nachosdesign/sheetmark-markdown-xlsx-csv-tsv-editor",
+    "homepage": "https://github.com/isnacho/sheetmark-markdown-xlsx-csv-tsv-editor",
     "keywords": [
         "markdown",
         "xlsx",

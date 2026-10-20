@@ -132,7 +132,7 @@ export class FeedbackModal {
             e.preventDefault();
             vscode.postMessage({
                 command: 'openExternal',
-                url: 'https://github.com/nachosdesign/sheetmark-markdown-xlsx-csv-tsv-editor/issues/new'
+                url: 'https://github.com/isnacho/sheetmark-markdown-xlsx-csv-tsv-editor/issues/new'
             });
         });
 

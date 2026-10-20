@@ -114,14 +114,14 @@ approval; don't ask a redundant second time.
 
 ```bash
 gh workflow run "Publish Sheetmark Release" \
-  --repo nachosdesign/sheetmark-markdown-xlsx-csv-tsv-editor \
+  --repo isnacho/sheetmark-markdown-xlsx-csv-tsv-editor \
   --ref "v<version>"
 gh run list \
-  --repo nachosdesign/sheetmark-markdown-xlsx-csv-tsv-editor \
+  --repo isnacho/sheetmark-markdown-xlsx-csv-tsv-editor \
   --workflow "Publish Sheetmark Release" \
   --event workflow_dispatch --commit "$RELEASE_SHA" --limit 1
 gh run watch <run-id> \
-  --repo nachosdesign/sheetmark-markdown-xlsx-csv-tsv-editor --exit-status
+  --repo isnacho/sheetmark-markdown-xlsx-csv-tsv-editor --exit-status
 ```
 
 The dispatch response may supply a run URL; otherwise poll the exact `workflow_dispatch` +

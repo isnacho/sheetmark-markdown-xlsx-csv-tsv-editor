@@ -10,7 +10,7 @@
 
 A fork of the open-source extension **`xlsx-viewer`** by Muhammad Ahmad
 ([upstream repo](https://github.com/Mahmadabid/XLSX-CSV-TSV-MARKDOWN-Editor-Vscode-Extension)),
-imported at version **1.9.91**. Repo: [nachosdesign/sheetmark-markdown-xlsx-csv-tsv-editor](https://github.com/nachosdesign/sheetmark-markdown-xlsx-csv-tsv-editor).
+imported at version **1.9.91**. Repo: [isnacho/sheetmark-markdown-xlsx-csv-tsv-editor](https://github.com/isnacho/sheetmark-markdown-xlsx-csv-tsv-editor).
 
 - ~20k lines of TypeScript.
 - **Two custom editors**:

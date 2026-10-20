@@ -5,7 +5,7 @@ description: Publish or locally install the Sheetmark VS Code extension (iggyinc
 
 # Publish Sheetmark
 
-Extension ID `iggyinc.sheetmark`, repo `nachosdesign/sheetmark-markdown-xlsx-csv-tsv-editor`.
+Extension ID `iggyinc.sheetmark`, repo `isnacho/sheetmark-markdown-xlsx-csv-tsv-editor`.
 
 ## First: pick a mode
 

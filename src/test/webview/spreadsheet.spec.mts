@@ -75,7 +75,10 @@ test('hostile cell values render inert and rich text keeps formatting', async ()
     assert.equal(await webview.page.evaluate(() => (window as any).__pwned), undefined);
     assert.equal(await webview.page.locator('td img[onerror]').count(), 0);
     assert.equal(await webview.page.locator('td[data-row="1"][data-col="1"] b').textContent(), 'bold');
-    assert.deepEqual((await webview.problems()).filter(p => !p.includes('img-src')), []);
+    // Chrome 156+ reports a script-src-attr violation as soon as the sanitizer parses the hostile
+    // <img onerror> in its inert <template> (DOMParser does the same). Nothing runs (checked above),
+    // so only that report is ignored here.
+    assert.deepEqual((await webview.problems()).filter(p => !p.includes('img-src') && p !== 'CSP blocked script-src-attr: inline'), []);
 });
 
 test('pasting a quoted multi-line cell writes it to one cell', async () => {

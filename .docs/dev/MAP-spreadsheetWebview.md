@@ -19,7 +19,15 @@ grep for function names.
 | [cellValues.ts](../../src/webviews/spreadsheet/cellValues.ts) | `getCellType`, `getCellNormalizedValue`, `getOrCreateRowCellData`, value normalizers (`normalizeCellText`, rating, date, boolean) |
 | [dataOps.ts](../../src/webviews/spreadsheet/dataOps.ts) | Sort and filter: `readCellTextForDataOps`, `compareDataOpValues`, `filterAndSortRows` (unit-tested) |
 | [rowMetrics.ts](../../src/webviews/spreadsheet/rowMetrics.ts) | Row-height prefix sums and `rowIndexAtOffset` for virtual scrolling (unit-tested) |
+| [rowLayout.ts](../../src/webviews/spreadsheet/rowLayout.ts) | The same math bound to `state`: `getRowTopOffset`, `getRowHeightRange`, `findRowIndexByOffset`, `invalidateRowMetrics`, `getMutableRowsSnapshot` |
+| [styleEdits.ts](../../src/webviews/spreadsheet/styleEdits.ts) | `styleToRendererCss`, `normalizeStyleForStorage` (unit-tested), `recordCellStyleEdit` / `recordLogicalStyleEdit` (pending style edits) |
+| [undo.ts](../../src/webviews/spreadsheet/undo.ts) | Undo/redo: `captureCellUndoState`, `captureWorksheetStateSnapshot`, `pushEditUndoEntry`, `pushSheetUndoEntry`, `pushSingleCellUndo`, `undoEditAction`, `redoEditAction`. Gets four helpers (selection, menu, re-render, find highlights) via `initUndo` |
+| [interactiveControls.ts](../../src/webviews/spreadsheet/interactiveControls.ts) | Checkbox, dropdown, rating and date cells: `applyInteractiveControlState`, `update*CellPresentation`, the Insert Control and dropdown-options popups, `insertControlIntoSelection`. Gets two helpers via `initInteractiveControls`. Pinned by `spreadsheetControls.spec.mts` |
+| [notices.ts](../../src/webviews/spreadsheet/notices.ts) | Merge warning (`confirmMergePreserveTopLeftContent`) and the styled-mode notice (`showStyleModeNoticePopup`, sends `styleModeDecision`) |
+| [linkPreview.ts](../../src/webviews/spreadsheet/linkPreview.ts) | Hyperlink tooltip (`showLinkTooltipForCell`, sends `openExternal`), `initializeHyperlinkHover`, image preview overlay |
 | [ui.ts](../../src/webviews/spreadsheet/ui.ts), [messaging.ts](../../src/webviews/spreadsheet/messaging.ts) | Loading overlay, `setButtonsEnabled`, `captureOriginalCellValues`; the typed `post` to the host |
+
+To move more code out, see [scripts/refactor/](../../scripts/refactor/): `cluster-deps.cjs` shows what a group of functions needs from the rest of the file, and `move-functions.cjs` moves it and fixes the imports.
 
 ## Responsibility clusters still in spreadsheetWebview.ts (in file order)
 
@@ -28,19 +36,14 @@ grep for function names.
 | Imports and component wiring | top of file; `XlsxSelectionManager`, `XlsxFindManager`, `VirtualLoader` |
 | Config | `Virtual Scrolling Configuration`; `virtualLoader` (`new VirtualLoader<any[]>('getRows')`), `selectionManager` (state itself is in `state.ts`) |
 | Border and color-preview helpers | `updateColorPreview`, `buildBorderCss`, `syncBorderControlsToUi`, `ensureBorderPopup`, `showBorderPopup`, `hideBorderPopup` |
-| Insert-control and dropdown-option popups | `ensureInsertControlPopup`, `showInsertControlPopup`, `promptDropdownOptions`, `parseDropdownOptionsInput`, `editDropdownOptionsForCell` |
-| Inserted controls (checkbox, rating, date, dropdown) | `createInsertedControlInnerHtml`, `applyInsertedControlToDomCell`, `insertControlIntoSelection` (`getOrCreateRowCellData` is in `cellValues.ts`) |
-| Merge warning and style-mode notice popups | `ensureMergeWarningPopup`, `confirmMergePreserveTopLeftContent`, `ensureStyleModeNoticePopup`, `showStyleModeNoticePopup`, `submitStyleModeDecision` (sends `styleModeDecision`) |
 | Find | `getFindManager`, `navigateFind`, `focusCellByPosition`, `applyFindHighlightsInVisibleCells`, `openFindOverlay` |
-| Row metrics and virtualization math | `ensureAllRowsLoadedForStructureEdits`, `getMutableRowsSnapshot`, `ensureRowOffsetPrefix`, `getRowTopOffset`, `findRowIndexByOffset`, `invalidateRowMetrics` (math in `rowMetrics.ts`) |
+| Loading every row before a structure edit | `ensureAllRowsLoadedForStructureEdits`, `rerenderCurrentSheetFromLocalState` |
 | Structure operations (insert/delete rows, columns, cells) | `applyStructureOperation`, `applyCellInsertOperation`, `applyCellDeleteOperation`, `persistStructureChange`, `canApplyStructureEdits` |
 | Header context menu and column filters | `ensureHeaderContextMenu`, `showHeaderContextMenu`, `hideHeaderContextMenu`, `activeColumnFilters`, `activeSortState` |
 | Cell context menu and edit selection | `showCellContextMenu`, `captureEditSelectionRange`, `restoreEditSelectionRange` |
 | Inline styling and plain-view toolbar state | `applyInlineStyleToSelection`, `syncPlainViewUiState`, `updatePlainViewButtonLabel`, `syncSheetSelectorVisibility`, `syncTemporaryFileToolbarActions` |
 | Settings scope and styled-mode gating | `resolveSettingsScope`, `normalizeSettingsForScope`, `applySettingsForScope`, `consumeIncomingSettingsPayload`, `requestStyledMode` (sends `requestStyleMode`), `activateStyledMode` (sends `setPreferredViewMode`), `cancelStyledModeRequest` |
 | Edit formatting core | `applyEditFormatting`, `getEditTargetCells`, `applyFormatToLogicalSelection`, `getLogicalSelectionBounds` |
-| Style normalization and edit recording | `styleToRendererCss`, `normalizeStyleForStorage`, `recordLogicalStyleEdit`, `recordCellStyleEdit` |
-| Undo/redo | `captureCellUndoState`, `captureWorksheetStateSnapshot`, `pushEditUndoEntry`, `pushSheetUndoEntry`, `undoEditAction`, `redoEditAction` |
 | Align, font, wrap, indent, strikethrough | `applyHorizontalAlign`, `applyVerticalAlign`, `applyFontSize`, `applyFontFamily`, `applyWrapMode`, `applyIndent`, `applyStrikeThrough` |
 | Borders | `applyBorderPreset`, `applyBorderColorToSelection`, `applyCurrentBorderMode` |
 | Clear formatting and contents | `clearFormattingOnSelection`, `getClearedValueForCellType`, `clearSelectionContents` |
@@ -48,7 +51,6 @@ grep for function names.
 | Format painter | `copyFormattingFromCell`, `applyStyleToCellFromPainter`, `toggleFormatPainter` |
 | Color palette | `applyCellBackgroundColor`, `applyTextColor`, `ensureColorPalette`, `showColorPalette` |
 | Edit-formatting toolbar wiring | `wireEditFormattingControls`, `ensureEditFormattingStrip`, `reorderToolbarAroundFind` |
-| Interactive-control presentation | `updateCheckboxCellPresentation`, `updateDropdownCellPresentation` (`getCellType` is in `cellValues.ts`) |
 | Persist edits and autosave | moved to `persistence.ts` |
 | Virtual-scroll core, sort and filter | `Virtual Scrolling Core`; `requestRows`, `requestAllRows` (via `VirtualLoader`, sends `getRows`), `rebuildFilteredRows`, `applyDataOpsRowsToViewport` (sort/filter logic: `filterAndSortRows` in `dataOps.ts`) |
 | Row rendering and viewport | `createRowHtml`, `adjustColumnWidths`, `setRowHeaderWidth`, `renderVirtualRows`, `updateVisibleRows` |
@@ -56,7 +58,6 @@ grep for function names.
 | Resize and auto-fit | `initializeResize`, `autoFitColumn`, `autoFitRow` |
 | Selection and clipboard | `selectCell`, `selectRange`, `selectRow`, `selectColumn`, `pasteTextAtSelection` (sends `saveXlsxEdits`) |
 | Selection interaction handlers | `initializeSelection` (mouse and keyboard navigation; Escape in version preview sends `cancelVersionPreview`), `startAutoScroll`, `autoScrollLoop` |
-| Link tooltip, image preview, hyperlink hover | `showLinkTooltipForCell` (sends `openExternal`), `showImagePreview`, `initializeHyperlinkHover` |
 | Settings visibility and apply | `hideStyledOnlySettingsForPlainMode`, `applySettings`, `postSettings` (sends `updateSettings`) |
 | Cell edit mode and navigation | `enterCellEditMode`, `exitCellEditMode`, `moveSelection` (multi-line cell text uses `spreadsheetCellTextComponent.ts`) |
 | Edit-mode toggle | `setEditMode` (save is `saveEdits` in `persistence.ts`) |

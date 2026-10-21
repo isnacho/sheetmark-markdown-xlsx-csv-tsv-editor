@@ -30,6 +30,9 @@ export interface WebviewHarness {
     send(message: unknown): Promise<void>;
     /** CSP violations and uncaught page errors seen so far. */
     problems(): Promise<string[]>;
+    /** Messages with this command, oldest first. */
+    postedOf(command: string): Promise<any[]>;
+    close(): Promise<void>;
 }
 
 let server: Server | undefined;
@@ -126,6 +129,8 @@ export async function openWebview(kind: WebviewKind, options: { extraInitScript?
         },
         send: (message) => page.evaluate((m) => { window.postMessage(m, '*'); }, message),
         problems: () => page.evaluate(() => (window as any).__problems as string[]),
+        postedOf: async (command) => (await posted()).filter(m => m?.command === command),
+        close: () => page.close(),
     };
 }
 

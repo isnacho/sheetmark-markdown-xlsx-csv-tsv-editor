@@ -124,9 +124,9 @@ The Markdown editor is a single CodeMirror 6 surface
 ([livePreviewEditor.ts](../../src/webviews/md/livePreview/livePreviewEditor.ts)) with custom widgets
 for tables, callouts, mermaid fences, images, and frontmatter. There is no split, raw-textarea, or
 reading view. `mdWebview.ts` holds the shell; the CM6 stack lives under `src/webviews/md/livePreview/`.
-Both are large: navigate with [MAP-mdWebview.md](MAP-mdWebview.md). `currentContent` in
-`mdWebview.ts` is the single source of truth: CM6 writes into it through its `onDocChanged`
-callback and `getActiveEditorContent()` reads it. Outline/TOC still uses markdown-it token parsing;
+Both are large: navigate with [MAP-mdWebview.md](MAP-mdWebview.md). `state.currentContent`
+(`state.ts`) is the single source of truth: CM6 writes into it through its `onDocChanged`
+callback and `getActiveEditorContent()` (`saveSync.ts`) reads it. Outline/TOC still uses markdown-it token parsing;
 document rendering is CM6, not a static HTML preview.
 
 ### Markdown per-file / global preferences (extension state)

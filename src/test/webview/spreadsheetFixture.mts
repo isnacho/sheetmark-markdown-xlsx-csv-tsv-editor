@@ -11,11 +11,11 @@ export const SPREADSHEET_SETTINGS: SpreadsheetSettings = {
 };
 
 /** Row objects in the shape the host's worksheet extractor sends. */
-export function rowsFromValues(values: string[][]) {
+export function rowsFromValues(values: string[][], cellProps: Record<string, object> = {}) {
     return values.map((cells, r) => ({
         rowNumber: r + 1,
         height: 21,
-        cells: cells.map((value, c) => ({ rowNumber: r + 1, colNumber: c + 1, value, style: {} })),
+        cells: cells.map((value, c) => ({ rowNumber: r + 1, colNumber: c + 1, value, style: {}, ...cellProps[`${r}:${c}`] })),
     }));
 }
 
@@ -28,12 +28,14 @@ export interface SpreadsheetFixture extends WebviewHarness {
 
 export async function bootSpreadsheet(options: {
     values: string[][];
+    /** Extra cell fields keyed `row:col` (zero-based), for example `{ '0:0': { hyperlink: 'https://…' } }`. */
+    cellProps?: Record<string, object>;
     settings?: Partial<SpreadsheetSettings>;
     fileType?: SpreadsheetFileType;
     extraInitScript?: string;
     initVirtualTable?: Partial<Extract<HostToSpreadsheetWebview, { command: 'initVirtualTable' }>>;
 }): Promise<SpreadsheetFixture> {
-    const rows = rowsFromValues(options.values);
+    const rows = rowsFromValues(options.values, options.cellProps);
     const columnCount = Math.max(...options.values.map(r => r.length));
     const settings = { ...SPREADSHEET_SETTINGS, ...options.settings };
     const webview = await openWebview('spreadsheet', { extraInitScript: options.extraInitScript });

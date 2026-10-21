@@ -120,3 +120,67 @@ test('header menu Sort A to Z reorders rows (requestAllRows + filterAndSortRows)
     assert.deepEqual(column, ['Apple', 'banana', 'pear']);
     await sheet.stop();
 });
+
+test('undo and redo a text edit (Ctrl+Z / Ctrl+Y), and Save sends the redone value', async () => {
+    const sheet = await bootSpreadsheet({ values: VALUES });
+    await sheet.page.click('#toggleTableEditButton');
+    await sheet.page.waitForSelector('td.editable-cell');
+    await editCell(sheet, 0, 0, 'Q');
+    assert.equal(await sheet.page.locator(sheet.cell(0, 0)).textContent(), 'a1Q');
+
+    await sheet.page.keyboard.press('Control+z');
+    assert.equal(await sheet.page.locator(sheet.cell(0, 0)).textContent(), 'a1');
+    await sheet.page.keyboard.press('Control+y');
+    assert.equal(await sheet.page.locator(sheet.cell(0, 0)).textContent(), 'a1Q');
+
+    await sheet.page.click('#saveTableEditsButton');
+    const save = await sheet.waitForPosted('saveXlsxEdits');
+    assert.deepEqual(save.edits, [{ row: 1, col: 1, value: 'a1Q' }]);
+    await sheet.stop();
+});
+
+test('undoing a style edit drops it from the save and keeps earlier ones', async () => {
+    const sheet = await bootSpreadsheet({ values: VALUES });
+    await sheet.page.click('#toggleTableEditButton');
+    await sheet.page.waitForSelector('td.editable-cell');
+    await sheet.page.click(sheet.cell(1, 1));
+    await sheet.page.keyboard.press('Control+b');
+    await sheet.page.click(sheet.cell(0, 0));
+    await sheet.page.keyboard.press('Control+b');
+    await sheet.page.keyboard.press('Control+z');
+    assert.equal(await sheet.page.locator(sheet.cell(0, 0)).evaluate(td => (td as HTMLElement).style.fontWeight), '');
+    await sheet.page.click('#saveTableEditsButton');
+    const save = await sheet.waitForPosted('saveXlsxEdits');
+    assert.deepEqual(save.styleEdits, [{ row: 2, col: 2, fontWeight: 'bold' }]);
+    await sheet.stop();
+});
+
+test('undo and redo an inserted row from the row header menu', async () => {
+    const sheet = await bootSpreadsheet({ values: VALUES });
+    const column = () => sheet.page.$$eval('td[data-col="0"]', tds => tds.map(td => td.textContent));
+    await sheet.page.click('th.row-header[data-row="0"]', { button: 'right' });
+    await sheet.page.click('text=Insert row below');
+    await sheet.page.waitForFunction(() => document.querySelectorAll('td[data-col="0"]').length === 4);
+    assert.deepEqual((await column()).map(t => t?.trim()), ['a1', '', 'a2', 'a3']);
+
+    await sheet.page.click(sheet.cell(0, 1));
+    await sheet.page.keyboard.press('Control+z');
+    await sheet.page.waitForFunction(() => document.querySelectorAll('td[data-col="0"]').length === 3);
+    assert.deepEqual(await column(), ['a1', 'a2', 'a3']);
+
+    await sheet.page.click(sheet.cell(0, 1));
+    await sheet.page.keyboard.press('Control+y');
+    await sheet.page.waitForFunction(() => document.querySelectorAll('td[data-col="0"]').length === 4);
+    await sheet.stop();
+});
+
+test('hovering a hyperlink cell shows the link tooltip, and Open posts openExternal', async () => {
+    const sheet = await bootSpreadsheet({ values: VALUES, cellProps: { '0:1': { hyperlink: 'https://example.com/a' } } });
+    await sheet.page.hover(sheet.cell(0, 1));
+    await sheet.page.waitForSelector('#linkTooltip:not(.hidden)');
+    assert.equal(await sheet.page.locator('#linkTooltipUrl').textContent(), 'https://example.com/a');
+    await sheet.page.click('#linkTooltipOpen');
+    assert.deepEqual(await sheet.waitForPosted('openExternal'), { command: 'openExternal', url: 'https://example.com/a' });
+    await sheet.page.waitForSelector('#linkTooltip.hidden', { state: 'attached' });
+    await sheet.stop();
+});

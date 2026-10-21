@@ -9,6 +9,15 @@ import { closeAllEditors, cspOf, fixtureDir, openInSheetmark, sheetmark, waitFor
 suite('Markdown editor (host)', () => {
     teardown(closeAllEditors);
 
+    test('the webview bundle loads and asks for the document (module script runs)', async () => {
+        const api = await sheetmark();
+        const file = path.join(fixtureDir({ 'boot.md': '# Boot\n\n```mermaid\ngraph TD\n  A --> B\n```\n' }), 'boot.md');
+        const editor = await openInSheetmark(api, file, 'xlsxViewer.md');
+        // initMarkdown is only sent in reply to the webview's webviewReady, so this proves the
+        // ES-module bundle loaded under the CSP and ran.
+        await waitFor('initMarkdown reply to webviewReady', () => editor.sent().some((m: any) => m?.command === 'initMarkdown'));
+    });
+
     test('every script tag carries the CSP nonce and inline script is otherwise blocked', async () => {
         const api = await sheetmark();
         const file = path.join(fixtureDir({ 'doc.md': '# Hello\n' }), 'doc.md');

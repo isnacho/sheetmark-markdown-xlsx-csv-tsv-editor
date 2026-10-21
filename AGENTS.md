@@ -101,9 +101,10 @@ is untrusted. Details: [.docs/dev/MESSAGE-PROTOCOL.md](.docs/dev/MESSAGE-PROTOCO
 
 ```bash
 npm install               # once
-npm run verify            # REQUIRED before calling work done: check-types + lint + test:unit + bundle
+npm run verify            # REQUIRED before calling work done: check-types + lint + test:unit + bundle + test:webview
 npm run test:integration  # REQUIRED when you touch src/*.ts, src/shared/** or src/spreadsheet/** (real VS Code, ~30 s)
 npm run test:unit         # unit tests only (node:test through tsx)
+npm run test:webview      # built webviews in headless Chrome (needs Chrome or Edge installed)
 node --import tsx --test src/webviews/md/livePreview/tableWidget.test.mts   # one test file
 npm run test:regressions  # re-breaks each past fix and checks a test fails (slow; run after fixing a bug)
 npm run watch             # watch build; what F5 uses
@@ -124,12 +125,17 @@ npm run package           # production build (also runs unit tests); used by vsc
   `.vscode-test/`). In test mode only, `activate()` returns a test API (`SheetmarkTestApi` in `extension.ts`):
   `openEditors()` gives each open panel plus `dispatch(message)`, which delivers a message to the
   host exactly as the webview would and resolves when it is handled. Use it to test saves, history,
-  links, CSP and commands against real files (see `helpers.ts`). Webview DOM behavior can't be
-  reached from there: cover it with unit tests on extracted pure functions.
+  links, CSP and commands against real files (see `helpers.ts`).
+- **Webview tests** (`src/test/webview/*.spec.mts`) load the built bundles from `dist/` in headless
+  Chrome with the real HTML shell and CSP (`src/shared/webviewHtml.ts`) and a stubbed
+  `acquireVsCodeApi`. `harness.mts` gives `send(hostMessage)`, `posted()` / `waitForPosted(command)`
+  and `problems()` (CSP violations, page errors). Use them for anything in the webview UI:
+  rendering, paste, keyboard, listeners, real-browser security checks. Tests act as the host, for
+  example answering `getRows` (see `spreadsheet.spec.mts`).
 - **Every bug fix gets a test that fails without the fix**, plus an entry in
   [scripts/check-regression-tests.mjs](scripts/check-regression-tests.mjs) that re-breaks it.
   Untestable fixes are listed there as `knownGap` so the gap stays visible.
-- **Manual smoke test** for anything the tests can't see (webview UI): **F5** opens an Extension
+- **Manual smoke test** for what no test sees yet (visual layout, VS Code theming): **F5** opens an Extension
   Development Host on [samples/](samples/) → open `test.xlsx` / `.csv` / `.tsv` / `.md` → exercise
   the change → `Cmd+R` to reload after edits.
 - When reporting results, say exactly what ran ("verify + integration green, smoke-tested table

@@ -2,7 +2,6 @@ import { EditorState, StateField } from '@codemirror/state';
 import { EditorView, Decoration, WidgetType } from '@codemirror/view';
 import type { DecorationSet } from '@codemirror/view';
 import { syntaxTree } from '@codemirror/language';
-import mermaid from 'mermaid';
 import { Icons } from '../../shared/icons';
 import {
     findMermaidFenceRanges,
@@ -27,6 +26,14 @@ export {
     seedMermaidPreviewMode,
 } from './mermaidPreviewMode';
 export { setMermaidPreviewModeCallback } from './mermaidPreviewActions';
+
+// Mermaid is about 3.5 MB of the editor bundle, so it loads on the first diagram only
+// (esbuild splits it into its own chunk; see esbuild.js).
+let mermaidLoader: Promise<typeof import('mermaid')['default']> | null = null;
+function loadMermaid() {
+    mermaidLoader ??= import('mermaid').then((module) => module.default);
+    return mermaidLoader;
+}
 
 function getMermaidTheme(): 'default' | 'dark' {
     const isDark = document.body.classList.contains('dark-mode')
@@ -248,8 +255,11 @@ class MermaidDiagramWidget extends WidgetType {
         diagramWrap.appendChild(chrome);
         block.appendChild(diagramWrap);
 
-        mermaid.initialize({ startOnLoad: false, theme: this.theme });
-        void mermaid.run({ nodes: [mermaidEl] }).catch((err: unknown) => {
+        const theme = this.theme;
+        void loadMermaid().then((mermaid) => {
+            mermaid.initialize({ startOnLoad: false, theme });
+            return mermaid.run({ nodes: [mermaidEl] });
+        }).catch((err: unknown) => {
             console.error('Mermaid render error:', err);
             diagramWrap.textContent = '';
             const errorEl = document.createElement('div');

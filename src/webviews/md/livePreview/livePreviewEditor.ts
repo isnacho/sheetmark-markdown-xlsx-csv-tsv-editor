@@ -95,7 +95,7 @@ import {
 import { runFormatCommand, livePreviewFormatKeymap, livePreviewTabKeymap, computePasteLink } from './formatCommands';
 import { computePasteList } from './listPaste';
 import { paragraphSelectionKeymap } from './paragraphNavigation';
-import { applyTableCellInlineFormatAction, blurActiveTableEditingCell } from './tableWidget';
+import { applyTableCellInlineFormatAction, blurActiveTableEditingCell, setTableLinkClickCallback } from './tableWidget';
 import { spellcheckExtensions, loadSpellDictionary, teardownSpellcheck } from './spellcheck';
 
 const selectAllKeymap = Prec.highest(keymap.of([
@@ -124,6 +124,8 @@ export interface LivePreviewMountOptions {
     onModifierClick?: (pos: number) => void;
     /** Fired on plain click on a collapsed link — return true when navigation ran (suppresses caret placement). */
     onLinkClick?: (pos: number) => boolean;
+    /** Fired on click of a rendered link inside an inactive table cell (widget ignores CM6 dom handlers). */
+    onTableLinkClick?: (href: string) => void;
     /** Whether reveal-on-cursor decorations are on (mirrors the md.livePreviewReveal setting). */
     reveal?: boolean;
     /** Whether to show the line-number gutter (mirrors the md.livePreviewLineNumbers setting). */
@@ -194,7 +196,7 @@ export function mountLivePreview(opts: LivePreviewMountOptions): EditorView {
     unmountLivePreview();
 
     const {
-        parent, doc, onDocChanged, lineWrapping = true, onScroll, onModifierClick, onLinkClick, reveal = true,
+        parent, doc, onDocChanged, lineWrapping = true, onScroll, onModifierClick, onLinkClick, onTableLinkClick, reveal = true,
         onDiffChunkResolved,
         showLineNumbers = false, columnWidths, onColumnWidthsChanged, onSelectionChange, onHistoryChange,
         frontmatterCollapsed = false, onFrontmatterCollapsedChanged,
@@ -207,6 +209,7 @@ export function mountLivePreview(opts: LivePreviewMountOptions): EditorView {
     setMermaidPreviewModeCallback(onMermaidPreviewModeChanged);
     setCalloutDefaultTypeCallback(onCalloutDefaultTypeChanged);
     setFenceCopyCallback(onFenceCopied);
+    setTableLinkClickCallback(onTableLinkClick);
     void loadSpellDictionary();
 
     const updateListener = EditorView.updateListener.of((update) => {
@@ -349,6 +352,7 @@ export function unmountLivePreview(): void {
     setMermaidPreviewModeCallback(undefined);
     setCalloutDefaultTypeCallback(undefined);
     setFenceCopyCallback(undefined);
+    setTableLinkClickCallback(undefined);
     setImageUriResolver(undefined);
 }
 

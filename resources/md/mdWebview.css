@@ -1131,6 +1131,10 @@ body.cm6-preview-active .markdown-preview .yaml-frontmatter-card {
     white-space: normal;
 }
 
+.cm-md-table-scroll table.md-table a {
+    cursor: pointer;
+}
+
 .cm-md-table-scroll table.md-table th,
 .cm-md-table-scroll table.md-table td {
     border: none;

@@ -567,6 +567,20 @@ let activeTableEditingCell: HTMLElement | null = null;
 const tableCellCommitHandlers = new WeakMap<HTMLElement, () => void>();
 /** Set on mousedown of an inactive cell; consumed by `wireActiveCell` to land the caret at the click. */
 let pendingCellClickPoint: { x: number; y: number } | null = null;
+let onTableLinkClickCallback: ((href: string) => void) | undefined;
+
+export function setTableLinkClickCallback(callback: ((href: string) => void) | undefined): void {
+    onTableLinkClickCallback = callback;
+}
+
+/** Inactive cells render markdown-it `<a>` tags; return its href when the click target is on a link. */
+export function resolveInactiveTableCellLinkHref(target: EventTarget | null): string | null {
+    if (!(target instanceof Element)) { return null; }
+    const anchor = target.closest('a');
+    if (!(anchor instanceof HTMLAnchorElement)) { return null; }
+    const href = anchor.getAttribute('href');
+    return href && href.length > 0 ? href : null;
+}
 
 export function applyTableCellInlineFormatAction(action: string): boolean {
     const cell = activeTableEditingCell;
@@ -1732,6 +1746,14 @@ export class TableWidget extends WidgetType {
         wrap.querySelectorAll('th, td').forEach((cellEl) => {
             cellEl.addEventListener('mousedown', (event) => {
                 if (view.state.readOnly) { return; }
+                const mouse = event as MouseEvent;
+                // Right/middle click on an inactive cell: open the context menu without editing. The
+                // default must still be prevented, or the browser moves the selection into the
+                // widget and CM6 maps it to the table's first cell, which then starts editing.
+                if (mouse.button !== 0) {
+                    if (!cellEl.classList.contains('cm-md-table-cell-editing')) { event.preventDefault(); }
+                    return;
+                }
                 // The active cell IS a real contentEditable — let the browser
                 // place its own caret at the clicked pixel natively. Only
                 // clicks on an INACTIVE cell need to be intercepted, to
@@ -1740,15 +1762,31 @@ export class TableWidget extends WidgetType {
                 // listener-attachment time, so this is correct regardless of
                 // which cell was active when toDOM ran).
                 if (cellEl.classList.contains('cm-md-table-cell-editing')) { return; }
+                // A link opens on click (handler below); don't start editing the cell under it.
+                if (resolveInactiveTableCellLinkHref(event.target)) {
+                    event.preventDefault();
+                    return;
+                }
                 const pos = resolveCellPosition(wrap, cellEl as HTMLElement);
                 const target = pos && gridAtClick ? gridAtClick[pos.row]?.[pos.col] : undefined;
                 if (!target) { return; }
                 event.preventDefault();
-                const mouse = event as MouseEvent;
                 pendingCellClickPoint = { x: mouse.clientX, y: mouse.clientY };
                 placeCollapsed(view, collapsedClickPosForCell(view.state, target));
             });
         });
+
+        // Rendered <a> tags in inactive cells: never let the webview follow them itself (that would
+        // navigate the whole page, or open the link a second time); route a left click through the
+        // live preview's link action instead.
+        const onLinkActivate = (event: MouseEvent) => {
+            const href = resolveInactiveTableCellLinkHref(event.target);
+            if (!href) { return; }
+            event.preventDefault();
+            if (event.type === 'click' && event.button === 0) { onTableLinkClickCallback?.(href); }
+        };
+        wrap.addEventListener('click', onLinkActivate);
+        wrap.addEventListener('auxclick', onLinkActivate);
 
         wrap.addEventListener('contextmenu', (event) => {
             const cellEl = (event.target as HTMLElement).closest('th, td') as HTMLElement | null;

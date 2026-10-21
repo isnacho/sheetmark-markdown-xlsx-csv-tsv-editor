@@ -1,5 +1,6 @@
  
 import { formatCellTextHtml } from './spreadsheetCellTextComponent';
+import { htmlToPlainText } from '../../shared/sanitizeHtml';
 
 export function getExcelColumnLabel(n: number): string {
     let label = '';
@@ -245,7 +246,7 @@ function renderCellContent(cellData: any, isPlainView: boolean, allowInteractive
         const safeSrc = escapeAttribute(src);
         const fallbackText = cellDisplayValue ? '<span class="cell-image-label">' + escapeHtml(cellDisplayValue) + '</span>' : '';
         if (!safeSrc) {
-            return '<span class="cell-content">' + (cellDisplayValue || '&nbsp;') + '</span>';
+            return '<span class="cell-content">' + formatCellTextHtml(cellDisplayValue) + '</span>';
         }
 
         return '<span class="cell-content cell-image-content">'
@@ -263,9 +264,7 @@ function toPlainCellContent(value: unknown): string {
     const raw = value === null || value === undefined ? '' : String(value);
     if (!raw) {return '&nbsp;';}
 
-    const tmp = document.createElement('div');
-    tmp.innerHTML = raw;
-    const plain = (tmp.textContent || tmp.innerText || '').replace(/\u00a0/g, ' ').trim();
+    const plain = htmlToPlainText(raw).replace(/\u00a0/g, ' ').trim();
 
     return plain ? formatCellTextHtml(plain) : '&nbsp;';
 }
@@ -348,7 +347,7 @@ export function createXlsxRowHtml(params: XlsxRowHtmlParams): string {
             }
             if (cellData.isEmpty) {html += ' data-empty="true"';}
             if (cellData.hyperlink) {html += ' data-hyperlink="' + String(cellData.hyperlink).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;') + '"';}
-            html += ' data-original-color="' + (cellData.originalColor || 'rgb(0, 0, 0)') + '"';
+            html += ' data-original-color="' + escapeAttribute(String(cellData.originalColor || 'rgb(0, 0, 0)')) + '"';
 
             if (!isPlainView) {
                 if (cellData.rowspan > 1) {html += ' rowspan="' + cellData.rowspan + '"';}
@@ -371,7 +370,7 @@ export function createXlsxRowHtml(params: XlsxRowHtmlParams): string {
             }
 
             if (cellStyleStr) {
-                html += ' style="' + cellStyleStr + '"';
+                html += ' style="' + escapeAttribute(cellStyleStr) + '"';
             }
             html += '>';
             html += renderCellContent(cellData, isPlainView, allowInteractiveControls, isEditMode);

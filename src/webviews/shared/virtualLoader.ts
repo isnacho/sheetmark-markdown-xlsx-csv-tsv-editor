@@ -3,9 +3,9 @@ import { vscode } from './common';
 export class VirtualLoader<T> {
     private pendingRequests = new Map<string, { resolve: (value: T[] | PromiseLike<T[]>) => void, start: number, end: number }>();
 
-    constructor(private command: string) {}
+    constructor(private command: 'getRows') {}
 
-    requestRows(start: number, end: number, timeout = 10000, extraData?: any): Promise<T[]> {
+    requestRows(start: number, end: number, timeout = 10000, extraData?: { sheetIndex?: number }): Promise<T[]> {
         return new Promise((resolve) => {
             const id = `${start}-${end}-${Date.now()}`;
             this.pendingRequests.set(id, { resolve, start, end });

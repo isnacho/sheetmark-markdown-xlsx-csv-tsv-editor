@@ -9,9 +9,10 @@ import {
     isSpellcheckExcluded,
 } from './spellcheckExclusions.ts';
 import { extractFrontmatter } from '../frontmatter.ts';
+import { fullyParsed } from './testState.ts';
 
 function stateFor(doc: string): EditorState {
-    return EditorState.create({ doc, extensions: [markdown()] });
+    return fullyParsed(EditorState.create({ doc, extensions: [markdown()] }));
 }
 
 function exclusions(doc: string, frontmatterRange?: { from: number; to: number } | null) {

@@ -6,9 +6,10 @@ import assert from 'node:assert/strict';
 import { EditorState, EditorSelection } from '@codemirror/state';
 import { markdown } from '@codemirror/lang-markdown';
 import { detectInteractionAtPos, detectCollapsedLinkAtPos } from './livePreviewInteractions.ts';
+import { fullyParsed } from './testState.ts';
 
 function stateFor(doc: string): EditorState {
-    return EditorState.create({ doc, extensions: [markdown()] });
+    return fullyParsed(EditorState.create({ doc, extensions: [markdown()] }));
 }
 
 test('detects a link and extracts its URL', () => {
@@ -58,22 +59,22 @@ test('detectCollapsedLinkAtPos: returns href when caret is outside the link', ()
 test('detectCollapsedLinkAtPos: returns null when caret is inside the link', () => {
     const doc = 'before [hello](./other.md) after';
     const labelStart = doc.indexOf('hello');
-    const state = EditorState.create({
+    const state = fullyParsed(EditorState.create({
         doc,
         selection: EditorSelection.cursor(labelStart + 2),
         extensions: [markdown()],
-    });
+    }));
     assert.equal(detectCollapsedLinkAtPos(state, labelStart + 2), null);
 });
 
 test('detectCollapsedLinkAtPos: caret immediately after closing paren stays navigable', () => {
     const doc = '[hello](./other.md)';
     const afterLink = doc.length;
-    const state = EditorState.create({
+    const state = fullyParsed(EditorState.create({
         doc,
         selection: EditorSelection.cursor(afterLink),
         extensions: [markdown()],
-    });
+    }));
     const pos = doc.indexOf('hello');
     assert.deepEqual(detectCollapsedLinkAtPos(state, pos), { href: './other.md' });
 });

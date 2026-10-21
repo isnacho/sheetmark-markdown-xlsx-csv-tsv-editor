@@ -4,6 +4,7 @@ import { EditorState } from '@codemirror/state';
 import { markdown } from '@codemirror/lang-markdown';
 import { GFM } from '@lezer/markdown';
 import { syntaxTree } from '@codemirror/language';
+import { fullyParsed } from './testState.ts';
 import {
     isMermaidFenceContent,
     isMermaidFence,
@@ -11,11 +12,11 @@ import {
 } from './mermaidDetection.ts';
 
 function stateFor(doc: string): EditorState {
-    return EditorState.create({ doc, extensions: [markdown({ extensions: GFM })] });
+    return fullyParsed(EditorState.create({ doc, extensions: [markdown({ extensions: GFM })] }));
 }
 
 function firstFencedCode(state: EditorState) {
-    let found: ReturnType<typeof syntaxTree> extends infer _T ? { from: number; to: number; node: import('@lezer/common').SyntaxNode } | null : never = null;
+    let found = null as { from: number; to: number; node: import('@lezer/common').SyntaxNode } | null;
     syntaxTree(state).iterate({
         enter(node) {
             if (node.name === 'FencedCode' && !found) {

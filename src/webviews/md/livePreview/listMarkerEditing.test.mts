@@ -4,6 +4,7 @@ import { EditorState } from '@codemirror/state';
 import { markdown } from '@codemirror/lang-markdown';
 import { GFM } from '@lezer/markdown';
 import { syntaxTree } from '@codemirror/language';
+import { fullyParsed } from './testState.ts';
 import {
     computeListItemPrefixRange,
     computeListMarkerRanges,
@@ -13,12 +14,11 @@ import {
     computeListMarkerArrowRight,
     listItemMarkerIsActivated,
     computeManualListContinuation,
-    isEmptyActivatedListItem,
     runLivePreviewEnter,
 } from './listMarkerEditing.ts';
 
 function stateFor(doc: string, pos = 0): EditorState {
-    return EditorState.create({ doc, selection: { anchor: pos, head: pos }, extensions: [markdown({ extensions: GFM, addKeymap: false })] });
+    return fullyParsed(EditorState.create({ doc, selection: { anchor: pos, head: pos }, extensions: [markdown({ extensions: GFM, addKeymap: false })] }));
 }
 
 function firstListItem(state: EditorState) {
@@ -192,7 +192,7 @@ test('runLivePreviewEnter: continues ordered list on Enter', () => {
     const doc = '1. list';
     const state = stateFor(doc, doc.length);
     let next = state;
-    const ok = runLivePreviewEnter({ state, dispatch: (tr) => { next = tr.state; } } as import('@codemirror/view').EditorView);
+    const ok = runLivePreviewEnter({ state, dispatch: (tr: import('@codemirror/state').Transaction) => { next = tr.state; } } as import('@codemirror/view').EditorView);
     assert.equal(ok, true);
     assert.equal(next.doc.toString(), '1. list\n2. ');
 });

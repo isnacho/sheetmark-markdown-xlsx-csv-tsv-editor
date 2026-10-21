@@ -4,213 +4,30 @@ import * as Excel from 'exceljs';
 import * as fs from 'fs';
 import * as path from 'path';
 import { createHash } from 'crypto';
-import { VERSION_HISTORY_RETENTION_MS, buildGroupedVersionHistoryItems as buildSharedVersionHistoryItems, formatVersionHistoryTimestamp, getVersionHistoryDir } from './shared/versionHistory';
+import { VERSION_HISTORY_RETENTION_MS, getVersionHistoryDir, pickVersionHistoryEntry } from './shared/versionHistory';
 import { convertARGBToRGBA, isShadeOfBlack, isShadeOfWhite } from './spreadsheet/spreadsheetUtilities';
+import { applyStoredStylesToWorksheet, applyStyleEditToCell, normalizeStoredStyle, parseStyleKey } from './spreadsheet/excelStyle';
 import { convertTabularFile, readTabularFile, detectTabularFileType, writeTabularFile, TabularFileType } from './shared/fileConversionService';
 import { StyleStorageService } from './shared/styleStorageService';
+import { createSerialQueue, type SerialQueue } from './shared/serialQueue';
+import { createMessageDispatcher, SPREADSHEET_FILE_WRITING_COMMANDS } from './shared/messageDispatch';
+import { recordSentInTests, trackOpenEditor, type OpenEditorHandle } from './shared/editorTestHooks';
+import { handleSharedHostMessage, isSharedHostMessage, syncColorTheme, type SharedHostContext } from './shared/commonHostMessages';
+import type { HostToSpreadsheetWebview, SpreadsheetSettings, SpreadsheetSettingsPayload, SpreadsheetWebviewToHost } from './protocol/spreadsheet';
 import { createExternalFileChangeWatcher } from './shared/fileExternalChangeWatcher';
-import { migrateFileUriState } from './shared/migrateFileUriState';
-import { enableOpenByDefault, disableOpenByDefault, isSheetmarkConfiguredAsDefault } from './shared/editorAssociationUtils';
-
-function borderEditToCssValue(enabled: boolean, style?: string, color?: string): string {
-    if (!enabled) {return '';}
-
-    const normalizedStyle = String(style || 'thin');
-    const lower = normalizedStyle.toLowerCase();
-    const width = lower.includes('thick')
-        ? '3px'
-        : lower.includes('medium')
-            ? '2px'
-            : '1px';
-    const pattern = lower.includes('double')
-        ? 'double'
-        : lower.includes('dash')
-            ? 'dashed'
-            : lower.includes('dot') || lower === 'hair'
-                ? 'dotted'
-                : 'solid';
-
-    return `${width} ${pattern} ${color || '#202124'}`;
-}
-
-function normalizeBorderForRender(border: any): any {
-    if (!border || typeof border !== 'object' || border.clear) {
-        return undefined;
-    }
-
-    const color = typeof border.color === 'string' ? border.color : '#202124';
-    const lineStyle = typeof border.style === 'string' ? border.style : 'thin';
-    const normalized: any = {};
-
-    (['top', 'right', 'bottom', 'left'] as const).forEach((side) => {
-        const value = border[side];
-        if (typeof value === 'string' && value.trim()) {
-            normalized[side] = value;
-        } else if (value === true) {
-            normalized[side] = borderEditToCssValue(true, lineStyle, color);
-        }
-    });
-
-    return Object.keys(normalized).length > 0 ? normalized : undefined;
-}
-
-function parseCssBorderForExcel(value: unknown): { style: Excel.BorderStyle; color?: string } | undefined {
-    if (typeof value !== 'string' || !value.trim()) {
-        return undefined;
-    }
-
-    const raw = value.trim();
-    const lower = raw.toLowerCase();
-    const style: Excel.BorderStyle = lower.includes('double')
-        ? 'double'
-        : lower.includes('dash')
-            ? 'dashed'
-            : lower.includes('dot')
-                ? 'dotted'
-                : lower.includes('3px') || lower.includes('thick')
-                    ? 'thick'
-                    : lower.includes('2px') || lower.includes('medium')
-                        ? 'medium'
-                        : 'thin';
-
-    const colorMatch = raw.match(/(#[0-9a-fA-F]{6}|rgba?\([^)]+\))/);
-    return {
-        style,
-        color: colorMatch ? colorMatch[1] : undefined
-    };
-}
-
-/**
- * Normalize stored style format to CSS-renderable properties.
- * Stored format: { bold: true, italic: false, textColor: '#000000', ... }
- * CSS format: { fontWeight: 'bold', fontStyle: 'italic', color: '#000000', ... }
- */
-function normalizeStoredStyle(stored: any): any {
-    if (!stored || typeof stored !== 'object') {
-        return {};
-    }
-
-    const normalized: any = {};
-
-    const copyCssProp = (prop: string) => {
-        if (stored[prop] !== undefined) {
-            normalized[prop] = stored[prop];
-        }
-    };
-
-    copyCssProp('fontWeight');
-    copyCssProp('fontStyle');
-    copyCssProp('color');
-    copyCssProp('backgroundColor');
-    copyCssProp('fontSize');
-    copyCssProp('fontFamily');
-    copyCssProp('textAlign');
-    copyCssProp('verticalAlign');
-    copyCssProp('whiteSpace');
-    copyCssProp('wordWrap');
-    copyCssProp('overflow');
-    copyCssProp('textOverflow');
-    copyCssProp('paddingLeft');
-    copyCssProp('textDecoration');
-    copyCssProp('textDecorationLine');
-    copyCssProp('textDecorationThickness');
-    copyCssProp('textDecorationSkipInk');
-
-    if (stored.bgColor && typeof stored.bgColor === 'string') {
-        normalized.backgroundColor = stored.bgColor;
-    }
-
-    // Font weight normalization
-    if (stored.bold !== undefined) {
-        normalized.fontWeight = stored.bold ? 'bold' : 'normal';
-    }
-
-    // Font style normalization
-    if (stored.italic !== undefined) {
-        normalized.fontStyle = stored.italic ? 'italic' : 'normal';
-    }
-
-    // Text decoration normalization
-    if (stored.strike !== undefined) {
-        if (stored.strike) {
-            normalized.textDecorationLine = 'line-through';
-            normalized.textDecorationThickness = '2px';
-            normalized.textDecorationSkipInk = 'none';
-        } else {
-            normalized.textDecoration = '';
-            normalized.textDecorationLine = '';
-        }
-    }
-
-    // Color normalization
-    if (stored.textColor && typeof stored.textColor === 'string') {
-        normalized.color = stored.textColor;
-    }
-
-    if (stored.color && typeof stored.color === 'string') {
-        normalized.color = stored.color;
-    }
-
-    // Background color normalization
-    if (stored.backgroundColor && typeof stored.backgroundColor === 'string') {
-        normalized.backgroundColor = stored.backgroundColor;
-    }
-
-    // Font size normalization
-    if (stored.fontSize && typeof stored.fontSize === 'number') {
-        normalized.fontSize = stored.fontSize + 'pt';
-    }
-
-    // Font family normalization
-    if (stored.fontFamily && typeof stored.fontFamily === 'string') {
-        normalized.fontFamily = stored.fontFamily;
-    }
-
-    // Text alignment normalization
-    if (stored.horizontalAlign && typeof stored.horizontalAlign === 'string') {
-        normalized.textAlign = stored.horizontalAlign;
-    }
-
-    // Vertical alignment normalization
-    if (stored.verticalAlign && typeof stored.verticalAlign === 'string') {
-        normalized.verticalAlign = stored.verticalAlign;
-    }
-
-    // Wrap mode normalization
-    if (stored.wrapMode && typeof stored.wrapMode === 'string') {
-        if (stored.wrapMode === 'wrap') {
-            normalized.whiteSpace = 'pre-wrap';
-            normalized.wordWrap = 'break-word';
-            normalized.overflow = 'visible';
-            normalized.textOverflow = 'clip';
-        } else if (stored.wrapMode === 'overflow') {
-            normalized.whiteSpace = 'nowrap';
-            normalized.wordWrap = 'normal';
-            normalized.overflow = 'visible';
-            normalized.textOverflow = 'clip';
-        } else if (stored.wrapMode === 'clip') {
-            normalized.whiteSpace = 'nowrap';
-            normalized.wordWrap = 'normal';
-            normalized.overflow = 'hidden';
-            normalized.textOverflow = 'clip';
-        }
-    }
-
-    // Indent normalization
-    if (stored.indent && typeof stored.indent === 'number') {
-        normalized.paddingLeft = stored.indent * 8 + 'px';
-    }
-
-    const renderBorder = normalizeBorderForRender(stored.border);
-    if (renderBorder) {
-        normalized.border = renderBorder;
-    }
-
-    return normalized;
-}
+import { isSheetmarkConfiguredAsDefault } from './shared/editorAssociationUtils';
 
 export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorProvider {
     private readonly styleStorage: StyleStorageService;
+    /** Open panels, for the integration tests only (see editorTestHooks.ts). */
+    readonly openEditors = new Set<OpenEditorHandle>();
+    /** Each open panel's write queue, keyed by lowercased path (see flushWrites). */
+    private readonly fileQueues = new Map<string, SerialQueue>();
+
+    /** Resolves once saves already queued for `uri` have finished (used before a rename moves its state). */
+    async flushWrites(uri: vscode.Uri): Promise<void> {
+        await this.fileQueues.get(uri.fsPath.toLowerCase())?.run(async () => { });
+    }
     constructor(private readonly context: vscode.ExtensionContext) {
         this.styleStorage = new StyleStorageService(context);
     }
@@ -229,6 +46,11 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
         token: vscode.CancellationToken
     ): Promise<void> {
         const webview = webviewPanel.webview;
+        // Typed send: the compiler checks every host-to-webview message against src/protocol/spreadsheet.ts.
+        const { post, sent } = recordSentInTests<HostToSpreadsheetWebview>(
+            this.context.extensionMode === vscode.ExtensionMode.Test,
+            (message) => webview.postMessage(message),
+        );
 
         webview.options = {
             enableScripts: true,
@@ -251,7 +73,11 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
         let hasActiveTemporaryStyles = false;
         let shouldOpenDelimitedInStyledMode = false;
         let currentIsPlainView = false;
-        let isSaving = false;
+        // Save and restore both read-modify-write the file; run them one at a time (see serialQueue.ts).
+        const fileQueue = createSerialQueue();
+        const fileQueueKey = document.uri.fsPath.toLowerCase();
+        this.fileQueues.set(fileQueueKey, fileQueue);
+        webviewPanel.onDidDispose(() => this.fileQueues.delete(fileQueueKey));
         let lastSaveTime = 0;
 
         type VersionHistoryEntry = {
@@ -281,252 +107,6 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
             }
 
             return fallbackType;
-        };
-
-        const parseStyleKey = (key: string): { row: number; col: number } | null => {
-            const [rowText, colText] = key.split(':');
-            const row = parseInt(rowText, 10);
-            const col = parseInt(colText, 10);
-            if (!Number.isFinite(row) || !Number.isFinite(col) || row <= 0 || col <= 0) {
-                return null;
-            }
-            return { row, col };
-        };
-
-        const toARGB = (hexOrColor: unknown): string | undefined => {
-            if (typeof hexOrColor !== 'string') {return undefined;}
-            const value = hexOrColor.trim();
-            const hexMatch = value.match(/^#([0-9a-fA-F]{6})$/);
-            if (hexMatch) {return ('FF' + hexMatch[1]).toUpperCase();}
-
-            const rgbMatch = value.match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
-            if (rgbMatch) {
-                const r = Math.max(0, Math.min(255, parseInt(rgbMatch[1], 10)));
-                const g = Math.max(0, Math.min(255, parseInt(rgbMatch[2], 10)));
-                const b = Math.max(0, Math.min(255, parseInt(rgbMatch[3], 10)));
-                return ('FF' + [r, g, b].map(n => n.toString(16).padStart(2, '0')).join('')).toUpperCase();
-            }
-
-            return undefined;
-        };
-
-        const applyStyleEditToCell = (cell: Excel.Cell, styleEdit: any) => {
-            if (!styleEdit || typeof styleEdit !== 'object') {
-                return;
-            }
-
-            if (styleEdit.clearFormatting) {
-                (cell as any).fill = undefined;
-                (cell as any).font = undefined;
-                (cell as any).alignment = undefined;
-                (cell as any).border = undefined;
-            }
-
-            const bgArgb = toARGB(styleEdit.bgColor);
-            if (bgArgb) {
-                cell.fill = {
-                    type: 'pattern',
-                    pattern: 'solid',
-                    fgColor: { argb: bgArgb }
-                } as Excel.FillPattern;
-            }
-
-            const textArgb = toARGB(styleEdit.textColor);
-            if (textArgb) {
-                const currentFont = cell.font || {};
-                cell.font = {
-                    ...currentFont,
-                    color: { argb: textArgb }
-                } as Partial<Excel.Font>;
-            }
-
-            const nextFont: any = cell.font ? { ...cell.font } : {};
-            let hasFontEdit = false;
-            if (typeof styleEdit.fontSize === 'number' && styleEdit.fontSize > 0) {
-                nextFont.size = styleEdit.fontSize;
-                hasFontEdit = true;
-            }
-            if (typeof styleEdit.fontFamily === 'string' && styleEdit.fontFamily.trim().length > 0) {
-                nextFont.name = styleEdit.fontFamily.trim();
-                hasFontEdit = true;
-            }
-            if (typeof styleEdit.bold === 'boolean') {
-                nextFont.bold = styleEdit.bold;
-                hasFontEdit = true;
-            }
-            if (typeof styleEdit.italic === 'boolean') {
-                nextFont.italic = styleEdit.italic;
-                hasFontEdit = true;
-            }
-            if (typeof styleEdit.strike === 'boolean') {
-                nextFont.strike = styleEdit.strike;
-                hasFontEdit = true;
-            }
-            if (hasFontEdit) {
-                cell.font = nextFont as Partial<Excel.Font>;
-            }
-
-            const nextAlignment: any = cell.alignment ? { ...cell.alignment } : {};
-            let hasAlignmentEdit = false;
-            const hAlign = typeof styleEdit.horizontalAlign === 'string' ? styleEdit.horizontalAlign : '';
-            if (hAlign === 'left' || hAlign === 'center' || hAlign === 'right') {
-                nextAlignment.horizontal = hAlign;
-                hasAlignmentEdit = true;
-            }
-            const vAlign = typeof styleEdit.verticalAlign === 'string' ? styleEdit.verticalAlign : '';
-            if (vAlign === 'top' || vAlign === 'middle' || vAlign === 'bottom') {
-                nextAlignment.vertical = vAlign;
-                hasAlignmentEdit = true;
-            }
-            const wrapMode = typeof styleEdit.wrapMode === 'string' ? styleEdit.wrapMode : '';
-            if (wrapMode === 'wrap' || wrapMode === 'overflow' || wrapMode === 'clip') {
-                nextAlignment.wrapText = wrapMode === 'wrap';
-                hasAlignmentEdit = true;
-            }
-            if (typeof styleEdit.indent === 'number') {
-                nextAlignment.indent = Math.max(0, Math.round(styleEdit.indent));
-                hasAlignmentEdit = true;
-            }
-            if (hasAlignmentEdit) {
-                cell.alignment = nextAlignment as Partial<Excel.Alignment>;
-            }
-
-            if (styleEdit.border) {
-                if (styleEdit.border.clear) {
-                    (cell as any).border = undefined;
-                } else {
-                    const borderStyle = typeof styleEdit.border.style === 'string' ? styleEdit.border.style : 'thin';
-                    const allowedStyles = [
-                        'thin', 'dotted', 'dashDot', 'hair', 'dashDotDot', 'slantDashDot', 'mediumDashed', 'mediumDashDotDot', 'mediumDashDot', 'medium', 'double', 'thick'
-                    ];
-
-                    let finalBorderStyle = 'thin';
-                    const sLower = borderStyle.toLowerCase();
-
-                    if (sLower.includes('thick') && sLower.includes('dash')) {finalBorderStyle = 'mediumDashed';}
-                    else if (sLower.includes('thick') && sLower.includes('dot')) {finalBorderStyle = 'mediumDashDot';}
-                    else if (sLower.includes('medium') && sLower.includes('dash')) {finalBorderStyle = 'mediumDashed';}
-                    else if (sLower.includes('medium') && sLower.includes('dot')) {finalBorderStyle = 'mediumDashDot';}
-                    else if (sLower.includes('dashdotdot')) {finalBorderStyle = 'dashDotDot';}
-                    else if (sLower.includes('dashdot')) {finalBorderStyle = 'dashDot';}
-                    else if (sLower.includes('dashed') || sLower === 'dashed' || sLower.includes('dash')) {finalBorderStyle = 'mediumDashed';}
-                    else if (allowedStyles.includes(borderStyle)) {finalBorderStyle = borderStyle;}
-                    else if (sLower === 'thick') {finalBorderStyle = 'thick';}
-                    else if (sLower === 'medium') {finalBorderStyle = 'medium';}
-                    else if (sLower === 'dotted') {finalBorderStyle = 'dotted';}
-                    else if (sLower === 'double') {finalBorderStyle = 'double';}
-
-                    const borderColorArgb = toARGB(styleEdit.border.color) || 'FF202124';
-                    const toEdge = (enabled?: boolean) => {
-                        if (!enabled) {return undefined;}
-                        return { style: finalBorderStyle as any, color: { argb: borderColorArgb } };
-                    };
-
-                    cell.border = {
-                        top: toEdge(styleEdit.border.top),
-                        right: toEdge(styleEdit.border.right),
-                        bottom: toEdge(styleEdit.border.bottom),
-                        left: toEdge(styleEdit.border.left)
-                    } as any;
-                }
-            }
-        };
-
-        const applyStoredStylesToWorksheet = (worksheet: Excel.Worksheet, storedStyles: Record<string, any>) => {
-            if (!storedStyles || typeof storedStyles !== 'object') {
-                return;
-            }
-
-            for (const [key, styleEdit] of Object.entries(storedStyles)) {
-                const address = parseStyleKey(key);
-                if (!address) {continue;}
-
-                const cell = worksheet.getRow(address.row).getCell(address.col);
-                const cssStyle = normalizeStoredStyle(styleEdit);
-                if (cssStyle.backgroundColor) {
-                    cell.fill = {
-                        type: 'pattern',
-                        pattern: 'solid',
-                        fgColor: { argb: toARGB(cssStyle.backgroundColor) || 'FFFFFFFF' }
-                    } as Excel.FillPattern;
-                }
-
-                const currentFont = cell.font ? { ...cell.font } : {};
-                let hasFontEdit = false;
-                if (cssStyle.fontWeight) {
-                    currentFont.bold = cssStyle.fontWeight === 'bold';
-                    hasFontEdit = true;
-                }
-                if (cssStyle.fontStyle) {
-                    currentFont.italic = cssStyle.fontStyle === 'italic';
-                    hasFontEdit = true;
-                }
-                if (cssStyle.color) {
-                    currentFont.color = { argb: toARGB(cssStyle.color) || 'FF000000' };
-                    hasFontEdit = true;
-                }
-                if (cssStyle.fontSize) {
-                    const parsedSize = parseFloat(cssStyle.fontSize);
-                    if (Number.isFinite(parsedSize) && parsedSize > 0) {
-                        currentFont.size = parsedSize;
-                        hasFontEdit = true;
-                    }
-                }
-                if (cssStyle.fontFamily) {
-                    currentFont.name = cssStyle.fontFamily;
-                    hasFontEdit = true;
-                }
-                if (cssStyle.textDecorationLine === 'line-through' || String(cssStyle.textDecoration || '').includes('line-through')) {
-                    currentFont.strike = true;
-                    hasFontEdit = true;
-                }
-                if (hasFontEdit) {
-                    cell.font = currentFont as Partial<Excel.Font>;
-                }
-
-                const currentAlignment: any = cell.alignment ? { ...cell.alignment } : {};
-                let hasAlignmentEdit = false;
-                if (cssStyle.textAlign) {
-                    currentAlignment.horizontal = cssStyle.textAlign;
-                    hasAlignmentEdit = true;
-                }
-                if (cssStyle.verticalAlign) {
-                    currentAlignment.vertical = cssStyle.verticalAlign;
-                    hasAlignmentEdit = true;
-                }
-                if (typeof cssStyle.whiteSpace === 'string') {
-                    currentAlignment.wrapText = cssStyle.whiteSpace === 'pre-wrap';
-                    hasAlignmentEdit = true;
-                }
-                if (cssStyle.paddingLeft) {
-                    const indentPx = parseFloat(cssStyle.paddingLeft);
-                    if (Number.isFinite(indentPx)) {
-                        currentAlignment.indent = Math.max(0, Math.round(indentPx / 8));
-                        hasAlignmentEdit = true;
-                    }
-                }
-                if (hasAlignmentEdit) {
-                    cell.alignment = currentAlignment as Partial<Excel.Alignment>;
-                }
-
-                if (cssStyle.border) {
-                    const border = cssStyle.border as any;
-                    const toEdge = (value: unknown) => {
-                        const parsed = parseCssBorderForExcel(value);
-                        if (!parsed) {return undefined;}
-                        return {
-                            style: parsed.style,
-                            color: { argb: toARGB(parsed.color || cssStyle.color || '#202124') || 'FF202124' }
-                        };
-                    };
-                    cell.border = {
-                        top: toEdge(border.top),
-                        right: toEdge(border.right),
-                        bottom: toEdge(border.bottom),
-                        left: toEdge(border.left)
-                    } as any;
-                }
-            }
         };
 
         const remapStylesForOperation = (styles: Record<string, any>, op: any): Record<string, any> => {
@@ -1021,7 +601,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
             }
 
             try {
-                webview.postMessage({ command: 'saveResult', ok: true, isAutosave });
+                post({ command: 'saveResult', ok: true, isAutosave });
             } catch {
                 // ignore
             }
@@ -1166,26 +746,8 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
         };
 
         type SettingsScope = 'plain' | 'styled';
-        type PersistedSpreadsheetSettings = {
-            firstRowIsHeader: boolean;
-            stickyToolbar: boolean;
-            stickyHeader: boolean;
-            autoSave: boolean;
-            autoSaveMode: 'all' | 'controlsOnly';
-            showManualSavePopup: boolean;
-            allowInteractiveControlsOutsideEditMode: boolean;
-            hyperlinkPreview: boolean;
-            spaciousCells: boolean;
-            mergeWarningEnabled: boolean;
-            isDefaultEditor: boolean;
-            textWrap: boolean;
-        };
-        type PersistedSettingsPayload = {
-            settings: PersistedSpreadsheetSettings;
-            plainSettings: PersistedSpreadsheetSettings;
-            styledSettings: PersistedSpreadsheetSettings;
-            settingsScope: SettingsScope;
-        };
+        type PersistedSpreadsheetSettings = SpreadsheetSettings;
+        type PersistedSettingsPayload = SpreadsheetSettingsPayload;
 
         const getAssociationType = (): 'xlsx' | 'csv' | 'tsv' =>
             currentFileType === 'csv' || currentFileType === 'tsv' ? currentFileType : 'xlsx';
@@ -1265,7 +827,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
             if (!isWebviewReady) {return;}
             try {
                 const persisted = getPersistedSettings();
-                webview.postMessage({
+                post({
                     command: 'initSettings',
                     ...persisted
                 });
@@ -1274,12 +836,8 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
             }
         };
 
-        // Sync VS Code theme changes to the webview
-        const themeChangeDisposable = vscode.window.onDidChangeActiveColorTheme(() => {
-            try { webview.postMessage({ type: 'setTheme', kind: vscode.window.activeColorTheme.kind }); } catch { }
-        });
-
-        webviewPanel.onDidDispose(() => themeChangeDisposable.dispose());
+        // Pushes the VS Code theme now (on webviewReady) and on every theme change.
+        const sendTheme = syncColorTheme(webviewPanel, post);
 
         const trySendInit = () => {
             if (!isWebviewReady || !worksheetsData.length) {return;}
@@ -1295,7 +853,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                     mergedCells: ws.data.mergedCells,
                     rowHeights: ws.data.rows.map((row: any) => row.height || 21)
                 }));
-                webview.postMessage({
+                post({
                     command: 'initVirtualTable',
                     worksheets: worksheetsMeta,
                     rowHeaderWidth,
@@ -1352,7 +910,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                                 const address = parseStyleKey(key);
                                 if (!address) {continue;}
                                 const cell = ws.getRow(address.row).getCell(address.col);
-                                const { controlType, dropdownOptions, defaultValue } = cellMeta.control;
+                                const { controlType, dropdownOptions } = cellMeta.control;
                                 if (controlType === 'checkbox') {
                                     cell.dataValidation = {
                                         type: 'list',
@@ -1449,17 +1007,26 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
         };
 
         // Listen for messages
-        webview.onDidReceiveMessage(async message => {
+        const sharedContext: SharedHostContext = {
+            post,
+            associationType: getAssociationType,
+            sendSettings: () => trySendSettings(),
+        };
+
+        const handleMessage = async (message: SpreadsheetWebviewToHost) => {
+            // Links, feedback and the default-editor toggle are shared with the Markdown editor.
+            if (isSharedHostMessage(message)) {
+                await handleSharedHostMessage(message, sharedContext);
+                return;
+            }
+
             if (message?.command === 'webviewReady') {
                 isWebviewReady = true;
                 await pruneHistory();
                 await persistVersionSnapshot();
                 trySendSettings();
                 trySendInit();
-                // Send current theme info to webview
-                try {
-                    webview.postMessage({ type: 'setTheme', kind: vscode.window.activeColorTheme.kind });
-                } catch { }
+                sendTheme();
                 return;
             }
 
@@ -1467,44 +1034,26 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                 try {
                     const history = await pruneHistory();
                     if (!history.length) {
-                        webview.postMessage({
+                        post({
                             command: 'versionHistoryError',
                             message: 'No saved versions available'
                         });
                         return;
                     }
 
-                    const sorted = [...history].sort((a, b) => b.timestamp - a.timestamp);
-                    const oldestVersionId = sorted.length ? sorted[sorted.length - 1].id : null;
-                    const picked = await vscode.window.showQuickPick(
-                        buildSharedVersionHistoryItems(sorted, (entry) => ({
-                            label: entry.id === oldestVersionId && entry.id === restoredVersionId
-                                ? 'Original File (Restored)'
-                                : entry.id === oldestVersionId
-                                    ? 'Original File'
-                                    : entry.id === restoredVersionId
-                                        ? 'Restored'
-                                        : formatVersionHistoryTimestamp(entry.timestamp),
-                            description: entry.id === oldestVersionId || entry.id === restoredVersionId
-                                ? formatVersionHistoryTimestamp(entry.timestamp)
-                                : `${entry.fileName} • ${(entry.byteSize / 1024).toFixed(1)} KB`,
-                            detail: `Saved ${Math.max(1, Math.round((Date.now() - entry.timestamp) / 60000))} min ago`,
-                            entry
-                        })),
-                        { placeHolder: `Version history (${sorted.length} versions)` }
-                    );
+                    const pickedEntry = await pickVersionHistoryEntry(history, restoredVersionId, (entry) => `${entry.fileName} • ${(entry.byteSize / 1024).toFixed(1)} KB`);
 
-                    if (!picked?.entry) {
+                    if (!pickedEntry) {
                         return;
                     }
 
-                    const snapshotFileType = getSnapshotFileType(picked.entry.snapshotFile, picked.entry.fileType || currentFileType);
-                    await loadWorkbookPayload(getSnapshotPath(picked.entry.snapshotFile), snapshotFileType);
-                    previewVersionId = picked.entry.id;
-                    previewVersionTimestamp = picked.entry.timestamp;
+                    const snapshotFileType = getSnapshotFileType(pickedEntry.snapshotFile, pickedEntry.fileType || currentFileType);
+                    await loadWorkbookPayload(getSnapshotPath(pickedEntry.snapshotFile), snapshotFileType);
+                    previewVersionId = pickedEntry.id;
+                    previewVersionTimestamp = pickedEntry.timestamp;
                     trySendInit();
                 } catch (err) {
-                    webview.postMessage({
+                    post({
                         command: 'versionHistoryError',
                         message: `Version history failed: ${String(err)}`
                     });
@@ -1519,14 +1068,13 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                     restoredVersionId = null;
                     await loadWorkbookPayload(filePath, currentFileType);
                     trySendInit();
-                    webview.postMessage({ command: 'versionPreviewCancelledXlsx' });
+                    post({ command: 'versionPreviewCancelledXlsx' });
                 }
                 return;
             }
 
             if (message?.command === 'restoreVersion') {
                 try {
-                    isSaving = true;
                     const versionId = typeof message.versionId === 'string' ? message.versionId : '';
                     if (!versionId) {
                         return;
@@ -1535,7 +1083,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                     const history = await pruneHistory();
                     const entry = history.find(item => item.id === versionId);
                     if (!entry) {
-                        webview.postMessage({
+                        post({
                             command: 'versionHistoryError',
                             message: 'Selected version is no longer available'
                         });
@@ -1552,18 +1100,16 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                     trySendInit();
                     await persistVersionSnapshot();
 
-                    webview.postMessage({
+                    post({
                         command: 'versionRestoredXlsx',
                         versionId: entry.id,
                         timestamp: entry.timestamp
                     });
                 } catch (err) {
-                    webview.postMessage({
+                    post({
                         command: 'versionHistoryError',
                         message: `Restore failed: ${String(err)}`
                     });
-                } finally {
-                    isSaving = false;
                 }
                 return;
             }
@@ -1605,40 +1151,13 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                 return;
             }
 
-            if (message?.command === 'enableDefaultEditor' || message?.command === 'enableAsDefault') {
-                const associationType = getAssociationType();
-                await enableOpenByDefault(associationType);
-                trySendSettings();
-                return;
-            }
-
-            if (message?.command === 'disableDefaultEditor') {
-                try {
-                    const associationType = getAssociationType();
-                    const result = await vscode.window.showWarningMessage(
-                        `Are you sure you want to disable Sheetmark for all .${associationType} files? You will be prompted to select a new default editor.`,
-                        "Yes, Disable",
-                        "Cancel"
-                    );
-
-                    if (result === "Yes, Disable") {
-                        await disableOpenByDefault(associationType);
-                        await vscode.commands.executeCommand('workbench.action.reopenWithEditor');
-                        trySendSettings();
-                    }
-                } catch (err) {
-                    vscode.window.showErrorMessage(`Error disabling editor: ${err}`);
-                }
-                return;
-            }
-
             // Handle getRows request for virtual scrolling
             if (message?.command === 'getRows') {
                 const { start, end, requestId, sheetIndex } = message;
                 const wsIndex = typeof sheetIndex === 'number' ? sheetIndex : 0;
                 const ws = worksheetsData[wsIndex];
                 if (!ws) {
-                    webview.postMessage({
+                    post({
                         command: 'rowsData',
                         rows: [],
                         start,
@@ -1652,63 +1171,13 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                 const clampedEnd = Math.min(ws.data.rows.length, end);
                 const rows = ws.data.rows.slice(clampedStart, clampedEnd);
 
-                webview.postMessage({
+                post({
                     command: 'rowsData',
                     rows,
                     start: clampedStart,
                     end: clampedEnd,
                     requestId
                 });
-                return;
-            }
-
-            if (message?.command === 'openExternal') {
-                try {
-                    const url = typeof message.url === 'string' ? message.url : '';
-                    if (url) {
-                        await vscode.env.openExternal(vscode.Uri.parse(url));
-                    }
-                } catch {
-                    // ignore
-                }
-                return;
-            }
-
-            if (message?.command === 'getSystemDetails') {
-                const ext = vscode.extensions.getExtension('iggyinc.sheetmark');
-                const editorName = vscode.env.appName || 'VS Code';
-                webview.postMessage({
-                    command: 'systemDetails',
-                    vscodeVersion: vscode.version,
-                    extensionVersion: ext?.packageJSON?.version ?? 'unknown',
-                    osInfo: `${process.platform} ${process.arch}`,
-                    editorName: editorName
-                });
-                return;
-            }
-
-            if (message?.command === 'submitFeedback') {
-                try {
-                    const https = await import('node:https');
-                    const formData = message.data as Record<string, string>;
-                    const body = Object.entries(formData)
-                        .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v ?? '')}`)
-                        .join('&');
-                    const result = await new Promise<boolean>((resolve) => {
-                        const req = https.request({
-                            hostname: 'docs.google.com',
-                            path: '/forms/d/e/1FAIpQLSc0rQ232X2rAI-gyLeACwaFsgN_UKf5LMt3ENd8WYtNVCCp7w/formResponse',
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(body) }
-                        }, (res: any) => resolve((res.statusCode ?? 500) < 400));
-                        req.on('error', () => resolve(false));
-                        req.write(body);
-                        req.end();
-                    });
-                    webview.postMessage({ command: 'feedbackResult', ok: result });
-                } catch {
-                    webview.postMessage({ command: 'feedbackResult', ok: false });
-                }
                 return;
             }
 
@@ -1749,12 +1218,12 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
             if (message?.command === 'requestStyleMode') {
                 try {
                     if (currentFileType === 'xlsx') {
-                        webview.postMessage({ command: 'styleModeActivated' });
+                        post({ command: 'styleModeActivated' });
                         return;
                     }
-                    webview.postMessage({ command: 'showStyleModeNotice' });
+                    post({ command: 'showStyleModeNotice' });
                 } catch (err) {
-                    webview.postMessage({ command: 'styleModeCancelled' });
+                    post({ command: 'styleModeCancelled' });
                     vscode.window.showErrorMessage(`Unable to switch to styled mode: ${String(err)}`);
                 }
                 return;
@@ -1765,7 +1234,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                     const decision = typeof message?.decision === 'string' ? message.decision : 'cancel';
 
                     if (decision === 'continue') {
-                        webview.postMessage({ command: 'styleModeActivated' });
+                        post({ command: 'styleModeActivated' });
                         return;
                     }
 
@@ -1774,9 +1243,9 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                         return;
                     }
 
-                    webview.postMessage({ command: 'styleModeCancelled' });
+                    post({ command: 'styleModeCancelled' });
                 } catch (err) {
-                    webview.postMessage({ command: 'styleModeCancelled' });
+                    post({ command: 'styleModeCancelled' });
                     vscode.window.showErrorMessage(`Unable to process style mode selection: ${String(err)}`);
                 }
                 return;
@@ -1784,9 +1253,8 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
 
             if (message?.command === 'saveXlsxEdits') {
                 try {
-                    isSaving = true;
                     if (previewVersionId) {
-                        webview.postMessage({ command: 'saveResult', ok: false, error: 'Preview mode is read-only' });
+                        post({ command: 'saveResult', ok: false, error: 'Preview mode is read-only' });
                         return;
                     }
 
@@ -1798,13 +1266,15 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                     const isAutosave = !!message.isAutosave;
 
                     if (!edits.length && !operations.length && !styleEdits.length && !richEdits.length) {
-                        try { webview.postMessage({ command: 'saveResult', ok: true, isAutosave }); } catch { }
+                        try { post({ command: 'saveResult', ok: true, isAutosave }); } catch { }
                         return;
                     }
 
                     const sourceType = detectTabularFileType(currentUri.fsPath) || 'xlsx';
                     if (sourceType === 'csv' || sourceType === 'tsv') {
                         await saveDelimitedFileAndStyles(sourceType, edits, richEdits, styleEdits, operations, isAutosave);
+                        // Same as the XLSX path below: every save is a restorable version (deduped by hash).
+                        await persistVersionSnapshot();
                         return;
                     }
 
@@ -2109,150 +1579,12 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                         }
                     }
 
-                    const toARGB = (hexOrColor: string): string | undefined => {
-                        if (typeof hexOrColor !== 'string') {return undefined;}
-                        const value = hexOrColor.trim();
-                        const hexMatch = value.match(/^#([0-9a-fA-F]{6})$/);
-                        if (hexMatch) {return ('FF' + hexMatch[1]).toUpperCase();}
-
-                        const rgbMatch = value.match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
-                        if (rgbMatch) {
-                            const r = Math.max(0, Math.min(255, parseInt(rgbMatch[1], 10)));
-                            const g = Math.max(0, Math.min(255, parseInt(rgbMatch[2], 10)));
-                            const b = Math.max(0, Math.min(255, parseInt(rgbMatch[3], 10)));
-                            return ('FF' + [r, g, b].map(n => n.toString(16).padStart(2, '0')).join('')).toUpperCase();
-                        }
-
-                        return undefined;
-                    };
-
                     for (const s of styleEdits) {
                         const row = typeof s?.row === 'number' ? s.row : 0;
                         const col = typeof s?.col === 'number' ? s.col : 0;
                         if (!row || !col) {continue;}
 
-                        const cell = ws.getRow(row).getCell(col);
-
-                        if (s?.clearFormatting) {
-                            (cell as any).fill = undefined;
-                            (cell as any).font = undefined;
-                            (cell as any).alignment = undefined;
-                            (cell as any).border = undefined;
-                        }
-
-                        const bgArgb = toARGB(typeof s?.bgColor === 'string' ? s.bgColor : '');
-                        if (bgArgb) {
-                            cell.fill = {
-                                type: 'pattern',
-                                pattern: 'solid',
-                                fgColor: { argb: bgArgb }
-                            } as Excel.FillPattern;
-                        }
-
-                        const textArgb = toARGB(typeof s?.textColor === 'string' ? s.textColor : '');
-                        if (textArgb) {
-                            const currentFont = cell.font || {};
-                            cell.font = {
-                                ...currentFont,
-                                color: { argb: textArgb }
-                            } as Partial<Excel.Font>;
-                        }
-
-                        const nextFont: any = cell.font ? { ...cell.font } : {};
-                        let hasFontEdit = false;
-                        if (typeof s?.fontSize === 'number' && s.fontSize > 0) {
-                            nextFont.size = s.fontSize;
-                            hasFontEdit = true;
-                        }
-                        if (typeof s?.fontFamily === 'string' && s.fontFamily.trim().length > 0) {
-                            nextFont.name = s.fontFamily.trim();
-                            hasFontEdit = true;
-                        }
-                        if (typeof s?.bold === 'boolean') {
-                            nextFont.bold = s.bold;
-                            hasFontEdit = true;
-                        }
-                        if (typeof s?.italic === 'boolean') {
-                            nextFont.italic = s.italic;
-                            hasFontEdit = true;
-                        }
-                        if (typeof s?.strike === 'boolean') {
-                            nextFont.strike = s.strike;
-                            hasFontEdit = true;
-                        }
-                        if (hasFontEdit) {
-                            cell.font = nextFont as Partial<Excel.Font>;
-                        }
-
-                        const nextAlignment: any = cell.alignment ? { ...cell.alignment } : {};
-                        let hasAlignmentEdit = false;
-                        const hAlign = typeof s?.horizontalAlign === 'string' ? s.horizontalAlign : '';
-                        if (hAlign === 'left' || hAlign === 'center' || hAlign === 'right') {
-                            nextAlignment.horizontal = hAlign;
-                            hasAlignmentEdit = true;
-                        }
-                        const vAlign = typeof s?.verticalAlign === 'string' ? s.verticalAlign : '';
-                        if (vAlign === 'top' || vAlign === 'middle' || vAlign === 'bottom') {
-                            nextAlignment.vertical = vAlign;
-                            hasAlignmentEdit = true;
-                        }
-                        const wrapMode = typeof s?.wrapMode === 'string' ? s.wrapMode : '';
-                        if (wrapMode === 'wrap' || wrapMode === 'overflow' || wrapMode === 'clip') {
-                            nextAlignment.wrapText = wrapMode === 'wrap';
-                            hasAlignmentEdit = true;
-                        }
-                        if (typeof s?.indent === 'number') {
-                            nextAlignment.indent = Math.max(0, Math.round(s.indent));
-                            hasAlignmentEdit = true;
-                        }
-                        if (hasAlignmentEdit) {
-                            cell.alignment = nextAlignment as Partial<Excel.Alignment>;
-                        }
-
-                        if (s?.border) {
-                            if (s.border.clear) {
-                                (cell as any).border = undefined;
-                            } else {
-                                const borderStyle = typeof s.border.style === 'string'
-                                    ? s.border.style : 'thin';
-
-                                const allowedStyles = [
-                                    "thin", "dotted", "dashDot", "hair", "dashDotDot", "slantDashDot", "mediumDashed", "mediumDashDotDot", "mediumDashDot", "medium", "double", "thick"
-                                ];
-
-                                let finalBorderStyle = 'thin';
-                                const sLower = borderStyle.toLowerCase();
-
-                                if (sLower.includes('thick') && sLower.includes('dash')) {finalBorderStyle = 'mediumDashed';} // no thickDashed in exceljs? mediumDashed is closest
-                                else if (sLower.includes('thick') && sLower.includes('dot')) {finalBorderStyle = 'mediumDashDot';}
-                                else if (sLower.includes('medium') && sLower.includes('dash')) {finalBorderStyle = 'mediumDashed';}
-                                else if (sLower.includes('medium') && sLower.includes('dot')) {finalBorderStyle = 'mediumDashDot';}
-                                else if (sLower.includes('dashdotdot')) {finalBorderStyle = 'dashDotDot';}
-                                else if (sLower.includes('dashdot')) {finalBorderStyle = 'dashDot';}
-                                else if (sLower.includes('dashed') || sLower === 'dashed' || sLower.includes('dash')) {finalBorderStyle = 'mediumDashed';}
-                                else if (allowedStyles.includes(borderStyle)) {finalBorderStyle = borderStyle;}
-                                else if (sLower === 'thick') {finalBorderStyle = 'thick';}
-                                else if (sLower === 'medium') {finalBorderStyle = 'medium';}
-                                else if (sLower === 'dotted') {finalBorderStyle = 'dotted';}
-                                else if (sLower === 'double') {finalBorderStyle = 'double';}
-                                else {finalBorderStyle = 'thin';}
-
-                                const excelBorderStyle = finalBorderStyle;
-                                const borderColorArgb = toARGB(typeof s.border.color === 'string' ? s.border.color : '') || 'FF202124';
-
-                                const toEdge = (enabled?: boolean) => {
-                                    if (!enabled) {return undefined;}
-                                    return { style: excelBorderStyle as any, color: { argb: borderColorArgb } };
-                                };
-
-                                cell.border = {
-                                    top: toEdge(s.border.top),
-                                    right: toEdge(s.border.right),
-                                    bottom: toEdge(s.border.bottom),
-                                    left: toEdge(s.border.left)
-                                } as any;
-                            }
-                        }
+                        applyStyleEditToCell(ws.getRow(row).getCell(col), s);
                     }
 
                     await workbook.xlsx.writeFile(currentUri.fsPath);
@@ -2276,21 +1608,32 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                         // For pure text/style edits, update worksheetsData internally but don't force a full webview re-render
                         await loadWorkbookPayload();
                     }
-                    try { webview.postMessage({ command: 'saveResult', ok: true, isAutosave }); } catch { }
+                    try { post({ command: 'saveResult', ok: true, isAutosave }); } catch { }
                 } catch (err) {
-                    try { webview.postMessage({ command: 'saveResult', ok: false, error: String(err), isAutosave: !!message?.isAutosave }); } catch { }
-                } finally {
-                    isSaving = false;
+                    try { post({ command: 'saveResult', ok: false, error: String(err), isAutosave: !!message?.isAutosave }); } catch { }
                 }
+                return;
             }
+
+            // Compile-time check that every SpreadsheetWebviewToHost command has a handler above.
+            const unhandled: never = message;
+            void unhandled;
+        };
+
+        const dispatch = createMessageDispatcher({
+            handle: handleMessage,
+            queue: fileQueue,
+            queuedCommands: SPREADSHEET_FILE_WRITING_COMMANDS,
         });
+        webview.onDidReceiveMessage(dispatch);
+        trackOpenEditor(this.openEditors, { panel: webviewPanel, uri: () => currentUri, dispatch, sent });
 
         // Forward settings changes made outside the webview
         const configChangeDisposable = vscode.workspace.onDidChangeConfiguration(e => {
             if (e.affectsConfiguration('xlsxViewer.xlsx') || e.affectsConfiguration('xlsxViewer') || e.affectsConfiguration('workbench.editorAssociations')) {
                 try {
                     const persisted = getPersistedSettings();
-                    webview.postMessage({ command: 'settingsUpdated', ...persisted });
+                    post({ command: 'settingsUpdated', ...persisted });
                 } catch {
                     // ignore
                 }
@@ -2298,39 +1641,11 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
         });
         webviewPanel.onDidDispose(() => configChangeDisposable.dispose());
 
-        const handleMove = async (newUri: vscode.Uri) => {
-            if (isSaving) {
-                return;
-            }
-            const oldUri = currentUri;
-            currentUri = newUri;
-            filePath = newUri.fsPath;
-            const detectedType = detectTabularFileType(filePath);
-            if (detectedType) {
-                currentFileType = detectedType;
-            }
-
-            await migrateFileUriState(this.context, oldUri, newUri, {
-                kind: currentFileType,
-                isSpreadsheet: true,
-                styleStorage: this.styleStorage,
-            });
-
-            externalFileWatcher.repoint(filePath, currentUri);
-
-            try {
-                webview.postMessage({
-                    command: 'diskMovedExternally',
-                    fileName: vscode.workspace.asRelativePath(newUri),
-                });
-            } catch { }
-        };
-
         const externalFileWatcher = createExternalFileChangeWatcher({
             filePath,
             documentUri: currentUri,
             onChange: async () => {
-                if (isSaving || Date.now() - lastSaveTime < 1000) {
+                if (fileQueue.busy || Date.now() - lastSaveTime < 1000) {
                     return;
                 }
                 try {
@@ -2341,14 +1656,13 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                 }
             },
             onDelete: () => {
-                if (isSaving) {
+                if (fileQueue.busy) {
                     return;
                 }
                 try {
-                    webview.postMessage({ command: 'diskDeletedExternally' });
+                    post({ command: 'diskDeletedExternally' });
                 } catch { }
             },
-            onMove: (newUri) => { void handleMove(newUri); },
         });
         webviewPanel.onDidDispose(() => externalFileWatcher.dispose());
 
@@ -2359,67 +1673,6 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
         } catch (error) {
             vscode.window.showErrorMessage(`Error reading XLSX file: ${error}`);
         }
-    }
-
-    private getLoadingContent(): string {
-        return `<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Loading XLSX File</title>
-    <style>
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            margin: 0;
-            padding: 0;
-            background-color: #ffffff;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            flex-direction: column;
-        }
-        
-        .loading-container {
-            text-align: center;
-        }
-        
-        .spinner {
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #2196f3;
-            border-radius: 50%;
-            width: 60px;
-            height: 60px;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 20px;
-        }
-        
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        
-        .loading-text {
-            font-size: 18px;
-            color: #333;
-            margin-bottom: 10px;
-        }
-        
-        .loading-subtext {
-            font-size: 14px;
-            color: #666;
-        }
-    </style>
-</head>
-<body>
-    <div class="loading-container">
-        <div class="spinner"></div>
-        <div class="loading-text">Loading XLSX File...</div>
-        <div class="loading-subtext">Please wait while we process your spreadsheet</div>
-    </div>
-</body>
-</html>`;
     }
 
     private extractWorksheetData(worksheet: Excel.Worksheet, workbook: Excel.Workbook): any {
@@ -3037,7 +2290,8 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                         } else if (argb.length === 6) {
                             hex = '#' + argb;
                         }
-                        if (hex.startsWith('#')) {
+                        // argb comes from the file: only emit it when it is really a hex color.
+                        if (/^#[0-9a-fA-F]{6}$/.test(hex)) {
                             txt = `<span style="color: ${hex};">${txt}</span>`;
                         }
                     }
@@ -3240,17 +2494,5 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
 
         return style;
     }
-
-    private getExcelColumnLabel(n: number): string {
-        let label = '';
-        while (n > 0) {
-            let rem = (n - 1) % 26;
-            label = String.fromCharCode(65 + rem) + label;
-            n = Math.floor((n - 1) / 26);
-        }
-        return label;
-    }
-
-
 }
 

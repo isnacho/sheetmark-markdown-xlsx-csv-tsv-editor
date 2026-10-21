@@ -10,6 +10,9 @@ import { Utils } from '../shared/utils';
 import { Icons } from '../shared/icons';
 import { vscode, VirtualScrollConfig, debounce } from '../shared/common';
 import { VirtualLoader } from '../shared/virtualLoader';
+import type { HostToSpreadsheetWebview, SpreadsheetWebviewToHost } from '../../protocol/spreadsheet';
+import type { HandledByFeedbackModal } from '../../protocol/common';
+import { htmlToPlainText } from '../shared/sanitizeHtml';
 import { createXlsxRowHtml, getExcelColumnLabel, renderDropdownCellContent } from './components/spreadsheetRenderComponent';
 import { XlsxSelectionManager } from './components/spreadsheetSelectionComponent';
 import { createXlsxToolbarButtons } from './components/spreadsheetToolbarComponent';
@@ -35,7 +38,6 @@ import {
 } from './components/spreadsheetBorderComponent';
 import type {
     StructuralOpType,
-    WorksheetOpType,
     InsertControlType,
     HorizontalAlign,
     VerticalAlign,
@@ -68,8 +70,12 @@ import {
 } from './components/spreadsheetCellTextComponent';
 import { XlsxFindManager } from './components/spreadsheetFindComponent';
 import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClipboardAsync } from './components/spreadsheetCopyComponent';
+import { parseTsv } from './components/tsvClipboard';
 
 (function () {
+    // Typed send: the compiler checks every webview-to-host message against src/protocol/spreadsheet.ts.
+    const post = (message: SpreadsheetWebviewToHost) => vscode.postMessage(message);
+
     // ===== Virtual Scrolling Configuration =====
     const { ROW_HEIGHT, BUFFER_ROWS, CHUNK_SIZE } = VirtualScrollConfig;
     const textColorIcon = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16"/><path d="M8.5 16h7"/><path d="M12 4l4 12"/><path d="M12 4L8 16"/></svg>';
@@ -152,6 +158,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
 
     let handlersAttached = false;
     let selectionGlobalListenersAttached = false;
+    let resizeGlobalListenersAttached = false;
     let toolbarManager: ToolbarManager | null = null;
 
     type SettingsScope = 'plain' | 'styled';
@@ -174,7 +181,6 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
     let isCellEditing = false;
     let activeTextEditBeforeState: CellUndoState | null = null;
     let lastEditRange: Range | null = null;
-    let lastFocusedEditableCell: HTMLElement | null = null;
 
     let pendingWorksheetOps: WorksheetOp[] = [];
     const pendingCellStyleEdits = new Map<string, CellStyleEdit>();
@@ -248,7 +254,6 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
     let linkTooltipHideTimer: any = null;
 
     // Toast
-    let toastEl: HTMLElement | null = null;
 
     // Copy state (CSV-parity: avoid concurrent copies)
     let isCopying = false;
@@ -945,7 +950,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
         if (!styleModeRequestPending) {
             return;
         }
-        vscode.postMessage({ command: 'styleModeDecision', decision });
+        post({ command: 'styleModeDecision', decision });
     }
 
     function ensureStyleModeNoticePopup() {
@@ -1068,10 +1073,6 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
         }
     }
 
-    async function runFind(query: string) {
-        await getFindManager().run(query);
-    }
-
     async function navigateFind(direction: 'next' | 'prev') {
         await getFindManager().navigate(direction);
     }
@@ -1082,10 +1083,6 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
 
     function toggleFindOverlay() {
         getFindManager().toggle();
-    }
-
-    function closeFindOverlay() {
-        getFindManager().close();
     }
 
     async function ensureAllRowsLoadedForStructureEdits(withOverlay = true) {
@@ -2099,7 +2096,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
         pendingStyleModeAction = nextAction ?? null;
         if (!styleModeRequestPending) {
             styleModeRequestPending = true;
-            vscode.postMessage({ command: 'requestStyleMode' });
+            post({ command: 'requestStyleMode' });
         }
         return true;
     }
@@ -2111,7 +2108,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
         syncPlainViewUiState();
         syncTemporaryFileToolbarActions();
         if (isTemporaryStyleFile) {
-            vscode.postMessage({ command: 'setPreferredViewMode', mode: 'styled' });
+            post({ command: 'setPreferredViewMode', mode: 'styled' });
         }
         applySettingsForScope('styled');
 
@@ -2785,54 +2782,6 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
         cells.forEach(cell => {
             cell.style.fontFamily = value;
             recordCellStyleEdit(cell, { fontFamily: value });
-        });
-    }
-
-    function applyWrapMode(mode: WrapMode) {
-        if (requestStyledMode(() => applyWrapMode(mode))) {
-            return;
-        }
-
-        const cells = getEditableCellsOrToast('Select cells to set wrapping');
-        if (!cells.length) {return;}
-
-        cells.forEach(cell => {
-            const content = cell.querySelector('.cell-content') as HTMLElement | null;
-            if (mode === 'wrap') {
-                cell.style.whiteSpace = 'pre-wrap';
-                cell.style.wordWrap = 'break-word';
-                cell.style.overflow = 'visible';
-                cell.style.textOverflow = 'clip';
-                if (content) {
-                    content.style.whiteSpace = 'pre-wrap';
-                    content.style.wordWrap = 'break-word';
-                    content.style.overflow = 'visible';
-                    content.style.textOverflow = 'clip';
-                }
-            } else if (mode === 'overflow') {
-                cell.style.wordWrap = 'normal';
-                cell.style.whiteSpace = 'nowrap';
-                cell.style.overflow = 'visible';
-                cell.style.textOverflow = 'clip';
-                if (content) {
-                    content.style.whiteSpace = 'nowrap';
-                    content.style.wordWrap = 'normal';
-                    content.style.overflow = 'visible';
-                    content.style.textOverflow = 'clip';
-                }
-            } else {
-                cell.style.wordWrap = 'normal';
-                cell.style.whiteSpace = 'nowrap';
-                cell.style.overflow = 'hidden';
-                cell.style.textOverflow = 'clip';
-                if (content) {
-                    content.style.whiteSpace = 'nowrap';
-                    content.style.wordWrap = 'normal';
-                    content.style.overflow = 'hidden';
-                    content.style.textOverflow = 'clip';
-                }
-            }
-            recordCellStyleEdit(cell, { wrapMode: mode });
         });
     }
 
@@ -4416,7 +4365,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
         }
 
         removePendingOutsideControlEdit(row, col);
-        vscode.postMessage({
+        post({
             command: 'saveXlsxEdits',
             sheetIndex: currentWorksheet,
             edits: [{ row, col, value }],
@@ -4446,7 +4395,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
         }
 
         removePendingOutsideControlEdit(row, col);
-        vscode.postMessage({
+        post({
             command: 'saveXlsxEdits',
             sheetIndex: currentWorksheet,
             edits: [{ row, col, value }],
@@ -4574,9 +4523,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
             return value;
         }
 
-        const tmp = document.createElement('div');
-        tmp.innerHTML = value;
-        return (tmp.textContent || tmp.innerText || '').replace(/\u00a0/g, ' ');
+        return htmlToPlainText(value).replace(/\u00a0/g, ' ');
     }
 
     function readCellTextForDataOps(rowData: any, colZeroBased: number): string {
@@ -5179,10 +5126,10 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
             const cancelBtn = document.getElementById('cancelVersionPreviewButton') as HTMLButtonElement | null;
             restoreBtn?.addEventListener('click', () => {
                 if (!previewVersionId) {return;}
-                vscode.postMessage({ command: 'restoreVersion', versionId: previewVersionId });
+                post({ command: 'restoreVersion', versionId: previewVersionId });
             });
             cancelBtn?.addEventListener('click', () => {
-                vscode.postMessage({ command: 'cancelVersionPreview' });
+                post({ command: 'cancelVersionPreview' });
             });
         }
         return banner;
@@ -5337,77 +5284,82 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
             }
         });
 
-        document.addEventListener('mousemove', (e) => {
-            if (!isResizing) {return;}
+        // The table is rebuilt on every re-render, but document listeners must be added only once.
+        if (!resizeGlobalListenersAttached) {
+            resizeGlobalListenersAttached = true;
 
-            const tableEl = document.querySelector('table');
-            if (!tableEl) {return;}
+            document.addEventListener('mousemove', (e) => {
+                if (!isResizing) {return;}
 
-            const indicator = document.getElementById('resizeIndicator');
+                const tableEl = document.querySelector('table');
+                if (!tableEl) {return;}
 
-            if (resizeType === 'column') {
-                const delta = e.clientX - resizeStartPos;
-                const newSize = Math.max(20, resizeStartSize + delta);
+                const indicator = document.getElementById('resizeIndicator');
 
-                const headers = tableEl.querySelectorAll('th.col-header[data-col="' + resizeIndex + '"]') as NodeListOf<HTMLElement>;
-                const cells = tableEl.querySelectorAll('td[data-col="' + resizeIndex + '"]') as NodeListOf<HTMLElement>;
+                if (resizeType === 'column') {
+                    const delta = e.clientX - resizeStartPos;
+                    const newSize = Math.max(20, resizeStartSize + delta);
 
-                headers.forEach(header => {
-                    header.style.width = newSize + 'px';
-                    header.style.minWidth = newSize + 'px';
-                });
+                    const headers = tableEl.querySelectorAll('th.col-header[data-col="' + resizeIndex + '"]') as NodeListOf<HTMLElement>;
+                    const cells = tableEl.querySelectorAll('td[data-col="' + resizeIndex + '"]') as NodeListOf<HTMLElement>;
 
-                cells.forEach(cell => {
-                    if (!cell.getAttribute('colspan') || cell.getAttribute('colspan') === '1') {
-                        cell.style.width = newSize + 'px';
-                        cell.style.minWidth = newSize + 'px';
-                    }
-                });
+                    headers.forEach(header => {
+                        header.style.width = newSize + 'px';
+                        header.style.minWidth = newSize + 'px';
+                    });
 
-                if (indicator) {
-                    indicator.style.left = e.clientX + 'px';
-                    indicator.style.top = e.clientY + 'px';
-                    indicator.textContent = newSize + 'px';
-                }
-            } else if (resizeType === 'row') {
-                const delta = e.clientY - resizeStartPos;
-                const newSize = Math.max(15, resizeStartSize + delta);
-
-                const headers = tableEl.querySelectorAll('th.row-header[data-row="' + resizeIndex + '"]') as NodeListOf<HTMLElement>;
-                const row = tableEl.querySelectorAll('tr')[resizeIndex + 1] as HTMLElement; // +1 for header row
-
-                headers.forEach(header => {
-                    header.style.height = newSize + 'px';
-                });
-
-                if (row) {
-                    row.style.height = newSize + 'px';
-                    const cells = row.querySelectorAll('td') as NodeListOf<HTMLElement>;
                     cells.forEach(cell => {
-                        if (!cell.getAttribute('rowspan') || cell.getAttribute('rowspan') === '1') {
-                            cell.style.height = newSize + 'px';
+                        if (!cell.getAttribute('colspan') || cell.getAttribute('colspan') === '1') {
+                            cell.style.width = newSize + 'px';
+                            cell.style.minWidth = newSize + 'px';
                         }
                     });
-                }
 
-                if (indicator) {
-                    indicator.style.left = e.clientX + 'px';
-                    indicator.style.top = e.clientY + 'px';
-                    indicator.textContent = newSize + 'px';
-                }
-            }
-        });
+                    if (indicator) {
+                        indicator.style.left = e.clientX + 'px';
+                        indicator.style.top = e.clientY + 'px';
+                        indicator.textContent = newSize + 'px';
+                    }
+                } else if (resizeType === 'row') {
+                    const delta = e.clientY - resizeStartPos;
+                    const newSize = Math.max(15, resizeStartSize + delta);
 
-        document.addEventListener('mouseup', () => {
-            if (isResizing) {
-                isResizing = false;
-                resizeType = null;
-                resizeIndex = -1;
-                document.body.style.cursor = '';
-                const indicator = document.getElementById('resizeIndicator');
-                if (indicator) {indicator.style.display = 'none';}
-            }
-        });
+                    const headers = tableEl.querySelectorAll('th.row-header[data-row="' + resizeIndex + '"]') as NodeListOf<HTMLElement>;
+                    const row = tableEl.querySelectorAll('tr')[resizeIndex + 1] as HTMLElement; // +1 for header row
+
+                    headers.forEach(header => {
+                        header.style.height = newSize + 'px';
+                    });
+
+                    if (row) {
+                        row.style.height = newSize + 'px';
+                        const cells = row.querySelectorAll('td') as NodeListOf<HTMLElement>;
+                        cells.forEach(cell => {
+                            if (!cell.getAttribute('rowspan') || cell.getAttribute('rowspan') === '1') {
+                                cell.style.height = newSize + 'px';
+                            }
+                        });
+                    }
+
+                    if (indicator) {
+                        indicator.style.left = e.clientX + 'px';
+                        indicator.style.top = e.clientY + 'px';
+                        indicator.textContent = newSize + 'px';
+                    }
+                }
+            });
+
+            document.addEventListener('mouseup', () => {
+                if (isResizing) {
+                    isResizing = false;
+                    resizeType = null;
+                    resizeIndex = -1;
+                    document.body.style.cursor = '';
+                    const indicator = document.getElementById('resizeIndicator');
+                    if (indicator) {indicator.style.display = 'none';}
+                }
+            });
+        }
 
         // Double-click to auto-fit or edit
         table.addEventListener('dblclick', (e) => {
@@ -5481,19 +5433,6 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
                 cell.style.height = maxHeight + 'px';
             }
         });
-    }
-
-    function autoFitAllColumns() {
-        if (!worksheetsMeta || !worksheetsMeta.length) {return;}
-        // Note: worksheetsData was not defined in original JS, assuming it meant worksheetsMeta or similar
-        // But autoFitAllColumns was not called anywhere in the original JS.
-        // Keeping it but commenting out usage if any.
-        /*
-        const data = worksheetsMeta[currentWorksheet].data;
-        for (let c = 0; c < data.maxCol; c++) {
-            autoFitColumn(c);
-        }
-        */
     }
 
     function clearSelection() {
@@ -5588,10 +5527,6 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
         }
     }
 
-    function copySelection() {
-        copySelectionToClipboard();
-    }
-
     async function copySelectionToClipboard() {
         await copySelectionToClipboardHelper({
             selectedCells,
@@ -5620,12 +5555,8 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
         const startRow = bounds.minRow;
         const startCol = bounds.minCol;
 
-        // Parse plain text content using tabs (\t) as column separators and newlines (\n) as row separators.
-        const lines = text.split(/\r?\n/);
-        if (lines.length > 0 && lines[lines.length - 1] === '') {
-            lines.pop();
-        }
-        const grid = lines.map(line => line.split('\t'));
+        // Clipboard TSV: tabs separate columns, newlines rows; quoted cells may hold line breaks.
+        const grid = parseTsv(text);
 
         if (grid.length === 0 || grid[0].length === 0) {
             return;
@@ -5688,7 +5619,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
             } else {
                 if (currentSettings.autoSave) {
                     editsList.forEach(e => removePendingOutsideControlEdit(e.row, e.col));
-                    vscode.postMessage({
+                    post({
                         command: 'saveXlsxEdits',
                         sheetIndex: currentWorksheet,
                         edits: editsList,
@@ -5702,17 +5633,6 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
                 }
             }
         }
-    }
-
-    function invertColor(color: string) {
-        const match = String(color || '').match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/);
-        if (!match) {return color;}
-
-        const r = 255 - parseInt(match[1], 10);
-        const g = 255 - parseInt(match[2], 10);
-        const b = 255 - parseInt(match[3], 10);
-        const a = match[4] ? match[4] : '1';
-        return `rgba(${r}, ${g}, ${b}, ${a})`;
     }
 
     function initializeSelection() {
@@ -6400,7 +6320,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
 
                 if (e.key === 'Escape') {
                     e.preventDefault();
-                    vscode.postMessage({ command: 'cancelVersionPreview' });
+                    post({ command: 'cancelVersionPreview' });
                     return;
                 }
 
@@ -6652,7 +6572,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
             openBtn.onclick = (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                vscode.postMessage({ command: 'openExternal', url });
+                post({ command: 'openExternal', url });
                 hideLinkTooltip();
             };
         }
@@ -6821,7 +6741,6 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
     function applySettings(settings: any, scopeOverride?: SettingsScope) {
         const scope = scopeOverride || getCurrentSettingsScope();
         const previousSpacious = !!currentSettings.spaciousCells;
-        const previousTextWrap = !!currentSettings.textWrap;
         const previousSettings = getStoredSettingsForScope(scope);
         currentSettings = normalizeSettingsForScope(scope, settings, previousSettings);
         setStoredSettingsForScope(scope, currentSettings);
@@ -6874,7 +6793,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
     }
 
     function postSettings() {
-        vscode.postMessage({
+        post({
             command: 'updateSettings',
             settingsScope: getCurrentSettingsScope(),
             settings: currentSettings
@@ -7115,7 +7034,6 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
             onLayoutApplied: initializeVirtualScrolling
         });
 
-        const sheetSelector = document.getElementById('sheetSelector');
         const toggleExpandButton = document.getElementById('toggleExpandButton');
         const togglePlainViewButton = document.getElementById('togglePlainViewButton');
         const versionHistoryButton = document.getElementById('versionHistoryButton');
@@ -7348,7 +7266,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
             setLoadingText('Saving worksheet...');
             showLoading();
         }
-        vscode.postMessage({ command: 'saveXlsxEdits', sheetIndex: currentWorksheet, edits, richEdits, styleEdits, operations, isAutosave });
+        post({ command: 'saveXlsxEdits', sheetIndex: currentWorksheet, edits, richEdits, styleEdits, operations, isAutosave });
     }
 
     function setExpandedMode(isExpanded: boolean) {
@@ -7377,7 +7295,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
             {
                 fileExtension: currentAssociationFileType,
                 onOpenByDefaultChange: (enabled: boolean) => {
-                    vscode.postMessage({ command: enabled ? 'enableAsDefault' : 'disableDefaultEditor' });
+                    post({ command: enabled ? 'enableAsDefault' : 'disableDefaultEditor' });
                 }
             }
         );
@@ -7473,7 +7391,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
                 syncPlainViewUiState();
                 syncTemporaryFileToolbarActions();
                 // Always notify the provider so it stays in sync for all file types
-                vscode.postMessage({ command: 'setPreferredViewMode', mode: isPlainView ? 'plain' : 'styled' });
+                post({ command: 'setPreferredViewMode', mode: isPlainView ? 'plain' : 'styled' });
                 applySettingsForScope(getCurrentSettingsScope());
 
                 rowCache.clear();
@@ -7483,7 +7401,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
             },
             onVersionHistory: () => {
                 if (isEditMode) {return;}
-                vscode.postMessage({ command: 'showVersionHistory' });
+                post({ command: 'showVersionHistory' });
             },
             onOpenSettings: () => { },
             onHelp: () => {
@@ -7491,11 +7409,11 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
             },
             onConvertFile: () => {
                 if (isEditMode) {return;}
-                vscode.postMessage({ command: 'convertFile' });
+                post({ command: 'convertFile' });
             },
             onRefresh: () => {
                 if (isEditMode) {return;}
-                vscode.postMessage({ command: 'requestFreshData' });
+                post({ command: 'requestFreshData' });
             }
         }));
 
@@ -7559,8 +7477,8 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
     }
 
     window.addEventListener('message', (event) => {
-        const message = event.data;
-        if (!message || typeof message !== 'object') {return;}
+        const message = event.data as HostToSpreadsheetWebview;
+        if (!message || typeof message !== 'object' || !('command' in message)) {return;}
 
         if (message.command === 'initSettings') {
             consumeIncomingSettingsPayload(message);
@@ -7632,11 +7550,6 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
             return;
         }
 
-        if (message.command === 'diskMovedExternally') {
-            showToast(`File moved to ${message.fileName || 'new location'}`, false, 10000);
-            return;
-        }
-
         if (message.command === 'diskDeletedExternally') {
             showToast('File deleted from disk', false, 10000);
             return;
@@ -7689,48 +7602,13 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper, writeToClip
             return;
         }
 
-        // Legacy init handler (for backwards compatibility)
-        if (message.command === 'init') {
-            const previousWorksheet = currentWorksheet;
-            // Convert old format to new format
-            const worksheets = Array.isArray(message.worksheets) ? message.worksheets : [];
-            worksheetsMeta = worksheets.map((ws: any, index: number) => ({
-                name: ws.name,
-                index,
-                totalRows: ws.data ? ws.data.maxRow : 0,
-                columnCount: ws.data ? ws.data.maxCol : 0,
-                columnWidths: ws.data ? ws.data.columnWidths : [],
-                mergedCells: ws.data ? ws.data.mergedCells : []
-            }));
-            // Also cache all rows since they were sent
-            worksheets.forEach((ws: any, wsIndex: number) => {
-                if (ws.data && ws.data.rows) {
-                    ws.data.rows.forEach((row: any, rowIndex: number) => {
-                        if (wsIndex === 0) {
-                            rowCache.set(rowIndex, row);
-                        }
-                    });
-                }
-            });
-            currentWorksheet = Math.min(Math.max(previousWorksheet, 0), Math.max(worksheetsMeta.length - 1, 0));
-            clearDataTransforms();
-
-            const rowHeaderWidth = typeof message.rowHeaderWidth === 'number' ? message.rowHeaderWidth : MIN_ROW_HEADER_WIDTH;
-            setRowHeaderWidth(rowHeaderWidth, true);
-
-            attachHandlersOnce();
-            populateSheetSelector();
-            const selector = document.getElementById('sheetSelector') as HTMLSelectElement | null;
-            if (selector) {selector.value = String(currentWorksheet);}
-            const expandBtn = document.getElementById('toggleExpandButton');
-            if (expandBtn) {expandBtn.setAttribute('data-state', 'default');}
-            setExpandedMode(false);
-            setVersionPreviewMode(false);
-            renderWorksheet(currentWorksheet);
-        }
+        // Compile-time check that every host message has a handler: only the feedback modal's
+        // messages may reach here. A new HostToSpreadsheetWebview member fails to compile until handled.
+        const handledByFeedbackModal: HandledByFeedbackModal = message;
+        void handledByFeedbackModal;
     });
 
     document.addEventListener('DOMContentLoaded', () => {
-        vscode.postMessage({ command: 'webviewReady' });
+        post({ command: 'webviewReady' });
     });
 })();

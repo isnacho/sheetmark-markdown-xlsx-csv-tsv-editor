@@ -4,6 +4,10 @@ import * as Excel from 'exceljs';
 import { SpreadsheetEditorProvider } from './spreadsheetEditorProvider';
 import { MDEditorProvider } from './mdEditorProvider';
 import { StyleStorageService } from './shared/styleStorageService';
+import { applyStoredStylesToWorksheet } from './spreadsheet/excelStyle';
+import { registerRenameStateMigration } from './shared/renameStateMigration';
+import { createMarkdownPreferences } from './shared/preferenceStore';
+import type { OpenEditorHandle } from './shared/editorTestHooks';
 import {
     convertTabularFile,
     detectTabularFileType,
@@ -30,7 +34,7 @@ function resolveDocumentUri(uri?: vscode.Uri): vscode.Uri | undefined {
     }
 
     const activeTab = vscode.window.tabGroups.activeTabGroup.activeTab;
-    if (activeTab?.input instanceof (vscode as any).TabInputCustom || activeTab?.input instanceof (vscode as any).TabInputText) {
+    if (activeTab?.input instanceof vscode.TabInputCustom || activeTab?.input instanceof vscode.TabInputText) {
         return (activeTab.input as any).uri;
     }
 
@@ -39,7 +43,7 @@ function resolveDocumentUri(uri?: vscode.Uri): vscode.Uri | undefined {
 
 function getTabUri(tab: vscode.Tab): vscode.Uri | undefined {
     const input = tab.input;
-    if (input instanceof (vscode as any).TabInputText || input instanceof (vscode as any).TabInputCustom) {
+    if (input instanceof vscode.TabInputText || input instanceof vscode.TabInputCustom) {
         return (input as { uri: vscode.Uri }).uri;
     }
     return undefined;
@@ -78,196 +82,6 @@ function getViewTypeForFileType(fileType: TabularFileType): string | undefined {
     return undefined;
 }
 
-function parseStyleKey(key: string): { row: number; col: number } | null {
-    const [rowText, colText] = key.split(':');
-    const row = parseInt(rowText, 10);
-    const col = parseInt(colText, 10);
-    if (!Number.isFinite(row) || !Number.isFinite(col) || row <= 0 || col <= 0) {
-        return null;
-    }
-    return { row, col };
-}
-
-function toARGB(hexOrColor: unknown): string | undefined {
-    if (typeof hexOrColor !== 'string') {return undefined;}
-    const value = hexOrColor.trim();
-    const hexMatch = value.match(/^#([0-9a-fA-F]{6})$/);
-    if (hexMatch) {return ('FF' + hexMatch[1]).toUpperCase();}
-
-    const rgbMatch = value.match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
-    if (rgbMatch) {
-        const r = Math.max(0, Math.min(255, parseInt(rgbMatch[1], 10)));
-        const g = Math.max(0, Math.min(255, parseInt(rgbMatch[2], 10)));
-        const b = Math.max(0, Math.min(255, parseInt(rgbMatch[3], 10)));
-        return ('FF' + [r, g, b].map(n => n.toString(16).padStart(2, '0')).join('')).toUpperCase();
-    }
-
-    return undefined;
-}
-
-function parseCssBorderForExcel(value: unknown): { style: Excel.BorderStyle; color?: string } | undefined {
-    if (typeof value !== 'string' || !value.trim()) {
-        return undefined;
-    }
-
-    const raw = value.trim();
-    const lower = raw.toLowerCase();
-    const style: Excel.BorderStyle = lower.includes('double')
-        ? 'double'
-        : lower.includes('dash')
-            ? 'dashed'
-            : lower.includes('dot')
-                ? 'dotted'
-                : lower.includes('3px') || lower.includes('thick')
-                    ? 'thick'
-                    : lower.includes('2px') || lower.includes('medium')
-                        ? 'medium'
-                        : 'thin';
-    const colorMatch = raw.match(/(#[0-9a-fA-F]{6}|rgba?\([^)]+\))/);
-    return {
-        style,
-        color: colorMatch ? colorMatch[1] : undefined
-    };
-}
-
-function applyStyleEditToCell(cell: Excel.Cell, styleEdit: any) {
-    if (!styleEdit || typeof styleEdit !== 'object') {
-        return;
-    }
-
-    const bgArgb = toARGB(styleEdit.bgColor || styleEdit.backgroundColor);
-    if (bgArgb) {
-        cell.fill = {
-            type: 'pattern',
-            pattern: 'solid',
-            fgColor: { argb: bgArgb }
-        } as Excel.FillPattern;
-    }
-
-    const textArgb = toARGB(styleEdit.textColor || styleEdit.color);
-    if (textArgb) {
-        const currentFont = cell.font || {};
-        cell.font = {
-            ...currentFont,
-            color: { argb: textArgb }
-        } as Partial<Excel.Font>;
-    }
-
-    const nextFont: any = cell.font ? { ...cell.font } : {};
-    let hasFontEdit = false;
-    if (typeof styleEdit.fontSize === 'number' && styleEdit.fontSize > 0) {
-        nextFont.size = styleEdit.fontSize;
-        hasFontEdit = true;
-    }
-    if (typeof styleEdit.fontFamily === 'string' && styleEdit.fontFamily.trim().length > 0) {
-        nextFont.name = styleEdit.fontFamily.trim();
-        hasFontEdit = true;
-    }
-    if (typeof styleEdit.bold === 'boolean') {
-        nextFont.bold = styleEdit.bold;
-        hasFontEdit = true;
-    } else if (typeof styleEdit.fontWeight === 'string') {
-        nextFont.bold = styleEdit.fontWeight === 'bold';
-        hasFontEdit = true;
-    }
-    if (typeof styleEdit.italic === 'boolean') {
-        nextFont.italic = styleEdit.italic;
-        hasFontEdit = true;
-    } else if (typeof styleEdit.fontStyle === 'string') {
-        nextFont.italic = styleEdit.fontStyle === 'italic';
-        hasFontEdit = true;
-    }
-    if (typeof styleEdit.strike === 'boolean') {
-        nextFont.strike = styleEdit.strike;
-        hasFontEdit = true;
-    } else if (styleEdit.textDecorationLine === 'line-through' || String(styleEdit.textDecoration || '').includes('line-through')) {
-        nextFont.strike = true;
-        hasFontEdit = true;
-    }
-    if (hasFontEdit) {
-        cell.font = nextFont as Partial<Excel.Font>;
-    }
-
-    const nextAlignment: any = cell.alignment ? { ...cell.alignment } : {};
-    let hasAlignmentEdit = false;
-    const hAlign = typeof styleEdit.horizontalAlign === 'string' ? styleEdit.horizontalAlign : (typeof styleEdit.textAlign === 'string' ? styleEdit.textAlign : '');
-    if (hAlign === 'left' || hAlign === 'center' || hAlign === 'right') {
-        nextAlignment.horizontal = hAlign;
-        hasAlignmentEdit = true;
-    }
-    const vAlign = typeof styleEdit.verticalAlign === 'string' ? styleEdit.verticalAlign : '';
-    if (vAlign === 'top' || vAlign === 'middle' || vAlign === 'bottom') {
-        nextAlignment.vertical = vAlign;
-        hasAlignmentEdit = true;
-    }
-    const wrapMode = typeof styleEdit.wrapMode === 'string' ? styleEdit.wrapMode : '';
-    if (wrapMode === 'wrap' || wrapMode === 'overflow' || wrapMode === 'clip') {
-        nextAlignment.wrapText = wrapMode === 'wrap';
-        hasAlignmentEdit = true;
-    }
-    if (typeof styleEdit.indent === 'number') {
-        nextAlignment.indent = Math.max(0, Math.round(styleEdit.indent));
-        hasAlignmentEdit = true;
-    } else if (typeof styleEdit.paddingLeft === 'string') {
-        const indentPx = parseFloat(styleEdit.paddingLeft);
-        if (Number.isFinite(indentPx)) {
-            nextAlignment.indent = Math.max(0, Math.round(indentPx / 8));
-            hasAlignmentEdit = true;
-        }
-    }
-    if (hasAlignmentEdit) {
-        cell.alignment = nextAlignment as Partial<Excel.Alignment>;
-    }
-
-    if (styleEdit.border) {
-        if (styleEdit.border.clear) {
-            (cell as any).border = undefined;
-        } else {
-            const firstCssBorder = parseCssBorderForExcel(styleEdit.border.top)
-                || parseCssBorderForExcel(styleEdit.border.right)
-                || parseCssBorderForExcel(styleEdit.border.bottom)
-                || parseCssBorderForExcel(styleEdit.border.left);
-            const borderStyle = typeof styleEdit.border.style === 'string' ? styleEdit.border.style : (firstCssBorder?.style || 'thin');
-            const allowedStyles = [
-                'thin', 'dotted', 'dashDot', 'hair', 'dashDotDot', 'slantDashDot', 'mediumDashed', 'mediumDashDotDot', 'mediumDashDot', 'medium', 'double', 'thick'
-            ];
-
-            let finalBorderStyle = 'thin';
-            const sLower = borderStyle.toLowerCase();
-
-            if (sLower.includes('thick') && sLower.includes('dash')) {finalBorderStyle = 'mediumDashed';}
-            else if (sLower.includes('thick') && sLower.includes('dot')) {finalBorderStyle = 'mediumDashDot';}
-            else if (sLower.includes('medium') && sLower.includes('dash')) {finalBorderStyle = 'mediumDashed';}
-            else if (sLower.includes('medium') && sLower.includes('dot')) {finalBorderStyle = 'mediumDashDot';}
-            else if (sLower.includes('dashdotdot')) {finalBorderStyle = 'dashDotDot';}
-            else if (sLower.includes('dashdot')) {finalBorderStyle = 'dashDot';}
-            else if (sLower.includes('dashed') || sLower === 'dashed' || sLower.includes('dash')) {finalBorderStyle = 'mediumDashed';}
-            else if (allowedStyles.includes(borderStyle)) {finalBorderStyle = borderStyle;}
-            else if (sLower === 'thick') {finalBorderStyle = 'thick';}
-            else if (sLower === 'medium') {finalBorderStyle = 'medium';}
-            else if (sLower === 'dotted') {finalBorderStyle = 'dotted';}
-            else if (sLower === 'double') {finalBorderStyle = 'double';}
-
-            const borderColorArgb = toARGB(styleEdit.border.color || firstCssBorder?.color) || 'FF202124';
-            const toEdge = (enabled?: boolean | string) => {
-                if (!enabled) {return undefined;}
-                const parsed = parseCssBorderForExcel(enabled);
-                if (parsed) {
-                    return { style: parsed.style, color: { argb: toARGB(parsed.color || styleEdit.border.color || firstCssBorder?.color) || borderColorArgb } };
-                }
-                return { style: finalBorderStyle as any, color: { argb: borderColorArgb } };
-            };
-
-            cell.border = {
-                top: toEdge(styleEdit.border.top),
-                right: toEdge(styleEdit.border.right),
-                bottom: toEdge(styleEdit.border.bottom),
-                left: toEdge(styleEdit.border.left)
-            } as any;
-        }
-    }
-}
-
 async function applyStoredStylesToXlsxFile(filePath: string, storedStyles: Record<string, any>): Promise<void> {
     if (!storedStyles || typeof storedStyles !== 'object' || !Object.keys(storedStyles).length) {
         return;
@@ -280,17 +94,20 @@ async function applyStoredStylesToXlsxFile(filePath: string, storedStyles: Recor
         return;
     }
 
-    for (const [key, styleEdit] of Object.entries(storedStyles)) {
-        const address = parseStyleKey(key);
-        if (!address) {continue;}
-
-        applyStyleEditToCell(worksheet.getRow(address.row).getCell(address.col), styleEdit);
-    }
+    // Same code path as the toolbar Convert, so both produce identical styling.
+    applyStoredStylesToWorksheet(worksheet, storedStyles);
 
     await workbook.xlsx.writeFile(filePath);
 }
 
-export function activate(context: vscode.ExtensionContext) {
+/** Returned from `activate` only when running integration tests (src/test/integration); never in normal use. */
+export interface SheetmarkTestApi {
+    openEditors(): OpenEditorHandle[];
+    styleStorage: StyleStorageService;
+    globalStoragePath: string;
+}
+
+export function activate(context: vscode.ExtensionContext): SheetmarkTestApi | undefined {
     const spreadsheetProvider = new SpreadsheetEditorProvider(context);
     const mdProvider = new MDEditorProvider(context);
     const styleStorage = new StyleStorageService(context);
@@ -308,6 +125,13 @@ export function activate(context: vscode.ExtensionContext) {
 
     context.subscriptions.push(new vscode.Disposable(() => {
         clearInterval(stylePruneTimer);
+    }));
+
+    // Move per-file state before VS Code renames a file, so the reopened editor finds it.
+    context.subscriptions.push(registerRenameStateMigration(context, {
+        styleStorage,
+        markdownPreferences: createMarkdownPreferences(context.workspaceState, context.globalState),
+        flushWrites: (uri) => Promise.all([spreadsheetProvider.flushWrites(uri), mdProvider.flushWrites(uri)]).then(() => undefined),
     }));
 
     void reconcileAllOpenByDefaultSettings().catch(() => {
@@ -378,7 +202,7 @@ export function activate(context: vscode.ExtensionContext) {
             } else {
                 // Try to get URI from active tab if not a text editor
                 const activeTab = vscode.window.tabGroups.activeTabGroup.activeTab;
-                if (activeTab?.input instanceof (vscode as any).TabInputCustom || activeTab?.input instanceof (vscode as any).TabInputText) {
+                if (activeTab?.input instanceof vscode.TabInputCustom || activeTab?.input instanceof vscode.TabInputText) {
                     const tabUri = (activeTab.input as any).uri;
                     if (tabUri) {
                         const path = tabUri.fsPath.toLowerCase();
@@ -410,7 +234,7 @@ export function activate(context: vscode.ExtensionContext) {
             } else {
                 // Try to get URI from active tab if not a text editor
                 const activeTab = vscode.window.tabGroups.activeTabGroup.activeTab;
-                if (activeTab?.input instanceof (vscode as any).TabInputCustom || activeTab?.input instanceof (vscode as any).TabInputText) {
+                if (activeTab?.input instanceof vscode.TabInputCustom || activeTab?.input instanceof vscode.TabInputText) {
                     const tabUri = (activeTab.input as any).uri;
                     if (tabUri && tabUri.fsPath.toLowerCase().endsWith('.xlsx')) {
                         await vscode.commands.executeCommand('workbench.action.closeActiveEditor');
@@ -584,6 +408,16 @@ export function activate(context: vscode.ExtensionContext) {
             }
         })
     );
+
+    // Only test runs get the API: other extensions could otherwise drive Sheetmark's saves through it.
+    if (context.extensionMode !== vscode.ExtensionMode.Test) {
+        return undefined;
+    }
+    return {
+        openEditors: () => [...spreadsheetProvider.openEditors, ...mdProvider.openEditors],
+        styleStorage,
+        globalStoragePath: context.globalStorageUri.fsPath,
+    };
 }
 
 export function deactivate() { }

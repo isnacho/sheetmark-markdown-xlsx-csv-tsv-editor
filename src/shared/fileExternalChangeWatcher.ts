@@ -2,10 +2,6 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 
-export function urisMatch(a: vscode.Uri, b: vscode.Uri): boolean {
-    return a.fsPath.toLowerCase() === b.fsPath.toLowerCase();
-}
-
 function pathsMatch(a: string, b: string): boolean {
     return a.toLowerCase() === b.toLowerCase();
 }
@@ -15,20 +11,20 @@ export interface ExternalFileChangeWatcherOptions {
     documentUri: vscode.Uri;
     onChange: () => void | Promise<void>;
     onDelete?: () => void | Promise<void>;
-    onMove?: (newUri: vscode.Uri) => void | Promise<void>;
     deleteDebounceMs?: number;
 }
 
-export interface ExternalFileChangeWatcher extends vscode.Disposable {
-    repoint(newFilePath: string, newDocumentUri: vscode.Uri): void;
-}
+export type ExternalFileChangeWatcher = vscode.Disposable;
 
 /**
  * Watches a single file for external changes. Combines VS Code's
  * FileSystemWatcher (onDidChange + onDidCreate for atomic saves) with Node's
  * fs.watch as a fallback for out-of-workspace paths and editors that rename
- * files on save. Detects renames via onDidRenameFiles and debounces delete
- * events so moves are not reported as deletions.
+ * files on save. Delete events are debounced.
+ *
+ * A rename inside VS Code is not a delete: VS Code closes this editor and opens
+ * a new one at the new path (state moves in renameStateMigration.ts), so the
+ * watcher just stops reporting for the old path.
  */
 export function createExternalFileChangeWatcher(
     options: ExternalFileChangeWatcherOptions
@@ -36,12 +32,11 @@ export function createExternalFileChangeWatcher(
     const {
         onChange,
         onDelete,
-        onMove,
         deleteDebounceMs = 250,
     } = options;
 
-    let watchedFilePath = options.filePath;
-    let watchedDocumentUri = options.documentUri;
+    const watchedFilePath = options.filePath;
+    const watchedDocumentUri = options.documentUri;
     const pathDisposables: vscode.Disposable[] = [];
 
     let changeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -111,33 +106,13 @@ export function createExternalFileChangeWatcher(
     attachPathWatchers(watchedFilePath, watchedDocumentUri);
 
     const renameDisposable = vscode.workspace.onDidRenameFiles((event) => {
-        if (!onMove) {
-            return;
-        }
-        for (const { oldUri, newUri } of event.files) {
-            if (!pathsMatch(oldUri.fsPath, watchedFilePath)) {
-                continue;
-            }
+        if (event.files.some(({ oldUri }) => pathsMatch(oldUri.fsPath, watchedFilePath))) {
             cancelPendingDelete();
-            watchedFilePath = newUri.fsPath;
-            watchedDocumentUri = newUri;
             disposePathWatchers();
-            attachPathWatchers(watchedFilePath, watchedDocumentUri);
-            void onMove(newUri);
-            break;
         }
     });
 
     return {
-        repoint(newFilePath: string, newDocumentUri: vscode.Uri) {
-            if (pathsMatch(watchedFilePath, newFilePath) && urisMatch(watchedDocumentUri, newDocumentUri)) {
-                return;
-            }
-            watchedFilePath = newFilePath;
-            watchedDocumentUri = newDocumentUri;
-            disposePathWatchers();
-            attachPathWatchers(watchedFilePath, watchedDocumentUri);
-        },
         dispose() {
             cancelPendingDelete();
             if (changeDebounceTimer) {

@@ -57,7 +57,7 @@ For things like code blocks, the code block should also wrap, but tables should 
 
 ## Plan
 
-**Superseded by:** [wide-tables-beyond-page](../../3-to-implement/wide-tables-beyond-page.md) + `.docs/product/MARKDOWN-TABLES.md`.
+**Superseded by:** [wide-tables-beyond-page](../wide-tables-beyond-page.md) + `.docs/product/MARKDOWN-TABLES.md`.
 
 Most prose/word-wrap and table scroll isolation steps were implemented before absorption; remaining nowrap-on-overflow and fade edge shipped in wide-tables-beyond-page (2026-08-15).
 

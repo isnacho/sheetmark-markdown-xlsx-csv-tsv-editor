@@ -1,4 +1,5 @@
-import { renderMenuActionRow, renderMenuSelectRow } from './menuPanel';
+import type { CommonHostToWebview } from '../../protocol/common';
+import { renderMenuSelectRow } from './menuPanel';
 
 export function renderThemeToggleSettingItem(selectId: string): string {
     return renderMenuSelectRow({
@@ -41,8 +42,8 @@ export class ThemeManager {
 
         // Listen for theme messages from VS Code so vscode-theme mode follows host changes.
         window.addEventListener('message', event => {
-            const msg = event.data;
-            if (msg && msg.type === 'setTheme') {
+            const msg = event.data as CommonHostToWebview | undefined;
+            if (msg && 'type' in msg && msg.type === 'setTheme') {
                 this.handleVsCodeThemeChange(msg.kind);
             }
         });

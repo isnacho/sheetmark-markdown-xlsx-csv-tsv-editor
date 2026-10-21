@@ -5,16 +5,16 @@
     "version": "1.5.0",
     "publisher": "iggyinc",
     "engines": {
-        "vscode": "^1.60.0"
+        "vscode": "^1.67.0"
     },
     "repository": {
         "type": "git",
-        "url": "https://github.com/nachosdesign/sheetmark-markdown-xlsx-csv-tsv-editor"
+        "url": "https://github.com/isnacho/sheetmark-markdown-xlsx-csv-tsv-editor"
     },
     "bugs": {
-        "url": "https://github.com/nachosdesign/sheetmark-markdown-xlsx-csv-tsv-editor/issues"
+        "url": "https://github.com/isnacho/sheetmark-markdown-xlsx-csv-tsv-editor/issues"
     },
-    "homepage": "https://github.com/nachosdesign/sheetmark-markdown-xlsx-csv-tsv-editor",
+    "homepage": "https://github.com/isnacho/sheetmark-markdown-xlsx-csv-tsv-editor",
     "keywords": [
         "markdown",
         "xlsx",
@@ -457,32 +457,35 @@
     "scripts": {
         "build": "npm run compile",
         "vscode:prepublish": "npm run package",
+        "verify": "npm run check-types && npm run lint && npm run test:unit && node esbuild.js",
         "compile": "npm run check-types && npm run lint && node esbuild.js",
         "watch": "npm-run-all -p watch:*",
         "watch:esbuild": "node esbuild.js --watch",
-        "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
-        "package": "npm run check-types && npm run lint && node esbuild.js --production",
-        "compile-tests": "tsc -p . --outDir out",
-        "watch-tests": "tsc -p . -w --outDir out",
-        "pretest": "npm run compile-tests && npm run compile && npm run lint",
-        "check-types": "tsc --noEmit",
-        "lint": "eslint \"src/**/*.ts\"",
-        "test": "vscode-test",
-        "test:unit": "node --test \"src/webviews/md/**/*.test.mts\""
+        "watch:tsc:host": "tsc --watch --project tsconfig.json",
+        "watch:tsc:webview": "tsc --watch --project src/webviews/tsconfig.json",
+        "package": "npm run check-types && npm run lint && npm run test:unit && node esbuild.js --production",
+        "check-types": "tsc -p tsconfig.json && tsc -p src/webviews/tsconfig.json && tsc -p tsconfig.test.json && tsc -p src/test/integration/tsconfig.json",
+        "lint": "eslint \"src/**/*.{ts,mts}\"",
+        "test:unit": "node --import tsx --test \"src/**/*.test.mts\"",
+        "test:integration": "node esbuild.js && node esbuild.js --integration && vscode-test",
+        "test:regressions": "node scripts/check-regression-tests.mjs"
     },
     "devDependencies": {
         "@types/js-yaml": "^4.0.9",
-        "@types/mocha": "^8.2.2",
-        "@types/node": "14.x",
-        "@types/vscode": "^1.60.0",
+        "@types/markdown-it": "^14.2.0",
+        "@types/mocha": "^10.0.10",
+        "@types/node": "^20.19.43",
+        "@types/vscode": "~1.67.0",
         "@typescript-eslint/eslint-plugin": "^8.30.1",
         "@typescript-eslint/parser": "^8.30.1",
+        "@vscode/test-cli": "^0.0.15",
+        "@vscode/test-electron": "^3.1.0",
         "esbuild": "^0.25.1",
         "eslint": "^9.24.0",
-        "mocha": "^11.7.5",
+        "linkedom": "^0.18.13",
         "npm-run-all": "^4.1.5",
-        "typescript": "^5.4.5",
-        "vscode-test": "^1.5.2"
+        "tsx": "^4.23.15",
+        "typescript": "^5.4.5"
     },
     "dependencies": {
         "@codemirror/autocomplete": "^6.18.6",
@@ -495,25 +498,9 @@
         "@codemirror/state": "^6.5.2",
         "@codemirror/view": "^6.36.5",
         "@lezer/markdown": "^1.4.2",
-        "@types/highlight.js": "^9.12.4",
-        "@types/markdown-it": "^14.1.2",
-        "@types/markdown-it-container": "^2.0.11",
         "exceljs": "^4.3.0",
-        "highlight.js": "^11.11.1",
         "js-yaml": "^5.2.1",
-        "katex": "^0.16.45",
         "markdown-it": "^14.1.0",
-        "markdown-it-abbr": "^2.0.0",
-        "markdown-it-container": "^4.0.0",
-        "markdown-it-deflist": "^3.0.0",
-        "markdown-it-emoji": "^3.0.0",
-        "markdown-it-footnote": "^4.0.0",
-        "markdown-it-ins": "^4.0.0",
-        "markdown-it-katex": "^2.0.3",
-        "markdown-it-mark": "^4.0.0",
-        "markdown-it-sub": "^2.0.0",
-        "markdown-it-sup": "^2.0.0",
-        "markdown-it-task-lists": "^2.1.1",
         "mermaid": "^11.4.0",
         "typo-js": "^1.3.2"
     },

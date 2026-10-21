@@ -7,4 +7,4 @@ out/
 *.log
 samples/
 
-# nachosdesign/mii-ai is tracked as a git submodule at .docs/mii-ai (see .gitmodules)
+# isnacho/mii-ai-resources is tracked as a git submodule at .docs/mii-ai (see .gitmodules)

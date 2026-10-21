@@ -6,11 +6,7 @@
 
 import { EditorState, EditorSelection } from '@codemirror/state';
 import type { TransactionSpec } from '@codemirror/state';
-
-/** Mirrored from listMarkerEditing.ts — kept local for Node ESM test loading. */
-function isEmptyActivatedListItem(lineText: string): boolean {
-    return /^\s*(?:\d+[.)]\s*|[-*+]\s(?:\[[ xX]\]\s)?)$/.test(lineText);
-}
+import { isEmptyActivatedListItem } from './listMarkerEditing';
 
 export interface ParsedListMarkerLine {
     indent: string;

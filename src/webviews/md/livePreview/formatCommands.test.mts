@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import { EditorState } from '@codemirror/state';
 import { markdown } from '@codemirror/lang-markdown';
 import { GFM } from '@lezer/markdown';
+import { fullyParsed } from './testState.ts';
 import {
     computeWrapSelection,
     computeToggleLinePrefix,
@@ -36,7 +37,7 @@ import {
 } from './formatCommands.ts';
 
 function stateFor(doc: string, anchor: number, head = anchor): EditorState {
-    return EditorState.create({ doc, selection: { anchor, head }, extensions: [markdown({ extensions: GFM })] });
+    return fullyParsed(EditorState.create({ doc, selection: { anchor, head }, extensions: [markdown({ extensions: GFM })] }));
 }
 
 function apply(state: EditorState, spec: ReturnType<typeof computeWrapSelection> | null) {
@@ -422,7 +423,7 @@ test('multiLineListAwareIndent: selecting two sibling items nests both under the
 test('multiLineListAwareIndent: outdents multiple nested siblings back to top-level, symmetrically', () => {
     const doc = '- top\n  - one\n  - two';
     const state = stateFor(doc, doc.indexOf('- one'), doc.length);
-    const { doc: newDoc, sel } = apply(state, computeMultiLineListAwareIndent(state, true));
+    const { doc: newDoc } = apply(state, computeMultiLineListAwareIndent(state, true));
     assert.equal(newDoc, '- top\n- one\n- two');
 });
 

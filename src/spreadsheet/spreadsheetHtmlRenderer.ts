@@ -1,3 +1,4 @@
+import { spreadsheetCsp } from '../shared/webviewCsp';
 import * as vscode from 'vscode';
 
 export function getWebviewContent(webviewPanel: vscode.WebviewPanel, context: vscode.ExtensionContext): string {
@@ -24,7 +25,7 @@ export function getWebviewContent(webviewPanel: vscode.WebviewPanel, context: vs
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${cspSource} https: data:; style-src ${cspSource} 'unsafe-inline'; font-src ${cspSource}; script-src ${cspSource} 'unsafe-inline';">
+    <meta http-equiv="Content-Security-Policy" content="${spreadsheetCsp(cspSource)}">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sheetmark</title>
     <link href="${themeStyleUri}" rel="stylesheet" />

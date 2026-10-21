@@ -190,7 +190,7 @@ export class StyleStorageService {
         const cells = metadata.cells || {};
 
         // Clear old styles, keep controls
-        for (const [key, cell] of Object.entries(cells)) {
+        for (const cell of Object.values(cells)) {
             if (cell) {
                 delete cell.style;
             }

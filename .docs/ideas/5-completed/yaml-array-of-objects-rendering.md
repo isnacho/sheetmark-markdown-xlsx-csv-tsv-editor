@@ -46,7 +46,7 @@ Example from a real frontmatter block (push-notifications spec): scalar fields a
 
 ### Root cause
 
-`flattenFieldRows` ([frontmatter.ts:84-94](src/webviews/md/frontmatter.ts)) maps every array
+`flattenFieldRows` ([frontmatter.ts:84-94](../../../src/webviews/md/frontmatter.ts)) maps every array
 element through `formatScalar`, which stringifies objects as `[object Object]`.
 
 ### A — Refactor array branch in `flattenFieldRows`
@@ -96,7 +96,7 @@ Optional assertion helper: `assert.ok(!rows.some(r => r.chips?.some(c => c.inclu
 **No changes expected** to `frontmatterCardUi.ts` — it already renders `kind: 'object'` headers and
 indented rows via `row.depth`. Index prefix lives in `row.key` string.
 
-Verify `FrontmatterWidget.eq` ([frontmatterWidget.ts](src/webviews/md/livePreview/frontmatterWidget.ts))
+Verify `FrontmatterWidget.eq` ([frontmatterWidget.ts](../../../src/webviews/md/livePreview/frontmatterWidget.ts))
 still compares `row.key` — prefix in key is fine.
 
 ### D — Verification

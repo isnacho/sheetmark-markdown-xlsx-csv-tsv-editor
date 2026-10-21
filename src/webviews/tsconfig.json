@@ -1,0 +1,16 @@
+{
+	// Webviews (browser sandbox). No Node types: `process`, `Buffer`, `require`, `fs` are compile errors here.
+	// Talk to the extension host only through postMessage (see AGENTS.md).
+	"compilerOptions": {
+		"module": "commonjs",
+		"target": "ES2020",
+		"lib": ["ES2020", "DOM", "DOM.Iterable"],
+		"types": [],
+		"strict": true,
+		"noUnusedLocals": true,
+		"esModuleInterop": true,
+		"skipLibCheck": true,
+		"noEmit": true
+	},
+	"include": ["./**/*.ts"]
+}

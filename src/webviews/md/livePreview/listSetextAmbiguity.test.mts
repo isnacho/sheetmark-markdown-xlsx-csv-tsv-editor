@@ -6,9 +6,10 @@ import { GFM } from '@lezer/markdown';
 import { syntaxTree } from '@codemirror/language';
 import type { SyntaxNode } from '@lezer/common';
 import { isSetextUnderlineListMarker, setextListMarkerLineAt } from './listSetextAmbiguity.ts';
+import { fullyParsed } from './testState.ts';
 
 function stateFor(doc: string): EditorState {
-    return EditorState.create({ doc, extensions: [markdown({ extensions: GFM })] });
+    return fullyParsed(EditorState.create({ doc, extensions: [markdown({ extensions: GFM })] }));
 }
 
 function firstSetext(state: EditorState): SyntaxNode | null {

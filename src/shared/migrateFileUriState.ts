@@ -1,14 +1,13 @@
 import * as vscode from 'vscode';
-import { FrontmatterPanelStorageService } from './frontmatterPanelStorageService';
+import type { FilePreference } from './preferenceStore';
 import { StyleStorageService } from './styleStorageService';
-import { TableColumnWidthStorageService } from './tableColumnWidthStorageService';
 import { migrateVersionHistory } from './versionHistory';
 
 export interface MigrateFileUriStateOptions {
     kind: string;
     isSpreadsheet: boolean;
-    tableColumnWidthStorage?: TableColumnWidthStorageService;
-    frontmatterPanelStorage?: FrontmatterPanelStorageService;
+    /** Per-file preferences to move (Markdown: MarkdownPreferences.perFile). */
+    filePreferences?: readonly FilePreference<unknown>[];
     styleStorage?: StyleStorageService;
 }
 
@@ -20,9 +19,9 @@ export async function migrateFileUriState(
 ): Promise<void> {
     if (options.isSpreadsheet) {
         await options.styleStorage?.migrateUri(oldUri, newUri);
-    } else {
-        await options.tableColumnWidthStorage?.migrateUri(oldUri, newUri);
-        await options.frontmatterPanelStorage?.migrateUri(oldUri, newUri);
+    }
+    for (const preference of options.filePreferences ?? []) {
+        await preference.migrate(oldUri, newUri);
     }
 
     await migrateVersionHistory(

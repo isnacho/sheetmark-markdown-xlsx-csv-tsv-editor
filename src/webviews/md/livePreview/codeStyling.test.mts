@@ -5,9 +5,10 @@ import assert from 'node:assert/strict';
 import { EditorState } from '@codemirror/state';
 import { markdown } from '@codemirror/lang-markdown';
 import { computeCodeDecorations } from './codeStyling.ts';
+import { fullyParsed } from './testState.ts';
 
 function stateFor(doc: string): EditorState {
-    return EditorState.create({ doc, extensions: [markdown()] });
+    return fullyParsed(EditorState.create({ doc, extensions: [markdown()] }));
 }
 
 interface FlatDeco { from: number; to: number; class: string | undefined; }

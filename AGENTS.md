@@ -30,7 +30,7 @@ runtime's APIs is a compile error, not a runtime surprise.
 |---|---|---|
 | Files | `src/extension.ts`, `src/*EditorProvider.ts`, `src/shared/**`, `src/spreadsheet/**` | `src/webviews/**` |
 | tsconfig | [tsconfig.json](tsconfig.json): Node types, **no DOM** | [src/webviews/tsconfig.json](src/webviews/tsconfig.json): DOM, **no Node types** |
-| Bundle | `dist/extension.js` (esbuild, `platform: node`) | `dist/spreadsheet/spreadsheetWebview.js`, `dist/md/mdWebview.js` (`platform: browser`, IIFE) |
+| Bundle | `dist/extension.js` (esbuild, `platform: node`) | `dist/spreadsheet/spreadsheetWebview.js` (IIFE), `dist/md/mdWebview.js` (ES module; mermaid loads lazily from `dist/md/chunks/`) (`platform: browser`) |
 | `vscode` | The real VS Code module (`vscode.window`, `Uri`, fs, commands) | **Not available.** `vscode` is the `acquireVsCodeApi()` wrapper in [src/webviews/shared/common.ts](src/webviews/shared/common.ts): only `postMessage` / `getState` / `setState` |
 | Can use | Node APIs, `exceljs`, the `vscode` module | DOM, CodeMirror 6, `markdown-it` (TOC, inactive table cells), `mermaid`, `js-yaml`, `typo-js` |
 
@@ -57,13 +57,14 @@ is untrusted. Details: [.docs/dev/MESSAGE-PROTOCOL.md](.docs/dev/MESSAGE-PROTOCO
   `registerCustomEditorProvider(...)` / `registerCommand(...)` strings in
   [src/extension.ts](src/extension.ts) exactly, or editors and commands silently stop registering.
   Users never see these strings; the rename is deferred on purpose.
-- **Do not insert file content into the DOM as HTML without escaping.** Spreadsheet cells and
-  Markdown come from untrusted files, and the webviews currently allow inline script. Build
-  markup from escaped text.
+- **Do not insert file content into the DOM as HTML without escaping or sanitizing.** Spreadsheet
+  cells and Markdown come from untrusted files. Build markup from escaped text, or pass HTML through
+  `sanitizeHtml` ([src/webviews/shared/sanitizeHtml.ts](src/webviews/shared/sanitizeHtml.ts)). The CSP
+  blocks inline script as a second line of defense; never loosen it.
 - **Do not add a webview asset without updating the CSP and `localResourceRoots`.** Assets load
-  through `webview.asWebviewUri(...)`, gated by the `Content-Security-Policy` meta tag in
-  `getWebviewContent` ([spreadsheetHtmlRenderer.ts](src/spreadsheet/spreadsheetHtmlRenderer.ts) and
-  `MDEditorProvider.getWebviewContent` in [mdEditorProvider.ts](src/mdEditorProvider.ts)). Spreadsheet
+  through `webview.asWebviewUri(...)`, gated by the `Content-Security-Policy` built in
+  [src/shared/webviewCsp.ts](src/shared/webviewCsp.ts) and put in the page by
+  [src/shared/webviewHtml.ts](src/shared/webviewHtml.ts). Spreadsheet
   roots: `resources/` + `dist/`. Markdown also allows the document's directory, workspace folders
   and ancestor directories (local images). Anything else is silently blocked.
 - **Do not bump `@types/vscode` on its own.** It is pinned to the `engines.vscode` floor (1.67) so
@@ -134,6 +135,13 @@ npm run package           # production build (also runs unit tests); used by vsc
   and `problems()` (CSP violations, page errors). Use them for anything in the webview UI:
   rendering, paste, keyboard, listeners, real-browser security checks. Tests act as the host, for
   example answering `getRows` (see `spreadsheet.spec.mts`).
+- **Splitting a large file:** add browser tests that pin the behavior first, then use
+  [scripts/refactor/](scripts/refactor/): `cluster-deps.cjs FILE name...` shows what a group of
+  functions uses from the rest of the file, `move-functions.cjs FILE TARGET name...` moves the
+  group to a module and fixes imports on both sides, `move-to-state.cjs` turns top-level variables
+  into `state.x` fields, and `rename-locals.cjs` renames a local everywhere it is in scope. All use
+  the TypeScript compiler, so they don't touch look-alike names. Anything the group still needs
+  from the old file goes in through an `initX(hooks)` function (see `initUndo` in `undo.ts`).
 - **Every bug fix gets a test that fails without the fix**, plus an entry in
   [scripts/check-regression-tests.mjs](scripts/check-regression-tests.mjs) that re-breaks it.
   Untestable fixes are listed there as `knownGap` so the gap stays visible.

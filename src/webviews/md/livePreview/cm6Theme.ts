@@ -382,7 +382,9 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             padding: '8px 0',
         },
         '.cm-md-table-widget': {
-            display: 'block',
+            // flow-root keeps the scroll wrapper's bottom margin inside the widget box. CodeMirror
+            // measures that box; a margin escaping it made the page jump 8px per table on scroll.
+            display: 'flow-root',
             cursor: 'text',
             overflow: 'visible',
             boxSizing: 'border-box',

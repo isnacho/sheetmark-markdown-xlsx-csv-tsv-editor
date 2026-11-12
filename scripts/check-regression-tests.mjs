@@ -53,6 +53,8 @@ const MUTATIONS = [
       find: "'&.cm-editor .cm-selectionBackground, &.cm-editor.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground': {", replace: "'&.cm-editor .cm-md-never-matches': {" },
     { id: 'md-image-placeholder-hidden', file: 'src/webviews/md/livePreview/cm6Theme.ts',
       find: "'.cm-md-image-placeholder[hidden]': {", replace: "'.cm-md-image-placeholder[data-never]': {" },
+    { id: 'md-table-no-scroll-jump', file: 'src/webviews/md/livePreview/cm6Theme.ts',
+      find: "            display: 'flow-root',\n", replace: "            display: 'block',\n" },
     { id: 'mermaid-lazy-load', file: 'src/webviews/md/livePreview/mermaidWidget.ts',
       find: "import { Icons } from '../../shared/icons';", replace: "import { Icons } from '../../shared/icons';\nimport * as eagerMermaid from 'mermaid';\nvoid eagerMermaid;" },
     { id: 'resize-listeners-once', file: 'src/webviews/spreadsheet/spreadsheetWebview.ts',

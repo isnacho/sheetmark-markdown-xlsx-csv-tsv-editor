@@ -124,3 +124,16 @@ test('an image\'s alt-text placeholder is not shown once the image is there', as
     assert.equal(placeholder!.display, 'none');
     assert.equal(placeholder!.height, 0);
 });
+
+// @@F06
+test('a table\'s box includes all of its spacing, so the next line starts right below it', async () => {
+    // Space that escapes the widget box is invisible to CodeMirror's height map, which makes the
+    // page jump by that amount whenever a table scrolls into view.
+    await openDoc('Before.\n\n| a | b |\n| - | - |\n| 1 | 2 |\n\nAfter the table.\n');
+    await webview.page.waitForSelector('.cm-md-table-widget', { timeout: 5000 });
+    const gap = await webview.page.evaluate(() => {
+        const widget = document.querySelector('.cm-md-table-widget')!;
+        return widget.nextElementSibling!.getBoundingClientRect().top - widget.getBoundingClientRect().bottom;
+    });
+    assert.ok(Math.abs(gap) < 1, `the line after the table starts ${gap}px below the table's box`);
+});

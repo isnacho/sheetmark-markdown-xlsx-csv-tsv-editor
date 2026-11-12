@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Markdown Preview Edit: scrolling past tables no longer makes the text jump a few pixels.
 - Markdown Preview Edit: images no longer show a grey bar with their alt text underneath once they load.
 - Markdown Preview Edit: selected text is readable again in dark themes. The selection now uses your VS Code theme's selection colour instead of a fixed light lavender.
 - Markdown Preview Edit: the `/` menu no longer opens under the toolbar when the cursor is low in the window. It stays inside the editor and scrolls if there is not enough room.

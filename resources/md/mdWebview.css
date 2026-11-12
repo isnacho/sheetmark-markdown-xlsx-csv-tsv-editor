@@ -525,7 +525,7 @@ body.cm6-preview-active .cm-md-fenced-code-line {
 body.cm6-preview-active {
     --cm-md-fence-inset: 12px;
     --cm-md-fence-chrome-inset: 6px;
-    --cm-md-fence-external-gap: 32px;
+    --cm-md-fence-external-gap: 4px;
 }
 
 body.cm6-preview-active .cm-md-fenced-code-line-first {
@@ -899,7 +899,7 @@ body.cm6-preview-active .markdown-preview .yaml-frontmatter-card {
 /* Measured as part of the block widget root — reserve space below the card border. */
 .markdown-preview .yaml-frontmatter-tail-spacer {
     display: block;
-    height: 40px;
+    height: 4px;
     pointer-events: none;
 }
 
@@ -1177,7 +1177,7 @@ body.preview-edit-mode .markdown-preview table.md-table td {
    applies to every row (tableWidget.ts). Horizontal scroll lives on
    `.cm-md-table-scroll`, which also clips rounded corners. */
 body.preview-edit-mode .markdown-preview .cm-md-table-widget .cm-md-table-scroll {
-    margin: 8px 0;
+    margin: 4px 0;
 }
 
 body.preview-edit-mode .markdown-preview .cm-md-table-widget table.md-table {
@@ -1308,7 +1308,6 @@ body.preview-edit-mode .markdown-preview .cm-md-table-widget table.md-table td:e
     max-width: calc(100% + var(--cm-md-row-grip-gutter));
     margin-left: calc(-1 * var(--cm-md-row-grip-gutter));
     padding-left: var(--cm-md-row-grip-gutter);
-    padding-top: 8px;
 }
 
 .cm-md-mermaid-block {

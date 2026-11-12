@@ -31,6 +31,9 @@ function calloutLineDecoration(
     if (emptyClose) {
         parts.push('cm-md-callout-empty');
     }
+    if (position !== 'middle' && !content) {
+        parts.push('cm-md-callout-fence');
+    }
     return Decoration.line({ class: parts.join(' ') });
 }
 

@@ -237,3 +237,46 @@ test('lists and quotes use one 20px step: markers on the text edge, text one ste
     expect('nested', x.body + 40);
     assert.ok(Math.abs(x.ten - x.nine) <= 0.5, `"10." pushed its text to x=${x.ten}, "9." text is at x=${x.nine}`);
 });
+
+// @@F08
+test('blocks are spaced like paragraphs: no hidden extra space around cards, the rule is centred', async () => {
+    const svg = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSIyMCI+PHJlY3Qgd2lkdGg9IjQwIiBoZWlnaHQ9IjIwIiBmaWxsPSJyZWQiLz48L3N2Zz4=';
+    await openDoc(`---\ntitle: Rhythm\n---\n\nP1 first.\n\nP2 second.\n\n\`\`\`ts\nconst gapCode = 1;\n\`\`\`\n\nP3 after code.\n\n::: info\nCallout body.\n:::\n\nP4 after callout.\n\n| A | B |\n| - | - |\n| 1 | 2 |\n\nP5 after table.\n\n![img](${svg})\n\nP6 after image.\n\n---\n\nP7 after rule.\n`);
+    await webview.page.waitForSelector('.cm-md-image-block img', { timeout: 5000 });
+    await webview.page.waitForTimeout(300);
+    const m = await webview.page.evaluate(() => {
+        const rect: Record<string, DOMRect> = {};
+        for (const p of ['P1 first', 'P2 second', 'P3 after code', 'P4 after callout', 'P5 after table', 'P6 after image', 'P7 after rule', 'Callout body']) {
+            rect[p] = [...document.querySelectorAll('.cm-content > .cm-line')].find(l => l.textContent?.includes(p))!.getBoundingClientRect();
+        }
+        for (const [key, selector] of [['yaml', '.cm-md-frontmatter-widget > *'], ['codeTop', '.cm-md-fenced-code-line-first'], ['codeBottom', '.cm-md-fenced-code-line-last'],
+            ['calloutTop', '.cm-md-callout-line-first'], ['calloutBottom', '.cm-md-callout-line-last'], ['table', '.cm-md-table-scroll'], ['image', '.cm-md-image-preview'], ['rule', '.cm-md-hr-widget']]) {
+            rect[key] = document.querySelector(selector)!.getBoundingClientRect();
+        }
+        // Where the rule is drawn: a top border paints at the box top, a centred background at its middle.
+        const ruleEl = document.querySelector('.cm-md-hr-widget')!;
+        const ruleLineY = parseFloat(getComputedStyle(ruleEl).borderTopWidth) > 0 ? rect.rule.top + 0.5 : (rect.rule.top + rect.rule.bottom) / 2;
+        return { ...Object.fromEntries(Object.entries(rect).map(([k, r]) => [k, { top: r.top, bottom: r.bottom }])), ruleLine: { top: ruleLineY, bottom: ruleLineY } };
+    });
+    const paragraphGap = m['P2 second'].top - m['P1 first'].bottom;
+    const gaps: Record<string, number> = {
+        'YAML card to text': m['P1 first'].top - m.yaml.bottom,
+        'text to code': m.codeTop.top - m['P2 second'].bottom,
+        'code to text': m['P3 after code'].top - m.codeBottom.bottom,
+        'text to callout': m.calloutTop.top - m['P3 after code'].bottom,
+        'callout to text': m['P4 after callout'].top - m.calloutBottom.bottom,
+        'text to table': m.table.top - m['P4 after callout'].bottom,
+        'table to text': m['P5 after table'].top - m.table.bottom,
+        'text to image': m.image.top - m['P5 after table'].bottom,
+        'image to text': m['P6 after image'].top - m.image.bottom,
+    };
+    for (const [pair, gap] of Object.entries(gaps)) {
+        assert.ok(Math.abs(gap - paragraphGap) <= 6, `${pair}: ${gap.toFixed(1)}px, paragraphs are ${paragraphGap.toFixed(1)}px apart`);
+    }
+    const above = m.ruleLine.top - m['P6 after image'].bottom;
+    const below = m['P7 after rule'].top - m.ruleLine.top;
+    assert.ok(Math.abs(above - below) <= 2, `rule is ${above.toFixed(1)}px below the text above and ${below.toFixed(1)}px above the text below`);
+    const padTop = m['Callout body'].top - m.calloutTop.top;
+    const padBottom = m.calloutBottom.bottom - m['Callout body'].bottom;
+    assert.ok(Math.abs(padTop - padBottom) <= 1 && padTop <= 20, `callout inner padding ${padTop.toFixed(1)}px top, ${padBottom.toFixed(1)}px bottom`);
+});

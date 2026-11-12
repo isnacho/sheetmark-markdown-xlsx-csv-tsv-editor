@@ -22,7 +22,9 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             fontSize: '15px',
             '--cm-md-fence-inset': '12px',
             '--cm-md-fence-chrome-inset': '6px',
-            '--cm-md-fence-external-gap': '32px',
+            // Blocks are separated by the blank line in the source; cards add only this much
+            // around themselves (it was 32px, so code blocks sat far from their paragraphs).
+            '--cm-md-fence-external-gap': '4px',
             // Left and right gutter of the text column, the same in every document (it used to
             // grow 24px once a document had a toggle, shifting all text). The left side holds the
             // toggle hover handle. mdWebview.css reads it for diff tints that bleed to the gutter.
@@ -456,7 +458,7 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
         },
         '.yaml-frontmatter-tail-spacer': {
             display: 'block',
-            height: '40px',
+            height: '4px',
             pointerEvents: 'none',
         },
         // Phase 7: extended reveal set (strikethrough/inline-code marker hide/
@@ -475,12 +477,16 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
         '.cm-md-image-block': {
             display: 'block',
             margin: '0',
-            paddingTop: '16px',
-            paddingBottom: '16px',
+            paddingTop: '4px',
+            paddingBottom: '4px',
         },
         '.cm-md-image-inline': {
             display: 'inline-block',
             verticalAlign: 'middle',
+        },
+        // mdWebview.css gives .md-image a 16px margin for the old reading view; not in the editor.
+        '.cm-md-image-block .cm-md-image-preview': {
+            margin: '0',
         },
         '.cm-md-image-preview': {
             maxWidth: '100%',
@@ -597,6 +603,13 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             margin: '0',
             padding: '0 12px 0 16px',
             borderLeft: 'none',
+        },
+        // The ::: lines are hidden (or dimmed while the cursor is in the callout); as short bands
+        // they give the box Notion-like inner padding instead of a full empty line each, and the
+        // band keeps its height when the dimmed markup shows, so nothing moves on click.
+        '.cm-md-callout-fence': {
+            fontSize: '11px',
+            lineHeight: '16px',
         },
         '.cm-md-callout-line-first': {
             borderRadius: 'var(--surface-radius) var(--surface-radius) 0 0',
@@ -790,17 +803,20 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             textDecoration: 'line-through',
             color: 'var(--color-text-secondary)',
         },
+        // A box exactly one line tall with the rule drawn through its middle: centred between
+        // the text above and below in any font (a middle-aligned border sat 6px high, and
+        // middle alignment alone still sits on the lowercase midline, not the line's).
         '.cm-md-hr-widget': {
             display: 'inline-block',
             width: '100%',
-            height: '0',
-            boxSizing: 'content-box',
-            padding: '6px 0',
+            height: '1lh',
+            boxSizing: 'border-box',
+            padding: '0',
             border: 'none',
-            borderTop: '1px solid var(--color-text-secondary)',
+            background: 'linear-gradient(var(--color-text-secondary), var(--color-text-secondary)) center / 100% 1px no-repeat',
             opacity: '0.6',
             cursor: 'text',
-            verticalAlign: 'middle',
+            verticalAlign: 'top',
         },
         // Slash menu styling lives in resources/shared/menuPanel.css (shared with settings panel).
         '.cm-lintRange-error': {

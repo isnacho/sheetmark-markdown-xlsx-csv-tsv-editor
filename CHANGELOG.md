@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Markdown Preview Edit: clicking into a heading no longer pushes its text to the right. The `#` marks now appear in the margin to the left of the heading (except in toggle titles, where the arrow sits).
 - Markdown Preview Edit: an image whose file is missing or not loaded yet shows only its placeholder, without the browser's broken-picture icon above it.
 - Markdown Preview Edit: even spacing between blocks. Code blocks, callouts, tables, images and the YAML card no longer add extra empty space around themselves, so they sit as close to the text as paragraphs do; one-line callouts are about 20px shorter, and dividers sit exactly halfway between the lines around them.
 - Markdown Preview Edit: lists and quotes now indent in the same 20px steps as toggles. Bullets and checkboxes line up with the edge of the text, nested items sit exactly under their parent's text, quote text lines up with list text, and numbered items keep their text in one column past item 9.

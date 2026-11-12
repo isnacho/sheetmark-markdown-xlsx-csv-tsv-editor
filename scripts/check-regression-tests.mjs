@@ -69,6 +69,8 @@ const MUTATIONS = [
       find: "        parts.push('cm-md-callout-fence');", replace: '        void parts;' },
     { id: 'md-image-unresolved-hidden', file: 'src/webviews/md/livePreview/cm6Theme.ts',
       find: "'.cm-md-image-preview[hidden]': {", replace: "'.cm-md-image-preview[data-never]': {" },
+    { id: 'md-heading-marker-hangs', file: 'src/webviews/md/livePreview/revealDecorations.ts',
+      find: '            ? Decoration.mark({ class: `cm-md-reveal-mark cm-md-h${level} cm-md-heading-marker` })\n', replace: '            ? dimHeadingMark\n' },
     { id: 'mermaid-lazy-load', file: 'src/webviews/md/livePreview/mermaidWidget.ts',
       find: "import { Icons } from '../../shared/icons';", replace: "import { Icons } from '../../shared/icons';\nimport * as eagerMermaid from 'mermaid';\nvoid eagerMermaid;" },
     { id: 'resize-listeners-once', file: 'src/webviews/spreadsheet/spreadsheetWebview.ts',

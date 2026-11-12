@@ -302,3 +302,41 @@ test('an image whose file is not resolved shows only its placeholder, no broken-
     assert.equal(state.imgDisplay, 'none');
     assert.equal(state.placeholderShown, true);
 });
+
+// @@F14
+test('a heading\'s text stays put when the cursor reveals its # marker, which hangs in the margin', async () => {
+    await openDoc('Intro paragraph.\n\n## Heading two\n\n### Heading three\n\nBody.\n');
+    const measure = () => webview.page.evaluate(() => {
+        const out: Record<string, number> = {};
+        for (const [key, text] of [['h2', 'Heading two'], ['h3', 'Heading three']]) {
+            const lineEl = [...document.querySelectorAll('.cm-content > .cm-line')].find(l => l.textContent?.includes(text))!;
+            const walker = document.createTreeWalker(lineEl, NodeFilter.SHOW_TEXT);
+            let node = walker.nextNode();
+            while (node && !node.textContent?.includes(text)) { node = walker.nextNode(); }
+            const range = document.createRange();
+            const offset = node!.textContent!.indexOf(text);
+            range.setStart(node!, offset);
+            range.setEnd(node!, offset + 1);
+            out[key] = range.getBoundingClientRect().left;
+            out[key + 'Height'] = lineEl.getBoundingClientRect().height;
+        }
+        const marker = document.querySelector('.cm-md-heading-marker');
+        if (marker) { const r = marker.getBoundingClientRect(); out.markerLeft = r.left; out.markerRight = r.right; }
+        return out;
+    });
+    const before = await measure();
+    await webview.page.locator('.cm-content > .cm-line', { hasText: 'Heading two' }).first().click();
+    await webview.page.keyboard.press('End');
+    await webview.page.waitForTimeout(150);
+    const after = await measure();
+    assert.ok(after.markerRight !== undefined, 'the # marker is not revealed on the cursor line');
+    assert.ok(Math.abs(after.h2 - before.h2) <= 0.5, `heading text moved from x=${before.h2} to x=${after.h2}`);
+    assert.ok(Math.abs(after.h2Height - before.h2Height) <= 0.5, 'the heading line changed height');
+    assert.ok(after.markerRight! <= after.h2 + 1 && after.markerRight! - after.markerLeft! > 5, `marker spans x=${after.markerLeft}..${after.markerRight}, text starts at ${after.h2}`);
+    // Typing at the end still edits the heading, and Home goes before the marker.
+    await webview.page.keyboard.type(' edited');
+    await webview.page.keyboard.press('Home');
+    await webview.page.keyboard.type('#');
+    const text = await webview.page.locator('.cm-content').textContent();
+    assert.ok(text?.includes('### Heading two edited'), `unexpected editor text: ${text}`);
+});

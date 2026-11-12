@@ -183,6 +183,19 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
         },
         '.cm-md-heading-line': {
             fontWeight: '600',
+            position: 'relative',
+        },
+        // Revealed "## " on the cursor's heading line: out of the text flow and shifted left by
+        // its own width, so it ends where the heading text starts and the text stays put. In a
+        // toggle title the arrow sits in that space, so there it stays inline.
+        '.cm-md-heading-marker': {
+            position: 'absolute',
+            transform: 'translateX(-100%)',
+            whiteSpace: 'pre',
+        },
+        '.cm-md-details-title-line .cm-md-heading-marker': {
+            position: 'static',
+            transform: 'none',
         },
         // Preview Edit: smaller than static-render h1–h3 defaults in mdWebview.css
         // so headings stay hierarchical without dominating the editor canvas.

@@ -549,9 +549,16 @@ export function computeRevealDecorations(
         // it. Marker + its trailing gap space are one combined span so the
         // space doesn't sit at yet another (base) size between the two.
         const dimHeadingMark = Decoration.mark({ class: `cm-md-reveal-mark cm-md-h${level}` });
+        // The revealed opening "## " hangs in the left margin (cm6Theme: .cm-md-heading-marker), so
+        // the heading text does not jump right when the cursor lands on it; Notion never shows the
+        // marker at all. A heading with no text yet keeps it inline: an out-of-flow marker alone
+        // would leave the line with no content and collapse its height while typing "# ".
+        const openMark = gapEnd < node.to
+            ? Decoration.mark({ class: `cm-md-reveal-mark cm-md-h${level} cm-md-heading-marker` })
+            : dimHeadingMark;
 
         if (active) {
-            specs.push({ from: open.from, to: gapEnd, value: dimHeadingMark });
+            specs.push({ from: open.from, to: gapEnd, value: openMark });
         } else {
             specs.push({ from: open.from, to: open.to, value: hiddenMark });
             if (hasGapSpace) {

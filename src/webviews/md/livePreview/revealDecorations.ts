@@ -349,6 +349,12 @@ function wrapInListMarkerSlot(marker: HTMLElement, extraClass?: string): HTMLEle
 // to the max below).
 export const LIST_INDENT_FLOOR_CHARS = 3; // "12." — two digits + delimiter
 
+// One indent step per list level, the same 20px step toggles use (4px grid). Labels up to
+// LIST_INDENT_FLOOR_CHARS fit it: ordered labels are right-aligned and a two-digit one hangs a
+// little into the margin on its left (as in Notion) instead of pushing its text right. Only
+// longer labels ("100.", "xiii.") widen the column, by one mono character each.
+export const LIST_INDENT_STEP_PX = 20;
+
 // `--font-mono` is fixed-pitch (unlike `.cm-content`'s proportional
 // `--font-family`), so its character count converts to pixels exactly once
 // its real rendered advance width is known. This constant is a deterministic
@@ -356,12 +362,10 @@ export const LIST_INDENT_FLOOR_CHARS = 3; // "12." — two digits + delimiter
 // getMonoCharWidthPx() below (never per-list, never per-render — see there).
 export const DEFAULT_MONO_CHAR_WIDTH_PX = 8;
 
-// A top-level bullet/checkbox has no parent list to cascade from, so it gets
-// NO leading inset — its own left edge lines up exactly with plain paragraph
-// text at the same depth. A nested one needs a small inset so it doesn't sit
-// flush against the cascade boundary (the parent's own text start) — see the
-// "clear gap on the left" requirement in the idea this feature comes from.
-export const LIST_MARKER_NESTED_INSET_PX = 4;
+// Markers sit flush with the text edge of their level: a top-level bullet or checkbox lines up
+// with plain paragraph text, a nested one with its parent item's text, the way a toggle arrow
+// lines up with the text around it (Notion does the same). The old 4px nested inset is gone.
+export const LIST_MARKER_NESTED_INSET_PX = 0;
 
 /** Widest ordered-marker label among `list`'s direct ListItem children, floored at LIST_INDENT_FLOOR_CHARS. */
 export function computeListOwnColumnChars(state: EditorState, list: SyntaxNode): number {
@@ -409,7 +413,7 @@ export function getListColumnMetrics(
     const cached = cache.get(list.from);
     if (cached) { return cached; }
     const columnChars = computeListOwnColumnChars(state, list);
-    const columnPx = columnChars * monoCharWidthPx;
+    const columnPx = LIST_INDENT_STEP_PX + Math.max(0, columnChars - LIST_INDENT_FLOOR_CHARS) * monoCharWidthPx;
     const parentList = enclosingListContainer(list.parent);
     const offsetPx = parentList ? getListColumnMetrics(state, parentList, monoCharWidthPx, cache).totalPx : 0;
     const totalPx = offsetPx + columnPx;

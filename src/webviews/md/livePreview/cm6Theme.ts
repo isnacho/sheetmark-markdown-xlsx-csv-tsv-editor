@@ -506,11 +506,12 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
         '.cm-md-image-placeholder[hidden]': {
             display: 'none',
         },
+        // Bar on the text edge, text one 20px step in (3px bar + 17px), like list and toggle text.
         '.cm-md-blockquote-line': {
             backgroundColor: 'transparent',
-            marginLeft: '4px',
-            borderLeft: '2px solid var(--color-text-primary)',
-            paddingLeft: '8px',
+            marginLeft: '0',
+            borderLeft: '3px solid var(--color-text-primary)',
+            paddingLeft: '17px',
             color: 'var(--color-text-secondary)',
         },
         '.cm-md-details-run': {
@@ -710,7 +711,7 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             // plain paragraph text); a small fixed inset once nested (set by
             // getListColumnMetrics in revealDecorations.ts), so the dot doesn't
             // sit flush against the cascade boundary (the parent's own text).
-            marginLeft: 'var(--list-marker-inset, 4px)',
+            marginLeft: 'var(--list-marker-inset, 0px)',
             borderRadius: '50%',
             backgroundColor: 'var(--color-text-primary)',
             verticalAlign: 'middle',
@@ -728,7 +729,7 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             display: 'none',
         },
         '.cm-md-task-checkbox': {
-            marginLeft: 'var(--list-marker-inset, 4px)',
+            marginLeft: 'var(--list-marker-inset, 0px)',
             verticalAlign: 'middle',
             cursor: 'pointer',
             accentColor: 'var(--color-action)',
@@ -775,7 +776,13 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             position: 'relative',
             top: '-3.3px',
         },
+        // Fixed-width slot, label pushed to its right edge: a label wider than the step (say "10.")
+        // overflows to the LEFT into the margin, so its text stays in the list's column.
         '.cm-md-list-marker-slot-numeric': {
+            display: 'inline-flex',
+            justifyContent: 'flex-end',
+            width: 'var(--list-col, 0px)',
+            whiteSpace: 'nowrap',
             textAlign: 'right',
             top: '-3px',
         },

@@ -664,7 +664,7 @@ body.cm6-preview-active .cm-md-bullet-marker {
     display: inline-block;
     width: 6px;
     height: 6px;
-    margin-left: 4px;
+    margin-left: var(--list-marker-inset, 0px);
     margin-right: 6px;
     border-radius: 50%;
     background-color: var(--color-text-primary);
@@ -677,7 +677,7 @@ body.cm6-preview-active .cm-md-bullet-marker-nested {
 }
 
 body.cm6-preview-active .cm-md-ordered-marker {
-    margin-left: 4px;
+    margin-left: var(--list-marker-inset, 0px);
     margin-right: 6px;
     color: var(--color-text-primary);
     font-weight: 600;
@@ -686,7 +686,7 @@ body.cm6-preview-active .cm-md-ordered-marker {
 body.cm6-preview-active .cm-md-checkbox-bullet-hidden { display: none; }
 
 body.cm6-preview-active .cm-md-task-checkbox {
-    margin-left: 4px;
+    margin-left: var(--list-marker-inset, 0px);
     margin-right: 6px;
     vertical-align: middle;
     accent-color: var(--color-action);
@@ -698,9 +698,9 @@ body.cm6-preview-active .cm-md-task-done-content {
 }
 
 body.cm6-preview-active .cm-md-blockquote-line {
-    margin-left: 4px;
-    padding-left: 8px;
-    border-left: 2px solid var(--color-text-primary);
+    margin-left: 0;
+    padding-left: 17px;
+    border-left: 3px solid var(--color-text-primary);
     color: var(--color-text-secondary);
 }
 

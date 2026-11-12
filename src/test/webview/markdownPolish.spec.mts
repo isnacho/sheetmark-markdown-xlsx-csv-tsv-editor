@@ -205,3 +205,35 @@ test('card edges (YAML, code, callout, table, image, rule) line up with the body
     assert.ok(Math.abs(x.code - (x.body + 13)) <= 1, `code text at x=${x.code}, expected 13px inside the card (${x.body + 13})`);
     assert.ok(Math.abs(x.callout2 - x.callout1) <= 0.5, `callout lines start at x=${x.callout1} and x=${x.callout2}`);
 });
+
+// @@F10
+test('lists and quotes use one 20px step: markers on the text edge, text one step in, nested one more', async () => {
+    const ordered = ['One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten'].map((w, i) => `${i + 1}. ${w} item`).join('\n');
+    await openDoc(`Body paragraph.\n\n- Bullet one\n  - Nested bullet\n- [ ] Task item\n\n${ordered}\n\n> Quote text here\n\nEnd.\n`);
+    const x = await webview.page.evaluate(() => {
+        const out: Record<string, number> = {};
+        for (const [key, text] of [['body', 'Body paragraph'], ['bullet', 'Bullet one'], ['nested', 'Nested bullet'], ['task', 'Task item'],
+            ['nine', 'Nine item'], ['ten', 'Ten item'], ['one', 'One item'], ['quote', 'Quote text']]) {
+            const lineEl = [...document.querySelectorAll('.cm-content > .cm-line')].find(l => l.textContent?.includes(text))!;
+            const walker = document.createTreeWalker(lineEl, NodeFilter.SHOW_TEXT);
+            let node = walker.nextNode();
+            while (node && !node.textContent?.includes(text)) { node = walker.nextNode(); }
+            const range = document.createRange();
+            const offset = node!.textContent!.indexOf(text);
+            range.setStart(node!, offset);
+            range.setEnd(node!, offset + 1);
+            out[key] = range.getBoundingClientRect().left;
+        }
+        const dots = [...document.querySelectorAll('.cm-md-bullet-marker')];
+        out.dot = dots.find(d => !d.classList.contains('cm-md-bullet-marker-nested'))!.getBoundingClientRect().left;
+        out.nestedDot = dots.find(d => d.classList.contains('cm-md-bullet-marker-nested'))!.getBoundingClientRect().left;
+        out.checkbox = document.querySelector('.cm-md-task-checkbox')!.getBoundingClientRect().left;
+        out.quoteBar = document.querySelector('.cm-md-blockquote-line')!.getBoundingClientRect().left;
+        return out;
+    });
+    const expect = (key: string, want: number) => assert.ok(Math.abs(x[key] - want) <= 1, `${key} at x=${x[key]}, expected ${want} (body text at ${x.body})`);
+    for (const key of ['dot', 'checkbox', 'quoteBar']) { expect(key, x.body); }
+    for (const key of ['bullet', 'task', 'one', 'quote', 'nestedDot']) { expect(key, x.body + 20); }
+    expect('nested', x.body + 40);
+    assert.ok(Math.abs(x.ten - x.nine) <= 0.5, `"10." pushed its text to x=${x.ten}, "9." text is at x=${x.nine}`);
+});

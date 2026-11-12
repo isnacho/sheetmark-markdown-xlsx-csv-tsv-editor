@@ -13,7 +13,7 @@ import {
     computeRevealDecorations, computeToggleTaskMarker, TaskCheckboxWidget, HorizontalRuleWidget,
     numberToLowerAlpha, numberToLowerRoman, formatOrderedMarkerLabel,
     OrderedMarkerWidget, BulletMarkerWidget, computeOrderedMarkerRanges,
-    DEFAULT_MONO_CHAR_WIDTH_PX, LIST_INDENT_FLOOR_CHARS, LIST_MARKER_NESTED_INSET_PX,
+    DEFAULT_MONO_CHAR_WIDTH_PX, LIST_INDENT_FLOOR_CHARS, LIST_INDENT_STEP_PX, LIST_MARKER_NESTED_INSET_PX,
 } from './revealDecorations.ts';
 
 // GFM is required for Strikethrough/TaskList nodes to exist in the tree at
@@ -513,7 +513,7 @@ test('setext-as-list: blank-line "- " also shows bullet widget before any item t
 
 // ===== Hanging indent / cascading marker columns (hanging-indent-list-text-wrap idea) =====
 
-const FLOOR_PX = LIST_INDENT_FLOOR_CHARS * DEFAULT_MONO_CHAR_WIDTH_PX; // 24
+const FLOOR_PX = LIST_INDENT_STEP_PX; // 20, one step per level
 
 /** One entry per `cm-md-list-line` decoration, keyed by its line number, with its raw inline style. */
 function listLineStyles(doc: string, selFrom = 0, selTo = selFrom): { line: number; style: string }[] {
@@ -566,7 +566,7 @@ test('list indent: an ordered list crossing 9->10 items already fits the floor (
 test('list indent: a list whose numbers reach 3 digits grows past the floor, uniformly across all its items', () => {
     const doc = '97. a\n98. b\n99. c\n100. d\n';
     const styles = listLineStyles(doc);
-    const grownPx = 4 * DEFAULT_MONO_CHAR_WIDTH_PX; // "100." is 4 chars, wider than the floor
+    const grownPx = LIST_INDENT_STEP_PX + (4 - LIST_INDENT_FLOOR_CHARS) * DEFAULT_MONO_CHAR_WIDTH_PX; // "100." is 4 chars, one past the floor
     assert.ok(grownPx > FLOOR_PX);
     assert.equal(styles.length, 4);
     assert.ok(styles.every(s => s.style === `padding-left:${grownPx}px;text-indent:-${grownPx}px;--list-col:${grownPx}px;--list-marker-inset:0px`));
@@ -583,7 +583,7 @@ test('list indent: depth-3 roman label wider than the floor grows; depth-2 short
     const depth3Style = styles.find(s => s.line === 3)!.style;
     assert.ok(depth1Style.includes(`text-indent:-${FLOOR_PX}px`), 'depth 1 (label "1.") stays at the floor');
     assert.ok(depth2Style.includes(`text-indent:-${FLOOR_PX}px`), 'depth 2 (label "a.") stays at the floor');
-    const depth3ColumnPx = 5 * DEFAULT_MONO_CHAR_WIDTH_PX; // "xiii." is 5 chars
+    const depth3ColumnPx = LIST_INDENT_STEP_PX + (5 - LIST_INDENT_FLOOR_CHARS) * DEFAULT_MONO_CHAR_WIDTH_PX; // "xiii." is 5 chars
     assert.ok(depth3ColumnPx > FLOOR_PX);
     assert.ok(depth3Style.includes(`text-indent:-${depth3ColumnPx}px`), 'depth 3 (label "xiii.") grows past the floor');
 });

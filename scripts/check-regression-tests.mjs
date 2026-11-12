@@ -61,6 +61,8 @@ const MUTATIONS = [
       find: "        '.cm-content .cm-line.cm-md-details-title-line': {", replace: "        '.cm-content.cm-md-has-toggles': { paddingLeft: '64px' },\n        '.cm-content .cm-line.cm-md-details-title-line': {" },
     { id: 'md-cards-align-with-text', file: 'src/webviews/md/livePreview/cm6Theme.ts',
       find: "        '.cm-line': {\n            paddingLeft: '0',\n        },", replace: "        '.cm-line': {\n            paddingLeft: '6px',\n        }," },
+    { id: 'md-list-20px-step', file: 'src/webviews/md/livePreview/revealDecorations.ts',
+      find: '    const columnPx = LIST_INDENT_STEP_PX + Math.max(0, columnChars - LIST_INDENT_FLOOR_CHARS) * monoCharWidthPx;', replace: '    const columnPx = (void LIST_INDENT_STEP_PX, columnChars * monoCharWidthPx);' },
     { id: 'mermaid-lazy-load', file: 'src/webviews/md/livePreview/mermaidWidget.ts',
       find: "import { Icons } from '../../shared/icons';", replace: "import { Icons } from '../../shared/icons';\nimport * as eagerMermaid from 'mermaid';\nvoid eagerMermaid;" },
     { id: 'resize-listeners-once', file: 'src/webviews/spreadsheet/spreadsheetWebview.ts',

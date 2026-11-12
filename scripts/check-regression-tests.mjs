@@ -43,6 +43,8 @@ const MUTATIONS = [
       find: '                        await persistVersionSnapshot();\n                        return;', replace: '                        return;' },
     { id: 'rename-state-before-reopen', file: 'src/shared/renameStateMigration.ts',
       find: 'return vscode.workspace.onWillRenameFiles((event) => {\n        event.waitUntil(', replace: 'return vscode.workspace.onDidRenameFiles((event) => {\n        void (' },
+    { id: 'md-heading-background-parse', file: 'src/webviews/md/livePreview/headingGutterSync.ts',
+      find: 'if (!tr.docChanged && syntaxTree(tr.state).length <= syntaxTree(tr.startState).length) {', replace: 'if (!tr.docChanged) {' },
     { id: 'mermaid-lazy-load', file: 'src/webviews/md/livePreview/mermaidWidget.ts',
       find: "import { Icons } from '../../shared/icons';", replace: "import { Icons } from '../../shared/icons';\nimport * as eagerMermaid from 'mermaid';\nvoid eagerMermaid;" },
     { id: 'resize-listeners-once', file: 'src/webviews/spreadsheet/spreadsheetWebview.ts',

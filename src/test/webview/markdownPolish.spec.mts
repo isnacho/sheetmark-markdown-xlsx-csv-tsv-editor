@@ -24,11 +24,14 @@ before(async () => {
 after(closeHarness);
 
 async function openDoc(content: string): Promise<void> {
+    // An assertion, not `satisfies`: `outlinePinned` is new (uncommitted outline work at the time of
+    // writing), and this has to compile both with and without it.
     await webview.send({
         command: 'initMarkdown', content, fileName: 'test.md', documentUri: 'file:///tmp/test.md',
         documentDirUri: 'file:///tmp', workspaceFolderUri: null, tableColumnWidths: {},
         frontmatterPanelCollapsed: false, detailsOpenState: {}, mermaidPreviewMode: 'diagram', calloutDefaultType: 'info',
-    } satisfies HostToMarkdownWebview);
+        outlinePinned: false,
+    } as HostToMarkdownWebview);
     await webview.page.waitForSelector('.cm-content .cm-line', { timeout: 10000 });
     await webview.page.waitForTimeout(200);
 }
@@ -249,7 +252,7 @@ test('blocks are spaced like paragraphs: no hidden extra space around cards, the
     await openDoc(`---\ntitle: Rhythm\n---\n\nP1 first.\n\nP2 second.\n\n\`\`\`ts\nconst gapCode = 1;\n\`\`\`\n\nP3 after code.\n\n::: info\nCallout body.\n:::\n\nP4 after callout.\n\n| A | B |\n| - | - |\n| 1 | 2 |\n\nP5 after table.\n\n![img](${svg})\n\nP6 after image.\n\n---\n\nP7 after rule.\n`);
     await webview.page.waitForSelector('.cm-md-image-block img', { timeout: 5000 });
     await webview.page.waitForTimeout(300);
-    const m = await webview.page.evaluate(() => {
+    const m = await webview.page.evaluate((): Record<string, { top: number; bottom: number }> => {
         const rect: Record<string, DOMRect> = {};
         for (const p of ['P1 first', 'P2 second', 'P3 after code', 'P4 after callout', 'P5 after table', 'P6 after image', 'P7 after rule', 'Callout body']) {
             rect[p] = [...document.querySelectorAll('.cm-content > .cm-line')].find(l => l.textContent?.includes(p))!.getBoundingClientRect();

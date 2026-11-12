@@ -94,3 +94,18 @@ test('the / menu stays below the toolbar when it opens upward', async () => {
         await webview.page.setViewportSize({ width: 1000, height: 800 });
     }
 });
+
+// @@F04
+test('the focused selection uses the theme selection colour, not CodeMirror\'s built-in light one', async () => {
+    await openDoc('Select this paragraph.\n\nAnother one.\n');
+    await webview.page.evaluate(() => document.body.style.setProperty('--color-selection-bg', 'rgb(1, 2, 3)'));
+    await line('Select this').click();
+    await webview.page.keyboard.press('Home');
+    await webview.page.keyboard.press('Shift+End');
+    await webview.page.waitForTimeout(100);
+    const background = await webview.page.evaluate(() => {
+        const layer = document.querySelector('.cm-editor.cm-focused .cm-selectionBackground');
+        return layer ? getComputedStyle(layer).backgroundColor : null;
+    });
+    assert.equal(background, 'rgb(1, 2, 3)');
+});

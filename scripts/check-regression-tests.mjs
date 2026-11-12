@@ -49,6 +49,8 @@ const MUTATIONS = [
       find: '    transition: opacity 0.2s ease, transform 0.2s ease, visibility 0s;\n', replace: '' },
     { id: 'md-slash-menu-below-toolbar', file: 'src/webviews/md/livePreview/slashMenu.ts',
       find: '        tooltips({ tooltipSpace: editorTooltipSpace }),\n', replace: '        ...(void tooltips, void editorTooltipSpace, []),\n' },
+    { id: 'md-dark-selection-colour', file: 'src/webviews/md/livePreview/cm6Theme.ts',
+      find: "'&.cm-editor .cm-selectionBackground, &.cm-editor.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground': {", replace: "'&.cm-editor .cm-md-never-matches': {" },
     { id: 'mermaid-lazy-load', file: 'src/webviews/md/livePreview/mermaidWidget.ts',
       find: "import { Icons } from '../../shared/icons';", replace: "import { Icons } from '../../shared/icons';\nimport * as eagerMermaid from 'mermaid';\nvoid eagerMermaid;" },
     { id: 'resize-listeners-once', file: 'src/webviews/spreadsheet/spreadsheetWebview.ts',

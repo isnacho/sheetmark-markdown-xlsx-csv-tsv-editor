@@ -54,6 +54,12 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
         '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': {
             backgroundColor: 'var(--color-selection-bg)',
         },
+        // CodeMirror's base theme sets a light selection colour (#d7d4f0 focused) with a more
+        // specific selector, and the editor is never created as a dark theme, so dark VS Code
+        // themes got light lavender behind light text. One class more than the base rule wins.
+        '&.cm-editor .cm-selectionBackground, &.cm-editor.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground': {
+            backgroundColor: 'var(--color-selection-bg)',
+        },
         '.cm-activeLine': {
             backgroundColor: 'transparent',
         },

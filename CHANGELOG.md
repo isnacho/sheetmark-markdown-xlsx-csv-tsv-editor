@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Markdown Preview Edit: selected text is readable again in dark themes. The selection now uses your VS Code theme's selection colour instead of a fixed light lavender.
 - Markdown Preview Edit: the `/` menu no longer opens under the toolbar when the cursor is low in the window. It stays inside the editor and scrolls if there is not enough room.
 - Markdown Preview Edit: `Cmd/Ctrl+F` now puts the cursor in the search box, so what you type searches the document. Before, the box opened but your typing went into the text.
 - Markdown Preview Edit: in long files, headings further down now show at heading size as soon as the file opens. Before, they could look like plain text until you typed something.

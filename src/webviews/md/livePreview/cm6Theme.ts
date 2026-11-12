@@ -46,6 +46,13 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             paddingBottom: '64px',
             paddingLeft: 'var(--cm-md-content-inset)',
         },
+        // CodeMirror pads every text line 6px on the left but not block widgets (tables, YAML,
+        // images, Mermaid), so every card sat 6px left of the text. Text now starts at the line
+        // edge, the same x as card edges; cards set their own inner inset. Keep this rule above
+        // the line rules below that set their own padding.
+        '.cm-line': {
+            paddingLeft: '0',
+        },
         '.cm-editor': {
             position: 'relative',
         },
@@ -198,6 +205,8 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             backgroundColor: 'var(--color-surface-sunken)',
             borderLeft: '1px solid var(--color-border-subtle)',
             borderRight: '1px solid var(--color-border-subtle)',
+            paddingLeft: 'var(--cm-md-fence-inset)',
+            paddingRight: 'var(--cm-md-fence-inset)',
         },
         '.cm-md-fenced-code-line-first': {
             borderTop: '1px solid var(--color-border-subtle)',
@@ -603,6 +612,10 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
         },
         '.cm-md-callout-content-first': {
             position: 'relative',
+        },
+        // Built-in types draw an icon on the first content line; every content line starts after
+        // it, so a second line does not slide back under the icon. Other types have no icon.
+        '.cm-md-callout-content.cm-md-callout-info, .cm-md-callout-content.cm-md-callout-warning, .cm-md-callout-content.cm-md-callout-error, .cm-md-callout-content.cm-md-callout-success': {
             paddingLeft: '36px',
         },
         '.cm-md-callout-empty': {

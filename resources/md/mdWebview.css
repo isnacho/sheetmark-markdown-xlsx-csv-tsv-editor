@@ -518,6 +518,8 @@ body.cm6-preview-active .cm-md-fenced-code-line {
     background-color: var(--md-surface-sunken);
     border-left: 1px solid var(--md-border-subtle);
     border-right: 1px solid var(--md-border-subtle);
+    padding-left: var(--cm-md-fence-inset);
+    padding-right: var(--cm-md-fence-inset);
 }
 
 body.cm6-preview-active {

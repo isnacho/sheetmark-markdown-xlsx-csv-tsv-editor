@@ -174,3 +174,34 @@ test('adding a toggle does not move the rest of the text, and its hover handle s
     });
     assert.equal(clipped, false, 'the toggle hover handle is cut off at the editor edge');
 });
+
+// @@F09
+test('card edges (YAML, code, callout, table, image, rule) line up with the body text', async () => {
+    const png = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSIyMCI+PHJlY3Qgd2lkdGg9IjQwIiBoZWlnaHQ9IjIwIiBmaWxsPSJyZWQiLz48L3N2Zz4=';
+    await openDoc(`---\ntitle: Cards\n---\n\nPlain paragraph text.\n\n\`\`\`ts\nconst codeLine = 1;\n\`\`\`\n\n::: info\nFirst callout line.\nSecond callout line.\n:::\n\n| A | B |\n| - | - |\n| 1 | 2 |\n\n![img](${png})\n\n---\n\nAfter.\n`);
+    await webview.page.waitForSelector('.cm-md-table-scroll', { timeout: 5000 });
+    const x = await webview.page.evaluate(() => {
+        const glyph: Record<string, number> = {};
+        for (const [key, text] of [['body', 'Plain paragraph'], ['code', 'const codeLine'], ['callout1', 'First callout'], ['callout2', 'Second callout']]) {
+            const lineEl = [...document.querySelectorAll('.cm-content > .cm-line')].find(l => l.textContent?.includes(text))!;
+            const walker = document.createTreeWalker(lineEl, NodeFilter.SHOW_TEXT);
+            let node = walker.nextNode();
+            while (node && !node.textContent?.trim()) { node = walker.nextNode(); }
+            const range = document.createRange();
+            const offset = node!.textContent!.search(/\S/);
+            range.setStart(node!, offset);
+            range.setEnd(node!, offset + 1);
+            glyph[key] = range.getBoundingClientRect().left;
+        }
+        for (const [key, selector] of [['yaml', '.cm-md-frontmatter-widget > *'], ['codeCard', '.cm-md-fenced-code-line-first'],
+            ['calloutCard', '.cm-md-callout-line-first'], ['table', '.cm-md-table-scroll'], ['image', '.cm-md-image-preview'], ['rule', '.cm-md-hr-widget']]) {
+            glyph[key] = document.querySelector(selector)!.getBoundingClientRect().left;
+        }
+        return glyph;
+    });
+    for (const key of ['yaml', 'codeCard', 'calloutCard', 'table', 'image', 'rule'] as const) {
+        assert.ok(Math.abs(x[key] - x.body) <= 1, `${key} edge at x=${x[key]}, body text at x=${x.body}`);
+    }
+    assert.ok(Math.abs(x.code - (x.body + 13)) <= 1, `code text at x=${x.code}, expected 13px inside the card (${x.body + 13})`);
+    assert.ok(Math.abs(x.callout2 - x.callout1) <= 0.5, `callout lines start at x=${x.callout1} and x=${x.callout2}`);
+});

@@ -12,6 +12,7 @@ function calloutLineDecoration(
     position: 'only' | 'first' | 'middle' | 'last',
     contentFirst: boolean,
     emptyClose = false,
+    content = false,
 ) {
     const parts = ['cm-md-callout-line', calloutTypeClass(type)];
     if (position === 'only') {
@@ -20,6 +21,9 @@ function calloutLineDecoration(
         parts.push('cm-md-callout-line-first');
     } else if (position === 'last') {
         parts.push('cm-md-callout-line-last');
+    }
+    if (content) {
+        parts.push('cm-md-callout-content');
     }
     if (contentFirst) {
         parts.push('cm-md-callout-content-first');
@@ -88,10 +92,11 @@ export function appendCalloutDecorationSpecs(
             }
 
             const contentFirst = hasContent && n === block.contentStartLine;
+            const content = hasContent && n >= block.contentStartLine && n <= block.contentEndLine;
             specs.push({
                 from: line.from,
                 to: line.from,
-                value: calloutLineDecoration(block.type, position, contentFirst, empty && isClose),
+                value: calloutLineDecoration(block.type, position, contentFirst, empty && isClose, content),
             });
         }
     }

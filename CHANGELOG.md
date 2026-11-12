@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Markdown Preview Edit: code blocks, callouts, tables, images, dividers and the YAML card now line up exactly with the left edge of the text (they used to sit a few pixels further left), and every line in a callout starts after its icon.
 - Markdown Preview Edit: adding the first toggle to a file no longer shifts all its text to the right. Every file now keeps the same margins on both sides of the text, with room for the toggle handle.
 - Markdown Preview Edit: the `/` menu lists commands in their intended order (Text, headings, lists, then blocks) instead of alphabetically, and Quote now shows its real shortcut, `"`.
 - Markdown Preview Edit: scrolling past tables no longer makes the text jump a few pixels.

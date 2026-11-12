@@ -10,17 +10,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { _electron as electron, type ElectronApplication, type Frame, type Page } from 'playwright-core';
-import { downloadAndUnzipVSCode } from '@vscode/test-electron';
-
-const ROOT = process.cwd();
-const SHOTS = join(ROOT, '.vscode-test', 'ui-shots');
-const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
-const LIGHT = 'Default Light Modern';
-const DARK = 'Default Dark Modern';
+import { DARK, LIGHT, MOD, lineGap, typeAtLineStart, withEditor } from './harness.mts';
 
 const SECTIONS = `Para one
 
@@ -99,69 +89,6 @@ Plain body.
 
 Normal paragraph below.
 `;
-
-interface Editor { page: Page; frame: Frame; file: string; raw(): string; shot(name: string): Promise<void>; visible(): Promise<string>; save(): Promise<void>; title(text: string): ReturnType<Frame['locator']> }
-
-let vscodePath: string | undefined;
-async function vscodeExecutable(): Promise<string> {
-    vscodePath ??= process.env.SHEETMARK_VSCODE_PATH ?? await downloadAndUnzipVSCode('stable');
-    return vscodePath;
-}
-
-async function withEditor(content: string, theme: string, run: (editor: Editor) => Promise<void>): Promise<void> {
-    const dir = mkdtempSync(join(tmpdir(), 'smk-ui-'));
-    const file = join(dir, 'doc.md');
-    writeFileSync(file, content);
-    mkdirSync(join(dir, 'User'), { recursive: true });
-    writeFileSync(join(dir, 'User', 'settings.json'), JSON.stringify({
-        'workbench.editorAssociations': { '*.md': 'xlsxViewer.md' },
-        'workbench.colorTheme': theme,
-        'workbench.startupEditor': 'none',
-        'security.workspace.trust.enabled': false,
-        'update.mode': 'none',
-        'telemetry.telemetryLevel': 'off',
-        'chat.disableAIFeatures': true,
-    }));
-    mkdirSync(SHOTS, { recursive: true });
-    const app: ElectronApplication = await electron.launch({
-        executablePath: await vscodeExecutable(),
-        args: [`--extensionDevelopmentPath=${ROOT}`, '--disable-extensions', `--user-data-dir=${dir}`,
-            '--skip-welcome', '--skip-release-notes', '--disable-workspace-trust', '--new-window', file],
-        timeout: 60000,
-    });
-    try {
-        const page = await app.firstWindow();
-        let frame: Frame | undefined;
-        for (let i = 0; i < 60 && !frame; i++) {
-            await page.waitForTimeout(500);
-            for (const candidate of page.frames()) {
-                if (await candidate.locator('.cm-content').count().catch(() => 0)) { frame = candidate; break; }
-            }
-        }
-        assert.ok(frame, 'the Sheetmark Markdown editor did not open');
-        await page.waitForTimeout(1000);
-        const editor: Editor = {
-            page, frame, file,
-            raw: () => readFileSync(file, 'utf8'),
-            shot: async name => { await page.screenshot({ path: join(SHOTS, `${name}.png`) }); },
-            visible: () => frame.locator('.cm-content').innerText(),
-            save: async () => { await page.keyboard.press(`${MOD}+s`); await page.waitForTimeout(800); },
-            title: text => frame.locator('.cm-content').getByText(text).first(),
-        };
-        await run(editor);
-    } finally {
-        await app.close();
-    }
-}
-
-/** Click the line with `text`, move to its start, optionally step right, then type. */
-async function typeAtLineStart(editor: Editor, lineText: string, typed: string, stepsRight = 0): Promise<void> {
-    await editor.title(lineText).click();
-    await editor.page.keyboard.press('Home');
-    for (let i = 0; i < stepsRight; i++) { await editor.page.keyboard.press('ArrowRight'); }
-    await editor.page.keyboard.type(typed);
-    await editor.page.waitForTimeout(400);
-}
 
 const HEADING_A_TOGGLE = `Para one
 
@@ -255,16 +182,6 @@ test('typing a double quote and a space makes a quote', { timeout: 120000 }, asy
         assert.ok(editor.raw().startsWith('> Para one\n'));
     });
 });
-
-/** Vertical gap in px between the bottom of the line containing `above` and the top of the line containing `below`. */
-async function lineGap(editor: Editor, above: string, below: string): Promise<number> {
-    return editor.frame.evaluate(([a, b]) => {
-        // No inner named functions: the test runner's transpiler would inject a helper the page does not have.
-        const lines = [...document.querySelectorAll('.cm-content .cm-line')];
-        return lines.find(l => l.textContent?.includes(b))!.getBoundingClientRect().top
-            - lines.find(l => l.textContent?.includes(a))!.getBoundingClientRect().bottom;
-    }, [above, below] as const);
-}
 
 test('a toggle adds no extra empty space after its last body line', { timeout: 120000 }, async () => {
     // The same two blocks as ordinary Markdown, with the single blank line normal paragraphs have between them.

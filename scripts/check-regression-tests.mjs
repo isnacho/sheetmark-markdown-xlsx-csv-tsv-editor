@@ -47,6 +47,8 @@ const MUTATIONS = [
       find: 'if (!tr.docChanged && syntaxTree(tr.state).length <= syntaxTree(tr.startState).length) {', replace: 'if (!tr.docChanged) {' },
     { id: 'md-search-focus-on-open', file: 'resources/shared/theme.css',
       find: '    transition: opacity 0.2s ease, transform 0.2s ease, visibility 0s;\n', replace: '' },
+    { id: 'md-slash-menu-below-toolbar', file: 'src/webviews/md/livePreview/slashMenu.ts',
+      find: '        tooltips({ tooltipSpace: editorTooltipSpace }),\n', replace: '        ...(void tooltips, void editorTooltipSpace, []),\n' },
     { id: 'mermaid-lazy-load', file: 'src/webviews/md/livePreview/mermaidWidget.ts',
       find: "import { Icons } from '../../shared/icons';", replace: "import { Icons } from '../../shared/icons';\nimport * as eagerMermaid from 'mermaid';\nvoid eagerMermaid;" },
     { id: 'resize-listeners-once', file: 'src/webviews/spreadsheet/spreadsheetWebview.ts',

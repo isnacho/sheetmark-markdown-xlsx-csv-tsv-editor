@@ -61,3 +61,36 @@ test('Cmd/Ctrl+F moves focus into the search box, so typing searches instead of 
     assert.ok(!(await line('Second paragraph').textContent())?.includes('wordswords'), 'the query was typed into the document');
     await webview.page.keyboard.press('Escape');
 });
+
+// @@F03
+test('the / menu stays below the toolbar when it opens upward', async () => {
+    await webview.page.setViewportSize({ width: 1000, height: 560 });
+    try {
+        await openDoc(Array.from({ length: 60 }, (_, i) => `Line ${i}`).join('\n\n') + '\n');
+        // A line in the lower part of the window, so the menu has more room above than below.
+        const target = await webview.page.evaluate(() => {
+            const lines = [...document.querySelectorAll('.cm-content > .cm-line')];
+            return lines.find(l => { const r = l.getBoundingClientRect(); return r.top > 400 && r.top < 460 && l.textContent; })?.textContent ?? null;
+        });
+        assert.ok(target, 'no line in the lower part of the window');
+        await line(target!).click();
+        await webview.page.keyboard.press('End');
+        await webview.page.keyboard.press('Enter');
+        await webview.page.keyboard.type('/');
+        await webview.page.waitForSelector('.cm-tooltip-autocomplete.cm-slash-menu-tooltip li', { timeout: 5000 });
+        await webview.page.waitForTimeout(150);
+        const geometry = await webview.page.evaluate(() => {
+            const tip = document.querySelector('.cm-tooltip-autocomplete.cm-slash-menu-tooltip')!.getBoundingClientRect();
+            const first = document.querySelector('.cm-tooltip-autocomplete.cm-slash-menu-tooltip li')!.getBoundingClientRect();
+            const scroller = document.querySelector('.cm-scroller')!.getBoundingClientRect();
+            return { tipTop: tip.top, tipBottom: tip.bottom, firstTop: first.top, scrollerTop: scroller.top, viewport: innerHeight };
+        });
+        assert.ok(geometry.scrollerTop > 20, `expected a toolbar above the editor, scroller top is ${geometry.scrollerTop}`);
+        assert.ok(geometry.tipTop >= geometry.scrollerTop - 1, `menu top ${geometry.tipTop} is under the toolbar (editor starts at ${geometry.scrollerTop})`);
+        assert.ok(geometry.firstTop >= geometry.scrollerTop - 1, 'the first command is hidden under the toolbar');
+        assert.ok(geometry.tipBottom <= geometry.viewport + 1, 'the menu runs off the bottom of the window');
+        await webview.page.keyboard.press('Escape');
+    } finally {
+        await webview.page.setViewportSize({ width: 1000, height: 800 });
+    }
+});

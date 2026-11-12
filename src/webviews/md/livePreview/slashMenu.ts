@@ -13,8 +13,8 @@ import type { TransactionSpec } from '@codemirror/state';
 import { autocompletion, CompletionContext, pickedCompletion, selectedCompletionIndex, setSelectedCompletion } from '@codemirror/autocomplete';
 import type { Completion, CompletionResult, CompletionSource } from '@codemirror/autocomplete';
 import type { Extension } from '@codemirror/state';
-import { ViewPlugin } from '@codemirror/view';
-import type { EditorView, ViewUpdate } from '@codemirror/view';
+import { tooltips, ViewPlugin } from '@codemirror/view';
+import type { EditorView, Rect, ViewUpdate } from '@codemirror/view';
 import { Icons } from '../../shared/icons';
 import { renderMenuIcon } from '../../shared/menuPanel';
 import { calloutDefaultTypeField } from './calloutDefaultType';
@@ -178,9 +178,25 @@ class SlashMenuPointerPlugin {
 
 const slashMenuPointerPlugin = ViewPlugin.fromClass(SlashMenuPointerPlugin);
 
+/**
+ * Room for editor tooltips: the editor's visible area, not the whole window. The toolbar sits
+ * above the scroller, so a menu that flips upward would otherwise open under it. CodeMirror
+ * shrinks a tooltip to fit this space; the slash list then scrolls inside (menuPanel.css).
+ */
+export function editorTooltipSpace(view: EditorView): Rect {
+    const scroller = view.scrollDOM.getBoundingClientRect();
+    return {
+        top: Math.max(0, scroller.top),
+        left: 0,
+        right: window.innerWidth,
+        bottom: Math.min(window.innerHeight, scroller.bottom),
+    };
+}
+
 /** CM6 autocomplete extension: slash source + icon row + themed tooltip classes. */
 export function slashMenuAutocompletion(): Extension {
     return [
+        tooltips({ tooltipSpace: editorTooltipSpace }),
         autocompletion({
             override: [livePreviewSlashSource],
             icons: false,

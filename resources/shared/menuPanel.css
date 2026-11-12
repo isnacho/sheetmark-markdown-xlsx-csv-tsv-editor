@@ -345,6 +345,18 @@ li[aria-selected] .cm-slash-menu-icon {
     gap: 0;
 }
 
+/* When CodeMirror shrinks the menu to fit the editor area (editorTooltipSpace in slashMenu.ts),
+   the list scrolls inside it instead of being clipped. */
+.cm-editor .cm-tooltip.cm-tooltip-autocomplete.cm-slash-menu-tooltip {
+    display: flex;
+    flex-direction: column;
+}
+
+.cm-editor .cm-tooltip.cm-tooltip-autocomplete.cm-slash-menu-tooltip > ul {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
 .cm-tooltip-autocomplete.cm-slash-menu-tooltip ul li.cm-slash-menu-option {
     display: flex;
     align-items: center;

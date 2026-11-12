@@ -61,9 +61,16 @@ test('heading: cursor on the heading line shows "#" dimmed AT THE HEADING\'S OWN
         // Marker + its gap space are one combined dimmed span, sized to match
         // the heading level (cm-md-h1) — a bare cm-md-reveal-mark (no size
         // class) would render smaller than the heading text right next to it.
-        { from: 0, to: 2, class: 'cm-md-reveal-mark cm-md-h1' },
+        // cm-md-heading-marker hangs it in the left margin so the text does not move.
+        { from: 0, to: 2, class: 'cm-md-reveal-mark cm-md-h1 cm-md-heading-marker' },
         { from: 2, to: 7, class: 'cm-md-heading-content cm-md-h1' },
     ]);
+});
+
+test('heading: a heading with no text yet keeps its revealed "#" inline, so the line keeps its height while typing', () => {
+    const doc = '## \n\nbody';
+    const decos = decorate(doc, 3);
+    assert.equal(decos[0]?.class, 'cm-md-reveal-mark cm-md-h2');
 });
 
 test('bold: cursor away hides both ** and bolds the content', () => {

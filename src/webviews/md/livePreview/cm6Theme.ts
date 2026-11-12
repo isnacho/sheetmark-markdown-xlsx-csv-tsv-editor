@@ -23,6 +23,10 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             '--cm-md-fence-inset': '12px',
             '--cm-md-fence-chrome-inset': '6px',
             '--cm-md-fence-external-gap': '32px',
+            // Left and right gutter of the text column, the same in every document (it used to
+            // grow 24px once a document had a toggle, shifting all text). The left side holds the
+            // toggle hover handle. mdWebview.css reads it for diff tints that bleed to the gutter.
+            '--cm-md-content-inset': '40px',
         },
         '.cm-scroller': {
             fontFamily: 'var(--font-family)',
@@ -38,9 +42,9 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             minWidth: '0',
             margin: '0 auto',
             paddingTop: '8px',
-            paddingRight: '16px',
+            paddingRight: 'var(--cm-md-content-inset)',
             paddingBottom: '64px',
-            paddingLeft: '16px',
+            paddingLeft: 'var(--cm-md-content-inset)',
         },
         '.cm-editor': {
             position: 'relative',
@@ -516,10 +520,6 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
         // callout and blockquote line rules, which also set a margin.
         // One 20px step (4px grid) per level. The arrow sits flush with normal text in the first step, the
         // title text starts after it, and the body starts at the same x as the title text.
-        '.cm-content.cm-md-has-toggles': {
-            // room for the hover handle, which hangs left of the arrow
-            paddingLeft: '40px',
-        },
         '.cm-content .cm-line.cm-md-details-title-line': {
             position: 'relative',
             marginLeft: 'calc(var(--d) * 20px + 20px)',

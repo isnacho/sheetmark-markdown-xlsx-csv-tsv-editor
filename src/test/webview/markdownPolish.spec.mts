@@ -152,3 +152,25 @@ test('the / menu lists commands in their designed order, and Quote shows its own
     assert.equal(rows.find(r => r.label === 'Quote')?.detail, '"');
     await webview.page.keyboard.press('Escape');
 });
+
+// @@F07
+test('adding a toggle does not move the rest of the text, and its hover handle stays inside the editor', async () => {
+    const textX = () => webview.page.evaluate(() => {
+        const lineEl = [...document.querySelectorAll('.cm-content > .cm-line')].find(l => l.textContent?.includes('Plain paragraph'))!;
+        const range = document.createRange();
+        range.setStart(lineEl.firstChild!, 0);
+        range.setEnd(lineEl.firstChild!, 1);
+        return range.getBoundingClientRect().left;
+    });
+    await openDoc('Plain paragraph.\n\nAnother paragraph.\n');
+    const withoutToggle = await textX();
+    await openDoc('Plain paragraph.\n\n<details open>\n<summary>\n\nA toggle\n\n</summary>\n\nBody.\n\n</details>\n');
+    const withToggle = await textX();
+    assert.ok(Math.abs(withToggle - withoutToggle) < 0.5, `text moved from x=${withoutToggle} to x=${withToggle} when the file got a toggle`);
+    await webview.page.locator('.cm-content > .cm-line', { hasText: 'A toggle' }).first().hover();
+    const clipped = await webview.page.evaluate(() => {
+        const handle = document.querySelector('.cm-md-details-handle')!.getBoundingClientRect();
+        return handle.left < document.querySelector('.cm-scroller')!.getBoundingClientRect().left;
+    });
+    assert.equal(clipped, false, 'the toggle hover handle is cut off at the editor edge');
+});

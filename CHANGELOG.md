@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Markdown Preview Edit: adding the first toggle to a file no longer shifts all its text to the right. Every file now keeps the same margins on both sides of the text, with room for the toggle handle.
 - Markdown Preview Edit: the `/` menu lists commands in their intended order (Text, headings, lists, then blocks) instead of alphabetically, and Quote now shows its real shortcut, `"`.
 - Markdown Preview Edit: scrolling past tables no longer makes the text jump a few pixels.
 - Markdown Preview Edit: images no longer show a grey bar with their alt text underneath once they load.

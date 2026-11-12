@@ -57,6 +57,8 @@ const MUTATIONS = [
       find: "            display: 'flow-root',\n", replace: "            display: 'block',\n" },
     { id: 'md-slash-menu-order', file: 'src/webviews/md/livePreview/slashMenu.ts',
       find: '    boost: SLASH_OPTIONS.length - index,\n', replace: '    boost: 0 * index,\n' },
+    { id: 'md-toggle-gutter-constant', file: 'src/webviews/md/livePreview/cm6Theme.ts',
+      find: "        '.cm-content .cm-line.cm-md-details-title-line': {", replace: "        '.cm-content.cm-md-has-toggles': { paddingLeft: '64px' },\n        '.cm-content .cm-line.cm-md-details-title-line': {" },
     { id: 'mermaid-lazy-load', file: 'src/webviews/md/livePreview/mermaidWidget.ts',
       find: "import { Icons } from '../../shared/icons';", replace: "import { Icons } from '../../shared/icons';\nimport * as eagerMermaid from 'mermaid';\nvoid eagerMermaid;" },
     { id: 'resize-listeners-once', file: 'src/webviews/spreadsheet/spreadsheetWebview.ts',

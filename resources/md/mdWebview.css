@@ -2322,14 +2322,14 @@ body:not(.show-line-numbers) .markdown-preview .code-line::before {
        green-500 for the vscode-theme block — so this needs no light-only
        override; each theme already carries its own correct shade. */
     background: var(--palette-green-100);
-    /* .cm-content has its own 16px left padding (cm6Theme.ts, so the live
+    /* .cm-content has its own left padding (--cm-md-content-inset in cm6Theme.ts, so the live
        document reads at a comfortable width) — that padding sits *inside*
-       the line's box, so the line's own background stops 16px short of the
+       the line's box, so the line's own background stops that far short of the
        gutter. box-shadow paints past the box edge without moving it (a
        margin/width change would shift this line's text out of alignment
        with every other line), bleeding the tint out to meet the gutter
        marker exactly at the boundary. */
-    box-shadow: -16px 0 0 0 var(--palette-green-100);
+    box-shadow: calc(-1 * var(--cm-md-content-inset, 40px)) 0 0 0 var(--palette-green-100);
 }
 
 /* The editor host carries .markdown-preview for live-preview typography, so
@@ -2362,7 +2362,7 @@ body:not(.show-line-numbers) .markdown-preview .code-line::before {
        would flatten it and misalign deleted lines against the document. */
     padding: 2px 0 2px 6px;
     /* Same content-padding bleed as .cm-changedLine above. */
-    box-shadow: -16px 0 0 0 var(--palette-red-100);
+    box-shadow: calc(-1 * var(--cm-md-content-inset, 40px)) 0 0 0 var(--palette-red-100);
 }
 
 .cm-deletedChunk .cm-deletedText {
@@ -2405,7 +2405,7 @@ body:not(.show-line-numbers) .markdown-preview .code-line::before {
 
 .cm-inlineChangedLine {
     background: color-mix(in srgb, var(--color-status-warning-subtle) 60%, transparent);
-    box-shadow: -16px 0 0 0 color-mix(in srgb, var(--color-status-warning-subtle) 60%, transparent);
+    box-shadow: calc(-1 * var(--cm-md-content-inset, 40px)) 0 0 0 color-mix(in srgb, var(--color-status-warning-subtle) 60%, transparent);
 }
 
 /* Per-chunk accept/reject controls.

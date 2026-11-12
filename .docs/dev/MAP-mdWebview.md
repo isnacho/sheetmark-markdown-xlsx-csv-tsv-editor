@@ -81,7 +81,7 @@ Unit tests live beside sources as `*.test.mts` (run with `npm run test:unit`, or
 | cm6Theme.ts | CM6 theme mapped onto VS Code theme CSS variables | `cm6Theme` |
 | revealDecorations.ts | "Reveal on cursor" syntax decorations; list marker, task checkbox, and HR widgets | `computeRevealDecorations`, `livePreviewRevealPlugin`, `TaskCheckboxWidget`, `OrderedMarkerWidget`, `BulletMarkerWidget`, `HorizontalRuleWidget` |
 | formatCommands.ts | Source-level format commands (wrap, lists, indent, line ops, case, sort, paste-linkify) | `runFormatCommand`, `computeWrapSelection`, `computeToggleLinePrefix`, `computePasteLink`, `livePreviewFormatKeymap`, `livePreviewTabKeymap` |
-| slashMenu.ts | Slash-command autocompletion | `SLASH_OPTIONS`, `slashMenuAutocompletion`, `computeSlashApply` |
+| slashMenu.ts | Slash-command autocompletion; the room editor tooltips may use (the editor area, so menus never open under the toolbar) | `SLASH_OPTIONS`, `slashMenuAutocompletion`, `computeSlashApply`, `editorTooltipSpace` |
 | livePreviewSearch.ts | In-document search matches and highlight decorations | `livePreviewSearchField`, `findCm6Matches`, `setCm6SearchHighlights`, `scrollCm6ToMatch` |
 | livePreviewInteractions.ts | Ctrl/Cmd-click target detection (links, images, anchors) | `detectInteractionAtPos`, `detectCollapsedLinkAtPos`, `Cm6Interaction` |
 | diffView.ts | `@codemirror/merge` unified diff overlay (disk vs editor) and chunk accept/reject/navigate | `buildDiffExtension`, `nextDiffChunk`, `acceptDiffChunkAtCursor`, `acceptAllDiffChunks`, `diffChunkResolutionKind` |

@@ -64,13 +64,18 @@ test('Cmd/Ctrl+F moves focus into the search box, so typing searches instead of 
 
 // @@F03
 test('the / menu stays below the toolbar when it opens upward', async () => {
-    await webview.page.setViewportSize({ width: 1000, height: 560 });
+    // A short window, so even the committed 10em menu (the WIP raises it to 12+ rows) has more
+    // room above the cursor than below and, measured against the whole window, opens upward.
+    await webview.page.setViewportSize({ width: 1000, height: 320 });
     try {
         await openDoc(Array.from({ length: 60 }, (_, i) => `Line ${i}`).join('\n\n') + '\n');
-        // A line in the lower part of the window, so the menu has more room above than below.
+        // A line a little below the toolbar: the new line under it (where "/" is typed) has more
+        // room above than below, and the room above measured from the window top fits the menu,
+        // so without a tooltip space that excludes the toolbar the menu opens upward under it.
         const target = await webview.page.evaluate(() => {
+            const scroller = document.querySelector('.cm-scroller')!.getBoundingClientRect();
             const lines = [...document.querySelectorAll('.cm-content > .cm-line')];
-            return lines.find(l => { const r = l.getBoundingClientRect(); return r.top > 400 && r.top < 460 && l.textContent; })?.textContent ?? null;
+            return lines.find(l => { const r = l.getBoundingClientRect(); return r.top > scroller.top + 52 && r.top < scroller.top + 107 && l.textContent; })?.textContent ?? null;
         });
         assert.ok(target, 'no line in the lower part of the window');
         await line(target!).click();

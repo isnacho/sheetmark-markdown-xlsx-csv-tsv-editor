@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Markdown Preview Edit: `Cmd/Ctrl+F` now puts the cursor in the search box, so what you type searches the document. Before, the box opened but your typing went into the text.
 - Markdown Preview Edit: in long files, headings further down now show at heading size as soon as the file opens. Before, they could look like plain text until you typed something.
 - Markdown Preview Edit: Notion-style toggles. Type `> ` and a space at the start of a paragraph or heading to turn it into a collapsible toggle (a heading takes everything below it up to the next heading of the same or higher level); `Cmd/Ctrl+Z` right after undoes it. Click the arrow to open or close it (remembered per file), hover for a menu to turn it back into text or delete it, or pick **Toggle** in the `/` menu. The markup stays standard `<details>`/`<summary>` in the file but is never shown. The title can be any formatted text or a heading.
 - Markdown Preview Edit: type `"` and a space at the start of a line to make a quote. Typing `> ` now makes a toggle instead; the toolbar and `/` menu Quote still insert a normal quote.

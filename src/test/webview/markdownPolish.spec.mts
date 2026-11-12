@@ -47,3 +47,17 @@ test('headings far down a long document get their heading style without any edit
     }, undefined, { timeout: 8000, polling: 200 }).then(() => true, () => false);
     assert.ok(styled, 'the last heading never got the cm-md-heading-line class');
 });
+
+// @@F02
+const line = (text: string) => webview.page.locator('.cm-content > .cm-line', { hasText: text }).first();
+
+test('Cmd/Ctrl+F moves focus into the search box, so typing searches instead of editing', async () => {
+    await openDoc('First paragraph.\n\nSecond paragraph with words.\n');
+    await line('Second paragraph').click();
+    await webview.page.keyboard.press('Control+f');
+    assert.equal(await webview.page.evaluate(() => document.activeElement?.id), 'searchInput');
+    await webview.page.keyboard.type('words');
+    assert.equal(await webview.page.inputValue('#searchInput'), 'words');
+    assert.ok(!(await line('Second paragraph').textContent())?.includes('wordswords'), 'the query was typed into the document');
+    await webview.page.keyboard.press('Escape');
+});

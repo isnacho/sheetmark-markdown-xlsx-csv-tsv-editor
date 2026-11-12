@@ -818,6 +818,9 @@ body:not(.sticky-toolbar-enabled) .toolbar {
     opacity: 1;
     visibility: visible;
     transform: translateY(0);
+    /* Visible at once when opening, so the input can take focus in the same tick (a transitioning
+       `visibility` is still hidden then and focus() is ignored). Closing keeps the fade. */
+    transition: opacity 0.2s ease, transform 0.2s ease, visibility 0s;
 }
 
 body:not(.sticky-toolbar-enabled) .search-overlay,

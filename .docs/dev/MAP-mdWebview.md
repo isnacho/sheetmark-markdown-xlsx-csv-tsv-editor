@@ -79,7 +79,7 @@ Unit tests live beside sources as `*.test.mts` (run with `npm run test:unit`, or
 |---|---|---|
 | livePreviewEditor.ts | EditorView mount, compartments, public API for the shell | `mountLivePreview`, `LivePreviewMountOptions`, `unmountLivePreview`, `setLivePreviewReadOnly` |
 | cm6Theme.ts | CM6 theme mapped onto VS Code theme CSS variables | `cm6Theme` |
-| revealDecorations.ts | "Reveal on cursor" syntax decorations; list marker, task checkbox, and HR widgets | `computeRevealDecorations`, `livePreviewRevealPlugin`, `TaskCheckboxWidget`, `OrderedMarkerWidget`, `BulletMarkerWidget`, `HorizontalRuleWidget` |
+| revealDecorations.ts | "Reveal on cursor" syntax decorations; list marker, task checkbox, HR and code-fence language label widgets; the revealed heading `#` hangs in the margin (`cm-md-heading-marker`) | `computeRevealDecorations`, `livePreviewRevealPlugin`, `TaskCheckboxWidget`, `OrderedMarkerWidget`, `BulletMarkerWidget`, `HorizontalRuleWidget`, `FenceLanguageWidget`, `handleFencedCode`, `LIST_INDENT_STEP_PX` |
 | formatCommands.ts | Source-level format commands (wrap, lists, indent, line ops, case, sort, paste-linkify) | `runFormatCommand`, `computeWrapSelection`, `computeToggleLinePrefix`, `computePasteLink`, `livePreviewFormatKeymap`, `livePreviewTabKeymap` |
 | slashMenu.ts | Slash-command autocompletion; the room editor tooltips may use (the editor area, so menus never open under the toolbar) | `SLASH_OPTIONS`, `slashMenuAutocompletion`, `computeSlashApply`, `editorTooltipSpace` |
 | livePreviewSearch.ts | In-document search matches and highlight decorations | `livePreviewSearchField`, `findCm6Matches`, `setCm6SearchHighlights`, `scrollCm6ToMatch` |

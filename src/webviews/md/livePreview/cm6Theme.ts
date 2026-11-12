@@ -223,6 +223,18 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             paddingLeft: 'var(--cm-md-fence-inset)',
             paddingRight: 'var(--cm-md-fence-inset)',
         },
+        // Shown in place of the opening ```lang line (revealDecorations.ts: FenceLanguageWidget).
+        '.cm-md-fence-lang': {
+            fontFamily: 'var(--font-family)',
+            fontSize: '12px',
+            color: 'var(--color-text-secondary)',
+            userSelect: 'none',
+        },
+        // The closing ``` line is a short band whether its marker is hidden or shown dimmed.
+        '.cm-md-fenced-code-line.cm-md-fence-closer-line': {
+            fontSize: '11px',
+            lineHeight: '16px',
+        },
         '.cm-md-fenced-code-line-first': {
             borderTop: '1px solid var(--color-border-subtle)',
             borderRadius: 'var(--surface-radius) var(--surface-radius) 0 0',

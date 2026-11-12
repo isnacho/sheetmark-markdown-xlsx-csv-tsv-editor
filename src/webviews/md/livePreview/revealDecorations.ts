@@ -65,6 +65,8 @@ import type { DecorationSet, ViewUpdate } from '@codemirror/view';
 import { syntaxTree } from '@codemirror/language';
 import type { SyntaxNode } from '@lezer/common';
 import { appendCalloutDecorationSpecs } from './calloutDecorations';
+import { fenceDisplayLang } from './fenceExtraction';
+import { isMermaidFence } from './mermaidDetection';
 import { isSetextUnderlineListMarker } from './listSetextAmbiguity';
 import { listItemMarkerIsActivated, orderedListStartNumber, listItemPositionInSegment } from './listMarkerEditing';
 
@@ -176,6 +178,26 @@ const blockquoteLineDeco = Decoration.line({ class: 'cm-md-blockquote-line' });
  * (the styled border sits in a block widget, so a bare click would otherwise
  * miss the tiny hidden source text and land on the next line).
  */
+/**
+ * Language label shown in place of a code fence's opening "```lang" line while the cursor is off
+ * that line, the way Notion labels code blocks. Clicking it puts the cursor on the opener, which
+ * reveals the raw marker for editing. Text only (never HTML): the label comes from the file.
+ */
+export class FenceLanguageWidget extends WidgetType {
+    constructor(readonly label: string) { super(); }
+
+    eq(other: FenceLanguageWidget): boolean { return other.label === this.label; }
+
+    toDOM(): HTMLElement {
+        const el = document.createElement('span');
+        el.className = 'cm-md-fence-lang';
+        el.textContent = this.label;
+        return el;
+    }
+
+    ignoreEvent(): boolean { return false; }
+}
+
 export class HorizontalRuleWidget extends WidgetType {
     readonly nodeFrom: number;
     readonly nodeTo: number;
@@ -597,6 +619,34 @@ export function computeRevealDecorations(
         }
     }
 
+    // Fenced code: the opening "```lang" line shows a language label and the closing "```" is
+    // hidden, unless the cursor is on that very line (then both show dimmed, for editing). Line by
+    // line, so typing code inside the block keeps the label. The closer line is a fixed short band
+    // (cm6Theme: .cm-md-fence-closer-line) in both states, so revealing it moves nothing. Mermaid
+    // fences are left to their own widget.
+    function handleFencedCode(node: SyntaxNode) {
+        const marks = node.getChildren('CodeMark');
+        if (marks.length === 0 || isMermaidFence(state, node)) { return; }
+        const open = marks[0];
+        const openLine = state.doc.lineAt(open.from);
+        const onLine = (lineFrom: number, lineTo: number) => selFrom <= lineTo && selTo >= lineFrom;
+        if (open.from < openLine.to) {
+            specs.push({
+                from: open.from,
+                to: openLine.to,
+                value: onLine(openLine.from, openLine.to)
+                    ? dimMark
+                    : Decoration.replace({ widget: new FenceLanguageWidget(fenceDisplayLang(state, node)) }),
+            });
+        }
+        if (marks.length < 2) { return; }
+        const close = marks[marks.length - 1];
+        const closeLine = state.doc.lineAt(close.from);
+        if (closeLine.number === openLine.number) { return; }
+        specs.push({ from: closeLine.from, to: closeLine.from, value: Decoration.line({ class: 'cm-md-fence-closer-line' }) });
+        specs.push({ from: close.from, to: close.to, value: onLine(closeLine.from, closeLine.to) ? dimMark : hiddenMark });
+    }
+
     // InlineCode already gets its baseline monospace/background look from
     // codeStylingPlugin (always-on, a separate decoration set) — this only
     // layers the marker hide/dim on top, no content span of its own.
@@ -818,6 +868,8 @@ export function computeRevealDecorations(
                     handlePairedMarks(node.node, 'StrikethroughMark', 'cm-md-strike-content');
                 } else if (node.name === 'InlineCode') {
                     handleInlineCode(node.node);
+                } else if (node.name === 'FencedCode') {
+                    handleFencedCode(node.node);
                 } else if (node.name === 'Link') {
                     handleLink(node.node);
                 } else if (node.name === 'Image') {

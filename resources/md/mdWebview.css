@@ -570,6 +570,12 @@ body.cm6-preview-active .cm-md-fence-chrome {
     box-sizing: border-box;
 }
 
+/* Plain code blocks: the chrome is only as wide as its buttons, so the language label and the rest
+   of the first line stay clickable. Mermaid overlays keep the full-width bar. */
+body.cm6-preview-active .cm-md-fence-chrome:not(.cm-md-fence-chrome-overlay) {
+    left: auto;
+}
+
 body.cm6-preview-active .cm-md-fence-chrome-overlay {
     top: 8px;
     right: 8px;

@@ -340,3 +340,30 @@ test('a heading\'s text stays put when the cursor reveals its # marker, which ha
     const text = await webview.page.locator('.cm-content').textContent();
     assert.ok(text?.includes('### Heading two edited'), `unexpected editor text: ${text}`);
 });
+
+// @@F11
+test('a code block shows a language label instead of its ``` markers, and reveals them only on their own line', async () => {
+    await openDoc('Para.\n\n```ts\nconst fenceBody = 1;\n```\n\nAfter.\n');
+    await webview.page.waitForSelector('.cm-md-fence-lang', { timeout: 5000 });
+    const read = () => webview.page.evaluate(() => {
+        const lines = [...document.querySelectorAll('.cm-content > .cm-md-fenced-code-line')];
+        return {
+            label: document.querySelector('.cm-md-fence-lang')?.textContent ?? null,
+            text: lines.map(l => l.textContent).join('|'),
+            openerHeight: lines[0].getBoundingClientRect().height,
+            closerHeight: lines[lines.length - 1].getBoundingClientRect().height,
+        };
+    });
+    const idle = await read();
+    assert.equal(idle.label, 'ts');
+    assert.ok(!idle.text.includes('```'), `fence markers are visible: ${idle.text}`);
+    await webview.page.locator('.cm-content > .cm-line', { hasText: 'const fenceBody' }).first().click();
+    const editingCode = await read();
+    assert.equal(editingCode.label, 'ts', 'the label should stay while the cursor is in the code');
+    await webview.page.locator('.cm-md-fence-lang').click();
+    await webview.page.waitForTimeout(100);
+    const onOpener = await read();
+    assert.ok(onOpener.text.startsWith('```ts'), `the opener should show its raw marker for editing: ${onOpener.text}`);
+    assert.ok(Math.abs(onOpener.openerHeight - idle.openerHeight) <= 0.5, `opener line height changed ${idle.openerHeight} -> ${onOpener.openerHeight}`);
+    assert.ok(Math.abs(onOpener.closerHeight - idle.closerHeight) <= 0.5, `closer line height changed ${idle.closerHeight} -> ${onOpener.closerHeight}`);
+});

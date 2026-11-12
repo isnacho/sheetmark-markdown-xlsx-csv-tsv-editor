@@ -280,3 +280,17 @@ test('blocks are spaced like paragraphs: no hidden extra space around cards, the
     const padBottom = m.calloutBottom.bottom - m['Callout body'].bottom;
     assert.ok(Math.abs(padTop - padBottom) <= 1 && padTop <= 20, `callout inner padding ${padTop.toFixed(1)}px top, ${padBottom.toFixed(1)}px bottom`);
 });
+
+// @@F05b
+test('an image whose file is not resolved shows only its placeholder, no broken-picture box', async () => {
+    await openDoc('Intro paragraph.\n\n![Missing picture](missing-file.png)\n\nAfter.\n');
+    await webview.page.waitForSelector('.cm-md-image-block .cm-md-image-placeholder', { timeout: 5000 });
+    const state = await webview.page.evaluate(() => {
+        const img = document.querySelector('.cm-md-image-block img') as HTMLImageElement | null;
+        const placeholder = document.querySelector('.cm-md-image-block .cm-md-image-placeholder') as HTMLElement;
+        return { imgHidden: img?.hidden ?? true, imgDisplay: img ? getComputedStyle(img).display : 'none', placeholderShown: placeholder.getBoundingClientRect().height > 0 };
+    });
+    assert.equal(state.imgHidden, true, 'the widget should hide an image it has no source for yet');
+    assert.equal(state.imgDisplay, 'none');
+    assert.equal(state.placeholderShown, true);
+});

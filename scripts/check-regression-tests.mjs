@@ -67,6 +67,8 @@ const MUTATIONS = [
       find: "            '--cm-md-fence-external-gap': '4px',", replace: "            '--cm-md-fence-external-gap': '32px'," },
     { id: 'md-rhythm-callout-fence', file: 'src/webviews/md/livePreview/calloutDecorations.ts',
       find: "        parts.push('cm-md-callout-fence');", replace: '        void parts;' },
+    { id: 'md-image-unresolved-hidden', file: 'src/webviews/md/livePreview/cm6Theme.ts',
+      find: "'.cm-md-image-preview[hidden]': {", replace: "'.cm-md-image-preview[data-never]': {" },
     { id: 'mermaid-lazy-load', file: 'src/webviews/md/livePreview/mermaidWidget.ts',
       find: "import { Icons } from '../../shared/icons';", replace: "import { Icons } from '../../shared/icons';\nimport * as eagerMermaid from 'mermaid';\nvoid eagerMermaid;" },
     { id: 'resize-listeners-once', file: 'src/webviews/spreadsheet/spreadsheetWebview.ts',

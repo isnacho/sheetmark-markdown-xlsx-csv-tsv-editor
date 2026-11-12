@@ -512,6 +512,11 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
         '.cm-md-image-placeholder[hidden]': {
             display: 'none',
         },
+        // Same for the image while its local path is still unresolved (or the file is missing):
+        // without this the browser draws an empty broken-picture box above the placeholder.
+        '.cm-md-image-preview[hidden]': {
+            display: 'none',
+        },
         // Bar on the text edge, text one 20px step in (3px bar + 17px), like list and toggle text.
         '.cm-md-blockquote-line': {
             backgroundColor: 'transparent',

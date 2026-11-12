@@ -54,7 +54,7 @@ export const SLASH_OPTIONS: SlashOption[] = [
     { label: 'Toggle Heading 1', ...toggleSlashSnippet('# '), icon: 'Toggle', hint: '> #' },
     { label: 'Toggle Heading 2', ...toggleSlashSnippet('## '), icon: 'Toggle', hint: '> ##' },
     { label: 'Toggle Heading 3', ...toggleSlashSnippet('### '), icon: 'Toggle', hint: '> ###' },
-    { label: 'Quote', insert: '> ', cursorOffset: 2, icon: 'Quote', hint: '>' },
+    { label: 'Quote', insert: '> ', cursorOffset: 2, icon: 'Quote', hint: '"' },
     { label: 'Table', insert: TABLE_SNIPPET, cursorOffset: TABLE_SNIPPET.length, icon: 'TableInsert', hint: '|' },
     { label: 'Divider', insert: '---', cursorOffset: 3, icon: 'HorizontalRule', hint: '---' },
 ];
@@ -73,9 +73,11 @@ export function computeSlashApply(option: SlashOption, from: number, to: number)
     };
 }
 
-export const slashMenuCompletions: Completion[] = SLASH_OPTIONS.map((option) => ({
+export const slashMenuCompletions: Completion[] = SLASH_OPTIONS.map((option, index) => ({
     label: option.label,
     type: 'text',
+    // CodeMirror sorts equal matches alphabetically; a descending boost keeps the order above.
+    boost: SLASH_OPTIONS.length - index,
     ...(option.hint ? { detail: option.hint } : {}),
     apply: (view, completion, from, to) => {
         if (option.label === 'Callout') {

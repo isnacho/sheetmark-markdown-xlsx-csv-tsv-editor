@@ -96,6 +96,17 @@ test('slash completions expose Notion-style markdown hints except plain Text', (
     assert.equal(byLabel['Heading 4'], '####');
     assert.equal(byLabel['Bulleted List'], '-');
     assert.equal(byLabel['Divider'], '---');
+    // Typing "> " makes a toggle; a quote is typed as '" '.
+    assert.equal(byLabel['Toggle'], '>');
+    assert.equal(byLabel['Quote'], '"');
+});
+
+test('slash completions keep their listed order in the menu (descending boost)', () => {
+    const boosts = slashMenuCompletions.map(c => c.boost ?? 0);
+    for (let i = 1; i < boosts.length; i++) {
+        assert.ok(boosts[i] < boosts[i - 1], `"${slashMenuCompletions[i].label}" would not sort after "${slashMenuCompletions[i - 1].label}"`);
+    }
+    assert.ok(boosts.every(b => b >= -99 && b <= 99), 'CodeMirror boosts must stay within -99..99');
 });
 
 test('computeSlashApply: "Text" just removes the trigger, leaving an empty line', () => {

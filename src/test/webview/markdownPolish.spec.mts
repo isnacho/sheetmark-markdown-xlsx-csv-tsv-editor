@@ -137,3 +137,18 @@ test('a table\'s box includes all of its spacing, so the next line starts right 
     });
     assert.ok(Math.abs(gap) < 1, `the line after the table starts ${gap}px below the table's box`);
 });
+
+// @@F12
+test('the / menu lists commands in their designed order, and Quote shows its own shortcut', async () => {
+    await openDoc('Paragraph.\n\n');
+    await webview.page.locator('.cm-content > .cm-line').last().click();
+    await webview.page.keyboard.type('/');
+    await webview.page.waitForSelector('.cm-tooltip-autocomplete.cm-slash-menu-tooltip li', { timeout: 5000 });
+    const rows = await webview.page.evaluate(() => [...document.querySelectorAll('.cm-tooltip-autocomplete.cm-slash-menu-tooltip li')].map(li => ({
+        label: li.querySelector('.cm-completionLabel')?.textContent ?? '',
+        detail: li.querySelector('.cm-completionDetail')?.textContent ?? '',
+    })));
+    assert.deepEqual(rows.slice(0, 5).map(r => r.label), ['Text', 'Heading 1', 'Heading 2', 'Heading 3', 'Heading 4']);
+    assert.equal(rows.find(r => r.label === 'Quote')?.detail, '"');
+    await webview.page.keyboard.press('Escape');
+});

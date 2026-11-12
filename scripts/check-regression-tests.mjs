@@ -55,6 +55,8 @@ const MUTATIONS = [
       find: "'.cm-md-image-placeholder[hidden]': {", replace: "'.cm-md-image-placeholder[data-never]': {" },
     { id: 'md-table-no-scroll-jump', file: 'src/webviews/md/livePreview/cm6Theme.ts',
       find: "            display: 'flow-root',\n", replace: "            display: 'block',\n" },
+    { id: 'md-slash-menu-order', file: 'src/webviews/md/livePreview/slashMenu.ts',
+      find: '    boost: SLASH_OPTIONS.length - index,\n', replace: '    boost: 0 * index,\n' },
     { id: 'mermaid-lazy-load', file: 'src/webviews/md/livePreview/mermaidWidget.ts',
       find: "import { Icons } from '../../shared/icons';", replace: "import { Icons } from '../../shared/icons';\nimport * as eagerMermaid from 'mermaid';\nvoid eagerMermaid;" },
     { id: 'resize-listeners-once', file: 'src/webviews/spreadsheet/spreadsheetWebview.ts',

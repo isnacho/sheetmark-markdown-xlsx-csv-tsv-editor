@@ -6,6 +6,7 @@ import { Decoration } from '@codemirror/view';
 import type { DecorationSet } from '@codemirror/view';
 import { syntaxTree } from '@codemirror/language';
 import type { VisibleRange } from './revealDecorations';
+import { findDetailsBlocks, toggleTagRanges } from './detailsTypes';
 
 const noSpellcheck = Decoration.mark({ attributes: { spellcheck: 'false' } });
 
@@ -24,6 +25,8 @@ export function collectSpellcheckExclusionRanges(
     if (frontmatterRange) {
         ranges.push(frontmatterRange);
     }
+    // Hidden toggle tags are zero-height lines: their words (details, summary, open) must not be flagged.
+    ranges.push(...toggleTagRanges(findDetailsBlocks(state.doc, state)));
     const tree = syntaxTree(state);
     for (const { from, to } of visibleRanges) {
         tree.iterate({

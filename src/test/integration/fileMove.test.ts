@@ -46,6 +46,21 @@ suite('Renaming an open file', () => {
         assert.deepStrictEqual(init.tableColumnWidths, { 0: [150, 90] });
     });
 
+    test('Markdown toggle open state follows a renamed file', async () => {
+        const api = await sheetmark();
+        const dir = fixtureDir({ 'a/toggle.md': '<details>\n<summary>Guide</summary>\n\nbody\n\n</details>\n' });
+        const from = vscode.Uri.file(path.join(dir, 'a', 'toggle.md'));
+        const to = vscode.Uri.file(path.join(dir, 'b', 'toggle.md'));
+        const editor = await openInSheetmark(api, from.fsPath, 'xlsxViewer.md');
+        await editor.dispatch({ command: 'saveDetailsOpenState', state: { 'Guide#0': true, bad: 'nope' } as unknown as Record<string, boolean> });
+
+        await rename(from, to);
+
+        const reopened = await waitFor('reopened Markdown editor', () => api.openEditors().find(e => e.uri().fsPath === to.fsPath));
+        const init = await waitFor('initMarkdown', () => firstSent<{ detailsOpenState: unknown }>(reopened, 'initMarkdown'));
+        assert.deepStrictEqual(init.detailsOpenState, { 'Guide#0': true });
+    });
+
     test('CSV styles and version history move with the file', async () => {
         const api = await sheetmark();
         const dir = fixtureDir({ 'a/data.csv': 'x,y\n1,2\n' });

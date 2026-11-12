@@ -55,7 +55,7 @@ test('option table includes every block transform named in the plan', () => {
     const labels = slashMenuCompletions.map(c => c.label);
     assert.deepEqual(labels, [
         'Text', 'Heading 1', 'Heading 2', 'Heading 3', 'Heading 4',
-        'Bulleted List', 'Numbered List', 'To-do List', 'Callout', 'Quote', 'Table', 'Divider',
+        'Bulleted List', 'Numbered List', 'To-do List', 'Callout', 'Toggle', 'Toggle Heading 1', 'Toggle Heading 2', 'Toggle Heading 3', 'Quote', 'Table', 'Divider',
     ]);
 });
 
@@ -103,4 +103,18 @@ test('computeSlashApply: "Text" just removes the trigger, leaving an empty line'
     const tr = state.update(computeSlashApply(option('Text'), 1, 5));
     assert.equal(tr.state.doc.toString(), '');
     assert.equal(tr.state.selection.main.from, 0);
+});
+
+test('computeSlashApply: "Toggle" inserts an open toggle with the cursor in the empty title', () => {
+    const state = stateFor('/tog');
+    const tr = state.update(computeSlashApply(option('Toggle'), 1, 4));
+    assert.equal(tr.state.doc.toString(), '<details open>\n<summary>\n\n\n\n</summary>\n\n\n</details>');
+    assert.equal(tr.state.selection.main.from, '<details open>\n<summary>\n\n'.length);
+});
+
+test('computeSlashApply: "Toggle Heading 2" puts the cursor after the ## prefix', () => {
+    const state = stateFor('/tog');
+    const tr = state.update(computeSlashApply(option('Toggle Heading 2'), 1, 4));
+    assert.ok(tr.state.doc.toString().includes('\n\n## \n\n</summary>'));
+    assert.equal(tr.state.sliceDoc(0, tr.state.selection.main.from).endsWith('\n\n## '), true);
 });

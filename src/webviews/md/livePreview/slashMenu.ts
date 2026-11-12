@@ -19,10 +19,11 @@ import { Icons } from '../../shared/icons';
 import { renderMenuIcon } from '../../shared/menuPanel';
 import { calloutDefaultTypeField } from './calloutDefaultType';
 import { buildCalloutSnippet, calloutCursorOffsetForType } from './calloutTypes';
+import { toggleSlashSnippet } from './detailsEditing';
 
 type SlashIconKey = keyof Pick<typeof Icons,
     'Paragraph' | 'Heading' | 'ListBullet' | 'ListOrdered' | 'Checkbox' |
-    'Callout' | 'Quote' | 'TableInsert' | 'HorizontalRule'
+    'Callout' | 'Toggle' | 'Quote' | 'TableInsert' | 'HorizontalRule'
 >;
 
 interface SlashOption {
@@ -49,6 +50,10 @@ export const SLASH_OPTIONS: SlashOption[] = [
     { label: 'Numbered List', insert: '1. ', cursorOffset: 3, icon: 'ListOrdered', hint: '1.' },
     { label: 'To-do List', insert: '- [ ] ', cursorOffset: 6, icon: 'Checkbox', hint: '[ ]' },
     { label: 'Callout', insert: ':::info\n\n:::', cursorOffset: 8, icon: 'Callout', hint: ':::' },
+    { label: 'Toggle', ...toggleSlashSnippet(''), icon: 'Toggle', hint: '>' },
+    { label: 'Toggle Heading 1', ...toggleSlashSnippet('# '), icon: 'Toggle', hint: '> #' },
+    { label: 'Toggle Heading 2', ...toggleSlashSnippet('## '), icon: 'Toggle', hint: '> ##' },
+    { label: 'Toggle Heading 3', ...toggleSlashSnippet('### '), icon: 'Toggle', hint: '> ###' },
     { label: 'Quote', insert: '> ', cursorOffset: 2, icon: 'Quote', hint: '>' },
     { label: 'Table', insert: TABLE_SNIPPET, cursorOffset: TABLE_SNIPPET.length, icon: 'TableInsert', hint: '|' },
     { label: 'Divider', insert: '---', cursorOffset: 3, icon: 'HorizontalRule', hint: '---' },

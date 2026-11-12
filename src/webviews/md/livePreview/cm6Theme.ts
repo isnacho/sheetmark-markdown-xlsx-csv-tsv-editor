@@ -487,6 +487,89 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             paddingLeft: '8px',
             color: 'var(--color-text-secondary)',
         },
+        '.cm-md-details-run': {
+            height: '0',
+            overflow: 'hidden',
+        },
+        '.cm-md-details-d0': { '--d': '0' },
+        '.cm-md-details-d1': { '--d': '1' },
+        '.cm-md-details-d2': { '--d': '2' },
+        '.cm-md-details-d3': { '--d': '3' },
+        '.cm-md-details-d4': { '--d': '4' },
+        '.cm-md-details-d5': { '--d': '5' },
+        '.cm-md-details-d6': { '--d': '6' },
+        // Indent with MARGIN, not padding: list lines set their own inline padding-left (hanging indent),
+        // so padding would indent the text but leave bullets behind. The doubled selector beats the
+        // callout and blockquote line rules, which also set a margin.
+        // One 20px step (4px grid) per level. The arrow sits flush with normal text in the first step, the
+        // title text starts after it, and the body starts at the same x as the title text.
+        '.cm-content.cm-md-has-toggles': {
+            // room for the hover handle, which hangs left of the arrow
+            paddingLeft: '40px',
+        },
+        '.cm-content .cm-line.cm-md-details-title-line': {
+            position: 'relative',
+            marginLeft: 'calc(var(--d) * 20px + 20px)',
+        },
+        '.cm-content .cm-line.cm-md-details-body': {
+            marginLeft: 'calc(var(--d) * 20px)',
+        },
+        // The arrow is an inline-block on the title's own text line. An inline-block with a block child and no
+        // text has its bottom edge on the BASELINE, so a 1em-tall box with vertical-align -0.16em has its middle
+        // 0.34em above the baseline: the visual middle of the title text, whatever the line box does around it.
+        // (An inline-flex box takes its baseline from its child instead, which put the arrow too low.)
+        // The -20px margin pulls it into the 20px step left of the title, starting exactly where normal text
+        // starts; net advance is zero.
+        '.cm-md-details-chevron': {
+            '--chev': '0.5',
+            display: 'inline-block',
+            boxSizing: 'border-box',
+            width: '20px',
+            height: '1em',
+            lineHeight: '1',
+            marginLeft: '-20px',
+            marginRight: '0',
+            verticalAlign: '-0.16em',
+            cursor: 'pointer',
+            userSelect: 'none',
+            color: 'var(--color-text-primary)',
+            opacity: '0.7',
+        },
+        '.cm-md-details-chevron svg': {
+            display: 'block',
+            marginTop: 'calc((1 - var(--chev)) * 0.5em)',
+            height: 'calc(var(--chev) * 1em)',
+            width: 'calc(var(--chev) * 0.8em)',
+            overflow: 'visible',
+            transition: 'transform 0.12s ease',
+        },
+        '.cm-md-details-chevron:hover': {
+            opacity: '1',
+        },
+        '.cm-md-details-chevron.is-open svg': {
+            transform: 'rotate(90deg)',
+        },
+        '.cm-content .cm-md-h1 .cm-md-details-chevron, .cm-content .cm-md-h2 .cm-md-details-chevron': { '--chev': '0.6' },
+        '.cm-content .cm-md-h3 .cm-md-details-chevron': { '--chev': '0.55' },
+        '.cm-md-details-handle': {
+            display: 'inline-block',
+            boxSizing: 'border-box',
+            width: '16px',
+            height: '1em',
+            lineHeight: '1',
+            marginLeft: '-36px',
+            marginRight: '20px',
+            verticalAlign: '-0.16em',
+            cursor: 'pointer',
+            userSelect: 'none',
+            color: 'var(--color-text-secondary)',
+            opacity: '0',
+            fontSize: '0.8em',
+            letterSpacing: '-2px',
+        },
+        '.cm-md-details-title-line:hover .cm-md-details-handle': {
+            opacity: '0.8',
+        },
         '.cm-md-callout-line': {
             margin: '0',
             padding: '0 12px 0 16px',

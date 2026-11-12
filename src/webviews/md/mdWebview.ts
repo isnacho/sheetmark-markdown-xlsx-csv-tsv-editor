@@ -28,6 +28,7 @@ import {
     setLivePreviewLineNumbers,
     setLivePreviewMermaidMode,
     setLivePreviewCalloutDefaultType,
+    setLivePreviewDetailsState,
     getLivePreviewCursorPosition,
     getLivePreviewSelectionStats,
     applyLivePreviewFormat,
@@ -419,6 +420,11 @@ function enterPreviewEditMode() {
             frontmatterCollapsed: state.frontmatterPanelCollapsed,
             onFrontmatterCollapsedChanged: (collapsed) => {
                 persistFrontmatterPanelCollapsed(collapsed);
+            },
+            detailsOpenState: state.detailsOpenState,
+            onDetailsStateChanged: (detailsState) => {
+                state.detailsOpenState = { ...detailsState };
+                post({ command: 'saveDetailsOpenState', state: state.detailsOpenState });
             },
             mermaidPreviewMode: state.mermaidPreviewMode,
             onMermaidPreviewModeChanged: (mode) => {
@@ -1464,6 +1470,7 @@ window.addEventListener('message', (event) => {
             state.workspaceFolderUri = m.workspaceFolderUri || null;
             state.currentTableColumnWidths = m.tableColumnWidths || {};
             state.frontmatterPanelCollapsed = !!m.frontmatterPanelCollapsed;
+            state.detailsOpenState = m.detailsOpenState || {};
             state.mermaidPreviewMode = m.mermaidPreviewMode === 'code' ? 'code' : 'diagram';
             state.calloutDefaultType = typeof m.calloutDefaultType === 'string' && /^[\w-]*$/.test(m.calloutDefaultType)
                 ? m.calloutDefaultType.toLowerCase()
@@ -1472,6 +1479,7 @@ window.addEventListener('message', (event) => {
             if (isLivePreviewActive()) {
                 setLivePreviewMermaidMode(state.mermaidPreviewMode);
                 setLivePreviewCalloutDefaultType(state.calloutDefaultType);
+                setLivePreviewDetailsState(state.detailsOpenState);
                 applyReloadedContent(state.currentContent);
             }
             updateStatusInfo();

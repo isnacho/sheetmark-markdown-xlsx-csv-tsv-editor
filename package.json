@@ -469,6 +469,7 @@
         "test:unit": "node --import tsx --test \"src/**/*.test.mts\"",
         "test:webview": "node esbuild.js && npm run test:webview:run",
         "test:webview:run": "node --import tsx --test \"src/test/webview/*.spec.mts\"",
+        "test:ui": "node esbuild.js && node --import tsx --test \"src/test/ui/*.spec.mts\"",
         "test:integration": "node esbuild.js && node esbuild.js --integration && vscode-test",
         "test:regressions": "node scripts/check-regression-tests.mjs"
     },

@@ -87,7 +87,7 @@ is untrusted. Details: [.docs/dev/MESSAGE-PROTOCOL.md](.docs/dev/MESSAGE-PROTOCO
 | Markdown file I/O, save, disk sync (host) | [src/mdEditorProvider.ts](src/mdEditorProvider.ts) |
 | External file watch (change, delete) | [fileExternalChangeWatcher.ts](src/shared/fileExternalChangeWatcher.ts) |
 | Per-file state following a rename/move | [renameStateMigration.ts](src/shared/renameStateMigration.ts), [migrateFileUriState.ts](src/shared/migrateFileUriState.ts) |
-| Markdown prefs kept outside the file (column widths, YAML card, mermaid mode, callout default) | [src/shared/preferenceStore.ts](src/shared/preferenceStore.ts) (`createMarkdownPreferences`) |
+| Markdown prefs kept outside the file (column widths, YAML card, toggle open state, mermaid mode, callout default) | [src/shared/preferenceStore.ts](src/shared/preferenceStore.ts) (`createMarkdownPreferences`) |
 | CSV/TSV style persistence | [src/shared/styleStorageService.ts](src/shared/styleStorageService.ts) |
 | File conversion csv ↔ tsv ↔ xlsx | [src/shared/fileConversionService.ts](src/shared/fileConversionService.ts) |
 | Version history / rollback | [src/shared/versionHistory.ts](src/shared/versionHistory.ts) |
@@ -108,6 +108,7 @@ npm run verify            # REQUIRED before calling work done: check-types + lin
 npm run test:integration  # REQUIRED when you touch src/*.ts, src/shared/** or src/spreadsheet/** (real VS Code, ~30 s)
 npm run test:unit         # unit tests only (node:test through tsx)
 npm run test:webview      # built webviews in headless Chrome (needs Chrome or Edge installed)
+npm run test:ui           # real VS Code window driven by Playwright, writes screenshots (slow, needs a display; not in verify)
 node --import tsx --test src/webviews/md/livePreview/tableWidget.test.mts   # one test file
 npm run test:regressions  # re-breaks each past fix and checks a test fails (slow; run after fixing a bug)
 npm run watch             # watch build; what F5 uses
@@ -145,6 +146,11 @@ npm run package           # production build (also runs unit tests); used by vsc
 - **Every bug fix gets a test that fails without the fix**, plus an entry in
   [scripts/check-regression-tests.mjs](scripts/check-regression-tests.mjs) that re-breaks it.
   Untestable fixes are listed there as `knownGap` so the gap stays visible.
+- **Real-VS-Code UI tests** (`src/test/ui/*.spec.mts`, `npm run test:ui`, about a minute) launch an
+  Electron VS Code with this extension through `playwright-core`, type into the real editor and save,
+  and assert on the file bytes. They also write light and dark screenshots to `.vscode-test/ui-shots/`:
+  **Read the PNGs** after any visual change (layout, spacing, colour); assertions do not see those.
+  Not part of `verify` (needs a display and a VS Code download).
 - **Manual smoke test** for what no test sees yet (visual layout, VS Code theming): **F5** opens an Extension
   Development Host on [samples/](samples/) → open `test.xlsx` / `.csv` / `.tsv` / `.md` → exercise
   the change → `Cmd+R` to reload after edits.

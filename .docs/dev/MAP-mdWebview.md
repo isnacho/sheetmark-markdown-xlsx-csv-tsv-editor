@@ -39,7 +39,7 @@ Section headers in the file look like `// ===== Name =====`. Grep for the header
 | Small utilities | `Utilities` | `livePreviewGutterLineNumbersEnabled`, `slugify`, `escapeHtmlAttr`, `isRemoteOrInlineUri`, `shouldResolveLocalImage` |
 | markdown-it (TOC only) | `Markdown-it (TOC parse only` | `md`, `addHeadingIds`, `buildToc`, `updateToc`, `refreshCm6Toc`, `tocIdToLine`, `tocLineToId`, `resolveTocLineForAnchor`, `scrollToAnchor`. CM6 renders the document; markdown-it only builds the outline |
 | Image URI resolution | (same section) | `wireImageUriResolver`, `applyResolvedImageUris`, `resolvedImageUriCache` (sends `resolveImageUris`) |
-| Per-file / global prefs | (same section) | `persistFrontmatterPanelCollapsed`, `persistMermaidPreviewMode`, `persistCalloutDefaultType`, `applyFrontmatterBlockToDocument` |
+| Per-file / global prefs | (same section) | `persistFrontmatterPanelCollapsed`, `onDetailsStateChanged` (toggle state), `persistMermaidPreviewMode`, `persistCalloutDefaultType`, `applyFrontmatterBlockToDocument` |
 | Edit toolbar state | (same section) | `updateEditToolbarButtons` (uses `isEditorDirty` / `canReloadFromDisk` from `saveSync.ts`) |
 | CM6 mount and link clicks | `Preview Edit Mode (CM6 live preview)` | `enterPreviewEditMode` (calls `mountLivePreview` with all callbacks), `updateVersionPreviewChrome`, `executeLivePreviewLinkAction` (sends `openExternal` / `openRelativeFile`), `handleLivePreviewLinkClick`, `handleLivePreviewModifierClick` |
 | Formatting | (before `Disk-vs-editor diff`) | `applyFormat` |
@@ -141,6 +141,10 @@ update that file.
 | calloutWidget.ts | Callout type picker widget | `calloutWidgetField`, `CalloutTypeWidget`, `setCalloutDefaultTypeCallback` |
 | calloutEditing.ts | Change a callout's type | `computeSetCalloutType` |
 | calloutDefaultType.ts | Default callout type state | `calloutDefaultTypeField`, `setCalloutDefaultTypeEffect`, `seedCalloutDefaultType` |
+| detailsTypes.ts | Toggle (`<details>`/`<summary>`) block detector: line-based, nesting-aware, reads Sheetmark's multi-line title shape and the one-line legacy shape; hidden-run ranges | `findDetailsBlocks`, `isDetailsOpen`, `plainTitle`, `toggleTagRanges`, `stripToggleTags` |
+| detailsExtension.ts | Toggle state, decorations that fully hide tag lines and a closed body (own `StateField`, outside `revealCompartment`), atomic ranges, chevron, hover handle + menu, structure guard (`changeFilter`), Enter/Backspace/Delete keys | `detailsExtensions`, `detailsOpenField`, `computeDetailsDecorations`, `setDetailsStateCallback`, `moveCursorOutOfHiddenRuns` |
+| detailsEditing.ts | Pure toggle edits: build, unwrap, delete, set `open`, heading section scan | `toggleText`, `toggleSlashSnippet`, `computeUnwrapToggle`, `computeDeleteToggle`, `computeSetStartOpen`, `sectionEndLine`, `structureEdit` |
+| toggleInputRules.ts | Typed shortcuts: `> ` makes a toggle, `" ` makes a quote (inputHandler, undo restores the literal text) | `computeToggleFromMarker`, `computeQuoteFromMarker`, `toggleInputHandler` |
 | imageWidget.ts | Local image previews; URI resolution delegated to the shell | `imageWidgetField`, `setImageUriResolver`, `refreshImageWidgetsEffect`, `computeImageDecorations` |
 | frontmatterWidget.ts | Collapsible, editable YAML frontmatter card | `frontmatterWidgetField`, `frontmatterCollapsedField`, `frontmatterEditingField`, `blurActiveFrontmatterEditing` |
 | spellcheck.ts | Typo.js spellcheck via `@codemirror/lint` | `spellcheckExtensions`, `spellcheckLint`, `loadSpellDictionary`, `spellcheckSuggestionMenu` |

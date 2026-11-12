@@ -144,7 +144,7 @@ Persisted outside the `.md` bytes by `createMarkdownPreferences` in
 Per-file preferences listed in `perFile` move with the file on rename (see Renames below).
 
 Loaded into `initMarkdown` / `diskChangedExternally`; webview persists edits via
-`saveTableColumnWidths`, `saveFrontmatterPanelCollapsed`, `saveMermaidPreviewMode`,
+`saveTableColumnWidths`, `saveFrontmatterPanelCollapsed`, `saveDetailsOpenState`, `saveMermaidPreviewMode`,
 `saveCalloutDefaultType`.
 
 ### External disk changes

@@ -109,3 +109,18 @@ test('the focused selection uses the theme selection colour, not CodeMirror\'s b
     });
     assert.equal(background, 'rgb(1, 2, 3)');
 });
+
+// @@F05
+test('an image\'s alt-text placeholder is not shown once the image is there', async () => {
+    const svg = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSIyMCI+PHJlY3Qgd2lkdGg9IjQwIiBoZWlnaHQ9IjIwIiBmaWxsPSJyZWQiLz48L3N2Zz4=';
+    await openDoc(`Intro paragraph.\n\n![Alt text bar](${svg})\n\nAfter.\n`);
+    await webview.page.waitForSelector('.cm-md-image-block img', { timeout: 5000 });
+    const placeholder = await webview.page.evaluate(() => {
+        const el = document.querySelector('.cm-md-image-block .cm-md-image-placeholder') as HTMLElement | null;
+        return el ? { hidden: el.hidden, display: getComputedStyle(el).display, height: el.getBoundingClientRect().height } : null;
+    });
+    assert.ok(placeholder, 'no placeholder element');
+    assert.equal(placeholder!.hidden, true, 'the widget should mark the placeholder hidden for a loaded image');
+    assert.equal(placeholder!.display, 'none');
+    assert.equal(placeholder!.height, 0);
+});

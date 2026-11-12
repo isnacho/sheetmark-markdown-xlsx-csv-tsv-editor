@@ -486,6 +486,11 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             color: 'var(--color-status-error)',
             background: 'color-mix(in srgb, var(--color-status-error) 8%, transparent)',
         },
+        // `display: block` above would otherwise beat the `hidden` attribute that imageWidget.ts
+        // sets once an image has a source, leaving an alt-text bar under every image.
+        '.cm-md-image-placeholder[hidden]': {
+            display: 'none',
+        },
         '.cm-md-blockquote-line': {
             backgroundColor: 'transparent',
             marginLeft: '4px',

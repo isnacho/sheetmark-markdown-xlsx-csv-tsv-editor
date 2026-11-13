@@ -66,6 +66,12 @@ export function parseCalloutOpener(lineText: string): { leading: string; type: s
     return { leading, type, titleSuffix: title ? ` ${title}` : '' };
 }
 
+/** Where the title starts on an opener line such as `::: info Read this`; null when it has none. */
+export function calloutTitleOffset(lineText: string): number | null {
+    const match = /^(\s*:::\s*[\w-]+\s+)\S/.exec(lineText);
+    return match ? match[1].length : null;
+}
+
 export function formatCalloutOpener(type: string, leading = '', titleSuffix = ''): string {
     const slug = type || CUSTOM_CALLOUT_TYPE_SLUG;
     return `${leading}:::${slug}${titleSuffix}`;

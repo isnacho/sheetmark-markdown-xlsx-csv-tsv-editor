@@ -3,9 +3,12 @@
 import type { EditorState } from '@codemirror/state';
 import { Decoration } from '@codemirror/view';
 import {
+    calloutTitleOffset,
     calloutTypeClass,
     findCalloutBlocks,
 } from './calloutTypes';
+
+const titleMark = Decoration.mark({ class: 'cm-md-callout-title' });
 
 function calloutLineDecoration(
     type: string,
@@ -68,7 +71,13 @@ export function appendCalloutDecorationSpecs(
         const active = isBlockActive(block.openFrom, blockTo);
         const fenceMark = active ? dimMark : hiddenMark;
 
-        specs.push({ from: block.openFrom, to: block.openTo, value: fenceMark });
+        // A title after the type stays visible as the callout's first line; only `::: type` hides.
+        const titleOffset = calloutTitleOffset(doc.line(block.openLine).text);
+        const titleFrom = titleOffset === null ? null : block.openFrom + titleOffset;
+        specs.push({ from: block.openFrom, to: titleFrom ?? block.openTo, value: fenceMark });
+        if (titleFrom !== null) {
+            specs.push({ from: titleFrom, to: block.openTo, value: titleMark });
+        }
         if (block.closeFrom !== null && block.closeTo !== null) {
             specs.push({ from: block.closeFrom, to: block.closeTo, value: fenceMark });
         }
@@ -94,8 +103,11 @@ export function appendCalloutDecorationSpecs(
                 position = 'middle';
             }
 
-            const contentFirst = hasContent && n === block.contentStartLine;
-            const content = hasContent && n >= block.contentStartLine && n <= block.contentEndLine;
+            // A titled opener is the first content line (it carries the icon); otherwise the
+            // first line after the opener is.
+            const titleLine = titleFrom !== null && isOpen;
+            const contentFirst = titleFrom !== null ? titleLine : hasContent && n === block.contentStartLine;
+            const content = titleLine || (hasContent && n >= block.contentStartLine && n <= block.contentEndLine);
             specs.push({
                 from: line.from,
                 to: line.from,

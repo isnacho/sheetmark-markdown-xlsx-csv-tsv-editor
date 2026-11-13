@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Markdown Preview Edit: a callout with a title on its first line (`::: warning Before you start`) now shows that title in bold at the top of the callout instead of hiding it. The info, warning, error and success icons are now matching drawn icons in their colours (the info icon used to be a plain letter i).
 - Markdown and spreadsheet editors: if your system is set to reduce motion, nothing in either editor animates any more (before, only three things respected it). Toasts now fade in over 120ms without the zoom, and images no longer grow when you hover them.
 - Markdown Preview Edit: when you type or move down near the bottom of the window, the page now scrolls early enough that the cursor stays above the word count pill instead of disappearing behind it.
 - Markdown Preview Edit: level 1 to 3 headings get extra space above them (16, 12 and 8px), so each heading sits with the section it starts, as in Notion. Level 6 headings are now a little smaller than body text instead of the same size.

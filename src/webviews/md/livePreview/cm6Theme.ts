@@ -13,6 +13,16 @@
 
 import { EditorView } from '@codemirror/view';
 
+/** Callout icons as CSS mask images (so they take the status colour). Allowed by `img-src data:`. */
+const calloutIcon = (body: string): string =>
+    `url("data:image/svg+xml,${encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'>${body}</svg>`)}")`;
+const CALLOUT_ICONS = {
+    info: calloutIcon("<circle cx='12' cy='12' r='10'/><path d='M12 16v-5M12 8h.01'/>"),
+    warning: calloutIcon("<path d='M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z'/><path d='M12 9v4M12 17h.01'/>"),
+    error: calloutIcon("<circle cx='12' cy='12' r='10'/><path d='m15 9-6 6M9 9l6 6'/>"),
+    success: calloutIcon("<circle cx='12' cy='12' r='10'/><path d='m8.5 12.5 2.5 2.5 4.5-5'/>"),
+};
+
 export function cm6Theme(): ReturnType<typeof EditorView.theme> {
     return EditorView.theme({
         '&': {
@@ -695,46 +705,39 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
         '.cm-md-callout-neutral': {
             backgroundColor: 'color-mix(in srgb, var(--color-surface-panel) 70%, var(--color-surface-default))',
         },
-        '.cm-md-callout-content-first.cm-md-callout-warning::before': {
-            content: '"\\26A0"',
+        // One drawn icon per built-in type (16px, coloured by its status token), centred where the
+        // text starts after it. Drawn, not text glyphs: the glyphs mixed a letter "i" with emoji.
+        '.cm-md-callout-content-first.cm-md-callout-info::before, .cm-md-callout-content-first.cm-md-callout-warning::before, .cm-md-callout-content-first.cm-md-callout-error::before, .cm-md-callout-content-first.cm-md-callout-success::before': {
+            content: '""',
             position: 'absolute',
-            left: '14px',
+            left: '12px',
             top: '50%',
+            width: '16px',
+            height: '16px',
             transform: 'translateY(-50%)',
-            fontSize: '15px',
-            lineHeight: '1',
+            maskPosition: 'center',
+            maskRepeat: 'no-repeat',
+            maskSize: 'contain',
         },
         '.cm-md-callout-content-first.cm-md-callout-info::before': {
-            content: '"\\2139"',
-            position: 'absolute',
-            left: '14px',
-            top: '50%',
-            transform: 'translateY(-50%)',
-            fontSize: '15px',
-            lineHeight: '1',
-            color: 'var(--color-status-info)',
+            backgroundColor: 'var(--color-status-info)',
+            maskImage: CALLOUT_ICONS.info,
+        },
+        '.cm-md-callout-content-first.cm-md-callout-warning::before': {
+            backgroundColor: 'var(--color-status-warning)',
+            maskImage: CALLOUT_ICONS.warning,
         },
         '.cm-md-callout-content-first.cm-md-callout-error::before': {
-            content: '"\\2717"',
-            position: 'absolute',
-            left: '14px',
-            top: '50%',
-            transform: 'translateY(-50%)',
-            fontSize: '15px',
-            lineHeight: '1',
-            color: 'var(--color-status-error)',
-            fontWeight: '700',
+            backgroundColor: 'var(--color-status-error)',
+            maskImage: CALLOUT_ICONS.error,
         },
         '.cm-md-callout-content-first.cm-md-callout-success::before': {
-            content: '"\\2713"',
-            position: 'absolute',
-            left: '14px',
-            top: '50%',
-            transform: 'translateY(-50%)',
-            fontSize: '15px',
-            lineHeight: '1',
-            color: 'var(--color-status-success)',
-            fontWeight: '700',
+            backgroundColor: 'var(--color-status-success)',
+            maskImage: CALLOUT_ICONS.success,
+        },
+        // A title written on the opener (`::: info Read this`) shows as the callout's first line.
+        '.cm-md-callout-title': {
+            fontWeight: '600',
         },
         '.cm-md-callout-type-toolbar': {
             display: 'inline-flex',

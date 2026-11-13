@@ -494,3 +494,30 @@ test('motion is short, images do not zoom on hover, and reduced motion stops all
         await webview.page.emulateMedia({ reducedMotion: 'no-preference' });
     }
 });
+
+// @@F25
+test('a callout shows the title written on its opener, and every type has a drawn icon', async () => {
+    await openDoc('Para.\n\n::: custom Custom title\nCustom body.\n:::\n\n::: info\nInfo body.\n:::\n\n::: warning\nWarn body.\n:::\n\n::: error\nError body.\n:::\n\n::: success\nDone body.\n:::\n\nAfter.\n');
+    await line('After').click();
+    await webview.page.waitForTimeout(100);
+    const m = await webview.page.evaluate(() => {
+        const lines = [...document.querySelectorAll('.cm-content > .cm-line')];
+        const titled = lines.find(l => l.textContent?.includes('Custom title'));
+        const icons: Record<string, string> = {};
+        for (const type of ['info', 'warning', 'error', 'success']) {
+            const first = document.querySelector(`.cm-md-callout-content-first.cm-md-callout-${type}`);
+            const before = first ? getComputedStyle(first, '::before') : null;
+            icons[type] = before ? `${before.content}|${before.maskImage.slice(0, 30)}|${before.width}` : 'missing';
+        }
+        return {
+            titleText: titled?.textContent ?? null,
+            titleWeight: titled?.querySelector('.cm-md-callout-title') ? getComputedStyle(titled.querySelector('.cm-md-callout-title')!).fontWeight : null,
+            icons,
+        };
+    });
+    assert.equal(m.titleText, 'Custom title', 'the opener line should show just its title');
+    assert.equal(m.titleWeight, '600');
+    for (const [type, icon] of Object.entries(m.icons)) {
+        assert.match(icon, /^""\|url\("data:image\/svg\+xml.*\|16px$/, `${type} icon: ${icon}`);
+    }
+});

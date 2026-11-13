@@ -36,6 +36,23 @@ body {
     --md-row-stripe: color-mix(in srgb, var(--color-text-primary) 5%, var(--color-surface-default));
 }
 
+/*
+ * Light themes (Sheetmark Light, or VS Code mode on a light theme) use a lighter,
+ * flatter set: one surface gray (code, inline code, YAML header, table header,
+ * toolbar), one faint gray (YAML body, table stripes) and one border. On Default
+ * Light Modern these land on #F5F5F5, #FAFAFA and #EBEBEB. Dark and high-contrast
+ * themes keep the stronger steps above, where lighter mixes would vanish.
+ */
+body:not(.dark-mode):not(.vscode-theme),
+body.vscode-theme.vscode-light {
+    --md-surface-panel: color-mix(in srgb, var(--color-text-primary) 2.5%, var(--color-surface-default));
+    --md-surface-raised: color-mix(in srgb, var(--color-text-primary) 5%, var(--color-surface-default));
+    --md-surface-sunken: color-mix(in srgb, var(--color-text-primary) 5%, var(--color-surface-default));
+    --md-border: color-mix(in srgb, var(--color-text-primary) 12%, var(--color-surface-default));
+    --md-border-subtle: color-mix(in srgb, var(--color-text-primary) 10%, var(--color-surface-default));
+    --md-row-stripe: color-mix(in srgb, var(--color-text-primary) 2.5%, var(--color-surface-default));
+}
+
 body.sticky-toolbar-enabled {
     /* Flex chrome + scrollable #content is more reliable in the MD webview than
        position:fixed (which breaks once Preview Edit shows the formatting bar

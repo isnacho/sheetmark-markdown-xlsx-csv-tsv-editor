@@ -29,9 +29,17 @@ function isSetextUnderlineListMarkerLine(state: EditorState, setextNode: SyntaxN
     return false;
 }
 
+const ACTIVATED_LIST_MARKER_PREFIX = /^\s*(?:[-*+]\s\[[ xX]\]\s|[-*+]\s(?!\[)|\d+[.)]\s)/;
+
+/** Character length of an activated list marker prefix within a line (0 if none). */
+export function activatedListMarkerPrefixLength(lineText: string): number {
+    const match = lineText.match(ACTIVATED_LIST_MARKER_PREFIX);
+    return match ? match[0].length : 0;
+}
+
 /** Line text matches an activated list marker (trailing gap space present). */
 export function listMarkerLineIsActivated(lineText: string): boolean {
-    return /^\s*(?:[-*+]\s\[[ xX]\]\s|[-*+]\s(?!\[)|\d+[.)]\s)/.test(lineText);
+    return activatedListMarkerPrefixLength(lineText) > 0;
 }
 
 /** True once the marker has its required trailing gap space (e.g. "1. ", "- ", "- [ ] "). */
@@ -165,6 +173,18 @@ export function computeListItemPrefixRange(state: EditorState, item: SyntaxNode)
         end += 1;
     }
     return { from: state.doc.lineAt(mark.from).from, to: end };
+}
+
+/** List item body on the line containing `pos` (marker/indent prefix excluded). */
+export function listItemLineContentRange(state: EditorState, pos: number): VisibleRange {
+    const line = state.doc.lineAt(pos);
+    const item = enclosingListItem(state, pos);
+    const prefix = item ? computeListItemPrefixRange(state, item) : null;
+    if (prefix && prefix.from >= line.from && prefix.to <= line.to) {
+        return { from: prefix.to, to: line.to };
+    }
+    const markerLen = activatedListMarkerPrefixLength(line.text);
+    return { from: line.from + markerLen, to: line.to };
 }
 
 function computeSetextListMarkerPrefix(state: EditorState, setextNode: SyntaxNode): VisibleRange | null {

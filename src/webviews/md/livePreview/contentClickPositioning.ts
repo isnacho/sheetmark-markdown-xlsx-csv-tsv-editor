@@ -13,17 +13,71 @@
 // feels like the whole line got selected. `listLineMouseSelectionStyle` below
 // routes those gestures through the same DOM caret resolver as single clicks.
 //
+// Heading lines (`.cm-md-heading-line`) hide ATX `#` markers with replace
+// decorations when the cursor is away, so the same DOM vs source mismatch breaks
+// drag and double-click there too — `headingLineMouseSelectionStyle` applies
+// the same fix.
+//
 // Triple-click selects the whole line without the trailing break (CM6's default
 // includes the newline, which bleeds into the next row and breaks paste).
-// Double-click stays CM6 default (word select). Single-click still corrects row
+// Double/triple on list lines select item text only (not the marker), so Mod+B
+// and similar formatting do not break list syntax. Single-click still corrects row
 // alignment when the height map drifts.
 
 import { EditorSelection, Prec } from '@codemirror/state';
 import type { EditorState, TransactionSpec } from '@codemirror/state';
 import type { SelectionRange } from '@codemirror/state';
+import { syntaxTree } from '@codemirror/language';
 import { EditorView } from '@codemirror/view';
 import type { MouseSelectionStyle } from '@codemirror/view';
+import { listItemLineContentRange } from './listMarkerEditing';
 import { closestCmLineElement, computeTripleClickLineSelection } from './pointerLineResolution';
+
+const WORD_CHAR = /[\w-]/;
+
+/** Visible title span on a heading line (excludes hidden ATX `#` markers). */
+export function headingLineContentRange(state: EditorState, pos: number): { from: number; to: number } {
+    const line = state.doc.lineAt(pos);
+    let content: { from: number; to: number } | null = null;
+    syntaxTree(state).iterate({
+        from: line.from,
+        to: line.to,
+        enter(node) {
+            if (content) { return; }
+            const name = node.name;
+            if (name.startsWith('ATXHeading')) {
+                const marks = node.node.getChildren('HeaderMark');
+                if (marks.length === 0) { return; }
+                const open = marks[0];
+                const hasGapSpace = state.sliceDoc(open.to, open.to + 1) === ' ';
+                const gapEnd = hasGapSpace ? open.to + 1 : open.to;
+                content = { from: Math.max(gapEnd, line.from), to: Math.min(node.to, line.to) };
+                return;
+            }
+            if (name === 'SetextHeading1' || name === 'SetextHeading2') {
+                if (state.doc.lineAt(node.from).number !== line.number) { return; }
+                content = { from: node.from, to: line.to };
+            }
+        },
+    });
+    return content ?? { from: line.from, to: line.to };
+}
+
+/** Word boundaries at `pos` (same rules as `computeSelectWord` in formatCommands.ts). */
+export function selectionRangeForWordAt(state: EditorState, pos: number): SelectionRange {
+    let wStart = pos;
+    let wEnd = pos;
+    while (wStart > 0 && WORD_CHAR.test(state.sliceDoc(wStart - 1, wStart))) { wStart--; }
+    while (wEnd < state.doc.length && WORD_CHAR.test(state.sliceDoc(wEnd, wEnd + 1))) { wEnd++; }
+    if (wStart === wEnd) { return EditorSelection.cursor(pos); }
+    return EditorSelection.range(wStart, wEnd);
+}
+
+/** Clicks inside the table replace widget are wired in `tableWidget.ts`. */
+export function isTableWidgetPointerTarget(target: EventTarget | null): boolean {
+    if (!target || typeof (target as HTMLElement).closest !== 'function') { return false; }
+    return Boolean((target as HTMLElement).closest('.cm-md-table-widget'));
+}
 
 function caretFromPoint(x: number, y: number): { node: Node; offset: number } | null {
     if (document.caretRangeFromPoint) {
@@ -88,12 +142,21 @@ function isListLineElement(lineEl: HTMLElement | null): boolean {
 
 /** Selection range for a list-line click (single / double / triple). */
 export function selectionRangeForListLineClick(state: EditorState, pos: number, clickDetail: number): SelectionRange {
+    if (clickDetail >= 2) {
+        const { from, to } = listItemLineContentRange(state, pos);
+        return EditorSelection.range(from, to);
+    }
+    return EditorSelection.cursor(pos);
+}
+
+/** Selection range for a heading-line click (single / double / triple). */
+export function selectionRangeForHeadingLineClick(state: EditorState, pos: number, clickDetail: number): SelectionRange {
     if (clickDetail >= 3) {
-        const line = state.doc.lineAt(pos);
-        return EditorSelection.range(line.from, line.to);
+        const { from, to } = headingLineContentRange(state, pos);
+        return EditorSelection.range(from, to);
     }
     if (clickDetail === 2) {
-        return state.wordAt(pos) ?? EditorSelection.cursor(pos);
+        return selectionRangeForWordAt(state, pos);
     }
     return EditorSelection.cursor(pos);
 }
@@ -111,11 +174,20 @@ function removeRangeAround(sel: EditorSelection, pos: number): EditorSelection |
     return null;
 }
 
-function makeListLineMouseSelectionStyle(view: EditorView, event: MouseEvent): MouseSelectionStyle | null {
+function isHeadingLineElement(lineEl: HTMLElement | null): boolean {
+    return lineEl?.classList.contains('cm-md-heading-line') ?? false;
+}
+
+function makeDomResolvedLineMouseSelectionStyle(
+    view: EditorView,
+    event: MouseEvent,
+    matchesLine: (lineEl: HTMLElement | null) => boolean,
+    selectionForClick: (state: EditorState, pos: number, clickDetail: number) => SelectionRange,
+): MouseSelectionStyle | null {
     if (event.button !== 0 || event.ctrlKey || event.metaKey || event.altKey) {
         return null;
     }
-    if (!isListLineElement(closestCmLineElement(view, event.target))) {
+    if (!matchesLine(closestCmLineElement(view, event.target))) {
         return null;
     }
     const clickDetail = event.detail || 1;
@@ -134,9 +206,9 @@ function makeListLineMouseSelectionStyle(view: EditorView, event: MouseEvent): M
         },
         get(event, extend, multiple) {
             const curPos = resolveContentClickPos(view, event) ?? startPos;
-            let range = selectionRangeForListLineClick(view.state, curPos, clickDetail);
+            let range = selectionForClick(view.state, curPos, clickDetail);
             if (startPos !== curPos && !extend && clickDetail === 1) {
-                const startRange = selectionRangeForListLineClick(view.state, startPos, clickDetail);
+                const startRange = selectionForClick(view.state, startPos, clickDetail);
                 const from = Math.min(startRange.from, range.from);
                 const to = Math.max(startRange.to, range.to);
                 range = EditorSelection.range(from, to);
@@ -156,7 +228,14 @@ function makeListLineMouseSelectionStyle(view: EditorView, event: MouseEvent): M
 
 /** DOM-accurate mouse selection on hanging-indent list lines. */
 export const listLineMouseSelectionStyle = Prec.high(
-    EditorView.mouseSelectionStyle.of(makeListLineMouseSelectionStyle),
+    EditorView.mouseSelectionStyle.of((view, event) =>
+        makeDomResolvedLineMouseSelectionStyle(view, event, isListLineElement, selectionRangeForListLineClick)),
+);
+
+/** DOM-accurate mouse selection on heading lines (hidden ATX markers, large type). */
+export const headingLineMouseSelectionStyle = Prec.high(
+    EditorView.mouseSelectionStyle.of((view, event) =>
+        makeDomResolvedLineMouseSelectionStyle(view, event, isHeadingLineElement, selectionRangeForHeadingLineClick)),
 );
 
 /** When DOM row disagrees with `posAtCoords`, snap to the DOM row. */
@@ -184,11 +263,13 @@ function dispatchClickSpec(view: EditorView, spec: TransactionSpec): void {
 }
 
 function runContentClick(view: EditorView, event: MouseEvent): boolean {
+    if (isTableWidgetPointerTarget(event.target)) { return false; }
     if (event.button !== 0 || event.ctrlKey || event.metaKey || event.altKey) {
         return false;
     }
-    // List-line clicks and drags are owned by listLineMouseSelectionStyle.
-    if (isListLineElement(closestCmLineElement(view, event.target))) {
+    const lineEl = closestCmLineElement(view, event.target);
+    // List/heading clicks and drags are owned by mouseSelectionStyle extensions.
+    if (isListLineElement(lineEl) || isHeadingLineElement(lineEl)) {
         return false;
     }
     if (event.detail === 3) {

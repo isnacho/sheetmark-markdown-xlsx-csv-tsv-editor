@@ -132,6 +132,9 @@ const MUTATIONS = [
       find: "import { Icons } from '../../shared/icons';", replace: "import { Icons } from '../../shared/icons';\nimport * as eagerMermaid from 'mermaid';\nvoid eagerMermaid;" },
     { id: 'resize-listeners-once', file: 'src/webviews/spreadsheet/spreadsheetWebview.ts',
       find: 'if (!state.resizeGlobalListenersAttached) {', replace: 'if (!state.resizeGlobalListenersAttached || document.body !== null) {' },
+    { id: 'md-table-header-text-select', file: 'src/webviews/md/livePreview/tableWidget.ts',
+      find: 'if (tableCellEditingAtPointer(event)) { return; }\n        event.preventDefault();\n        event.stopPropagation();\n\n        const tableNode = findTableNodeByIndex(view.state, tableIndex);\n        if (!tableNode) { return; }\n        const col = colTarget.col;',
+      replace: 'event.preventDefault();\n        event.stopPropagation();\n        if (document.activeElement?.classList.contains(\'cm-md-table-cell-editing\')) { return; }\n\n        const tableNode = findTableNodeByIndex(view.state, tableIndex);\n        if (!tableNode) { return; }\n        const col = colTarget.col;' },
 ];
 
 const repo = execSync('git rev-parse --show-toplevel', { encoding: 'utf8' }).trim();

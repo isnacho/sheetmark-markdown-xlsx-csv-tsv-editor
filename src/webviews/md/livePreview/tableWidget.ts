@@ -591,6 +591,7 @@ function serializeCellContent(el: HTMLElement): string {
         }
         if (node.nodeType !== Node.ELEMENT_NODE) { return; }
         const element = node as HTMLElement;
+        if (element.classList.contains('cm-md-col-resize-handle')) { return; }
         if (element.tagName === 'BR') {
             out += '<br>';
             return;
@@ -919,6 +920,7 @@ function hasExplicitColumnWidths(widths: readonly number[]): boolean {
 function wireResizeHandle(th: HTMLElement, table: HTMLTableElement, view: EditorView, col: number, tableIndex: number): void {
     const handle = document.createElement('div');
     handle.className = 'cm-md-col-resize-handle';
+    handle.contentEditable = 'false';
     th.appendChild(handle);
 
     const currentCols = () => Array.from(table.querySelectorAll(':scope > colgroup > col')) as HTMLTableColElement[];
@@ -1039,15 +1041,37 @@ function headerColAtX(wrap: HTMLElement, clientX: number): { th: HTMLElement; co
     return null;
 }
 
-/** Header column under the pointer, including the top gutter above `<thead>`. */
-function columnTargetAt(wrap: HTMLElement, clientX: number, clientY: number): { th: HTMLElement; col: number } | null {
+const COLUMN_DRAG_GRIP_HEIGHT_PX = 16;
+
+/** Pure hit test: top-of-header gutter straddling `<th>` top (matches `positionColHandle`). */
+export function columnDragGripTarget(
+    wrapTop: number,
+    thRect: { top: number; left: number; right: number },
+    clientX: number,
+    clientY: number,
+    gripHeightPx = COLUMN_DRAG_GRIP_HEIGHT_PX,
+): boolean {
+    const gripTop = thRect.top - gripHeightPx / 2;
+    const gripBottom = thRect.top + gripHeightPx / 2;
+    const yInGrip = clientY >= Math.max(wrapTop, gripTop) && clientY <= gripBottom;
+    const xInCol = clientX >= thRect.left - 4 && clientX <= thRect.right + 4;
+    return yInGrip && xInCol;
+}
+
+/** Column under the pointer when starting a column drag (grip band only — not header cell text). */
+function columnDragGripAt(wrap: HTMLElement, clientX: number, clientY: number): { th: HTMLElement; col: number } | null {
     const col = headerColAtX(wrap, clientX);
     if (!col) { return null; }
     const wrapRect = wrap.getBoundingClientRect();
     const thRect = col.th.getBoundingClientRect();
-    const yInStrip = clientY >= wrapRect.top && clientY <= thRect.bottom + 4;
-    const xInCol = clientX >= thRect.left - 4 && clientX <= thRect.right + 4;
-    return yInStrip && xInCol ? col : null;
+    if (!columnDragGripTarget(wrapRect.top, thRect, clientX, clientY)) { return null; }
+    return col;
+}
+
+function tableCellEditingAtPointer(event: MouseEvent): boolean {
+    if (document.activeElement?.classList.contains('cm-md-table-cell-editing')) { return true; }
+    const target = event.target;
+    return target instanceof HTMLElement && Boolean(target.closest('.cm-md-table-cell-editing'));
 }
 
 /** Pixels between the row grip's right edge and the table's left border. */
@@ -1188,10 +1212,9 @@ function wireTableDragUI(
     const positionColHandle = (th: HTMLElement) => {
         const wrapRect = wrap.getBoundingClientRect();
         const thRect = th.getBoundingClientRect();
-        const gripHeight = 16;
         colHandle.style.left = `${thRect.left - wrapRect.left + thRect.width / 2}px`;
         // Straddle the header top edge so the grip is reachable without leaving the hit strip.
-        colHandle.style.top = `${Math.max(0, thRect.top - wrapRect.top - gripHeight / 2)}px`;
+        colHandle.style.top = `${Math.max(0, thRect.top - wrapRect.top - COLUMN_DRAG_GRIP_HEIGHT_PX / 2)}px`;
         colHandle.style.transform = 'translateX(-50%) rotate(90deg)';
     };
 
@@ -1221,7 +1244,7 @@ function wireTableDragUI(
             hideRowHandle();
         }
 
-        const col = columnTargetAt(wrap, event.clientX, event.clientY);
+        const col = columnDragGripAt(wrap, event.clientX, event.clientY);
         if (col) {
             colTarget = { col: col.col };
             positionColHandle(col.th);
@@ -1263,9 +1286,9 @@ function wireTableDragUI(
     const startRowDrag = (event: MouseEvent) => {
         if (view.state.readOnly) { return; }
         if (!rowTarget) { return; }
+        if (tableCellEditingAtPointer(event)) { return; }
         event.preventDefault();
         event.stopPropagation();
-        if (document.activeElement?.classList.contains('cm-md-table-cell-editing')) { return; }
 
         const tableNode = findTableNodeByIndex(view.state, tableIndex);
         if (!tableNode) { return; }
@@ -1324,9 +1347,9 @@ function wireTableDragUI(
     const startColDrag = (event: MouseEvent) => {
         if (view.state.readOnly) { return; }
         if (!colTarget) { return; }
+        if (tableCellEditingAtPointer(event)) { return; }
         event.preventDefault();
         event.stopPropagation();
-        if (document.activeElement?.classList.contains('cm-md-table-cell-editing')) { return; }
 
         const tableNode = findTableNodeByIndex(view.state, tableIndex);
         if (!tableNode) { return; }
@@ -1393,18 +1416,25 @@ function wireTableDragUI(
     };
 
     rowHandle.addEventListener('mousedown', startRowDrag);
-    colHandle.addEventListener('mousedown', startColDrag);
+    colHandle.addEventListener('mousedown', (event) => {
+        if (!colTarget) {
+            const col = headerColAtX(wrap, event.clientX);
+            if (col) { colTarget = { col: col.col }; }
+        }
+        startColDrag(event);
+    });
 
     // Gutter click starts a drag even if the pointer misses the 14px grip icon.
     wrap.addEventListener('mousedown', (event) => {
         if (rowDragging || colDragging) { return; }
+        if (tableCellEditingAtPointer(event)) { return; }
         const wrapRect = wrap.getBoundingClientRect();
         const xFromLeft = event.clientX - wrapRect.left;
         if (xFromLeft <= ROW_GRIP_GUTTER_PX && rowTarget) {
             startRowDrag(event);
             return;
         }
-        const col = columnTargetAt(wrap, event.clientX, event.clientY);
+        const col = columnDragGripAt(wrap, event.clientX, event.clientY);
         if (col) {
             colTarget = { col: col.col };
             startColDrag(event);
@@ -1743,7 +1773,11 @@ export class TableWidget extends WidgetType {
                 const pos = resolveCellPosition(wrap, cellEl as HTMLElement);
                 const target = pos && gridAtClick ? gridAtClick[pos.row]?.[pos.col] : undefined;
                 if (!target) { return; }
+                if (activeTableEditingCell && activeTableEditingCell !== cellEl) {
+                    tableCellCommitHandlers.get(activeTableEditingCell)?.();
+                }
                 event.preventDefault();
+                event.stopPropagation();
                 const mouse = event as MouseEvent;
                 pendingCellClickPoint = { x: mouse.clientX, y: mouse.clientY };
                 placeCollapsed(view, collapsedClickPosForCell(view.state, target));
@@ -1774,7 +1808,11 @@ export class TableWidget extends WidgetType {
             wireTableScrollUI(scroll);
             wireTableDragUI(wrap, view, this.tableIndex, this.grid);
             wrap.querySelectorAll('thead th').forEach((th, col) => {
-                wireResizeHandle(th as HTMLElement, table, view, col, this.tableIndex);
+                const editingThisHeader =
+                    this.activeCell?.row === 0 && this.activeCell.col === col;
+                if (!editingThisHeader) {
+                    wireResizeHandle(th as HTMLElement, table, view, col, this.tableIndex);
+                }
             });
             scheduleAllTableRowMinHeightsSync(table);
         }

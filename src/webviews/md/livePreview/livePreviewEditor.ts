@@ -62,7 +62,7 @@ import {
 import { listMarkerBoundaryExtensions, livePreviewMarkdownKeymap } from './listMarkerEditing';
 import { codeStylingPlugin } from './codeStylingPlugin';
 import { codeBlockNavigationKeymap } from './codeBlockBoundaryEditing';
-import { contentClickHandlers, listLineMouseSelectionStyle, resolveContentClickPos } from './contentClickPositioning';
+import { contentClickHandlers, headingLineMouseSelectionStyle, isTableWidgetPointerTarget, listLineMouseSelectionStyle, resolveContentClickPos } from './contentClickPositioning';
 import { tableWidgetField, columnWidthsField, setColumnWidthsEffect } from './tableWidget';
 import { tableBoundaryExtensions } from './tableBoundaryEditing';
 import { frontmatterWidgetField, seedFrontmatterCollapsed, seedFrontmatterEditing, setFrontmatterCollapsedCallback, blurActiveFrontmatterEditing, setFrontmatterEditingEffect } from './frontmatterWidget';
@@ -245,6 +245,7 @@ export function mountLivePreview(opts: LivePreviewMountOptions): EditorView {
     const domHandlers = EditorView.domEventHandlers({
         mousedown(event, editorView) {
             if (event.button !== 0) { return false; }
+            if (isTableWidgetPointerTarget(event.target)) { return false; }
             const pos = resolveContentClickPos(editorView, event)
                 ?? editorView.posAtCoords({ x: event.clientX, y: event.clientY });
             if (pos === null) { return false; }
@@ -331,6 +332,7 @@ export function mountLivePreview(opts: LivePreviewMountOptions): EditorView {
             codeStylingPlugin,
             codeBlockNavigationKeymap,
             listLineMouseSelectionStyle,
+            headingLineMouseSelectionStyle,
             contentClickHandlers,
             ...spellcheckExtensions,
             slashMenuAutocompletion(),

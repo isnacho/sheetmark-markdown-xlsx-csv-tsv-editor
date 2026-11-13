@@ -95,7 +95,7 @@ from the real DOM.
 
 | File | Responsibility | Grep for |
 |---|---|---|
-| contentClickPositioning.ts | DOM-accurate click and drag positioning in the content area | `contentClickHandlers`, `resolveContentClickPos`, `computeContentClickCorrection`, `selectionRangeForListLineClick` |
+| contentClickPositioning.ts | DOM-accurate click and drag positioning in the content area | `contentClickHandlers`, `resolveContentClickPos`, `computeContentClickCorrection`, `listLineMouseSelectionStyle`, `headingLineMouseSelectionStyle`, `selectionRangeForListLineClick`, `selectionRangeForHeadingLineClick` |
 | pointerLineResolution.ts | Screen Y to document line; triple-click line selection | `resolveLinePosAtPointer`, `closestCmLineElement`, `computeTripleClickLineSelection` |
 | hoverLineGutter.ts | Hover highlight on the line-number gutter | `hoverLineGutter`, `hoverGutterDomEventHandlers`, `setHoveredLine` |
 | headingGutterSync.ts | Heading line decorations so gutter rows align with heading sizes | `headingLineDecorationField` |

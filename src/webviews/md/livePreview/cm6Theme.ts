@@ -525,7 +525,7 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             overflowX: 'auto',
             position: 'relative',
         },
-        '.cm-md-table-scroll.cm-md-table-overflow-x table.md-table.cm-md-table-resized th, .cm-md-table-scroll.cm-md-table-overflow-x table.md-table.cm-md-table-resized td:not(.cm-md-table-cell-editing)': {
+        '.cm-md-table-scroll.cm-md-table-overflow-x table.md-table.cm-md-table-resized th:not(.cm-md-table-cell-editing), .cm-md-table-scroll.cm-md-table-overflow-x table.md-table.cm-md-table-resized td:not(.cm-md-table-cell-editing)': {
             whiteSpace: 'nowrap',
         },
         '.cm-md-table-scroll.cm-md-table-hug-content': {

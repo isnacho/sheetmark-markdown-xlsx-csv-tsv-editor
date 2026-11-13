@@ -1112,7 +1112,7 @@ body.cm6-preview-active .markdown-preview .yaml-frontmatter-card {
 }
 
 /* Wide manual-layout tables: inactive cells stay on one line so width = column sum. */
-.cm-md-table-scroll.cm-md-table-overflow-x table.md-table.cm-md-table-resized th,
+.cm-md-table-scroll.cm-md-table-overflow-x table.md-table.cm-md-table-resized th:not(.cm-md-table-cell-editing),
 .cm-md-table-scroll.cm-md-table-overflow-x table.md-table.cm-md-table-resized td:not(.cm-md-table-cell-editing) {
     white-space: nowrap;
 }

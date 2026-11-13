@@ -121,6 +121,8 @@ const MUTATIONS = [
       find: "{ key: 'Mod-Enter', run: toggleFromTitle },", replace: "{ key: 'Mod-Alt-Shift-F12', run: toggleFromTitle }," },
     { id: 'focus-ring-small-controls', file: 'resources/shared/theme.css',
       find: '.cm-md-details-chevron:focus-visible,\n.cm-md-details-handle:focus-visible,', replace: '.cm-md-details-chevron:never-focus,\n.cm-md-details-handle:focus-visible,' },
+    { id: 'sheet-toolbar-end-group', file: 'src/webviews/spreadsheet/components/spreadsheetToolbarComponent.ts',
+      find: "section: 'end',\n            onClick: options.onOpenSettings", replace: "onClick: options.onOpenSettings" },
     { id: 'mermaid-lazy-load', file: 'src/webviews/md/livePreview/mermaidWidget.ts',
       find: "import { Icons } from '../../shared/icons';", replace: "import { Icons } from '../../shared/icons';\nimport * as eagerMermaid from 'mermaid';\nvoid eagerMermaid;" },
     { id: 'resize-listeners-once', file: 'src/webviews/spreadsheet/spreadsheetWebview.ts',

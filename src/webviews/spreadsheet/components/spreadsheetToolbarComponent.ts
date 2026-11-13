@@ -94,25 +94,11 @@ export function createXlsxToolbarButtons(options: CreateXlsxToolbarButtonsOption
             onClick: options.onToggleExpand
         },
         {
-            id: 'findButton',
-            icon: Icons.Search,
-            cls: 'icon-only',
-            tooltip: 'Find in sheet (Ctrl/Cmd+F)',
-            onClick: options.onFind
-        },
-        {
             id: 'togglePlainViewButton',
             icon: Icons.Table,
             cls: 'icon-only',
             tooltip: 'Toggle Plain View (removes all styling)',
             onClick: options.onTogglePlainView
-        },
-        {
-            id: 'openSettingsButton',
-            icon: Icons.Settings,
-            tooltip: 'Sheet Settings',
-            cls: 'icon-only',
-            onClick: options.onOpenSettings
         },
         {
             id: 'insertControlButton',
@@ -122,11 +108,21 @@ export function createXlsxToolbarButtons(options: CreateXlsxToolbarButtonsOption
             hidden: true,
             onClick: options.onInsertControl
         },
+        // Right end, in the Markdown toolbar's order: find first, settings last.
+        {
+            id: 'findButton',
+            icon: Icons.Search,
+            cls: 'icon-only',
+            tooltip: 'Find in sheet (Ctrl/Cmd+F)',
+            section: 'end',
+            onClick: options.onFind
+        },
         {
             id: 'versionHistoryButton',
             icon: Icons.VersionHistory,
             tooltip: 'Version history',
             cls: 'icon-only',
+            section: 'end',
             onClick: options.onVersionHistory
         },
         {
@@ -134,6 +130,7 @@ export function createXlsxToolbarButtons(options: CreateXlsxToolbarButtonsOption
             icon: Icons.Convert,
             cls: 'icon-only',
             tooltip: 'Convert this file to CSV, TSV, or XLSX',
+            section: 'end',
             onClick: options.onConvertFile
         },
         {
@@ -141,7 +138,16 @@ export function createXlsxToolbarButtons(options: CreateXlsxToolbarButtonsOption
             icon: Icons.Help,
             tooltip: 'Help & Feedback',
             cls: 'icon-only',
+            section: 'end',
             onClick: options.onHelp
+        },
+        {
+            id: 'openSettingsButton',
+            icon: Icons.Settings,
+            tooltip: 'Sheet Settings',
+            cls: 'icon-only',
+            section: 'end',
+            onClick: options.onOpenSettings
         }
     ];
 }

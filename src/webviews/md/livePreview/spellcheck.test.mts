@@ -65,11 +65,14 @@ test('web and email addresses written in prose are excluded from spell check', (
     assert.equal(isSpellcheckExcluded(now, now + 3, state, null), false);
 });
 
-test('link targets are excluded from spell check, link text is not', () => {
-    const doc = 'A [linkk text](https://exampel.com/pathz) here.';
+test('link targets and HTML tags are excluded from spell check, link text is not', () => {
+    // A relative target, so only the syntax tree (not the web-address rule) can exclude it.
+    const doc = 'A [linkk text](docs/setupp-guide.md) here,<br>then more.';
     const state = stateFor(doc);
-    const target = doc.indexOf('exampel');
-    assert.equal(isSpellcheckExcluded(target, target + 7, state, null), true);
+    const target = doc.indexOf('setupp');
+    assert.equal(isSpellcheckExcluded(target, target + 6, state, null), true);
+    const tag = doc.indexOf('br>');
+    assert.equal(isSpellcheckExcluded(tag, tag + 2, state, null), true);
     const text = doc.indexOf('linkk');
     assert.equal(isSpellcheckExcluded(text, text + 5, state, null), false);
 });

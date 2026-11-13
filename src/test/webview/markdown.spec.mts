@@ -202,6 +202,41 @@ test('the CSP blocks inline handlers even if markup gets past sanitizing', async
     assert.ok((await webview.problems()).some(p => p.includes('script-src')), 'expected a CSP script-src violation');
 });
 
+test('slash menu shows at least twelve rows and shrinks for a short viewport', async () => {
+    const originalViewport = webview.page.viewportSize() ?? { width: 1280, height: 720 };
+    const openSlashMenu = async () => {
+        await openDoc('');
+        await webview.page.click('.cm-content .cm-line');
+        await webview.page.keyboard.type('/');
+        await webview.page.waitForSelector('.cm-slash-menu-tooltip');
+    };
+    const menuGeometry = () => webview.page.locator('.cm-slash-menu-tooltip ul').evaluate((list) => {
+        const listRect = list.getBoundingClientRect();
+        let visibleRows = 0;
+        for (const row of list.querySelectorAll('li')) {
+            const rowRect = row.getBoundingClientRect();
+            if (rowRect.top >= listRect.top - 0.5 && rowRect.bottom <= listRect.bottom + 0.5) {
+                visibleRows++;
+            }
+        }
+        return { height: listRect.height, visibleRows };
+    });
+
+    try {
+        await openSlashMenu();
+        const full = await menuGeometry();
+        assert.ok(full.visibleRows >= 12, `only ${full.visibleRows} slash-menu rows are visible`);
+
+        await webview.page.setViewportSize({ width: originalViewport.width, height: 320 });
+        await openSlashMenu();
+        const compact = await menuGeometry();
+        assert.ok(compact.height < full.height, `short viewport menu stayed ${compact.height}px tall`);
+        assert.ok(compact.height <= 296, `short viewport menu is ${compact.height}px tall`);
+    } finally {
+        await webview.page.setViewportSize(originalViewport);
+    }
+});
+
 test('non-sticky toolbar reveals from the top edge and stays for its settings panel', async () => {
     await webview.send({ command: 'initSettings', settings: { ...SETTINGS, stickyToolbar: false } } satisfies HostToMarkdownWebview);
     await webview.page.evaluate(() => {

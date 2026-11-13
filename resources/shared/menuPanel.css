@@ -446,12 +446,12 @@ li[aria-selected] .cm-slash-menu-icon {
     overflow: hidden;
 }
 
-.cm-tooltip-autocomplete.cm-slash-menu-tooltip ul {
+.cm-editor .cm-tooltip.cm-tooltip-autocomplete.cm-slash-menu-tooltip > ul {
     font-family: var(--font-family);
     font-size: var(--menu-row-font-size);
     line-height: var(--menu-row-line-height);
     min-width: 224px;
-    max-height: 360px;
+    max-height: min(640px, calc(100vh - 24px));
     margin: 0;
     padding: 0;
     gap: 0;

@@ -140,6 +140,9 @@ const MUTATIONS = [
       replace: 'void activeId; const active = \'\';' },
     { id: 'outline-rail-below-toolbar', file: 'src/webviews/md/outlineRailOverlay.ts',
       find: 'return Math.max(0, ...toolbarBottoms) + gap;', replace: 'return 0 * Math.max(0, ...toolbarBottoms) + gap;' },
+    { id: 'slash-menu-height', file: 'resources/shared/menuPanel.css',
+      find: '.cm-editor .cm-tooltip.cm-tooltip-autocomplete.cm-slash-menu-tooltip > ul {',
+      replace: '.cm-tooltip-autocomplete.cm-slash-menu-tooltip ul {' },
 ];
 
 const repo = execSync('git rev-parse --show-toplevel', { encoding: 'utf8' }).trim();

@@ -111,6 +111,8 @@ const MUTATIONS = [
       find: 'diagramWrap.insertBefore(createMermaidError(view, err), chrome);', replace: 'diagramWrap.textContent = \'\'; diagramWrap.appendChild(createMermaidError(view, err)); void chrome;' },
     { id: 'md-format-toolbar-wraps', file: 'resources/md/mdWebview.css',
       find: 'flex-direction: row;\n    flex-wrap: wrap;\n    align-items: center;\n    position: relative;', replace: 'flex-direction: row;\n    flex-wrap: nowrap;\n    align-items: center;\n    position: relative;' },
+    { id: 'md-toolbar-text-contrast', file: 'resources/md/mdWebview.css',
+      find: '    color: color-mix(in srgb, currentColor 50%, var(--color-text-primary));\n    font-size: 11px;', replace: '    color: currentColor;\n    font-size: 11px;' },
     { id: 'mermaid-lazy-load', file: 'src/webviews/md/livePreview/mermaidWidget.ts',
       find: "import { Icons } from '../../shared/icons';", replace: "import { Icons } from '../../shared/icons';\nimport * as eagerMermaid from 'mermaid';\nvoid eagerMermaid;" },
     { id: 'resize-listeners-once', file: 'src/webviews/spreadsheet/spreadsheetWebview.ts',

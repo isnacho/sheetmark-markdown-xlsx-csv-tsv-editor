@@ -578,3 +578,32 @@ test('in a narrow window the formatting toolbar wraps, so every button is fully 
         await webview.page.setViewportSize({ width: 1000, height: 800 });
     }
 });
+
+// @@F16
+test('toolbar text icons (H1, AB...) have at least 4.5:1 contrast in light and dark', async () => {
+    await openDoc('Para.\n');
+    // A string, not a function: tsx would wrap the named helpers in `__name`, which the page lacks.
+    const ratio = () => webview.page.evaluate<number>(`(() => {
+        const parse = (c) => {
+            const nums = (c.match(/[\\d.]+/g) || []).map(Number);
+            return c.startsWith('color(') ? nums.slice(0, 3).map(n => n * 255) : nums.slice(0, 3);
+        };
+        const lum = (c) => {
+            const [r, g, b] = parse(c).map(v => { const x = v / 255; return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; });
+            return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+        };
+        const icon = document.querySelector('#formattingToolbar .fmt-text-icon');
+        const fg = lum(getComputedStyle(icon).color);
+        const bg = lum(getComputedStyle(document.getElementById('formattingToolbar')).backgroundColor);
+        return (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05);
+    })()`);
+    const light = await ratio();
+    assert.ok(light >= 4.5, `light contrast ${light.toFixed(2)}:1`);
+    await webview.page.evaluate(() => document.body.classList.add('dark-mode'));
+    try {
+        const dark = await ratio();
+        assert.ok(dark >= 4.5, `dark contrast ${dark.toFixed(2)}:1`);
+    } finally {
+        await webview.page.evaluate(() => document.body.classList.remove('dark-mode'));
+    }
+});

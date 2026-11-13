@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Markdown Preview Edit: the text-style toolbar buttons (H1, H2, H3, AB, ab, Ab) are now darker in light themes and lighter in dark ones, so their small labels are easy to read (they were below the 4.5:1 contrast that small text needs).
 - Markdown Preview Edit: in a narrow window the formatting toolbar now wraps onto a second row, so every button stays visible. Before, the last button was cut in half and the rest were hidden off the edge.
 - Markdown Preview Edit: a Mermaid diagram with a syntax error now keeps its Diagram/Code switch and copy button, shows Mermaid's own error message, and has an Edit code button that opens the code. Before, the card only told you to switch to Code and showed no way to do it.
 - Markdown Preview Edit: the callout type menu now moves with the cursor. Clicking from one callout into another shows the menu for the one you are in; before, it stayed on the first callout until you typed something.

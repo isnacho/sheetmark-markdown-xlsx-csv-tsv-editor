@@ -1981,7 +1981,11 @@ html::-webkit-scrollbar-corner,
     stroke: currentColor;
 }
 
+/* Small text (H1, AB...) needs 4.5:1 contrast; the shared icon grey only reaches about 3.5:1
+   on the light toolbar. Pulling it toward the text colour raises contrast in every theme (light,
+   dark, VS Code), and on hover it is the text colour anyway. Drawn icons keep the grey (3:1). */
 .fmt-text-icon {
+    color: color-mix(in srgb, currentColor 50%, var(--color-text-primary));
     font-size: 11px;
     font-weight: 700;
     letter-spacing: -0.5px;

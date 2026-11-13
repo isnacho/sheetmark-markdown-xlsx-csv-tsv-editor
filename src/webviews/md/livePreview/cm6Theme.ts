@@ -23,6 +23,24 @@ const CALLOUT_ICONS = {
     success: calloutIcon("<circle cx='12' cy='12' r='10'/><path d='m8.5 12.5 2.5 2.5 4.5-5'/>"),
 };
 
+/**
+ * Cards (tables, images, diagrams) replace their source lines, so the toggle body's line indent
+ * never reaches them and they sat at the toggle's own left edge. A card takes the indent of the
+ * line just before it instead: a body line at depth d, or a title line at depth d (body d + 1).
+ */
+function toggleCardIndent(): Record<string, { marginLeft: string }> {
+    const cards = ['.cm-md-table-widget', '.cm-md-image-block', '.cm-md-mermaid-block'];
+    const rules: Record<string, { marginLeft: string }> = {};
+    for (let d = 1; d <= 6; d++) {
+        const after = [
+            `.cm-content > .cm-line.cm-md-details-body.cm-md-details-d${d} + `,
+            `.cm-content > .cm-line.cm-md-details-title-line.cm-md-details-d${d - 1} + `,
+        ];
+        rules[after.flatMap(prefix => cards.map(card => prefix + card)).join(', ')] = { marginLeft: `${d * 20}px` };
+    }
+    return rules;
+}
+
 export function cm6Theme(): ReturnType<typeof EditorView.theme> {
     return EditorView.theme({
         '&': {
@@ -623,6 +641,7 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
         '.cm-md-details-d4': { '--d': '4' },
         '.cm-md-details-d5': { '--d': '5' },
         '.cm-md-details-d6': { '--d': '6' },
+        ...toggleCardIndent(),
         // Indent with MARGIN, not padding: list lines set their own inline padding-left (hanging indent),
         // so padding would indent the text but leave bullets behind. The doubled selector beats the
         // callout and blockquote line rules, which also set a margin.

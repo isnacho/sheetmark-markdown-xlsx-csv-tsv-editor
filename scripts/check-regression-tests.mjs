@@ -113,6 +113,8 @@ const MUTATIONS = [
       find: 'flex-direction: row;\n    flex-wrap: wrap;\n    align-items: center;\n    position: relative;', replace: 'flex-direction: row;\n    flex-wrap: nowrap;\n    align-items: center;\n    position: relative;' },
     { id: 'md-toolbar-text-contrast', file: 'resources/md/mdWebview.css',
       find: '    color: color-mix(in srgb, currentColor 50%, var(--color-text-primary));\n    font-size: 11px;', replace: '    color: currentColor;\n    font-size: 11px;' },
+    { id: 'md-toggle-card-indent', file: 'src/webviews/md/livePreview/cm6Theme.ts',
+      find: '{ marginLeft: `${d * 20}px` }', replace: '{ marginLeft: `${d * 0}px` }' },
     { id: 'mermaid-lazy-load', file: 'src/webviews/md/livePreview/mermaidWidget.ts',
       find: "import { Icons } from '../../shared/icons';", replace: "import { Icons } from '../../shared/icons';\nimport * as eagerMermaid from 'mermaid';\nvoid eagerMermaid;" },
     { id: 'resize-listeners-once', file: 'src/webviews/spreadsheet/spreadsheetWebview.ts',

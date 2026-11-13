@@ -607,3 +607,18 @@ test('toolbar text icons (H1, AB...) have at least 4.5:1 contrast in light and d
         await webview.page.evaluate(() => document.body.classList.remove('dark-mode'));
     }
 });
+
+// @@F20
+test('a table inside a toggle is indented with the toggle body text', async () => {
+    await openDoc('Para.\n\n<details open>\n<summary>\n\nA toggle\n\n</summary>\n\nBody text.\n\n| A | B |\n| - | - |\n| 1 | 2 |\n\n</details>\n\nAfter.\n');
+    await line('After').click();
+    await webview.page.waitForSelector('.cm-md-table-widget');
+    const m = await webview.page.evaluate(() => {
+        const body = [...document.querySelectorAll('.cm-content > .cm-line')].find(l => l.textContent?.includes('Body text'))!;
+        const range = document.createRange();
+        range.setStart(body.firstChild!, 0);
+        range.setEnd(body.firstChild!, 1);
+        return { text: range.getBoundingClientRect().left, table: document.querySelector('.cm-md-table-widget')!.getBoundingClientRect().left };
+    });
+    assert.ok(Math.abs(m.table - m.text) <= 1, `table left ${m.table} vs toggle body text ${m.text}`);
+});

@@ -114,7 +114,11 @@ class HandleWidget extends WidgetType {
         el.className = 'cm-md-details-handle';
         el.setAttribute('role', 'button');
         el.setAttribute('aria-label', 'Toggle options');
-        el.textContent = '⋮⋮';
+        // Six drawn dots (Notion's grip), centred like the arrow's triangle; a text glyph such as
+        // the vertical ellipsis sits low in its box.
+        el.innerHTML = '<svg viewBox="0 0 10 16" aria-hidden="true">'
+            + [3, 8, 13].map(y => `<circle cx="3" cy="${y}" r="1.5"/><circle cx="7" cy="${y}" r="1.5"/>`).join('')
+            + '</svg>';
         el.addEventListener('mousedown', (event) => {
             event.preventDefault();
             event.stopPropagation();

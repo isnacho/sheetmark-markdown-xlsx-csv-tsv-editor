@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Markdown Preview Edit: the handle that appears when you hover a toggle is now six drawn dots, as in Notion, centred on the title next to the arrow (it used to sit a few pixels low).
 - Markdown Preview Edit: the find box (Cmd/Ctrl+F) now says "Find in document" instead of "Search in preview...", and screen readers announce it by that name.
 - Markdown Preview Edit: code blocks show a small language label instead of their ``` lines, as in Notion. Click the label to edit the language; the ``` marks show, dimmed, only while the cursor is on that line, and nothing moves when they appear.
 - Markdown Preview Edit: clicking into a heading no longer pushes its text to the right. The `#` marks now appear in the margin to the left of the heading (except in toggle titles, where the arrow sits).

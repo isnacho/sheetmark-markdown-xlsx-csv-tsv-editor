@@ -374,3 +374,16 @@ test('the search box says what it does: find in this document', async () => {
     assert.equal(await webview.page.getAttribute('#searchInput', 'placeholder'), 'Find in document');
     assert.equal(await webview.page.getAttribute('#searchInput', 'aria-label'), 'Find in document');
 });
+
+// @@F27
+test('a toggle\'s hover handle is drawn dots, centred on the title like the arrow', async () => {
+    await openDoc('Para.\n\n<details open>\n<summary>\n\nA toggle title\n\n</summary>\n\nBody.\n\n</details>\n');
+    await webview.page.locator('.cm-content > .cm-line', { hasText: 'A toggle title' }).first().hover();
+    const centres = await webview.page.evaluate(() => {
+        const arrow = document.querySelector('.cm-md-details-chevron svg')!.getBoundingClientRect();
+        const grip = document.querySelector('.cm-md-details-handle svg')?.getBoundingClientRect();
+        return { arrow: (arrow.top + arrow.bottom) / 2, grip: grip ? (grip.top + grip.bottom) / 2 : null };
+    });
+    assert.ok(centres.grip !== null, 'the handle is a text glyph, not drawn dots');
+    assert.ok(Math.abs(centres.grip - centres.arrow) <= 1, `handle centre ${centres.grip} vs arrow centre ${centres.arrow}`);
+});

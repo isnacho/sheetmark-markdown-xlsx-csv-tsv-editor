@@ -77,6 +77,8 @@ const MUTATIONS = [
       find: 'body.cm6-preview-active .cm-md-fence-chrome:not(.cm-md-fence-chrome-overlay) {\n    left: auto;', replace: 'body.cm6-preview-active .cm-md-fence-chrome:not(.cm-md-fence-chrome-overlay) {\n    left: 0;' },
     { id: 'md-find-placeholder', file: 'src/shared/webviewHtml.ts',
       find: 'placeholder="Find in document" aria-label="Find in document"', replace: 'placeholder="Search in preview..."' },
+    { id: 'md-toggle-handle-centred', file: 'src/webviews/md/livePreview/cm6Theme.ts',
+      find: "margin: '0.1em auto 0',\n            fill: 'currentColor',", replace: "margin: '0.4em auto 0',\n            fill: 'currentColor'," },
     { id: 'mermaid-lazy-load', file: 'src/webviews/md/livePreview/mermaidWidget.ts',
       find: "import { Icons } from '../../shared/icons';", replace: "import { Icons } from '../../shared/icons';\nimport * as eagerMermaid from 'mermaid';\nvoid eagerMermaid;" },
     { id: 'resize-listeners-once', file: 'src/webviews/spreadsheet/spreadsheetWebview.ts',

@@ -623,8 +623,15 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             userSelect: 'none',
             color: 'var(--color-text-secondary)',
             opacity: '0',
-            fontSize: '0.8em',
-            letterSpacing: '-2px',
+        },
+        // Same box rule as the arrow (1em tall, bottom 0.16em under the baseline), so both centres
+        // sit at the middle of the title text.
+        '.cm-md-details-handle svg': {
+            display: 'block',
+            height: '0.8em',
+            width: '0.5em',
+            margin: '0.1em auto 0',
+            fill: 'currentColor',
         },
         '.cm-md-details-title-line:hover .cm-md-details-handle': {
             opacity: '0.8',

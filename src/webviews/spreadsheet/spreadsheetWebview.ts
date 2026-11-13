@@ -2751,13 +2751,10 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
             </div>
         `;
 
-        const findButton = document.getElementById('findButton');
-        const findWrapper = findButton ? findButton.closest('.tooltip') : null;
-        if (findWrapper && findWrapper.parentElement === toolbar) {
-            findWrapper.insertAdjacentElement('afterend', strip);
-        } else {
-            toolbar.appendChild(strip);
-        }
+        // At the end of the left button group, before the right-end group (Find, History, Convert,
+        // Help, Settings), so the strip scrolls with the edit buttons instead of pushing them aside.
+        const startGroup = toolbar.querySelector(':scope > .toolbar-group-start');
+        (startGroup ?? toolbar).appendChild(strip);
         state.editFormattingStripEl = strip;
 
         const onKeepTextSelection = (event: Event) => {

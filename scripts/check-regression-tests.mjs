@@ -123,6 +123,8 @@ const MUTATIONS = [
       find: '.cm-md-details-chevron:focus-visible,\n.cm-md-details-handle:focus-visible,', replace: '.cm-md-details-chevron:never-focus,\n.cm-md-details-handle:focus-visible,' },
     { id: 'sheet-toolbar-end-group', file: 'src/webviews/spreadsheet/components/spreadsheetToolbarComponent.ts',
       find: "section: 'end',\n            onClick: options.onOpenSettings", replace: "onClick: options.onOpenSettings" },
+    { id: 'sheet-edit-strip-in-start-group', file: 'src/webviews/spreadsheet/spreadsheetWebview.ts',
+      find: '(startGroup ?? toolbar).appendChild(strip);', replace: 'void startGroup; toolbar.appendChild(strip);' },
     { id: 'mermaid-lazy-load', file: 'src/webviews/md/livePreview/mermaidWidget.ts',
       find: "import { Icons } from '../../shared/icons';", replace: "import { Icons } from '../../shared/icons';\nimport * as eagerMermaid from 'mermaid';\nvoid eagerMermaid;" },
     { id: 'resize-listeners-once', file: 'src/webviews/spreadsheet/spreadsheetWebview.ts',

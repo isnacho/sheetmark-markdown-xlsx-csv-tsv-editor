@@ -84,6 +84,8 @@ Unit tests live beside sources as `*.test.mts` (run with `npm run test:unit`, or
 | slashMenu.ts | Slash-command autocompletion; the room editor tooltips may use (the editor area, so menus never open under the toolbar) | `SLASH_OPTIONS`, `slashMenuAutocompletion`, `computeSlashApply`, `editorTooltipSpace` |
 | livePreviewSearch.ts | In-document search matches and highlight decorations | `livePreviewSearchField`, `findCm6Matches`, `setCm6SearchHighlights`, `scrollCm6ToMatch` |
 | livePreviewInteractions.ts | Ctrl/Cmd-click target detection (links, images, anchors) | `detectInteractionAtPos`, `detectCollapsedLinkAtPos`, `Cm6Interaction` |
+| selectionColumn.ts | Selection highlight trimmed to the text column (CodeMirror's own layer is hidden; it painted into the side gutters) | `textColumnSelection`, `clampToColumn` |
+| statusBarClearance.ts | Scroll margin that keeps the cursor above the floating stats pill | `statusBarScrollMargins`, `bottomClearance` |
 | diffView.ts | `@codemirror/merge` unified diff overlay (disk vs editor) and chunk accept/reject/navigate | `buildDiffExtension`, `nextDiffChunk`, `acceptDiffChunkAtCursor`, `acceptAllDiffChunks`, `diffChunkResolutionKind` |
 
 ### Pointer, click, and gutter geometry
@@ -130,7 +132,7 @@ update that file.
 | mermaidDetection.ts | Is this fence mermaid? Find mermaid fence ranges | `isMermaidFence`, `findMermaidFenceRanges`, `extractMermaidSource` |
 | mermaidPreviewMode.ts | Diagram vs code mode state field | `mermaidPreviewModeField`, `setMermaidPreviewModeEffect`, `seedMermaidPreviewMode` |
 | mermaidPreviewActions.ts | Diagram/code mode select control and its dispatch | `createMermaidModeSelect`, `dispatchMermaidPreviewMode`, `setMermaidPreviewModeCallback` |
-| mermaidWidget.ts | Rendered mermaid diagram widget with zoom and pan | `mermaidWidgetField`, `mermaidAtomicRanges`, `attachZoomPan` |
+| mermaidWidget.ts | Rendered mermaid diagram widget with zoom and pan; on a syntax error the card keeps its controls and offers Edit code | `mermaidWidgetField`, `mermaidAtomicRanges`, `attachZoomPan`, `createMermaidError` |
 
 ### Callouts, images, frontmatter, spellcheck
 
@@ -142,13 +144,13 @@ update that file.
 | calloutEditing.ts | Change a callout's type | `computeSetCalloutType` |
 | calloutDefaultType.ts | Default callout type state | `calloutDefaultTypeField`, `setCalloutDefaultTypeEffect`, `seedCalloutDefaultType` |
 | detailsTypes.ts | Toggle (`<details>`/`<summary>`) block detector: line-based, nesting-aware, reads Sheetmark's multi-line title shape and the one-line legacy shape; hidden-run ranges | `findDetailsBlocks`, `isDetailsOpen`, `plainTitle`, `toggleTagRanges`, `stripToggleTags` |
-| detailsExtension.ts | Toggle state, decorations that fully hide tag lines and a closed body (own `StateField`, outside `revealCompartment`), atomic ranges, chevron, hover handle + menu, structure guard (`changeFilter`), Enter/Backspace/Delete keys | `detailsExtensions`, `detailsOpenField`, `computeDetailsDecorations`, `setDetailsStateCallback`, `moveCursorOutOfHiddenRuns` |
+| detailsExtension.ts | Toggle state, decorations that fully hide tag lines and a closed body (own `StateField`, outside `revealCompartment`), atomic ranges, chevron and hover handle (Tab stops, Enter/Space) + menu, structure guard (`changeFilter`), Enter/Backspace/Delete keys, Cmd/Ctrl+Enter toggles from the title | `detailsExtensions`, `detailsOpenField`, `computeDetailsDecorations`, `setDetailsStateCallback`, `moveCursorOutOfHiddenRuns` |
 | detailsEditing.ts | Pure toggle edits: build, unwrap, delete, set `open`, heading section scan | `toggleText`, `toggleSlashSnippet`, `computeUnwrapToggle`, `computeDeleteToggle`, `computeSetStartOpen`, `sectionEndLine`, `structureEdit` |
 | toggleInputRules.ts | Typed shortcuts: `> ` makes a toggle, `" ` makes a quote (inputHandler, undo restores the literal text) | `computeToggleFromMarker`, `computeQuoteFromMarker`, `toggleInputHandler` |
 | imageWidget.ts | Local image previews; URI resolution delegated to the shell | `imageWidgetField`, `setImageUriResolver`, `refreshImageWidgetsEffect`, `computeImageDecorations` |
 | frontmatterWidget.ts | Collapsible, editable YAML frontmatter card | `frontmatterWidgetField`, `frontmatterCollapsedField`, `frontmatterEditingField`, `blurActiveFrontmatterEditing` |
 | spellcheck.ts | Typo.js spellcheck via `@codemirror/lint` | `spellcheckExtensions`, `spellcheckLint`, `loadSpellDictionary`, `spellcheckSuggestionMenu` |
-| spellcheckExclusions.ts | Ranges to skip (code and frontmatter); pure | `computeSpellcheckExclusions`, `isSpellcheckExcluded` |
+| spellcheckExclusions.ts | Ranges to skip (code, frontmatter, link targets, HTML tags, web and email addresses) and the tech word list; pure | `computeSpellcheckExclusions`, `isSpellcheckExcluded`, `urlLikeRanges`, `isKnownTechWord` |
 
 ---
 

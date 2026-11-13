@@ -560,27 +560,31 @@ test('a Mermaid diagram with an error keeps its controls and offers Edit code', 
 });
 
 // @@F15
-test('in a narrow window the formatting toolbar wraps, so every button is fully visible', async () => {
+test('in a narrow window the formatting toolbar stays on one row and scrolls sideways to every button', async () => {
     await webview.page.setViewportSize({ width: 600, height: 800 });
     try {
         await openDoc('Para.\n');
         const m = await webview.page.evaluate(() => {
             const bar = document.getElementById('formattingToolbar')!;
+            const buttons = [...bar.querySelectorAll('.fmt-btn')].filter(b => b.getBoundingClientRect().width > 0);
+            const rows = new Set(buttons.map(b => Math.round(b.getBoundingClientRect().top))).size;
+            const scrolls = bar.scrollWidth > bar.clientWidth + 1;
+            bar.scrollLeft = bar.scrollWidth;
             const box = bar.getBoundingClientRect();
-            const cut = [...bar.querySelectorAll('.fmt-btn')].map(b => b.getBoundingClientRect())
-                .filter(r => r.width > 0 && (r.right > box.right + 0.5 || r.left < box.left - 0.5 || r.bottom > box.bottom + 0.5));
-            return { cut: cut.length, scrolls: bar.scrollWidth > bar.clientWidth + 1, rows: new Set([...bar.querySelectorAll('.fmt-btn')].map(b => Math.round(b.getBoundingClientRect().top))).size };
+            const last = buttons[buttons.length - 1].getBoundingClientRect();
+            return { rows, scrolls, scrollbar: getComputedStyle(bar).scrollbarWidth, lastInside: last.right <= box.right + 0.5 && last.left >= box.left - 0.5 };
         });
-        assert.equal(m.scrolls, false, 'the toolbar scrolls sideways');
-        assert.equal(m.cut, 0, `${m.cut} toolbar buttons are cut off`);
-        assert.ok(m.rows >= 2, 'the toolbar did not wrap at 600px');
+        assert.equal(m.rows, 1, `the toolbar wrapped onto ${m.rows} rows`);
+        assert.equal(m.scrolls, true, 'the toolbar does not scroll sideways at 600px');
+        assert.equal(m.scrollbar, 'thin', 'the sideways scrollbar is hidden');
+        assert.equal(m.lastInside, true, 'the last button cannot be scrolled fully into view');
     } finally {
         await webview.page.setViewportSize({ width: 1000, height: 800 });
     }
 });
 
 // @@F16
-test('toolbar text icons (H1, AB...) have at least 4.5:1 contrast in light and dark', async () => {
+test('toolbar icons share one colour, and text icons (H1, AB...) have at least 4.5:1 contrast in light and dark', async () => {
     await openDoc('Para.\n');
     // A string, not a function: tsx would wrap the named helpers in `__name`, which the page lacks.
     const ratio = () => webview.page.evaluate<number>(`(() => {
@@ -597,6 +601,14 @@ test('toolbar text icons (H1, AB...) have at least 4.5:1 contrast in light and d
         const bg = lum(getComputedStyle(document.getElementById('formattingToolbar')).backgroundColor);
         return (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05);
     })()`);
+    const colours = () => webview.page.evaluate(() => {
+        const text = document.querySelector('#formattingToolbar .fmt-text-icon')!;
+        const drawn = [...document.querySelectorAll('#formattingToolbar .fmt-btn')].find(b => b.querySelector('svg') && !b.querySelector('.fmt-text-icon'))!;
+        const main = document.getElementById('searchButton')!;
+        return [getComputedStyle(text).color, getComputedStyle(drawn).color, getComputedStyle(main).color];
+    });
+    const lightColours = await colours();
+    assert.equal(new Set(lightColours).size, 1, `toolbar icons differ in colour: ${lightColours.join(' / ')}`);
     const light = await ratio();
     assert.ok(light >= 4.5, `light contrast ${light.toFixed(2)}:1`);
     await webview.page.evaluate(() => document.body.classList.add('dark-mode'));

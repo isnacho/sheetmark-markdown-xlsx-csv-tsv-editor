@@ -113,7 +113,7 @@ body:not(.dark-mode):not(.vscode-dark) .menu-panel.settings-panel {
 body.sticky-toolbar-enabled #formattingToolbar.formatting-toolbar:not(.hidden) {
     display: flex;
     flex-direction: row;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     align-items: center;
     position: relative;
     top: auto;
@@ -1907,18 +1907,20 @@ html::-webkit-scrollbar-corner,
 }
 
 /* ===== Formatting Toolbar ===== */
-/* Wraps onto more rows in a narrow window. It used to scroll sideways with a hidden scrollbar,
-   which cut the last icon in half and hid the rest. Groups stay together on a row. */
+/* One row. In a narrow window it scrolls sideways; the thin scrollbar shows there is more and
+   works with a mouse (it used to be hidden, so the cut-off icons looked like the end of the row). */
 .formatting-toolbar {
     display: flex;
     flex-direction: row;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     align-items: center;
     gap: 2px;
     padding: 4px 12px;
     background: var(--md-surface-raised);
     border-bottom: 1px solid var(--md-border);
-    overflow-x: visible;
+    overflow-x: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-scrollbar-thumb) transparent;
     z-index: 19;
 }
 
@@ -1926,9 +1928,6 @@ html::-webkit-scrollbar-corner,
     display: none;
 }
 
-.formatting-toolbar::-webkit-scrollbar {
-    display: none;
-}
 
 .fmt-group {
     display: flex;
@@ -1981,11 +1980,7 @@ html::-webkit-scrollbar-corner,
     stroke: currentColor;
 }
 
-/* Small text (H1, AB...) needs 4.5:1 contrast; the shared icon grey only reaches about 3.5:1
-   on the light toolbar. Pulling it toward the text colour raises contrast in every theme (light,
-   dark, VS Code), and on hover it is the text colour anyway. Drawn icons keep the grey (3:1). */
 .fmt-text-icon {
-    color: color-mix(in srgb, currentColor 50%, var(--color-text-primary));
     font-size: 11px;
     font-weight: 700;
     letter-spacing: -0.5px;

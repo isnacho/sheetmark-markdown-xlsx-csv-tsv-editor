@@ -54,7 +54,9 @@
     --color-text-on-action: var(--palette-white);
     --color-text-link: var(--palette-blue-500);
     --color-text-code: var(--palette-blue-500);
-    --color-toolbar-icon: var(--palette-icon-muted);
+    /* Every toolbar icon, drawn or text (H1, AB), in one colour: the muted grey pulled halfway
+       toward the text colour, so the small text icons reach 4.5:1 in light, dark and VS Code themes. */
+    --color-toolbar-icon: color-mix(in srgb, var(--palette-icon-muted) 50%, var(--palette-neutral-900));
 
     --color-surface-default: var(--palette-neutral-50);
     --color-surface-raised: var(--palette-neutral-100);
@@ -198,7 +200,7 @@ body.dark-mode {
     --color-text-on-action: var(--palette-white);
     --color-text-link: var(--palette-blue-400);
     --color-text-code: var(--palette-blue-400);
-    --color-toolbar-icon: var(--palette-icon-muted);
+    --color-toolbar-icon: color-mix(in srgb, var(--palette-icon-muted) 50%, var(--palette-neutral-900));
 
     --color-surface-default: var(--palette-neutral-950);
     --color-surface-raised: var(--palette-neutral-100);
@@ -307,7 +309,7 @@ body.vscode-theme {
     --color-text-on-action: var(--vscode-button-foreground, #ffffff);
     --color-text-link: var(--vscode-textLink-foreground, var(--color-action));
     --color-text-code: var(--vscode-textPreformat-foreground, var(--color-text-primary));
-    --color-toolbar-icon: var(--palette-icon-muted);
+    --color-toolbar-icon: color-mix(in srgb, var(--palette-icon-muted) 50%, var(--palette-neutral-900));
 
     --color-surface-default: var(--palette-neutral-50);
     --color-surface-raised: var(--palette-neutral-100);

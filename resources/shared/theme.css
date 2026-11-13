@@ -696,6 +696,53 @@ body:not(.sticky-toolbar-enabled) .toolbar {
     border-bottom: 1px solid var(--color-border-default);
 }
 
+.toolbar-hover-reveal-hotspot {
+    position: fixed;
+    top: 0;
+    right: 0;
+    left: 0;
+    height: 16px;
+    z-index: 10001;
+    pointer-events: none;
+}
+
+@media (hover: hover) {
+    body.toolbar-hover-reveal-armed:not(.sticky-toolbar-enabled) .toolbar-hover-reveal-hotspot {
+        pointer-events: auto;
+    }
+
+    body.toolbar-hover-reveal-armed:not(.sticky-toolbar-enabled) .toolbar-wrapper {
+        height: var(--toolbar-hover-reveal-height);
+        overflow: visible;
+    }
+
+    body.toolbar-hover-reveal-armed:not(.sticky-toolbar-enabled) #toolbar.toolbar {
+        position: fixed;
+        top: 0;
+        right: 0;
+        left: 0;
+        width: 100%;
+        min-width: 100%;
+        z-index: 10000;
+        opacity: 0;
+        pointer-events: none;
+        transform: translateY(-100%);
+        transition: opacity 120ms ease, transform 120ms ease;
+    }
+
+    body.toolbar-hover-reveal-visible:not(.sticky-toolbar-enabled) #toolbar.toolbar {
+        opacity: 1;
+        pointer-events: auto;
+        transform: translateY(0);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    body.toolbar-hover-reveal-armed:not(.sticky-toolbar-enabled) #toolbar.toolbar {
+        transition: none;
+    }
+}
+
 .toolbar img {
     flex-shrink: 0;
     max-width: none !important;

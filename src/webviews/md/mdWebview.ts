@@ -1391,10 +1391,10 @@ function applyFormattingToolbarLayout() {
     const fmtToolbar = $('formattingToolbar');
     const contentArea = $('content');
     const mainToolbar = $('toolbar');
+    const toolbarWrapper = mainToolbar?.closest('.toolbar-wrapper') as HTMLElement | null;
     if (!fmtToolbar || !contentArea) {return;}
 
     if (state.currentSettings.stickyToolbar) {
-        const toolbarWrapper = mainToolbar?.closest('.toolbar-wrapper') as HTMLElement | null;
         const anchor = toolbarWrapper && toolbarWrapper.parentNode === document.body
             ? toolbarWrapper
             : mainToolbar;
@@ -1406,8 +1406,8 @@ function applyFormattingToolbarLayout() {
         return;
     }
 
-    if (mainToolbar && mainToolbar.parentNode === contentArea) {
-        contentArea.insertBefore(fmtToolbar, mainToolbar.nextSibling);
+    if (toolbarWrapper) {
+        toolbarWrapper.appendChild(fmtToolbar);
     } else {
         contentArea.insertBefore(fmtToolbar, contentArea.firstChild);
     }
@@ -1595,6 +1595,7 @@ window.addEventListener('message', (event) => {
 function wireButtons() {
     state.toolbarManager = new ToolbarManager('toolbar');
     state.toolbarManager.setHeaderHeightHook(() => syncMdHeaderHeight());
+    state.toolbarManager.setHoverRevealCompanion($('formattingToolbar'));
 
     state.toolbarManager.setButtons(buildToolbarButtons());
 }

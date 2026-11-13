@@ -100,6 +100,46 @@ test('re-rendering the sheet does not stack document mousemove listeners', async
     assert.equal(after, before);
 });
 
+test('non-sticky spreadsheet toolbar reveals only after it scrolls away', async () => {
+    assert.equal(await webview.page.locator('.toolbar-hover-reveal-hotspot').count(), 0);
+
+    const nonStickySettings = { ...SETTINGS, stickyToolbar: false };
+    await webview.send({
+        command: 'initSettings',
+        settings: nonStickySettings,
+        plainSettings: nonStickySettings,
+        styledSettings: nonStickySettings,
+        settingsScope: 'styled',
+    } satisfies HostToSpreadsheetWebview);
+    await webview.page.evaluate(() => {
+        const spacer = document.createElement('div');
+        spacer.id = 'toolbarRevealTestSpacer';
+        spacer.style.height = '200vh';
+        document.getElementById('content')?.appendChild(spacer);
+        const content = document.getElementById('content');
+        if (content) {content.scrollTop = content.scrollHeight;}
+    });
+    await webview.page.waitForFunction(() => document.body.classList.contains('toolbar-hover-reveal-armed'));
+
+    await webview.page.mouse.move(10, 2);
+    await webview.page.waitForFunction(() => document.body.classList.contains('toolbar-hover-reveal-visible'));
+    assert.equal(await webview.page.locator('#toolbar').evaluate(el => getComputedStyle(el).position), 'fixed');
+
+    const viewport = webview.page.viewportSize();
+    await webview.page.mouse.move(1, (viewport?.height ?? 720) - 1);
+    await webview.page.waitForFunction(() => !document.body.classList.contains('toolbar-hover-reveal-visible'));
+
+    await webview.page.evaluate(() => document.getElementById('toolbarRevealTestSpacer')?.remove());
+    await webview.send({
+        command: 'initSettings',
+        settings: SETTINGS,
+        plainSettings: SETTINGS,
+        styledSettings: SETTINGS,
+        settingsScope: 'styled',
+    } satisfies HostToSpreadsheetWebview);
+    assert.equal(await webview.page.locator('.toolbar-hover-reveal-hotspot').count(), 0);
+});
+
 async function openFontPicker() {
     if ((await webview.page.locator('#settingsPanel').getAttribute('aria-hidden')) !== 'false') {
         await webview.page.click('#openSettingsButton');

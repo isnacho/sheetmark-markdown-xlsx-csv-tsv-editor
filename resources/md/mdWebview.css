@@ -1945,6 +1945,33 @@ html::-webkit-scrollbar-corner,
     display: none;
 }
 
+@media (hover: hover) {
+    body.toolbar-hover-reveal-armed:not(.sticky-toolbar-enabled) #formattingToolbar.formatting-toolbar {
+        position: fixed;
+        top: var(--toolbar-hover-reveal-main-height);
+        right: 0;
+        left: 0;
+        width: 100%;
+        z-index: 9999;
+        opacity: 0;
+        pointer-events: none;
+        transform: translateY(calc(-100% - var(--toolbar-hover-reveal-main-height)));
+        transition: opacity 120ms ease, transform 120ms ease;
+    }
+
+    body.toolbar-hover-reveal-visible:not(.sticky-toolbar-enabled) #formattingToolbar.formatting-toolbar {
+        opacity: 1;
+        pointer-events: auto;
+        transform: translateY(0);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    body.toolbar-hover-reveal-armed:not(.sticky-toolbar-enabled) #formattingToolbar.formatting-toolbar {
+        transition: none;
+    }
+}
+
 
 .fmt-group {
     display: flex;

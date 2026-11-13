@@ -202,6 +202,58 @@ test('the CSP blocks inline handlers even if markup gets past sanitizing', async
     assert.ok((await webview.problems()).some(p => p.includes('script-src')), 'expected a CSP script-src violation');
 });
 
+test('non-sticky toolbar reveals from the top edge and stays for its settings panel', async () => {
+    await webview.send({ command: 'initSettings', settings: { ...SETTINGS, stickyToolbar: false } } satisfies HostToMarkdownWebview);
+    await webview.page.evaluate(() => {
+        const spacer = document.createElement('div');
+        spacer.id = 'toolbarRevealTestSpacer';
+        spacer.style.height = '200vh';
+        document.getElementById('content')?.appendChild(spacer);
+        const content = document.getElementById('content');
+        if (content) {content.scrollTop = content.scrollHeight;}
+    });
+    await webview.page.waitForFunction(() => document.body.classList.contains('toolbar-hover-reveal-armed'));
+
+    await webview.page.mouse.move(10, 2);
+    await webview.page.waitForFunction(() => document.body.classList.contains('toolbar-hover-reveal-visible'));
+    assert.equal(await webview.page.locator('#toolbar').evaluate(el => getComputedStyle(el).position), 'fixed');
+    // The formatting row fades and slides in (120ms transitions): wait for them to finish, else this reads mid-animation values.
+    await webview.page.waitForFunction(() => document.getElementById('formattingToolbar')!.getAnimations().length === 0, undefined, { timeout: 2000 });
+    const toolbarRows = await webview.page.evaluate(() => {
+        const main = document.getElementById('toolbar')!.getBoundingClientRect();
+        const formatting = document.getElementById('formattingToolbar')!;
+        return {
+            formattingPosition: getComputedStyle(formatting).position,
+            formattingOpacity: getComputedStyle(formatting).opacity,
+            mainBottom: main.bottom,
+            formattingTop: formatting.getBoundingClientRect().top,
+        };
+    });
+    assert.equal(toolbarRows.formattingPosition, 'fixed');
+    assert.equal(toolbarRows.formattingOpacity, '1');
+    assert.ok(toolbarRows.formattingTop >= toolbarRows.mainBottom - 1);
+
+    await webview.page.click('#openSettingsButton');
+    await webview.page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    const viewport = webview.page.viewportSize();
+    await webview.page.mouse.move(1, (viewport?.height ?? 720) - 1);
+    await webview.page.waitForTimeout(250);
+    assert.equal(await webview.page.locator('#settingsPanel').getAttribute('aria-hidden'), 'false');
+    assert.equal(await webview.page.locator('body').evaluate(el => el.classList.contains('toolbar-hover-reveal-visible')), true);
+
+    await webview.page.click('#settingsCancelButton');
+    await webview.page.mouse.move(1, (viewport?.height ?? 720) - 1);
+    await webview.page.waitForFunction(() => !document.body.classList.contains('toolbar-hover-reveal-visible'));
+
+    await webview.page.evaluate(() => {
+        document.getElementById('toolbarRevealTestSpacer')?.remove();
+        const content = document.getElementById('content');
+        if (content) {content.scrollTop = 0;}
+    });
+    await webview.send({ command: 'initSettings', settings: SETTINGS } satisfies HostToMarkdownWebview);
+    assert.equal(await webview.page.locator('.toolbar-hover-reveal-hotspot').count(), 0);
+});
+
 test('toggle: a closed <details> hides its body, the chevron opens it and posts the choice', async () => {
     const doc = 'intro\n\n<details>\n<summary>Guide</summary>\n\nsecret body line\n\n</details>\n\nafter\n';
     await webview.send(markdownDocument(doc));

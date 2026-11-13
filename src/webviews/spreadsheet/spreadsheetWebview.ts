@@ -193,6 +193,7 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
         const popup = document.createElement('div');
         popup.id = 'xlsxBorderPopup';
         popup.className = 'xlsx-border-popup hidden';
+        popup.dataset.toolbarRevealRetain = '';
         popup.innerHTML = `
             <div class="border-popup-title">Borders</div>
             <div class="border-popup-grid">

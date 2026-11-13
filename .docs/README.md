@@ -19,6 +19,9 @@ the codebase; not product roadmap or feature ideas.
 Entry point for agents: [AGENTS.md](../AGENTS.md) at the repo root. Shared webview modules:
 [src/webviews/shared/guide.md](../src/webviews/shared/guide.md).
 
+To see a Markdown file in the real editor, run `npm run shot -- <file.md> --theme dark`: it saves a
+screenshot of a real VS Code window to `.vscode-test/ui-shots/` (options in [src/test/ui/shot.mts](../src/test/ui/shot.mts)).
+
 ## `product/`: Product documentation
 
 Product rules, roadmap, and history. Not architecture reference.

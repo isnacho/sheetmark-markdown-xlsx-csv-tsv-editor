@@ -109,6 +109,7 @@ npm run test:integration  # REQUIRED when you touch src/*.ts, src/shared/** or s
 npm run test:unit         # unit tests only (node:test through tsx)
 npm run test:webview      # built webviews in headless Chrome (needs Chrome or Edge installed)
 npm run test:ui           # real VS Code window driven by Playwright, writes screenshots (slow, needs a display; not in verify)
+npm run shot -- samples/test.md --theme dark   # one screenshot of a file in real VS Code, to .vscode-test/ui-shots/ (options: src/test/ui/shot.mts)
 node --import tsx --test src/webviews/md/livePreview/tableWidget.test.mts   # one test file
 npm run test:regressions  # re-breaks each past fix and checks a test fails (slow; run after fixing a bug)
 npm run watch             # watch build; what F5 uses

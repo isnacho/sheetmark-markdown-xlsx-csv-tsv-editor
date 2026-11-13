@@ -8,6 +8,8 @@ the spreadsheet webview (xlsx, csv, tsv) and the Markdown webview. A change here
 | `common.ts` | `vscode` (the `acquireVsCodeApi()` wrapper used for every `postMessage`), `VirtualScrollConfig` (`ROW_HEIGHT`, `BUFFER_ROWS`, `CHUNK_SIZE`), `debounce` |
 | `virtualLoader.ts` | `VirtualLoader`: request/response bookkeeping for row windows from the host (`getRows` → `rowsData`, `resolveRequest`) |
 | `themeManager.ts` | `ThemeManager` (VS Code / Light / Dark; handles the host's `setTheme` message, keyed on `type`), `renderThemeToggleSettingItem` |
+| `fontManager.ts` | The Font picker row in both Settings panels: a button that opens a searchable list inline under the row (`renderFontSettingItem`, `wireFontPicker`). Also `applyFontChoice` (handles `fontFamilyChanged`), `applyLocalFonts` (handles `localFonts`), `onFontApplied` (re-measure after a change). Adding a built-in font: `BuiltInFont` in `protocol/common.ts`, a label here, a `:root[data-font]` rule in `theme.css`, `src/shared/fontChoice.ts` |
+| `fontSearch.ts` | `filterFontNames`: the picker's search (case and accent blind, every word must match, best matches first) |
 | `settingsManager.ts` | `SettingsManager`, `SettingDefinition`: settings panel rendering and change wiring |
 | `toolbarManager.ts` | `ToolbarManager`, `ToolbarButton`: toolbar buttons, visibility, sticky layout, header height |
 | `toolbarLayout.ts` | `applyToolbarLayout`: applies the sticky/non-sticky toolbar setting via `ToolbarManager` |

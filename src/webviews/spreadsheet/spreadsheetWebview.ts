@@ -2,6 +2,7 @@
  
 
 import { ThemeManager, renderThemeToggleSettingItem } from '../shared/themeManager';
+import { applyFontChoice, applyLocalFonts, onFontApplied, renderFontSettingItem, wireFontPicker } from '../shared/fontManager';
 import { SettingsManager } from '../shared/settingsManager';
 import { ToolbarManager } from '../shared/toolbarManager';
 import { applyToolbarLayout } from '../shared/toolbarLayout';
@@ -192,6 +193,7 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
         const popup = document.createElement('div');
         popup.id = 'xlsxBorderPopup';
         popup.className = 'xlsx-border-popup hidden';
+        popup.dataset.toolbarRevealRetain = '';
         popup.innerHTML = `
             <div class="border-popup-title">Borders</div>
             <div class="border-popup-grid">
@@ -3041,7 +3043,9 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
             if (!ctx) {return;}
-            ctx.font = '10pt Arial, sans-serif';
+            // Measure in the font the table really uses (Inter, then the system font). Arial is
+            // narrower than Inter, so columns sized with it would clip text.
+            ctx.font = `10pt ${window.getComputedStyle(table).fontFamily || 'sans-serif'}`;
 
             const visibleRows = table.querySelectorAll('tbody tr:not(.virtual-spacer)');
             const limit = Math.min(visibleRows.length, 80);
@@ -5257,6 +5261,7 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
         const settingsGroup = document.querySelector('#settingsPanel .settings-group');
         if (settingsGroup) {
             settingsGroup.insertAdjacentHTML('beforeend', renderThemeToggleSettingItem('themeSelect'));
+            settingsGroup.insertAdjacentHTML('beforeend', renderFontSettingItem('fontSelect'));
         }
 
         new SettingsManager('openSettingsButton', 'settingsPanel', 'settingsCancelButton', settings, () => {
@@ -5268,6 +5273,11 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
                 onBeforeCycle: () => !state.isEditMode
             }, vscode);
         }
+
+        // Font picker (the setting is shared with the Markdown editor). Column widths were sized in
+        // the old font, so size them again once the new one is applied.
+        wireFontPicker('fontSelect', post);
+        onFontApplied(() => syncColumnWidthsToCurrentMode());
     }
 
     function attachHandlersOnce() {
@@ -5449,6 +5459,16 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
 
         if (message.command === 'versionHistoryError') {
             showToast(message.message || 'Version history failed');
+            return;
+        }
+
+        if (message.command === 'fontFamilyChanged') {
+            applyFontChoice(message.font);
+            return;
+        }
+
+        if (message.command === 'localFonts') {
+            applyLocalFonts(message.fonts);
             return;
         }
 

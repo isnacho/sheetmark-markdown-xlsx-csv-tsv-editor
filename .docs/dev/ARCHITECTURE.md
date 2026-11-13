@@ -140,12 +140,13 @@ Persisted outside the `.md` bytes by `createMarkdownPreferences` in
 | `frontmatterPanelCollapsed` | file | YAML card collapsed state |
 | `mermaidPreviewMode` | global | Mermaid diagram vs code preview |
 | `calloutDefaultType` | global | Default callout type slug |
+| `outlinePinned` | global | Sidebar outline vs minimal preview-edit line rail |
 
 Per-file preferences listed in `perFile` move with the file on rename (see Renames below).
 
 Loaded into `initMarkdown` / `diskChangedExternally`; webview persists edits via
 `saveTableColumnWidths`, `saveFrontmatterPanelCollapsed`, `saveDetailsOpenState`, `saveMermaidPreviewMode`,
-`saveCalloutDefaultType`.
+`saveCalloutDefaultType`, `saveOutlinePinned`.
 
 ### External disk changes
 **Markdown:** `createExternalFileChangeWatcher` in

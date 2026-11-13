@@ -12,7 +12,7 @@ import { StyleStorageService } from './shared/styleStorageService';
 import { createSerialQueue, type SerialQueue } from './shared/serialQueue';
 import { createMessageDispatcher, SPREADSHEET_FILE_WRITING_COMMANDS } from './shared/messageDispatch';
 import { recordSentInTests, trackOpenEditor, type OpenEditorHandle } from './shared/editorTestHooks';
-import { handleSharedHostMessage, isSharedHostMessage, syncColorTheme, type SharedHostContext } from './shared/commonHostMessages';
+import { handleSharedHostMessage, isSharedHostMessage, syncColorTheme, syncFontFamily, type SharedHostContext } from './shared/commonHostMessages';
 import type { HostToSpreadsheetWebview, SpreadsheetSettings, SpreadsheetSettingsPayload, SpreadsheetWebviewToHost } from './protocol/spreadsheet';
 import { createExternalFileChangeWatcher } from './shared/fileExternalChangeWatcher';
 import { isSheetmarkConfiguredAsDefault } from './shared/editorAssociationUtils';
@@ -838,6 +838,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
 
         // Pushes the VS Code theme now (on webviewReady) and on every theme change.
         const sendTheme = syncColorTheme(webviewPanel, post);
+        const sendFont = syncFontFamily(webviewPanel, post);
 
         const trySendInit = () => {
             if (!isWebviewReady || !worksheetsData.length) {return;}
@@ -1027,6 +1028,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                 trySendSettings();
                 trySendInit();
                 sendTheme();
+                sendFont();
                 return;
             }
 

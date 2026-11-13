@@ -6,10 +6,51 @@
     font-display: swap;
 }
 
+/* Inter (variable weight 100-900), bundled in latin + latin-ext slices. Characters outside these
+   ranges (Cyrillic, Greek, CJK, Arabic...) fall through to the system font, glyph by glyph. */
+@font-face {
+    font-family: 'Inter';
+    src: url('../fonts/inter-latin-ext-wght-normal.woff2') format('woff2');
+    font-weight: 100 900;
+    font-style: normal;
+    font-display: swap;
+    unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+    font-family: 'Inter';
+    src: url('../fonts/inter-latin-wght-normal.woff2') format('woff2');
+    font-weight: 100 900;
+    font-style: normal;
+    font-display: swap;
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* Italic is bundled for latin only; latin-ext italic is synthesized from the upright face. */
+@font-face {
+    font-family: 'Inter';
+    src: url('../fonts/inter-latin-wght-italic.woff2') format('woff2');
+    font-weight: 100 900;
+    font-style: italic;
+    font-display: swap;
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* Font choice from Settings (`xlsxViewer.fontFamily`). fontManager.ts sets data-font on <html>;
+   Inter is the default below, so a missing attribute means Inter. A new choice needs its own rule
+   here plus the places listed on FontChoice in src/protocol/common.ts. */
+:root[data-font='system'] {
+    --font-family: system-ui, -apple-system, sans-serif;
+}
+
+:root[data-font='serif'] {
+    --font-family: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, 'Times New Roman', serif;
+}
+
 :root {
     /* --- Typography --- */
-    /* System fonts only - cleanest look */
-    --font-family: system-ui, -apple-system, sans-serif;
+    /* Bundled Inter first; if it fails to load, the system UI font takes over */
+    --font-family: 'Inter', system-ui, -apple-system, sans-serif;
     /* Bundled JetBrains Mono Regular; system mono fallbacks if load fails */
     --font-mono: 'JetBrains Mono', ui-monospace, Menlo, Monaco, Consolas, 'Courier New', monospace;
     --font-mono-weight: 400;
@@ -655,6 +696,53 @@ body:not(.sticky-toolbar-enabled) .toolbar {
     border-bottom: 1px solid var(--color-border-default);
 }
 
+.toolbar-hover-reveal-hotspot {
+    position: fixed;
+    top: 0;
+    right: 0;
+    left: 0;
+    height: 16px;
+    z-index: 10001;
+    pointer-events: none;
+}
+
+@media (hover: hover) {
+    body.toolbar-hover-reveal-armed:not(.sticky-toolbar-enabled) .toolbar-hover-reveal-hotspot {
+        pointer-events: auto;
+    }
+
+    body.toolbar-hover-reveal-armed:not(.sticky-toolbar-enabled) .toolbar-wrapper {
+        height: var(--toolbar-hover-reveal-height);
+        overflow: visible;
+    }
+
+    body.toolbar-hover-reveal-armed:not(.sticky-toolbar-enabled) #toolbar.toolbar {
+        position: fixed;
+        top: 0;
+        right: 0;
+        left: 0;
+        width: 100%;
+        min-width: 100%;
+        z-index: 10000;
+        opacity: 0;
+        pointer-events: none;
+        transform: translateY(-100%);
+        transition: opacity 120ms ease, transform 120ms ease;
+    }
+
+    body.toolbar-hover-reveal-visible:not(.sticky-toolbar-enabled) #toolbar.toolbar {
+        opacity: 1;
+        pointer-events: auto;
+        transform: translateY(0);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    body.toolbar-hover-reveal-armed:not(.sticky-toolbar-enabled) #toolbar.toolbar {
+        transition: none;
+    }
+}
+
 .toolbar img {
     flex-shrink: 0;
     max-width: none !important;
@@ -935,7 +1023,7 @@ body:not(.sticky-toolbar-enabled) #tableContainer {
 /* Keyboard focus ring for the small controls that had none (or only the browser's default):
    VS Code's focus colour, outside the control so it never covers its icon. */
 .cm-md-details-chevron:focus-visible,
-.cm-md-details-handle:focus-visible,
+.cm-md-block-grip:focus-visible,
 .cm-md-fence-copy-btn:focus-visible,
 .cm-md-mermaid-zoom-btn:focus-visible,
 .cm-md-mermaid-mode-select:focus-visible,

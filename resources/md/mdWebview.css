@@ -445,17 +445,154 @@ body:not(.sticky-toolbar-enabled) .toc-panel {
     color: var(--color-action);
 }
 
-.toc-level-1 { padding-left: 2px; font-weight: 600; }
-.toc-level-2 { padding-left: 12px; }
-.toc-level-3 { padding-left: 22px; }
-.toc-level-4 { padding-left: 32px; }
-.toc-level-5 { padding-left: 42px; }
-.toc-level-6 { padding-left: 52px; }
+.toc-item.toc-level-1 { padding-left: 2px; font-weight: 600; }
+.toc-item.toc-level-2 { padding-left: 12px; }
+.toc-item.toc-level-3 { padding-left: 22px; }
+.toc-item.toc-level-4 { padding-left: 32px; }
+.toc-item.toc-level-5 { padding-left: 42px; }
+.toc-item.toc-level-6 { padding-left: 52px; }
 
 .toc-empty {
     color: var(--color-text-secondary);
     font-size: 12px;
     padding: 8px;
+}
+
+/* Preview Edit: line rail floats over the editor (not in CM6 document flow). */
+body:not(.outline-rail-mode) .outline-rail-host {
+    display: none;
+}
+
+.outline-rail-host {
+    position: absolute;
+    inset: 0;
+    z-index: 6;
+    pointer-events: none;
+    overflow: visible;
+}
+
+/* Non-sticky toolbar: #content scrolls; sticky fails under overflow:hidden ancestors — pin the rail to the viewport. */
+body:not(.sticky-toolbar-enabled).outline-rail-mode .outline-rail-host {
+    position: static;
+    height: 0;
+    width: 0;
+    overflow: visible;
+}
+
+/* --outline-rail-top (outlineRailOverlay.ts) is 10px under whichever toolbar is on screen: in the
+   page at the top of the document, sliding away while scrolling, or revealed from the top edge. */
+body:not(.sticky-toolbar-enabled).outline-rail-mode .outline-rail-host .outline-rail-widget {
+    position: fixed;
+    top: var(--outline-rail-top, 10px);
+    left: 8px;
+    z-index: 6;
+}
+
+body.show-line-numbers.outline-rail-mode:not(.sticky-toolbar-enabled) .outline-rail-host .outline-rail-widget {
+    left: 30px;
+}
+
+.outline-rail-host .outline-rail-widget {
+    position: absolute;
+    top: 10px;
+    left: 8px;
+    pointer-events: auto;
+}
+
+body.show-line-numbers.outline-rail-mode .outline-rail-host .outline-rail-widget {
+    left: 30px;
+}
+
+.outline-rail-lines {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    padding-top: 1px;
+    cursor: default;
+    color: var(--color-text-tertiary);
+}
+
+/* Fixed row height: tick + gap; active tick is 2px tall, centered in the same row. */
+.outline-rail-line-slot {
+    height: 7px;
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.outline-rail-line {
+    display: block;
+    height: 1px;
+    border-radius: 999px;
+    background: currentColor;
+    max-width: 36px;
+    min-width: 8px;
+}
+
+.outline-rail-line.active {
+    height: 2px;
+    border-radius: 999px;
+    color: var(--color-text-primary);
+}
+
+.outline-rail-popover-header {
+    display: flex;
+    justify-content: flex-end;
+    padding: 4px 6px 0 4px;
+    border-bottom: none;
+    flex-shrink: 0;
+}
+
+.outline-rail-pin {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--color-text-secondary);
+    width: 22px;
+    height: 22px;
+    cursor: pointer;
+    padding: 0;
+    border-radius: var(--surface-radius);
+}
+
+.outline-rail-pin svg {
+    width: 14px;
+    height: 14px;
+}
+
+.outline-rail-pin:hover {
+    border-color: var(--color-border-default);
+    color: var(--color-text-primary);
+}
+
+.outline-rail-popover {
+    z-index: 50;
+    display: flex;
+    flex-direction: column;
+    width: fit-content;
+    height: max-content;
+    min-width: 160px;
+    max-width: min(280px, calc(100vw - 24px));
+    max-height: var(--outline-rail-popover-max-h, calc(100vh - 16px));
+    overflow: hidden;
+    border: 1px solid var(--color-border-default);
+    border-radius: var(--surface-radius);
+    background: var(--color-surface-default);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
+
+.outline-rail-popover.hidden {
+    display: none;
+}
+
+.outline-rail-popover .outline-rail-popover-body {
+    flex: 1 1 auto;
+    padding: 2px 8px 10px 4px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    min-height: 0;
 }
 
 .markdown-container.word-wrap .markdown-preview {
@@ -466,6 +603,14 @@ body:not(.sticky-toolbar-enabled) .toc-panel {
 
 /* ===== Preview Edit Mode (WYSIWYG) ===== */
 
+.markdown-container.preview-edit .markdown-preview-stack {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
 .markdown-container.preview-edit .markdown-preview {
     flex: 1;
     min-height: 0;
@@ -473,6 +618,10 @@ body:not(.sticky-toolbar-enabled) .toc-panel {
 }
 
 /* CM6 owns scrolling via .cm-scroller — keep the preview pane a flex box only. */
+body.cm6-preview-active .markdown-container.preview-edit .markdown-preview-stack {
+    overflow: hidden;
+}
+
 body.cm6-preview-active .markdown-container.preview-edit .markdown-preview {
     overflow: hidden;
     padding: 0;
@@ -1112,7 +1261,7 @@ body.cm6-preview-active .markdown-preview .yaml-frontmatter-card {
 }
 
 /* Wide manual-layout tables: inactive cells stay on one line so width = column sum. */
-.cm-md-table-scroll.cm-md-table-overflow-x table.md-table.cm-md-table-resized th,
+.cm-md-table-scroll.cm-md-table-overflow-x table.md-table.cm-md-table-resized th:not(.cm-md-table-cell-editing),
 .cm-md-table-scroll.cm-md-table-overflow-x table.md-table.cm-md-table-resized td:not(.cm-md-table-cell-editing) {
     white-space: nowrap;
 }
@@ -1943,6 +2092,33 @@ html::-webkit-scrollbar-corner,
 
 .formatting-toolbar.hidden {
     display: none;
+}
+
+@media (hover: hover) {
+    body.toolbar-hover-reveal-armed:not(.sticky-toolbar-enabled) #formattingToolbar.formatting-toolbar {
+        position: fixed;
+        top: var(--toolbar-hover-reveal-main-height);
+        right: 0;
+        left: 0;
+        width: 100%;
+        z-index: 9999;
+        opacity: 0;
+        pointer-events: none;
+        transform: translateY(calc(-100% - var(--toolbar-hover-reveal-main-height)));
+        transition: opacity 120ms ease, transform 120ms ease;
+    }
+
+    body.toolbar-hover-reveal-visible:not(.sticky-toolbar-enabled) #formattingToolbar.formatting-toolbar {
+        opacity: 1;
+        pointer-events: auto;
+        transform: translateY(0);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    body.toolbar-hover-reveal-armed:not(.sticky-toolbar-enabled) #formattingToolbar.formatting-toolbar {
+        transition: none;
+    }
 }
 
 

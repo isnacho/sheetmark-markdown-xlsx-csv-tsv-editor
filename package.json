@@ -229,6 +229,17 @@
         "configuration": {
             "title": "Sheetmark",
             "properties": {
+                "xlsxViewer.fontFamily": {
+                    "type": "string",
+                    "default": "inter",
+                    "examples": [
+                        "inter",
+                        "system",
+                        "serif",
+                        "Helvetica Neue"
+                    ],
+                    "markdownDescription": "Font used by the Markdown, XLSX, CSV and TSV editors. Use `inter` (bundled with the extension), `system` (your operating system's interface font), `serif`, or the name of any font installed on this computer, such as `Helvetica Neue`. The Font choice in each editor's Settings panel lists the installed fonts. If a named font is not installed, the system font is used. Spreadsheet cells that carry their own font in the file keep it."
+                },
                 "xlsxViewer.csv.firstRowIsHeader": {
                     "type": "boolean",
                     "default": true,

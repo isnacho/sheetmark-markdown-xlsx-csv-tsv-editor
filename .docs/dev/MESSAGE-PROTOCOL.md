@@ -6,7 +6,7 @@ files hold no runtime code):
 
 | File | Contains |
 |---|---|
-| [common.ts](../../src/protocol/common.ts) | Messages both editors share (ready, links, history, default editor, feedback, `setTheme`) |
+| [common.ts](../../src/protocol/common.ts) | Messages both editors share (ready, links, history, default editor, feedback, `setTheme`, font: `setFontFamily` / `fontFamilyChanged` / `requestLocalFonts` / `localFonts`) |
 | [spreadsheet.ts](../../src/protocol/spreadsheet.ts) | `SpreadsheetWebviewToHost`, `HostToSpreadsheetWebview`, settings and worksheet payloads |
 | [markdown.ts](../../src/protocol/markdown.ts) | `MarkdownWebviewToHost`, `HostToMarkdownWebview`, settings and document payloads |
 
@@ -39,6 +39,20 @@ matched on `type` in `ThemeManager.init`.
   ([feedbackModal.ts](../../src/webviews/shared/feedbackModal.ts),
   [themeManager.ts](../../src/webviews/shared/themeManager.ts)), not the per-editor webview entry
   files. Both editors reuse them, so a change there hits both.
+- **Font.** The font is one shared VS Code setting, `xlsxViewer.fontFamily` (`FontChoice` in
+  [common.ts](../../src/protocol/common.ts)): a built-in id (`inter`, `system`, `serif`) or the family
+  name of any installed font. It is not part of either editor's settings payload. The host sends
+  `fontFamilyChanged` on `webviewReady` and whenever the setting changes (`syncFontFamily` in
+  [commonHostMessages.ts](../../src/shared/commonHostMessages.ts)); the picker in each Settings panel
+  sends `setFontFamily`, which the host checks with [fontChoice.ts](../../src/shared/fontChoice.ts)
+  before writing it. A webview cannot list installed fonts (the webview sandbox blocks the browser's
+  font-listing API), so the picker sends `requestLocalFonts` and the host answers `localFonts` from
+  [localFonts.ts](../../src/shared/localFonts.ts), which asks the operating system once per session.
+  In a remote window (SSH, WSL, Dev Containers) that is the remote machine's font list. Each
+  webview's message handler passes both messages to
+  [fontManager.ts](../../src/webviews/shared/fontManager.ts): built-in fonts set `data-font` on
+  `<html>` (stacks in [theme.css](../../resources/shared/theme.css)); an installed font sets
+  `--font-family` inline, quoted, with the system font as fallback.
 - **Settings** flow one way at init (`initSettings`) and on host-side change (`settingsUpdated`);
   webview edits flow back via `updateSettings`. Shapes are defined in
   [settingsManager.ts](../../src/webviews/shared/settingsManager.ts) and, for the spreadsheet,

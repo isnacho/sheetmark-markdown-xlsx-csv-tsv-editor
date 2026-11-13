@@ -35,6 +35,7 @@ export function ensureInsertControlPopup() {
     const popup = document.createElement('div');
     popup.id = 'xlsxInsertControlPopup';
     popup.className = 'xlsx-insert-control-popup hidden';
+    popup.dataset.toolbarRevealRetain = '';
     popup.innerHTML = `
         <div class="insert-control-title">Insert into selected cells</div>
         <button type="button" class="insert-control-item" data-control-type="checkbox">Checkbox</button>
@@ -107,6 +108,7 @@ export function ensureDropdownOptionsPopup() {
     const popup = document.createElement('div');
     popup.id = 'xlsxDropdownOptionsPopup';
     popup.className = 'xlsx-dropdown-options-popup hidden';
+    popup.dataset.toolbarRevealRetain = '';
     popup.innerHTML = `
         <div class="xlsx-dropdown-options-dialog" role="dialog" aria-modal="true" aria-labelledby="dropdownOptionsTitle">
             <div id="dropdownOptionsTitle" class="dropdown-options-title">Dropdown options</div>

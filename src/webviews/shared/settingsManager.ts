@@ -69,6 +69,7 @@ export class SettingsManager {
         const panel = document.createElement('div');
         panel.id = panelId;
         panel.className = 'menu-panel settings-panel hidden';
+        panel.dataset.toolbarRevealRetain = '';
         panel.setAttribute('role', 'dialog');
         panel.setAttribute('aria-hidden', 'true');
 

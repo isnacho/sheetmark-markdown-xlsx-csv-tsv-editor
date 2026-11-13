@@ -18,7 +18,7 @@ function markdownDocument(content: string): HostToMarkdownWebview {
     return {
         command: 'initMarkdown', content, fileName: 'test.md', documentUri: 'file:///tmp/test.md',
         documentDirUri: 'file:///tmp', workspaceFolderUri: null, tableColumnWidths: {},
-        frontmatterPanelCollapsed: false, detailsOpenState: {}, mermaidPreviewMode: 'diagram', calloutDefaultType: 'info',
+        frontmatterPanelCollapsed: false, detailsOpenState: {}, mermaidPreviewMode: 'diagram', calloutDefaultType: 'info', outlinePinned: false,
     };
 }
 
@@ -56,6 +56,132 @@ test('renders a document and loads the mermaid chunk on demand', async () => {
     assert.deepEqual(await webview.problems(), []);
 });
 
+test('body text uses the bundled Inter font, with the system font as fallback', async () => {
+    await webview.send(markdownDocument('# Title\n\nHello world\n'));
+    await webview.page.waitForSelector('.cm-content');
+    const { family, loaded } = await webview.page.evaluate(async () => {
+        // Variable weights: a bold request must still resolve to the one bundled face.
+        const faces = [...await document.fonts.load('400 14px Inter', 'Hello'), ...await document.fonts.load('600 14px Inter', 'Hello')];
+        return {
+            family: getComputedStyle(document.querySelector('.cm-content')!).fontFamily,
+            loaded: faces.length > 0 && faces.every(face => face.status === 'loaded'),
+        };
+    });
+    assert.match(family, /^"?Inter"?, system-ui/, `font stack is "${family}"`);
+    assert.ok(loaded, 'Inter did not load: wrong path in theme.css, or the CSP blocked it');
+    assert.deepEqual(await webview.problems(), []);
+});
+
+async function openFontPicker() {
+    if ((await webview.page.locator('#settingsPanel').getAttribute('aria-hidden')) !== 'false') {
+        await webview.page.click('#openSettingsButton');
+    }
+    await webview.page.click('#fontSelect');
+    await webview.page.waitForSelector('#fontSelectSearch', { state: 'visible' });
+}
+const fontOptions = () => webview.page.locator('#fontSelectList [role=option]').evaluateAll(options => options.map(o => o.textContent));
+const activeFontOption = () => webview.page.evaluate(() => document.getElementById(document.getElementById('fontSelectSearch')!.getAttribute('aria-activedescendant') ?? '')?.textContent ?? null);
+const fontButtonText = () => webview.page.locator('#fontSelect').innerText();
+const rootFont = () => webview.page.evaluate(() => ({ data: document.documentElement.dataset.font, inline: document.documentElement.style.getPropertyValue('--font-family') }));
+const bodyFont = () => webview.page.locator('.cm-content').evaluate(el => getComputedStyle(el).fontFamily);
+
+test('the Font picker applies a font at once, saves it, and follows the host', async () => {
+    await webview.send(markdownDocument('# Title\n\nHello world\n'));
+    await webview.page.waitForSelector('.cm-content');
+    await webview.send({ command: 'fontFamilyChanged', font: 'inter' });
+    await webview.page.waitForFunction(() => document.documentElement.dataset.font === 'inter');
+
+    // The row shows the font in use; the list opens from it with the three built-in fonts.
+    assert.equal(await fontButtonText(), 'Inter');
+    await openFontPicker();
+    assert.equal(await webview.page.evaluate(() => document.activeElement?.id), 'fontSelectSearch');
+    assert.equal(await webview.page.locator('#fontSelect').getAttribute('aria-expanded'), 'true');
+    assert.deepEqual(await fontOptions(), ['Inter', 'System', 'Serif']);
+    assert.equal(await activeFontOption(), 'Inter');
+
+    // Choosing a font applies it, saves it and folds the list away.
+    await webview.page.click('#fontSelectList [role=option]:has-text("Serif")');
+    assert.equal((await rootFont()).data, 'serif');
+    assert.match(await bodyFont(), /Iowan|Georgia|serif/);
+    assert.deepEqual((await webview.postedOf('setFontFamily')).at(-1), { command: 'setFontFamily', font: 'serif' });
+    assert.equal(await webview.page.locator('#fontSelectPanel').isVisible(), false);
+    assert.equal(await webview.page.locator('#settingsPanel').getAttribute('aria-hidden'), 'false', 'choosing a font closed the Settings panel');
+    assert.equal(await fontButtonText(), 'Serif');
+
+    // The host pushes the setting (another editor changed it, or Settings JSON was edited).
+    await webview.send({ command: 'fontFamilyChanged', font: 'system' });
+    await webview.page.waitForFunction(() => document.getElementById('fontSelect')!.textContent!.trim() === 'System');
+    assert.equal((await rootFont()).data, 'system');
+
+    // A value that cannot be a font name falls back to Inter instead of leaving a broken font.
+    await webview.send({ command: 'fontFamilyChanged', font: '<b>' });
+    await webview.page.waitForFunction(() => document.documentElement.dataset.font === 'inter');
+    assert.equal(await fontButtonText(), 'Inter');
+    assert.deepEqual(await webview.problems(), []);
+    await webview.page.click('#settingsCancelButton');
+});
+
+test('the Font picker searches the installed fonts, by mouse and keyboard', async () => {
+    await webview.send(markdownDocument('# Title\n\nHello world\n'));
+    await webview.page.waitForSelector('.cm-content');
+    assert.ok((await webview.postedOf('requestLocalFonts')).length >= 1, 'the picker never asked the host for the installed fonts');
+    // A hostile name in the list is dropped, not shown.
+    await webview.send({ command: 'localFonts', fonts: ['Georgia', 'Helvetica', 'Helvetica Neue', 'Menlo', 'Bad";x'] });
+    await openFontPicker();
+    assert.deepEqual(await fontOptions(), ['Inter', 'System', 'Serif', 'Georgia', 'Helvetica', 'Helvetica Neue', 'Menlo']);
+    assert.deepEqual(await webview.page.locator('#fontSelectList .font-picker__group-label').allInnerTexts(), ['BUILT IN', 'INSTALLED ON THIS COMPUTER']);
+
+    // Typing narrows the list, best match first and highlighted; every word has to match.
+    await webview.page.keyboard.type('hel');
+    assert.deepEqual(await fontOptions(), ['Helvetica', 'Helvetica Neue']);
+    assert.equal(await activeFontOption(), 'Helvetica');
+    await webview.page.keyboard.press('ArrowDown');
+    assert.equal(await activeFontOption(), 'Helvetica Neue');
+    await webview.page.keyboard.press('ArrowDown');
+    assert.equal(await activeFontOption(), 'Helvetica Neue', 'the highlight ran past the end of the list');
+    await webview.page.keyboard.press('ArrowUp');
+    assert.equal(await activeFontOption(), 'Helvetica');
+    await webview.page.keyboard.type(' neue');
+    assert.deepEqual(await fontOptions(), ['Helvetica Neue']);
+
+    // Enter chooses the highlighted font; it is saved and used with the system font behind it.
+    await webview.page.keyboard.press('Enter');
+    assert.deepEqual(await rootFont(), { data: 'custom', inline: '"Helvetica Neue", system-ui, -apple-system, sans-serif' });
+    assert.match(await bodyFont(), /^"Helvetica Neue", system-ui/);
+    assert.deepEqual((await webview.postedOf('setFontFamily')).at(-1), { command: 'setFontFamily', font: 'Helvetica Neue' });
+    assert.equal(await fontButtonText(), 'Helvetica Neue');
+    assert.equal(await webview.page.evaluate(() => document.activeElement?.id), 'fontSelect', 'focus did not return to the Font button');
+
+    // Reopened, the list starts unfiltered with the font in use highlighted. No match shows a message.
+    await openFontPicker();
+    assert.equal((await fontOptions()).length, 7);
+    assert.equal(await activeFontOption(), 'Helvetica Neue');
+    await webview.page.keyboard.type('zzzz');
+    assert.deepEqual(await fontOptions(), []);
+    assert.equal(await webview.page.locator('#fontSelectEmpty').isVisible(), true);
+    await webview.page.keyboard.press('Enter');
+    assert.equal(await webview.page.locator('#fontSelectPanel').isVisible(), true, 'Enter with no match should do nothing');
+
+    // The first Escape folds the list away; only the second closes the Settings panel.
+    await webview.page.keyboard.press('Escape');
+    assert.equal(await webview.page.locator('#fontSelectPanel').isVisible(), false);
+    assert.equal(await webview.page.locator('#settingsPanel').getAttribute('aria-hidden'), 'false');
+    await webview.page.keyboard.press('Escape');
+    assert.equal(await webview.page.locator('#settingsPanel').getAttribute('aria-hidden'), 'true');
+
+    // Clicking outside the list folds it away without choosing anything.
+    await openFontPicker();
+    await webview.page.click('#settingsPanelTitle');
+    assert.equal(await webview.page.locator('#fontSelectPanel').isVisible(), false);
+    assert.equal(await fontButtonText(), 'Helvetica Neue');
+
+    // Back to the default, for the tests after this one.
+    await webview.send({ command: 'fontFamilyChanged', font: 'inter' });
+    await webview.page.waitForFunction(() => document.documentElement.dataset.font === 'inter');
+    await webview.page.click('#settingsCancelButton');
+    assert.deepEqual(await webview.problems(), []);
+});
+
 test('hostile HTML in a table cell does not run', async () => {
     await webview.send(markdownDocument('| a |\n| - |\n| <img src=x onerror="window.__pwned = true"> |\n\nplain\n'));
     await webview.page.waitForSelector('.cm-md-table-scroll table', { timeout: 10000 });
@@ -74,6 +200,93 @@ test('the CSP blocks inline handlers even if markup gets past sanitizing', async
     await webview.page.waitForTimeout(300);
     assert.equal(await webview.page.evaluate(() => (window as any).__pwnedByCsp), undefined);
     assert.ok((await webview.problems()).some(p => p.includes('script-src')), 'expected a CSP script-src violation');
+});
+
+test('slash menu shows at least twelve rows and shrinks for a short viewport', async () => {
+    const originalViewport = webview.page.viewportSize() ?? { width: 1280, height: 720 };
+    const openSlashMenu = async () => {
+        await openDoc('');
+        await webview.page.click('.cm-content .cm-line');
+        await webview.page.keyboard.type('/');
+        await webview.page.waitForSelector('.cm-slash-menu-tooltip');
+    };
+    const menuGeometry = () => webview.page.locator('.cm-slash-menu-tooltip ul').evaluate((list) => {
+        const listRect = list.getBoundingClientRect();
+        let visibleRows = 0;
+        for (const row of list.querySelectorAll('li')) {
+            const rowRect = row.getBoundingClientRect();
+            if (rowRect.top >= listRect.top - 0.5 && rowRect.bottom <= listRect.bottom + 0.5) {
+                visibleRows++;
+            }
+        }
+        return { height: listRect.height, visibleRows };
+    });
+
+    try {
+        await openSlashMenu();
+        const full = await menuGeometry();
+        assert.ok(full.visibleRows >= 12, `only ${full.visibleRows} slash-menu rows are visible`);
+
+        await webview.page.setViewportSize({ width: originalViewport.width, height: 320 });
+        await openSlashMenu();
+        const compact = await menuGeometry();
+        assert.ok(compact.height < full.height, `short viewport menu stayed ${compact.height}px tall`);
+        assert.ok(compact.height <= 296, `short viewport menu is ${compact.height}px tall`);
+    } finally {
+        await webview.page.setViewportSize(originalViewport);
+    }
+});
+
+test('non-sticky toolbar reveals from the top edge and stays for its settings panel', async () => {
+    await webview.send({ command: 'initSettings', settings: { ...SETTINGS, stickyToolbar: false } } satisfies HostToMarkdownWebview);
+    await webview.page.evaluate(() => {
+        const spacer = document.createElement('div');
+        spacer.id = 'toolbarRevealTestSpacer';
+        spacer.style.height = '200vh';
+        document.getElementById('content')?.appendChild(spacer);
+        const content = document.getElementById('content');
+        if (content) {content.scrollTop = content.scrollHeight;}
+    });
+    await webview.page.waitForFunction(() => document.body.classList.contains('toolbar-hover-reveal-armed'));
+
+    await webview.page.mouse.move(10, 2);
+    await webview.page.waitForFunction(() => document.body.classList.contains('toolbar-hover-reveal-visible'));
+    assert.equal(await webview.page.locator('#toolbar').evaluate(el => getComputedStyle(el).position), 'fixed');
+    // The formatting row fades and slides in (120ms transitions): wait for them to finish, else this reads mid-animation values.
+    await webview.page.waitForFunction(() => document.getElementById('formattingToolbar')!.getAnimations().length === 0, undefined, { timeout: 2000 });
+    const toolbarRows = await webview.page.evaluate(() => {
+        const main = document.getElementById('toolbar')!.getBoundingClientRect();
+        const formatting = document.getElementById('formattingToolbar')!;
+        return {
+            formattingPosition: getComputedStyle(formatting).position,
+            formattingOpacity: getComputedStyle(formatting).opacity,
+            mainBottom: main.bottom,
+            formattingTop: formatting.getBoundingClientRect().top,
+        };
+    });
+    assert.equal(toolbarRows.formattingPosition, 'fixed');
+    assert.equal(toolbarRows.formattingOpacity, '1');
+    assert.ok(toolbarRows.formattingTop >= toolbarRows.mainBottom - 1);
+
+    await webview.page.click('#openSettingsButton');
+    await webview.page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    const viewport = webview.page.viewportSize();
+    await webview.page.mouse.move(1, (viewport?.height ?? 720) - 1);
+    await webview.page.waitForTimeout(250);
+    assert.equal(await webview.page.locator('#settingsPanel').getAttribute('aria-hidden'), 'false');
+    assert.equal(await webview.page.locator('body').evaluate(el => el.classList.contains('toolbar-hover-reveal-visible')), true);
+
+    await webview.page.click('#settingsCancelButton');
+    await webview.page.mouse.move(1, (viewport?.height ?? 720) - 1);
+    await webview.page.waitForFunction(() => !document.body.classList.contains('toolbar-hover-reveal-visible'));
+
+    await webview.page.evaluate(() => {
+        document.getElementById('toolbarRevealTestSpacer')?.remove();
+        const content = document.getElementById('content');
+        if (content) {content.scrollTop = 0;}
+    });
+    await webview.send({ command: 'initSettings', settings: SETTINGS } satisfies HostToMarkdownWebview);
+    assert.equal(await webview.page.locator('.toolbar-hover-reveal-hotspot').count(), 0);
 });
 
 test('toggle: a closed <details> hides its body, the chevron opens it and posts the choice', async () => {
@@ -275,5 +488,34 @@ test('toggle: the arrow is centred on the title text and does not move when it t
         const closed = await measure();
         assert.ok(Math.abs(closed.x - open.x) < 0.5 && Math.abs(closed.y - open.y) < 0.5,
             `"${title}": arrow moved from (${open.x}, ${open.y}) to (${closed.x}, ${closed.y})`);
+    }
+});
+
+test('with the toolbar not sticky, the outline rail starts below whichever toolbar is on screen', async () => {
+    await webview.send({ command: 'initSettings', settings: { ...SETTINGS, stickyToolbar: false } } satisfies HostToMarkdownWebview);
+    try {
+        await webview.send(markdownDocument(Array.from({ length: 60 }, (_, i) => `## Heading ${i}\n\nText ${i}.\n`).join('\n')));
+        await webview.page.waitForSelector('.outline-rail-widget');
+        await webview.page.waitForTimeout(300);
+        const gap = () => webview.page.evaluate(() => {
+            const bottoms = ['toolbar', 'formattingToolbar'].map(id => document.getElementById(id)!.getBoundingClientRect().bottom);
+            return document.querySelector('.outline-rail-widget')!.getBoundingClientRect().top - Math.max(0, ...bottoms);
+        });
+        // Top of the document: the toolbar is in the page.
+        assert.ok(Math.abs(await gap() - 10) <= 1, `rail is ${await gap()}px below the toolbar at the top of the file`);
+        // Half scrolled away.
+        await webview.page.evaluate(() => { document.getElementById('content')!.scrollTop = 50; });
+        await webview.page.waitForTimeout(200);
+        assert.ok(Math.abs(await gap() - 10) <= 1, `rail is ${await gap()}px below the toolbar while it scrolls away`);
+        // Scrolled far, then the toolbar revealed from the top edge.
+        await webview.page.evaluate(() => { document.getElementById('content')!.scrollTop = 1500; });
+        await webview.page.waitForFunction(() => document.body.classList.contains('toolbar-hover-reveal-armed'));
+        await webview.page.mouse.move(300, 2);
+        await webview.page.waitForFunction(() => document.body.classList.contains('toolbar-hover-reveal-visible'));
+        await webview.page.waitForTimeout(400);
+        assert.ok(Math.abs(await gap() - 10) <= 1, `rail is ${await gap()}px below the revealed toolbar`);
+    } finally {
+        await webview.page.mouse.move(500, 500);
+        await webview.send({ command: 'initSettings', settings: SETTINGS } satisfies HostToMarkdownWebview);
     }
 });

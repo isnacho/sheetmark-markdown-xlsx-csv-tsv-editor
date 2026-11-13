@@ -163,7 +163,10 @@ export function renderMarkdownHtml({ asset, cspSource, nonce }: WebviewHtmlOptio
                         </div>
                         <div id="tocBody" class="toc-body"></div>
                     </aside>
-                    <div id="markdownPreview" class="markdown-preview"></div>
+                    <div class="markdown-preview-stack">
+                        <div id="outlineRailHost" class="outline-rail-host hidden" aria-hidden="true"></div>
+                        <div id="markdownPreview" class="markdown-preview"></div>
+                    </div>
                     <div id="diskDiffChunkRuler" class="disk-diff-chunk-ruler hidden" aria-hidden="true"></div>
                 </div>
             </div>

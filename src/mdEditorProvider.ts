@@ -8,7 +8,7 @@ import { renderMarkdownHtml } from './shared/webviewHtml';
 import { createSerialQueue, type SerialQueue } from './shared/serialQueue';
 import { createMessageDispatcher, MARKDOWN_FILE_WRITING_COMMANDS } from './shared/messageDispatch';
 import { recordSentInTests, trackOpenEditor, type OpenEditorHandle } from './shared/editorTestHooks';
-import { handleSharedHostMessage, isSharedHostMessage, syncColorTheme, type SharedHostContext } from './shared/commonHostMessages';
+import { handleSharedHostMessage, isSharedHostMessage, syncColorTheme, syncFontFamily, type SharedHostContext } from './shared/commonHostMessages';
 import type { MessageOf } from './protocol/common';
 import type { HostToMarkdownWebview, MarkdownSettings, MarkdownWebviewToHost } from './protocol/markdown';
 import { createExternalFileChangeWatcher } from './shared/fileExternalChangeWatcher';
@@ -240,6 +240,7 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                 detailsOpenState: this.prefs.detailsOpenState.get(currentUri),
                 mermaidPreviewMode: this.prefs.mermaidPreviewMode.get(),
                 calloutDefaultType: this.prefs.calloutDefaultType.get(),
+                outlinePinned: this.prefs.outlinePinned.get(),
             });
 
             // Set up webview
@@ -252,6 +253,7 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
             // Handle messages from webview
             // Pushes the VS Code theme now (on webviewReady) and on every theme change.
             const sendTheme = syncColorTheme(webviewPanel, post);
+            const sendFont = syncFontFamily(webviewPanel, post);
 
             const sharedContext: SharedHostContext = {
                 post,
@@ -282,6 +284,7 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                             post({ command: 'initSettings', settings: buildMdWebviewSettings() });
 
                             sendTheme();
+                            sendFont();
                         } catch (err) {
                             vscode.window.showErrorMessage(`Error reading Markdown file: ${err}`);
                             try {
@@ -452,6 +455,14 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                             await this.prefs.calloutDefaultType.set(message.type);
                         } catch (err) {
                             vscode.window.showErrorMessage(`Error saving callout default type: ${err}`);
+                        }
+                        break;
+
+                    case 'saveOutlinePinned':
+                        try {
+                            await this.prefs.outlinePinned.set(!!message.pinned);
+                        } catch (err) {
+                            vscode.window.showErrorMessage(`Error saving outline layout: ${err}`);
                         }
                         break;
 

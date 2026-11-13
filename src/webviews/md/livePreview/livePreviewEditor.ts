@@ -29,6 +29,8 @@
 import { EditorState, Compartment, Annotation, EditorSelection, Prec } from '@codemirror/state';
 import { EditorView, keymap, drawSelection, highlightActiveLine, highlightActiveLineGutter, lineNumbers } from '@codemirror/view';
 import { textColumnSelection } from './selectionColumn';
+import { blockSelectionExtensions } from './blockSelection';
+import { blockDragExtension } from './blockDrag';
 import { statusBarScrollMargins } from './statusBarClearance';
 import { history, historyKeymap, defaultKeymap, undo, redo, undoDepth, redoDepth, selectAll } from '@codemirror/commands';
 import { markdown } from '@codemirror/lang-markdown';
@@ -62,13 +64,14 @@ import {
 import { listMarkerBoundaryExtensions, livePreviewMarkdownKeymap } from './listMarkerEditing';
 import { codeStylingPlugin } from './codeStylingPlugin';
 import { codeBlockNavigationKeymap } from './codeBlockBoundaryEditing';
-import { contentClickHandlers, listLineMouseSelectionStyle, resolveContentClickPos } from './contentClickPositioning';
+import { contentClickHandlers, headingLineMouseSelectionStyle, isTableWidgetPointerTarget, listLineMouseSelectionStyle, resolveContentClickPos } from './contentClickPositioning';
 import { tableWidgetField, columnWidthsField, setColumnWidthsEffect } from './tableWidget';
 import { tableBoundaryExtensions } from './tableBoundaryEditing';
 import { frontmatterWidgetField, seedFrontmatterCollapsed, seedFrontmatterEditing, setFrontmatterCollapsedCallback, blurActiveFrontmatterEditing, setFrontmatterEditingEffect } from './frontmatterWidget';
 import { cursorPosAfterFrontmatter } from '../frontmatter';
 import { headingLineDecorationField } from './headingGutterSync';
 import { hoverLineGutter, hoverGutterDomEventHandlers } from './hoverLineGutter';
+import { outlineActiveHeadingGutter, syncOutlineActiveHeadingLine } from './outlineActiveHeadingGutter';
 import { resolveLinePosAtPointer } from './pointerLineResolution';
 import { normalizeClipboardPasteText } from './pasteNormalization';
 import {
@@ -245,6 +248,7 @@ export function mountLivePreview(opts: LivePreviewMountOptions): EditorView {
     const domHandlers = EditorView.domEventHandlers({
         mousedown(event, editorView) {
             if (event.button !== 0) { return false; }
+            if (isTableWidgetPointerTarget(event.target)) { return false; }
             const pos = resolveContentClickPos(editorView, event)
                 ?? editorView.posAtCoords({ x: event.clientX, y: event.clientY });
             if (pos === null) { return false; }
@@ -279,12 +283,14 @@ export function mountLivePreview(opts: LivePreviewMountOptions): EditorView {
         extensions: [
             history(),
             drawSelection(),
+            textColumnSelection,
+            blockSelectionExtensions,
+            statusBarScrollMargins,
             EditorView.clipboardInputFilter.of((text, state) => normalizeClipboardPasteText(state, text)),
             highlightActiveLine(),
-            textColumnSelection,
-            statusBarScrollMargins,
             highlightActiveLineGutter(),
             hoverLineGutter(),
+            outlineActiveHeadingGutter(),
             markdown({ extensions: GFM, addKeymap: false }),
             // No `syntaxHighlighting(defaultHighlightStyle)` here — it was
             // unused boilerplate, not a real dependency: no `codeLanguages` is
@@ -331,10 +337,13 @@ export function mountLivePreview(opts: LivePreviewMountOptions): EditorView {
             codeStylingPlugin,
             codeBlockNavigationKeymap,
             listLineMouseSelectionStyle,
+            headingLineMouseSelectionStyle,
             contentClickHandlers,
             ...spellcheckExtensions,
             slashMenuAutocompletion(),
             livePreviewTabKeymap,
+            // Outside revealCompartment: block drag works with "reveal syntax" off too.
+            blockDragExtension({ isDisabled: () => diffActive }),
             domHandlers,
             updateListener,
         ],
@@ -347,6 +356,11 @@ export function mountLivePreview(opts: LivePreviewMountOptions): EditorView {
 
 export function refreshLivePreviewImages(): void {
     view?.dispatch({ effects: refreshImageWidgetsEffect.of(undefined) });
+}
+
+/** Re-measure line heights and widths after the page font changed (CM6 does not notice CSS changes). */
+export function remeasureLivePreview(): void {
+    view?.requestMeasure();
 }
 
 /** Destroy the view and clear its DOM. Idempotent — safe to call when unmounted. */
@@ -466,6 +480,10 @@ export function setLivePreviewDetailsState(detailsState: DetailsOpenState): void
     view.dispatch({ effects: replaceDetailsStateEffect.of(detailsState) });
 }
 
+export function setLivePreviewOutlineActiveHeadingLine(lineNumber: number | null): void {
+    syncOutlineActiveHeadingLine(view, lineNumber);
+}
+
 /** Version-history preview: block doc edits while keeping scroll/selection/search. */
 export function setLivePreviewReadOnly(on: boolean): void {
     view?.dispatch({
@@ -565,9 +583,14 @@ export function getLivePreviewScrollMetrics(): { scrollTop: number; scrollHeight
 /** 1-indexed line number nearest the top of the viewport, for scroll-spy. */
 export function getLivePreviewTopLine(): number | null {
     if (!view) { return null; }
-    const top = view.scrollDOM.scrollTop + 8;
-    const block = view.lineBlockAtHeight(Math.min(top, view.scrollDOM.scrollHeight));
-    return view.state.doc.lineAt(block.from).number;
+    const scroller = view.scrollDOM;
+    const rect = scroller.getBoundingClientRect();
+    if (rect.bottom <= rect.top) { return null; }
+    const x = Math.min(rect.left + 24, rect.right - 8);
+    const y = rect.top + 8;
+    const pos = view.posAtCoords({ x, y });
+    if (pos === null) { return null; }
+    return view.state.doc.lineAt(pos).number;
 }
 
 /** 1-indexed line + 1-indexed column of the current selection head. null when not mounted. */

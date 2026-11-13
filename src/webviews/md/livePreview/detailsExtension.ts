@@ -1,6 +1,6 @@
 // Toggle (`<details>`) blocks in Preview Edit, Notion style: the tag lines never show, the title is
-// an ordinary Markdown block, a chevron in the left margin opens and closes the body, and a hover
-// handle opens a small menu. Runtime: WEBVIEW.
+// an ordinary Markdown block, and a chevron in the left margin opens and closes the body. The
+// toggle's menu opens from its block grip (blockDrag.ts) through `showToggleMenu`. Runtime: WEBVIEW.
 //
 // Deliberately NOT inside revealCompartment: hiding must work whether or not the "reveal syntax"
 // setting is on, and reconfiguring that compartment would reset these fields. Block replace
@@ -50,6 +50,12 @@ let onStateChanged: ((state: DetailsOpenState) => void) | undefined;
 /** mdWebview.ts persists the new map to the host. */
 export function setDetailsStateCallback(cb: ((state: DetailsOpenState) => void) | undefined): void {
     onStateChanged = cb;
+}
+
+/** Replace the open/closed map and persist it (block moves re-key toggles by their new position). */
+export function applyDetailsOpenState(view: EditorView, next: DetailsOpenState): void {
+    view.dispatch({ effects: replaceDetailsStateEffect.of(next) });
+    onStateChanged?.(view.state.field(detailsOpenField));
 }
 
 const MAX_DEPTH_CLASS = 6;
@@ -115,37 +121,6 @@ class ChevronWidget extends WidgetType {
     }
 }
 
-class HandleWidget extends WidgetType {
-    constructor(private readonly id: string) { super(); }
-    eq(other: HandleWidget): boolean { return other.id === this.id; }
-    ignoreEvent(): boolean { return true; }
-    toDOM(view: EditorView): HTMLElement {
-        const el = document.createElement('span');
-        el.className = 'cm-md-details-handle';
-        el.setAttribute('role', 'button');
-        el.setAttribute('aria-label', 'Toggle options');
-        el.setAttribute('aria-haspopup', 'menu');
-        el.tabIndex = 0;
-        // Six drawn dots (Notion's grip), centred like the arrow's triangle; a text glyph such as
-        // the vertical ellipsis sits low in its box.
-        el.innerHTML = '<svg viewBox="0 0 10 16" aria-hidden="true">'
-            + [3, 8, 13].map(y => `<circle cx="3" cy="${y}" r="1.5"/><circle cx="7" cy="${y}" r="1.5"/>`).join('')
-            + '</svg>';
-        el.addEventListener('mousedown', (event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            showToggleMenu(view, this.id, el.getBoundingClientRect());
-        });
-        el.addEventListener('keydown', (event) => {
-            if (event.key !== 'Enter' && event.key !== ' ') { return; }
-            event.preventDefault();
-            event.stopPropagation();
-            showToggleMenu(view, this.id, el.getBoundingClientRect());
-        });
-        return el;
-    }
-}
-
 // ----- Menu (singleton on document.body, same look as the table context menu) -----
 
 let menuEl: HTMLElement | null = null;
@@ -171,7 +146,8 @@ function dispatchStructure(view: EditorView, spec: TransactionSpec): void {
     view.dispatch({ ...spec, annotations: [structureEdit.of(true)], userEvent: 'input.toggle' });
 }
 
-function showToggleMenu(view: EditorView, id: string, anchor: DOMRect): void {
+/** The toggle's options menu, opened from its block grip (right-click, or Enter on the focused grip). */
+export function showToggleMenu(view: EditorView, id: string, anchor: DOMRect): void {
     const block = findBlock(view, id);
     if (!block) { return; }
     const menu = ensureToggleMenu();
@@ -271,7 +247,6 @@ export function computeDetailsDecorations(state: EditorState, userState: Details
             titleLines.add(n);
             decos.push(Decoration.line({ class: `cm-md-details-title-line ${depthClass(block.depth)}` }).range(state.doc.line(n).from));
         }
-        decos.push(Decoration.widget({ widget: new HandleWidget(block.id), side: -2 }).range(block.titleFrom));
         decos.push(Decoration.widget({ widget: new ChevronWidget(block.id, open), side: -1 }).range(block.titleFrom));
 
         if (hide) {

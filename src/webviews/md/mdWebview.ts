@@ -1,6 +1,7 @@
 import MarkdownIt from 'markdown-it';
 
 import { ThemeManager, renderThemeToggleSettingItem } from '../shared/themeManager';
+import { applyFontChoice, applyLocalFonts, onFontApplied, renderFontSettingItem, wireFontPicker } from '../shared/fontManager';
 import { renderMenuActionRow } from '../shared/menuPanel';
 import { SettingsManager } from '../shared/settingsManager';
 import { ToolbarManager, type ToolbarButton } from '../shared/toolbarManager';
@@ -46,7 +47,15 @@ import {
     goToPrevLivePreviewDiffChunk,
     acceptAllLivePreviewDiffChunks,
     rejectAllLivePreviewDiffChunks,
+    setLivePreviewOutlineActiveHeadingLine,
+    remeasureLivePreview,
 } from './livePreview/livePreviewEditor';
+import { collectTocItems, renderTocEmptyHtml, renderTocListHtml, type TocItem } from './outlineToc';
+import {
+    syncOutlineRailOverlay,
+    setOutlineRailPinHandler,
+    setOutlineRailNavigateHandler,
+} from './outlineRailOverlay';
 import { setImageUriResolver } from './livePreview/imageWidget';
 import { diffLineStats, formatDiffLineStats } from './diffStats';
 import { markdownBodyWithoutFrontmatter, frontmatterBodyStartLine } from './frontmatter';
@@ -240,41 +249,18 @@ function normalizeHeadingText(text: string): string {
     return md.utils.unescapeAll(stripped);
 }
 
-// id <-> CM6 line number (1-indexed), refreshed every buildToc() call.
+// id <-> CM6 line number (1-indexed), refreshed every TOC rebuild.
 const tocIdToLine = new Map<string, number>();
 const tocLineToId = new Map<number, string>();
+let lastTocItems: TocItem[] = [];
 
-function buildToc(tokens: any[], bodyStartLine: number) {
+function refreshTocLineMaps(items: readonly TocItem[]) {
     tocIdToLine.clear();
     tocLineToId.clear();
-
-    const items: Array<{ id: string; level: number; text: string }> = [];
-    for (let i = 0; i < tokens.length; i++) {
-        const token = tokens[i];
-        if (token.type === 'heading_open') {
-            const inline = tokens[i + 1];
-            const text = inline && inline.type === 'inline' ? normalizeHeadingText(inline.content) : '';
-            const id = token.attrGet('id');
-            const level = parseInt((token.tag || 'h2').replace('h', ''), 10);
-            if (id && text) {
-                items.push({ id, level, text });
-                if (Array.isArray(token.map)) {
-                    const line = token.map[0] + bodyStartLine;
-                    tocIdToLine.set(id, line);
-                    tocLineToId.set(line, id);
-                }
-            }
-        }
+    for (const item of items) {
+        tocIdToLine.set(item.id, item.line);
+        tocLineToId.set(item.line, item.id);
     }
-
-    if (!items.length) {
-        return '<div class="toc-empty">No headings found</div>';
-    }
-
-    return items.map(item => {
-        const safeText = md.utils.escapeHtml(item.text);
-        return `<div class="toc-item toc-level-${item.level}"><a href="#${item.id}" data-target="${item.id}">${safeText}</a></div>`;
-    }).join('');
 }
 
 /** Re-derive the TOC + its id<->line map from live CM6 content. */
@@ -304,11 +290,65 @@ function persistCalloutDefaultType(type: string) {
     post({ command: 'saveCalloutDefaultType', type });
 }
 
+function persistOutlinePinned(pinned: boolean) {
+    state.outlinePinned = pinned;
+    post({ command: 'saveOutlinePinned', pinned });
+}
+
+function outlineRailEnabled(): boolean {
+    return state.hostSettingsLoaded
+        && !!state.currentSettings.showOutline
+        && !state.outlinePinned
+        && isLivePreviewActive();
+}
+
+function outlineActiveHeadingEnabled(): boolean {
+    return state.hostSettingsLoaded
+        && !!state.currentSettings.showOutline
+        && isLivePreviewActive();
+}
+
+function syncOutlineRailFromState() {
+    const topLine = isLivePreviewActive() ? getLivePreviewTopLine() : null;
+    const activeId = topLine !== null ? nearestTocIdForLine(topLine) : '';
+    const railOn = outlineRailEnabled();
+    syncOutlineRailOverlay({
+        items: lastTocItems,
+        activeId,
+        enabled: railOn,
+    });
+    const outlineActiveLine = outlineActiveHeadingEnabled() && activeId ? tocIdToLine.get(activeId) ?? null : null;
+    setLivePreviewOutlineActiveHeadingLine(outlineActiveLine);
+}
+
+function applyOutlineChrome() {
+    const container = $('markdownContainer');
+    const tocPanel = $('tocPanel');
+    if (!state.hostSettingsLoaded) { return; }
+    const master = !!state.currentSettings.showOutline;
+    const pinned = master && state.outlinePinned;
+    const rail = master && !state.outlinePinned && isLivePreviewActive();
+    if (container) { container.classList.toggle('toc-open', pinned); }
+    if (tocPanel) { tocPanel.classList.toggle('hidden', !pinned); }
+    document.body.classList.toggle('outline-rail-mode', rail);
+    syncOutlineRailFromState();
+}
 
 function updateToc(tokens: any[], bodyStartLine: number) {
     const tocBody = $('tocBody');
-    if (!tocBody) {return;}
-    tocBody.innerHTML = buildToc(tokens, bodyStartLine);
+    if (!tocBody) { return; }
+    const items = collectTocItems(tokens, bodyStartLine, normalizeHeadingText);
+    lastTocItems = items;
+    refreshTocLineMaps(items);
+    tocBody.innerHTML = items.length ? renderTocListHtml(items) : renderTocEmptyHtml();
+    syncOutlineRailFromState();
+}
+
+function navigateTocTarget(id: string) {
+    if (!id) { return; }
+    if (!scrollToAnchor(`#${id}`)) {
+        showToast('Section not found', undefined, { icon: 'warning' });
+    }
 }
 
 function resolveTocLineForAnchor(href: string): number | undefined {
@@ -440,8 +480,16 @@ function enterPreviewEditMode() {
         });
         // mountLivePreview unmounts first and clears the resolver — wire after mount.
         wireImageUriResolver();
+        setOutlineRailPinHandler(() => {
+            state.outlinePinned = true;
+            persistOutlinePinned(true);
+            applyOutlineChrome();
+        });
+        setOutlineRailNavigateHandler((id) => navigateTocTarget(id));
         refreshLivePreviewImages();
         refreshCm6Toc(state.currentContent);
+        applyOutlineChrome();
+        bindScrollSpyListeners();
         focusLivePreview();
     }
 
@@ -449,6 +497,7 @@ function enterPreviewEditMode() {
         stickyToolbar: state.currentSettings.stickyToolbar,
         scrollTarget: '#content'
     });
+    bindScrollSpyListeners();
     applyFormattingToolbarLayout();
     updateHeaderHeight();
     requestAnimationFrame(() => updateHeaderHeight());
@@ -853,11 +902,22 @@ function nearestTocIdForLine(line: number): string {
 }
 
 function updateScrollSpy() {
-    const tocBody = $('tocBody');
-    if (!tocBody || !isLivePreviewActive()) {return;}
+    if (!isLivePreviewActive()) { return; }
 
     const topLine = getLivePreviewTopLine();
     const current = topLine !== null ? nearestTocIdForLine(topLine) : '';
+
+    syncOutlineRailOverlay({
+        items: lastTocItems,
+        activeId: current,
+        enabled: outlineRailEnabled(),
+    });
+
+    const outlineActiveLine = outlineActiveHeadingEnabled() && current ? tocIdToLine.get(current) ?? null : null;
+    setLivePreviewOutlineActiveHeadingLine(outlineActiveLine);
+
+    const tocBody = $('tocBody');
+    if (!tocBody) { return; }
 
     const links = tocBody.querySelectorAll('.toc-item a');
     let activeLink: HTMLElement | null = null;
@@ -888,11 +948,22 @@ const throttledScrollSpy = throttleRAF(() => {
     updateProgressBar();
 });
 
-function initScrollSpy() {
-    const preview = $('markdownPreview');
-    if (!preview) {return;}
+let scrollSpyTargets: HTMLElement[] = [];
 
-    preview.addEventListener('scroll', throttledScrollSpy, { passive: true });
+function bindScrollSpyListeners() {
+    scrollSpyTargets.forEach((el) => el.removeEventListener('scroll', throttledScrollSpy));
+    scrollSpyTargets = [];
+    if (!document.body.classList.contains('sticky-toolbar-enabled')) {
+        const content = $('content');
+        if (content) { scrollSpyTargets.push(content); }
+    }
+    const scroller = $('markdownPreview')?.querySelector('.cm-scroller');
+    if (scroller instanceof HTMLElement) {
+        scrollSpyTargets.push(scroller);
+    }
+    scrollSpyTargets.forEach((el) => {
+        el.addEventListener('scroll', throttledScrollSpy, { passive: true });
+    });
 }
 
 // ===== Lightbox =====
@@ -1104,6 +1175,7 @@ function applySettings(settings: any, persist = false) {
         scrollTarget: '#content'
     });
 
+    bindScrollSpyListeners();
     applyFormattingToolbarLayout();
     updateHeaderHeight();
 
@@ -1147,11 +1219,7 @@ function applySettings(settings: any, persist = false) {
     // Line numbers
     document.body.classList.toggle('show-line-numbers', livePreviewGutterLineNumbersEnabled());
 
-    const tocPanel = $('tocPanel');
-    if (state.hostSettingsLoaded) {
-        if (container) {container.classList.toggle('toc-open', !!state.currentSettings.showOutline);}
-        if (tocPanel) {tocPanel.classList.toggle('hidden', !state.currentSettings.showOutline);}
-    }
+    applyOutlineChrome();
 
     // The whole diff-review affordance (toolbar icon, HUD, overlay) hinges on
     // this setting — hide the entry point and tear down anything already
@@ -1195,7 +1263,7 @@ function initializeSettings() {
             id: 'chkShowOutline',
             section: 'General',
             label: 'Show Outline',
-            tooltip: 'Display the document outline panel for heading navigation.',
+            tooltip: 'Heading navigation in Preview Edit: a minimal line rail by default; pin for the sidebar panel. Off hides both.',
             defaultValue: state.currentSettings.showOutline,
             onChange: (val: boolean) => {
                 state.currentSettings.showOutline = val;
@@ -1236,6 +1304,13 @@ function initializeSettings() {
             section: 'General',
             label: 'Theme',
             html: renderThemeToggleSettingItem('themeSelect'),
+            onChange: () => {}
+        },
+        {
+            id: 'fontSelect',
+            section: 'General',
+            label: 'Font',
+            html: renderFontSettingItem('fontSelect'),
             onChange: () => {}
         },
         {
@@ -1371,6 +1446,10 @@ function initializeSettings() {
     new ThemeManager('themeSelect', {
         onBeforeCycle: () => true
     }, vscode);
+
+    // Font picker (the setting is shared with the spreadsheet editor)
+    wireFontPicker('fontSelect', post);
+    onFontApplied(remeasureLivePreview);
 }
 
 // ===== Header Height =====
@@ -1378,10 +1457,10 @@ function applyFormattingToolbarLayout() {
     const fmtToolbar = $('formattingToolbar');
     const contentArea = $('content');
     const mainToolbar = $('toolbar');
+    const toolbarWrapper = mainToolbar?.closest('.toolbar-wrapper') as HTMLElement | null;
     if (!fmtToolbar || !contentArea) {return;}
 
     if (state.currentSettings.stickyToolbar) {
-        const toolbarWrapper = mainToolbar?.closest('.toolbar-wrapper') as HTMLElement | null;
         const anchor = toolbarWrapper && toolbarWrapper.parentNode === document.body
             ? toolbarWrapper
             : mainToolbar;
@@ -1393,8 +1472,8 @@ function applyFormattingToolbarLayout() {
         return;
     }
 
-    if (mainToolbar && mainToolbar.parentNode === contentArea) {
-        contentArea.insertBefore(fmtToolbar, mainToolbar.nextSibling);
+    if (toolbarWrapper) {
+        toolbarWrapper.appendChild(fmtToolbar);
     } else {
         contentArea.insertBefore(fmtToolbar, contentArea.firstChild);
     }
@@ -1475,6 +1554,7 @@ window.addEventListener('message', (event) => {
             state.calloutDefaultType = typeof m.calloutDefaultType === 'string' && /^[\w-]*$/.test(m.calloutDefaultType)
                 ? m.calloutDefaultType.toLowerCase()
                 : 'info';
+            state.outlinePinned = !!m.outlinePinned;
             state.resolvedImageUriCache.clear();
             if (isLivePreviewActive()) {
                 setLivePreviewMermaidMode(state.mermaidPreviewMode);
@@ -1507,6 +1587,14 @@ window.addEventListener('message', (event) => {
 
         case 'openRelativeFileFailed':
             showToast(m.message || 'File not found', undefined, { icon: 'warning' });
+            break;
+
+        case 'fontFamilyChanged':
+            applyFontChoice(m.font);
+            break;
+
+        case 'localFonts':
+            applyLocalFonts(m.fonts);
             break;
 
         case 'diskDeletedExternally':
@@ -1574,6 +1662,7 @@ window.addEventListener('message', (event) => {
 function wireButtons() {
     state.toolbarManager = new ToolbarManager('toolbar');
     state.toolbarManager.setHeaderHeightHook(() => syncMdHeaderHeight());
+    state.toolbarManager.setHoverRevealCompanion($('formattingToolbar'));
 
     state.toolbarManager.setButtons(buildToolbarButtons());
 }
@@ -1785,20 +1874,17 @@ function wireTocPanel() {
         tocBody.addEventListener('click', (e) => {
             const target = e.target as HTMLElement;
             const link = target.closest('a[data-target]') as HTMLAnchorElement | null;
-            if (!link) {return;}
+            if (!link) { return; }
             e.preventDefault();
-            const id = link.getAttribute('data-target') || '';
-            if (!id) {return;}
-            if (!scrollToAnchor(`#${id}`)) {
-                showToast('Section not found', undefined, { icon: 'warning' });
-            }
+            navigateTocTarget(link.getAttribute('data-target') || '');
         });
     }
 
     if (closeBtn) {
         closeBtn.addEventListener('click', () => {
-            state.currentSettings.showOutline = false;
-            applySettings(state.currentSettings, true);
+            state.outlinePinned = false;
+            persistOutlinePinned(false);
+            applyOutlineChrome();
         });
     }
 }
@@ -1920,7 +2006,7 @@ wireTocPanel();
 initLightbox();
 initSearchOverlay();
 wireDiskDiffBulkActions();
-initScrollSpy();
+bindScrollSpyListeners();
 initResizeHandles();
 updateHeaderHeight();
 

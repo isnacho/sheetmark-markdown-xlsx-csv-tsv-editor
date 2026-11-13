@@ -9,7 +9,7 @@
 // "caught" just by noUnusedLocals: a test has to notice the behavior change. Add an entry whenever
 // you fix a bug. `knownGap: true` marks a fix no test can reach yet; it is reported, not failed.
 
-import { execSync, spawnSync } from 'node:child_process';
+import { execSync, spawn } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -136,8 +136,32 @@ const filter = process.argv[2];
 const selected = MUTATIONS.filter(m => !filter || m.id.includes(filter));
 const worktree = mkdtempSync(join(tmpdir(), 'sheetmark-regressions-'));
 
-const run = (cmd, cwd = worktree) => spawnSync(cmd, { cwd, shell: true, encoding: 'utf8' });
-const failingCheck = (output) => (/error TS\d+/.test(output) ? 'type check' : /✖|failing|fail [1-9]/.test(output) ? 'tests' : 'lint/build');
+// A mutation can make a test wait forever (a page that never reports ready, say). Each command
+// runs in its own process group with a time limit, and the whole group is killed when it runs out,
+// so one stuck browser test can no longer stall the run.
+const COMMAND_TIMEOUT_MS = 20 * 60_000;
+const run = (cmd, cwd = worktree) => new Promise((resolve) => {
+    const child = spawn(cmd, { cwd, shell: true, detached: true });
+    let output = '';
+    let timedOut = false;
+    child.stdout.on('data', (chunk) => { output += chunk; });
+    child.stderr.on('data', (chunk) => { output += chunk; });
+    const timer = setTimeout(() => {
+        timedOut = true;
+        try { process.kill(-child.pid, 'SIGKILL'); } catch { /* already gone */ }
+    }, COMMAND_TIMEOUT_MS);
+    child.on('close', (status) => { clearTimeout(timer); resolve({ status: timedOut ? null : status, output, timedOut }); });
+});
+// Names of the failing node:test tests in a run's output, each once.
+const failingTests = (output) => [...new Set([...output.matchAll(/^✖ (?!failing tests)(.+?)(?: \([\d.]+m?s\))?$/gm)].map(m => m[1]))];
+// Which check failed, naming the first failing test when there is one.
+const failingCheck = (output) => {
+    if (/error TS\d+/.test(output)) { return 'type check'; }
+    const [test] = failingTests(output);
+    if (test) { return `test: ${test}`; }
+    return /failing|fail [1-9]/.test(output) ? 'tests' : 'lint/build';
+};
+const timedOutStatus = (cmd) => `TIMED OUT after ${COMMAND_TIMEOUT_MS / 60_000} min in \`${cmd}\` (a test waits forever: fix it)`;
 
 console.log(`Worktree of HEAD at ${worktree}`);
 execSync(`git worktree add --detach "${worktree}" HEAD`, { cwd: repo, stdio: 'ignore' });
@@ -148,25 +172,30 @@ const results = [];
 try {
     // Baseline: everything must pass unmutated, or "caught" below would mean nothing.
     for (const cmd of ['npm run verify', 'npm run test:integration']) {
-        const baseline = run(cmd);
+        const baseline = await run(cmd);
         if (baseline.status !== 0) {
-            console.error(`Baseline \`${cmd}\` fails on unmodified HEAD; fix that first.\n` + (baseline.stdout + baseline.stderr).slice(-3000));
+            const names = failingTests(baseline.output);
+            console.error(`Baseline \`${cmd}\` ${baseline.timedOut ? 'timed out' : 'fails'} on unmodified HEAD; fix that first.`
+                + (names.length ? `\nFailing tests:\n${names.map(n => `  ✖ ${n}`).join('\n')}` : '')
+                + '\n' + baseline.output.slice(-3000));
             process.exitCode = 1;
             throw new Error('baseline failed');
         }
     }
 
     for (const m of selected) {
-        run('git checkout -q -- .');
+        await run('git checkout -q -- .');
         const path = join(worktree, m.file);
         const source = readFileSync(path, 'utf8');
         if (!source.includes(m.find)) { results.push({ m, status: 'STALE (pattern not found: update this entry)' }); continue; }
         writeFileSync(path, source.replace(m.find, m.replace));
 
-        const verify = run('npm run verify');
-        if (verify.status !== 0) { results.push({ m, status: `caught by verify (${failingCheck(verify.stdout + verify.stderr)})` }); continue; }
-        const integration = run('npm run test:integration');
-        const failed = (integration.stdout + integration.stderr).match(/^\s+\d+\) .+$/m)?.[0].trim();
+        const verify = await run('npm run verify');
+        if (verify.timedOut) { results.push({ m, status: timedOutStatus('npm run verify') }); continue; }
+        if (verify.status !== 0) { results.push({ m, status: `caught by verify (${failingCheck(verify.output)})` }); continue; }
+        const integration = await run('npm run test:integration');
+        if (integration.timedOut) { results.push({ m, status: timedOutStatus('npm run test:integration') }); continue; }
+        const failed = integration.output.match(/^\s+\d+\) .+$/m)?.[0].trim();
         results.push({ m, status: integration.status !== 0 ? `caught by integration tests${failed ? ` (${failed})` : ''}` : 'SURVIVED' });
         process.stdout.write('.');
     }
@@ -181,6 +210,8 @@ console.log('\n');
 let failed = false;
 for (const { m, status } of results) {
     const survived = status === 'SURVIVED' || status.startsWith('STALE');
+    // A timeout is neither caught nor survived: always a failure to look at.
+    if (status.startsWith('TIMED OUT')) { failed = true; console.log(`✖ ${m.id.padEnd(24)} ${status}`); continue; }
     // A known gap that is suddenly "caught" is suspicious too: either a test now covers it (remove
     // knownGap) or something unrelated is failing.
     const ok = survived === Boolean(m.knownGap);

@@ -125,6 +125,9 @@
     --space-3: 12px;
     --space-4: 16px;
     --space-5: 20px;
+    /* Motion: one short duration for UI feedback (menus, toasts, hovers) */
+    --motion-fast: 120ms;
+    --motion-ease: ease;
     --settings-panel-min-width: 360px;
 
     /* Shared menu panel (settings gear panel, slash / menu, …) */
@@ -922,4 +925,18 @@ body:not(.sticky-toolbar-enabled) #tableContainer {
     height: auto;
     max-height: none;
     overflow: visible;
+}
+
+/* Reduced motion (an OS setting): no animated movement anywhere in either editor. Transitions
+   still end in the same state, just at once, so nothing that waits for one is left hanging. */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        transition-delay: 0s !important;
+        scroll-behavior: auto !important;
+    }
 }

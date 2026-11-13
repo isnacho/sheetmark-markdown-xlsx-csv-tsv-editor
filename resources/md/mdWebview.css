@@ -1555,7 +1555,7 @@ body.preview-edit-mode .markdown-preview .table-tool-btn[data-table-action="tabl
        to the bottom of the page should match. */
     bottom: 12px;
     left: 50%;
-    transform: translateX(-50%) translateY(8px) scale(0.9);
+    transform: translateX(-50%) translateY(8px);
     background-color: #1e1e20;
     color: var(--color-toast-text);
     padding: 9px 16px;
@@ -1578,7 +1578,7 @@ body.preview-edit-mode .markdown-preview .table-tool-btn[data-table-action="tabl
     box-sizing: border-box;
     opacity: 0;
     visibility: hidden;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: opacity var(--motion-fast) var(--motion-ease), transform var(--motion-fast) var(--motion-ease), visibility var(--motion-fast);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
     pointer-events: none;
@@ -1589,7 +1589,7 @@ body.preview-edit-mode .markdown-preview .table-tool-btn[data-table-action="tabl
 .toast-notification.show {
     opacity: 1;
     visibility: visible;
-    transform: translateX(-50%) translateY(0) scale(1);
+    transform: translateX(-50%) translateY(0);
 }
 
 .toast-header {
@@ -2191,12 +2191,12 @@ body.lightbox-open {
 /* ===== Zoomable Images ===== */
 .markdown-preview .zoomable {
     cursor: zoom-in;
-    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    transition: box-shadow var(--motion-fast) var(--motion-ease);
     border-radius: var(--surface-radius);
 }
 
+/* A shadow only: the image does not grow on hover (that moved it under the pointer). */
 .markdown-preview .zoomable:hover {
-    transform: scale(1.02);
     box-shadow: var(--shadow-md);
 }
 

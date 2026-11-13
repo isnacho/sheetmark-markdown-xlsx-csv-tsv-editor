@@ -468,3 +468,29 @@ test('typing near the bottom of the window keeps the cursor clear of the stats p
     assert.ok(m.pillHeight > 0, 'the stats pill is not shown');
     assert.ok(m.caretBottom <= m.pillTop, `cursor bottom ${m.caretBottom} is under the pill (top ${m.pillTop})`);
 });
+
+// @@F22
+test('motion is short, images do not zoom on hover, and reduced motion stops all of it', async () => {
+    await openDoc('Para.\n');
+    const durations = (selector: string) => webview.page.evaluate(
+        (sel) => getComputedStyle(document.querySelector(sel)!).transitionDuration.split(',').map(d => parseFloat(d)), selector);
+    assert.ok((await durations('.toast-notification')).every(d => d <= 0.12), 'toasts animate longer than 120ms');
+    await webview.page.evaluate(() => {
+        const img = document.createElement('img');
+        img.className = 'zoomable';
+        img.id = 'zoomProbe';
+        img.style.cssText = 'display:block;width:100px;height:60px';
+        document.querySelector('.markdown-preview')!.appendChild(img);
+    });
+    await webview.page.hover('#zoomProbe');
+    assert.equal(await webview.page.evaluate(() => getComputedStyle(document.getElementById('zoomProbe')!).transform), 'none');
+    await webview.page.evaluate(() => document.getElementById('zoomProbe')!.remove());
+    await webview.page.emulateMedia({ reducedMotion: 'reduce' });
+    try {
+        for (const selector of ['.toast-notification', '.search-overlay', '.cm-editor']) {
+            assert.ok((await durations(selector)).every(d => d < 0.001), `${selector} still animates with reduced motion`);
+        }
+    } finally {
+        await webview.page.emulateMedia({ reducedMotion: 'no-preference' });
+    }
+});

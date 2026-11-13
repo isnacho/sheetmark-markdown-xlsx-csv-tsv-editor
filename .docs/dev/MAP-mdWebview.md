@@ -134,6 +134,16 @@ update that file.
 | mermaidPreviewActions.ts | Diagram/code mode select control and its dispatch | `createMermaidModeSelect`, `dispatchMermaidPreviewMode`, `setMermaidPreviewModeCallback` |
 | mermaidWidget.ts | Rendered mermaid diagram widget with zoom and pan; on a syntax error the card keeps its controls and offers Edit code | `mermaidWidgetField`, `mermaidAtomicRanges`, `attachZoomPan`, `createMermaidError` |
 
+### Block drag (Notion-style `+` and grip)
+
+Product spec: `.docs/ideas/*/notion-style-block-drag.md`. Logic is pure and unit-tested; the DOM layer only measures, positions and dispatches.
+
+| File | Responsibility | Grep for |
+|---|---|---|
+| blockModel.ts | Pure block tree (paragraphs, headings, list items with their children, code, quotes, callouts, toggles, tables), drop targets per gap, and the move itself: re-bases list indent and `> ` prefixes, keeps blank lines tidy, renumbers ordered lists; the `+` insert; remaps for table widths and toggle open state | `buildBlockTree`, `blockAtLine`, `blocksForRange`, `visibleBlocks`, `dropTargetsAtGap`, `isDropAllowed`, `computeMoveBlocks`, `computeInsertAfter`, `remapTableIndexMap`, `remapToggleState` |
+| blockSelection.ts | Click-to-select: a block selection is an ordinary text selection the field remembers came from a grip; layers paint the block highlight and the dimmed drag source | `blockSelectionField`, `selectBlocksEffect`, `selectBlocksSpec`, `dragSourceField`, `blockSelectionExtensions` |
+| blockDrag.ts | Hover controls (`+`, grip) as one overlay in `.cm-scroller`, click/Shift-click select, right-click toggle menu, drag with ghost and drop line, nesting depth from pointer x, edge auto-scroll while dragging (rAF, on whichever element scrolls), commit with remaps | `blockDragExtension`, `BlockDragView`, `hoverAt`, `trackDrag`, `edgeScrollVelocity`, `edgeScrollStep`, `commit` |
+
 ### Callouts, images, frontmatter, spellcheck
 
 | File | Responsibility | Grep for |
@@ -144,7 +154,7 @@ update that file.
 | calloutEditing.ts | Change a callout's type | `computeSetCalloutType` |
 | calloutDefaultType.ts | Default callout type state | `calloutDefaultTypeField`, `setCalloutDefaultTypeEffect`, `seedCalloutDefaultType` |
 | detailsTypes.ts | Toggle (`<details>`/`<summary>`) block detector: line-based, nesting-aware, reads Sheetmark's multi-line title shape and the one-line legacy shape; hidden-run ranges | `findDetailsBlocks`, `isDetailsOpen`, `plainTitle`, `toggleTagRanges`, `stripToggleTags` |
-| detailsExtension.ts | Toggle state, decorations that fully hide tag lines and a closed body (own `StateField`, outside `revealCompartment`), atomic ranges, chevron and hover handle (Tab stops, Enter/Space) + menu, structure guard (`changeFilter`), Enter/Backspace/Delete keys, Cmd/Ctrl+Enter toggles from the title | `detailsExtensions`, `detailsOpenField`, `computeDetailsDecorations`, `setDetailsStateCallback`, `moveCursorOutOfHiddenRuns` |
+| detailsExtension.ts | Toggle state, decorations that fully hide tag lines and a closed body (own `StateField`, outside `revealCompartment`), atomic ranges, chevron (Tab stop, Enter/Space), the toggle menu (opened from the block grip: right-click, or Enter on the focused grip), structure guard (`changeFilter`), Enter/Backspace/Delete keys, Cmd/Ctrl+Enter toggles from the title | `detailsExtensions`, `detailsOpenField`, `computeDetailsDecorations`, `setDetailsStateCallback`, `showToggleMenu`, `applyDetailsOpenState`, `moveCursorOutOfHiddenRuns` |
 | detailsEditing.ts | Pure toggle edits: build, unwrap, delete, set `open`, heading section scan | `toggleText`, `toggleSlashSnippet`, `computeUnwrapToggle`, `computeDeleteToggle`, `computeSetStartOpen`, `sectionEndLine`, `structureEdit` |
 | toggleInputRules.ts | Typed shortcuts: `> ` makes a toggle, `" ` makes a quote (inputHandler, undo restores the literal text) | `computeToggleFromMarker`, `computeQuoteFromMarker`, `toggleInputHandler` |
 | imageWidget.ts | Local image previews; URI resolution delegated to the shell | `imageWidgetField`, `setImageUriResolver`, `refreshImageWidgetsEffect`, `computeImageDecorations` |

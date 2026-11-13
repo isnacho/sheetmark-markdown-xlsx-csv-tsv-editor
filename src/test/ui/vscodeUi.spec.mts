@@ -159,11 +159,11 @@ test('Enter at the end of a title moves into the body; Backspace at the title st
     });
 });
 
-test('the hover handle opens a menu; "Start closed" drops the open attribute', { timeout: 120000 }, async () => {
+test('right-clicking a toggle\'s grip opens its menu; "Start closed" drops the open attribute', { timeout: 120000 }, async () => {
     await withEditor(SECTIONS, LIGHT, async editor => {
         await typeAtLineStart(editor, 'Heading A', '> ');
         await editor.title('Heading A').hover();
-        await editor.frame.locator('.cm-md-details-handle').first().click({ force: true });
+        await editor.frame.locator('.cm-md-block-grip').first().click({ button: 'right', force: true });
         await editor.page.waitForTimeout(300);
         await editor.shot('toggle-menu');
         for (const label of ['Turn into text', 'Start closed', 'Delete toggle']) {

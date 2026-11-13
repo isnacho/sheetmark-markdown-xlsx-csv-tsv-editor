@@ -162,7 +162,7 @@ test('the / menu lists commands in their designed order, and Quote shows its own
 });
 
 // @@F07
-test('adding a toggle does not move the rest of the text, and its hover handle stays inside the editor', async () => {
+test('adding a toggle does not move the rest of the text, and its block grip stays inside the editor', async () => {
     const textX = () => webview.page.evaluate(() => {
         const lineEl = [...document.querySelectorAll('.cm-content > .cm-line')].find(l => l.textContent?.includes('Plain paragraph'))!;
         const range = document.createRange();
@@ -176,11 +176,12 @@ test('adding a toggle does not move the rest of the text, and its hover handle s
     const withToggle = await textX();
     assert.ok(Math.abs(withToggle - withoutToggle) < 0.5, `text moved from x=${withoutToggle} to x=${withToggle} when the file got a toggle`);
     await webview.page.locator('.cm-content > .cm-line', { hasText: 'A toggle' }).first().hover();
+    await webview.page.waitForSelector('.cm-md-block-controls-visible', { timeout: 2000 });
     const clipped = await webview.page.evaluate(() => {
-        const handle = document.querySelector('.cm-md-details-handle')!.getBoundingClientRect();
-        return handle.left < document.querySelector('.cm-scroller')!.getBoundingClientRect().left;
+        const controls = document.querySelector('.cm-md-block-controls')!.getBoundingClientRect();
+        return controls.left < document.querySelector('.cm-scroller')!.getBoundingClientRect().left;
     });
-    assert.equal(clipped, false, 'the toggle hover handle is cut off at the editor edge');
+    assert.equal(clipped, false, 'the toggle\'s block controls are cut off at the editor edge');
 });
 
 // @@F09
@@ -376,12 +377,13 @@ test('the search box says what it does: find in this document', async () => {
 });
 
 // @@F27
-test('a toggle\'s hover handle is drawn dots, centred on the title like the arrow', async () => {
+test('a toggle\'s grip is drawn dots, centred on the title like the arrow', async () => {
     await openDoc('Para.\n\n<details open>\n<summary>\n\nA toggle title\n\n</summary>\n\nBody.\n\n</details>\n');
     await webview.page.locator('.cm-content > .cm-line', { hasText: 'A toggle title' }).first().hover();
+    await webview.page.waitForSelector('.cm-md-block-controls-visible', { timeout: 2000 });
     const centres = await webview.page.evaluate(() => {
         const arrow = document.querySelector('.cm-md-details-chevron svg')!.getBoundingClientRect();
-        const grip = document.querySelector('.cm-md-details-handle svg')?.getBoundingClientRect();
+        const grip = document.querySelector('.cm-md-block-grip svg')?.getBoundingClientRect();
         return { arrow: (arrow.top + arrow.bottom) / 2, grip: grip ? (grip.top + grip.bottom) / 2 : null };
     });
     assert.ok(centres.grip !== null, 'the handle is a text glyph, not drawn dots');
@@ -660,8 +662,10 @@ test('toggles work from the keyboard: arrow and handle take focus with a ring, C
     await webview.page.keyboard.press('Enter');
     await webview.page.waitForTimeout(100);
     assert.equal(await expanded(), 'false');
-    // The handle opens its menu from the keyboard.
-    await webview.page.focus('.cm-md-details-handle');
+    // The block grip opens the toggle menu from the keyboard.
+    await webview.page.locator('.cm-content > .cm-line', { hasText: 'A toggle' }).first().hover();
+    await webview.page.waitForSelector('.cm-md-block-controls-visible', { timeout: 2000 });
+    await webview.page.focus('.cm-md-block-grip');
     await webview.page.keyboard.press('Enter');
     await webview.page.waitForSelector('.cm-md-details-menu:not(.hidden)', { timeout: 2000 });
     await webview.page.keyboard.press('Escape');

@@ -29,6 +29,8 @@
 import { EditorState, Compartment, Annotation, EditorSelection, Prec } from '@codemirror/state';
 import { EditorView, keymap, drawSelection, highlightActiveLine, highlightActiveLineGutter, lineNumbers } from '@codemirror/view';
 import { textColumnSelection } from './selectionColumn';
+import { blockSelectionExtensions } from './blockSelection';
+import { blockDragExtension } from './blockDrag';
 import { statusBarScrollMargins } from './statusBarClearance';
 import { history, historyKeymap, defaultKeymap, undo, redo, undoDepth, redoDepth, selectAll } from '@codemirror/commands';
 import { markdown } from '@codemirror/lang-markdown';
@@ -281,10 +283,11 @@ export function mountLivePreview(opts: LivePreviewMountOptions): EditorView {
         extensions: [
             history(),
             drawSelection(),
+            textColumnSelection,
+            blockSelectionExtensions,
+            statusBarScrollMargins,
             EditorView.clipboardInputFilter.of((text, state) => normalizeClipboardPasteText(state, text)),
             highlightActiveLine(),
-            textColumnSelection,
-            statusBarScrollMargins,
             highlightActiveLineGutter(),
             hoverLineGutter(),
             outlineActiveHeadingGutter(),
@@ -339,6 +342,8 @@ export function mountLivePreview(opts: LivePreviewMountOptions): EditorView {
             ...spellcheckExtensions,
             slashMenuAutocompletion(),
             livePreviewTabKeymap,
+            // Outside revealCompartment: block drag works with "reveal syntax" off too.
+            blockDragExtension({ isDisabled: () => diffActive }),
             domHandlers,
             updateListener,
         ],

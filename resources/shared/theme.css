@@ -1023,7 +1023,7 @@ body:not(.sticky-toolbar-enabled) #tableContainer {
 /* Keyboard focus ring for the small controls that had none (or only the browser's default):
    VS Code's focus colour, outside the control so it never covers its icon. */
 .cm-md-details-chevron:focus-visible,
-.cm-md-details-handle:focus-visible,
+.cm-md-block-grip:focus-visible,
 .cm-md-fence-copy-btn:focus-visible,
 .cm-md-mermaid-zoom-btn:focus-visible,
 .cm-md-mermaid-mode-select:focus-visible,

@@ -190,6 +190,13 @@ npm run package           # production build (also runs unit tests); used by vsc
   `SpreadsheetEditorProvider` serves `xlsxViewer.xlsx/.csv/.tsv`; `MDEditorProvider` serves `xlsxViewer.md`.
 - **Markdown editing** is CM6 live preview only. `state.currentContent` (`src/webviews/md/state.ts`)
   is the single source of truth for save and disk reload.
+- **Callouts (`:::type` … `:::`) and toggles (`<details>`) are not syntax-tree nodes.** They are
+  found by line scanners (`findCalloutBlocks`, `findDetailsBlocks`). Without blank lines around a
+  fence, lezer merges the `:::` line into the next paragraph, so clip syntax nodes to the
+  container's lines. Frontmatter is also detected from text (`extractFrontmatter`), not the tree.
+- **Some Markdown state is keyed by position, not identity:** table column widths by table order
+  (`columnWidthsField`), toggle open state by `title#occurrence` (`detailsOpenField`). A feature that
+  reorders blocks must remap both (see `remapTableIndexMap` and `remapToggleState` in `blockModel.ts`).
 - **External disk sync** uses `fileExternalChangeWatcher.ts` (change, debounced delete).
 - **Renames:** VS Code closes an open Sheetmark editor when its file is renamed and opens a new one
   at the new path. Per-file state (styles, view mode, Markdown prefs, version history) moves in

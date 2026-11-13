@@ -55,7 +55,7 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             '--cm-md-fence-external-gap': '4px',
             // Left and right gutter of the text column, the same in every document (it used to
             // grow 24px once a document had a toggle, shifting all text). The left side holds the
-            // toggle hover handle. mdWebview.css reads it for diff tints that bleed to the gutter.
+            // block controls (`+` and grip). mdWebview.css reads it for diff tints that bleed to the gutter.
             '--cm-md-content-inset': '40px',
         },
         '.cm-scroller': {
@@ -112,8 +112,8 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             lineHeight: '1.7',
         },
         '.cm-lineNumbers .cm-gutterElement': {
-            minWidth: '2.5em',
-            padding: '0 8px 0 4px',
+            minWidth: '2em',
+            padding: '0 4px 0 2px',
             textAlign: 'right',
             fontVariantNumeric: 'tabular-nums',
             fontSize: '12px',
@@ -696,31 +696,81 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
         },
         '.cm-content .cm-md-h1 .cm-md-details-chevron, .cm-content .cm-md-h2 .cm-md-details-chevron': { '--chev': '0.6' },
         '.cm-content .cm-md-h3 .cm-md-details-chevron': { '--chev': '0.55' },
-        '.cm-md-details-handle': {
-            display: 'inline-block',
-            boxSizing: 'border-box',
-            width: '16px',
-            height: '1em',
-            lineHeight: '1',
-            marginLeft: '-36px',
-            marginRight: '20px',
-            verticalAlign: '-0.16em',
-            cursor: 'pointer',
-            userSelect: 'none',
-            color: 'var(--color-text-secondary)',
+        // Block controls (blockDrag.ts): `+` and the grip, shown in the left margin of the hovered
+        // block. One overlay element inside the scroller, positioned per block.
+        '.cm-md-block-controls': {
+            position: 'absolute',
+            display: 'flex',
+            gap: '2px',
+            zIndex: '5',
             opacity: '0',
+            pointerEvents: 'none',
+            transition: 'opacity 0.12s ease',
         },
-        // Same box rule as the arrow (1em tall, bottom 0.16em under the baseline), so both centres
-        // sit at the middle of the title text.
-        '.cm-md-details-handle svg': {
-            display: 'block',
-            height: '0.8em',
-            width: '0.5em',
-            margin: '0.1em auto 0',
-            fill: 'currentColor',
+        '.cm-md-block-controls.cm-md-block-controls-visible': {
+            opacity: '1',
+            pointerEvents: 'auto',
         },
-        '.cm-md-details-title-line:hover .cm-md-details-handle, .cm-md-details-handle:focus-visible': {
-            opacity: '0.8',
+        '.cm-md-block-add, .cm-md-block-grip': {
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: '18px',
+            height: '18px',
+            borderRadius: '3px',
+            color: 'var(--color-text-secondary)',
+            opacity: '0.7',
+            userSelect: 'none',
+        },
+        '.cm-md-block-add': { cursor: 'pointer' },
+        '.cm-md-block-grip': { cursor: 'grab' },
+        '.cm-md-block-add:hover, .cm-md-block-grip:hover, .cm-md-block-grip:focus-visible': {
+            opacity: '1',
+            color: 'var(--color-text-primary)',
+            backgroundColor: 'var(--color-interactive-hover)',
+        },
+        '.cm-md-block-add svg': { width: '14px', height: '14px', display: 'block' },
+        '.cm-md-block-grip svg': { width: '8px', height: '12px', display: 'block' },
+        '&.cm-md-block-dragging, &.cm-md-block-dragging *': { cursor: 'grabbing !important' },
+        '.cm-md-block-drop-line': {
+            position: 'absolute',
+            height: '2px',
+            borderRadius: '1px',
+            backgroundColor: 'var(--color-action)',
+            pointerEvents: 'none',
+            zIndex: '6',
+            display: 'none',
+        },
+        '.cm-md-block-drop-line.cm-md-block-drop-line-visible': { display: 'block' },
+        // Block selection (blockSelection.ts): a soft box over whole blocks, widgets included. The
+        // text selection and cursor under it are hidden so the box reads as one selection.
+        '.cm-md-block-selection-layer': { zIndex: '-1' },
+        '.cm-md-block-selected': {
+            backgroundColor: 'var(--color-action-subtle)',
+            borderRadius: '4px',
+        },
+        '&.cm-md-has-block-selection .cm-md-selection-column, &.cm-md-has-block-selection .cm-cursorLayer': {
+            display: 'none',
+        },
+        // The dragged blocks fade while their copy follows the pointer.
+        '.cm-md-block-drag-source': {
+            backgroundColor: 'var(--color-surface-default)',
+            opacity: '0.6',
+        },
+        '.cm-md-block-drag-ghost': {
+            position: 'fixed',
+            zIndex: '1000',
+            pointerEvents: 'none',
+            opacity: '0.55',
+            maxHeight: '240px',
+            overflow: 'hidden',
+            maskImage: 'linear-gradient(to bottom, black 70%, transparent)',
+            WebkitMaskImage: 'linear-gradient(to bottom, black 70%, transparent)',
+        },
+        '.cm-md-block-drag-ghost .cm-md-block-drag-ghost-content': {
+            padding: '0 !important',
+            maxWidth: 'none',
+            margin: '0',
         },
         '.cm-md-callout-line': {
             margin: '0',

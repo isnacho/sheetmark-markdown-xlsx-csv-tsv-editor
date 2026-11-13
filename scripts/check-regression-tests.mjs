@@ -121,7 +121,7 @@ const MUTATIONS = [
     { id: 'md-toggle-mod-enter', file: 'src/webviews/md/livePreview/detailsExtension.ts',
       find: "{ key: 'Mod-Enter', run: toggleFromTitle },", replace: "{ key: 'Mod-Alt-Shift-F12', run: toggleFromTitle }," },
     { id: 'focus-ring-small-controls', file: 'resources/shared/theme.css',
-      find: '.cm-md-details-chevron:focus-visible,\n.cm-md-details-handle:focus-visible,', replace: '.cm-md-details-chevron:never-focus,\n.cm-md-details-handle:focus-visible,' },
+      find: '.cm-md-details-chevron:focus-visible,\n.cm-md-block-grip:focus-visible,', replace: '.cm-md-details-chevron:never-focus,\n.cm-md-block-grip:focus-visible,' },
     { id: 'sheet-toolbar-end-group', file: 'src/webviews/spreadsheet/components/spreadsheetToolbarComponent.ts',
       find: "section: 'end',\n            onClick: options.onOpenSettings", replace: "onClick: options.onOpenSettings" },
     { id: 'sheet-edit-strip-in-start-group', file: 'src/webviews/spreadsheet/spreadsheetWebview.ts',

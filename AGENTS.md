@@ -158,12 +158,26 @@ npm run package           # production build (also runs unit tests); used by vsc
   the change → `Cmd+R` to reload after edits.
 - When reporting results, say exactly what ran ("verify + integration green, smoke-tested table
   paste") rather than "all tests pass".
+- **If verify is already red before you change anything**, say so at the start and name the failing
+  test. Don't try to fix it as part of your task, and don't spend runs proving it isn't yours: check
+  once (for example with your change switched off), then report it.
+- **Browser tests and animations:** a check that reads a style right after a class change can catch
+  a CSS transition halfway. Wait for it to finish first, for example
+  `waitForFunction(() => el.getAnimations().length === 0)`.
 - CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs `verify` and the integration tests
   on every push to `main` and every PR.
 
 ## 6. Workflow conventions
 
 - **Branches:** work on a branch, not `main`. Releases publish from pushed `main` only.
+- **The owner's uncommitted work:** before starting a feature on files that already hold
+  uncommitted changes, say which files overlap and ask whether to commit or stash that work first.
+  Otherwise the feature can only be committed by splitting files hunk by hunk, and can't be
+  reviewed or reverted on its own.
+- **Parallel and worktree sessions start from the last commit, not from the working tree.** If a
+  task builds on uncommitted work, either commit that work to a branch first and start from it, or
+  work in this checkout, or copy the files into the worktree, commit them there as a local
+  baseline, and hand back a patch against it (`git diff baseline`). Say which in the session brief.
 - **Commits:** imperative, sentence case, describes the user-visible effect
   ("Fix drag-to-select on hanging-indent list lines."). Releases use `chore: release vX.Y.Z`.
 - **Changelog:** every user-facing change gets a bullet under `## Unreleased` in

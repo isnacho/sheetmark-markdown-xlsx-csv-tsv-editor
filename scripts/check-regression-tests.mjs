@@ -109,6 +109,8 @@ const MUTATIONS = [
       find: 'if (!tr.docChanged && !tr.selection) {', replace: 'if (!tr.docChanged) {' },
     { id: 'md-mermaid-error-actions', file: 'src/webviews/md/livePreview/mermaidWidget.ts',
       find: 'diagramWrap.insertBefore(createMermaidError(view, err), chrome);', replace: 'diagramWrap.textContent = \'\'; diagramWrap.appendChild(createMermaidError(view, err)); void chrome;' },
+    { id: 'md-format-toolbar-wraps', file: 'resources/md/mdWebview.css',
+      find: 'flex-direction: row;\n    flex-wrap: wrap;\n    align-items: center;\n    position: relative;', replace: 'flex-direction: row;\n    flex-wrap: nowrap;\n    align-items: center;\n    position: relative;' },
     { id: 'mermaid-lazy-load', file: 'src/webviews/md/livePreview/mermaidWidget.ts',
       find: "import { Icons } from '../../shared/icons';", replace: "import { Icons } from '../../shared/icons';\nimport * as eagerMermaid from 'mermaid';\nvoid eagerMermaid;" },
     { id: 'resize-listeners-once', file: 'src/webviews/spreadsheet/spreadsheetWebview.ts',

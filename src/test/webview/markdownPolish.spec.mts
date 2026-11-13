@@ -558,3 +558,23 @@ test('a Mermaid diagram with an error keeps its controls and offers Edit code', 
     // The code is now shown for editing (openDoc puts the next test back in Diagram mode).
     await webview.page.waitForSelector('.cm-content > .cm-line:has-text("graph TD")', { timeout: 5000 });
 });
+
+// @@F15
+test('in a narrow window the formatting toolbar wraps, so every button is fully visible', async () => {
+    await webview.page.setViewportSize({ width: 600, height: 800 });
+    try {
+        await openDoc('Para.\n');
+        const m = await webview.page.evaluate(() => {
+            const bar = document.getElementById('formattingToolbar')!;
+            const box = bar.getBoundingClientRect();
+            const cut = [...bar.querySelectorAll('.fmt-btn')].map(b => b.getBoundingClientRect())
+                .filter(r => r.width > 0 && (r.right > box.right + 0.5 || r.left < box.left - 0.5 || r.bottom > box.bottom + 0.5));
+            return { cut: cut.length, scrolls: bar.scrollWidth > bar.clientWidth + 1, rows: new Set([...bar.querySelectorAll('.fmt-btn')].map(b => Math.round(b.getBoundingClientRect().top))).size };
+        });
+        assert.equal(m.scrolls, false, 'the toolbar scrolls sideways');
+        assert.equal(m.cut, 0, `${m.cut} toolbar buttons are cut off`);
+        assert.ok(m.rows >= 2, 'the toolbar did not wrap at 600px');
+    } finally {
+        await webview.page.setViewportSize({ width: 1000, height: 800 });
+    }
+});

@@ -113,7 +113,7 @@ body:not(.dark-mode):not(.vscode-dark) .menu-panel.settings-panel {
 body.sticky-toolbar-enabled #formattingToolbar.formatting-toolbar:not(.hidden) {
     display: flex;
     flex-direction: row;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
     align-items: center;
     position: relative;
     top: auto;
@@ -1907,17 +1907,18 @@ html::-webkit-scrollbar-corner,
 }
 
 /* ===== Formatting Toolbar ===== */
+/* Wraps onto more rows in a narrow window. It used to scroll sideways with a hidden scrollbar,
+   which cut the last icon in half and hid the rest. Groups stay together on a row. */
 .formatting-toolbar {
     display: flex;
     flex-direction: row;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
     align-items: center;
     gap: 2px;
     padding: 4px 12px;
     background: var(--md-surface-raised);
     border-bottom: 1px solid var(--md-border);
-    overflow-x: auto;
-    scrollbar-width: none;
+    overflow-x: visible;
     z-index: 19;
 }
 

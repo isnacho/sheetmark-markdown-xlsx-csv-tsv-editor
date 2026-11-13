@@ -6,6 +6,7 @@ import { EditorState } from '@codemirror/state';
 import { markdown } from '@codemirror/lang-markdown';
 import {
     collectSpellcheckExclusionRanges,
+    isKnownTechWord,
     isSpellcheckExcluded,
 } from './spellcheckExclusions.ts';
 import { extractFrontmatter } from '../frontmatter.ts';
@@ -51,4 +52,31 @@ test('isSpellcheckExcluded returns true inside inline code', () => {
     const state = stateFor(doc);
     assert.equal(isSpellcheckExcluded(5, 14, state, null), true);
     assert.equal(isSpellcheckExcluded(0, 3, state, null), false);
+});
+
+test('web and email addresses written in prose are excluded from spell check', () => {
+    const doc = 'Open https://example.com/some/pathz or www.exampel.org, mail me@exampel.org now.';
+    const state = stateFor(doc);
+    for (const word of ['https', 'pathz', 'www', 'exampel']) {
+        const from = doc.indexOf(word);
+        assert.equal(isSpellcheckExcluded(from, from + word.length, state, null), true, word);
+    }
+    const now = doc.indexOf('now');
+    assert.equal(isSpellcheckExcluded(now, now + 3, state, null), false);
+});
+
+test('link targets are excluded from spell check, link text is not', () => {
+    const doc = 'A [linkk text](https://exampel.com/pathz) here.';
+    const state = stateFor(doc);
+    const target = doc.indexOf('exampel');
+    assert.equal(isSpellcheckExcluded(target, target + 7, state, null), true);
+    const text = doc.indexOf('linkk');
+    assert.equal(isSpellcheckExcluded(text, text + 5, state, null), false);
+});
+
+test('common technical words count as spelled correctly in any case', () => {
+    for (const word of ['callout', 'blockquote', 'GFM', 'url', 'URLs', 'Markdown', 'frontmatter']) {
+        assert.equal(isKnownTechWord(word), true, word);
+    }
+    assert.equal(isKnownTechWord('mispelled'), false);
 });

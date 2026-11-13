@@ -23,6 +23,7 @@ import { EditorView } from '@codemirror/view';
 import { extractFrontmatter } from '../frontmatter';
 import {
     collectSpellcheckExclusionRanges,
+    isKnownTechWord,
     isSpellcheckExcluded,
     rangesOverlap,
     type TextRange,
@@ -60,7 +61,7 @@ const suggestCache = new Map<string, string[]>();
 function isSpelledCorrectly(word: string): boolean {
     const cached = checkCache.get(word);
     if (cached !== undefined) { return cached; }
-    const ok = !!typo?.check(word);
+    const ok = isKnownTechWord(word) || !!typo?.check(word);
     if (checkCache.size >= MAX_CACHE_ENTRIES) { checkCache.clear(); }
     checkCache.set(word, ok);
     return ok;

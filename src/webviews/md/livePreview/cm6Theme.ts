@@ -199,12 +199,20 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
         },
         // Preview Edit: smaller than static-render h1–h3 defaults in mdWebview.css
         // so headings stay hierarchical without dominating the editor canvas.
+        // H5 is body size in bold (like GitHub's H4); H6 is a step smaller and muted, so no
+        // heading level looks like plain text.
         '.cm-content .cm-md-h1': { fontSize: '1.6em' },
         '.cm-content .cm-md-h2': { fontSize: '1.4em' },
         '.cm-content .cm-md-h3': { fontSize: '1.2em' },
         '.cm-content .cm-md-h4': { fontSize: '1.1em' },
         '.cm-content .cm-md-h5': { fontSize: '1em' },
-        '.cm-content .cm-md-h6': { fontSize: '1em', color: 'var(--color-text-secondary)' },
+        '.cm-content .cm-md-h6': { fontSize: '0.875em', color: 'var(--color-text-secondary)' },
+        // Extra room above the big headings (as in Notion), so a heading sits with the section
+        // it starts rather than halfway between two sections. Padding, not margin: CodeMirror
+        // measures line boxes, and a margin outside them would throw its height map off.
+        '.cm-content .cm-line.cm-md-heading-line.cm-md-h1': { paddingTop: '16px' },
+        '.cm-content .cm-line.cm-md-heading-line.cm-md-h2': { paddingTop: '12px' },
+        '.cm-content .cm-line.cm-md-heading-line.cm-md-h3': { paddingTop: '8px' },
         '.cm-md-inline-code': {
             fontFamily: 'var(--font-mono)',
             fontWeight: 'var(--font-mono-weight)',

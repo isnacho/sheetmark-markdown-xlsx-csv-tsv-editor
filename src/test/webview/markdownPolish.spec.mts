@@ -427,3 +427,29 @@ test('table headers line up with their column: left by default, as set by the de
     const align = await webview.page.evaluate(() => [...document.querySelectorAll('.cm-md-table-widget th')].map(th => getComputedStyle(th).textAlign));
     assert.deepEqual(align, ['left', 'center']);
 });
+
+// @@F17
+test('headings group with their section: more room above than below, and H6 is not body size', async () => {
+    await openDoc('Para before.\n\n# Big heading\n\nPara after.\n\n###### Small heading\n\nBody text.\n');
+    await line('Body text').click();
+    const m = await webview.page.evaluate(() => {
+        const lines = [...document.querySelectorAll('.cm-content > .cm-line')];
+        const boxes: Record<string, DOMRect> = {};
+        const sizes: Record<string, number> = {};
+        for (const text of ['Para before', 'Big heading', 'Para after', 'Small heading', 'Body text']) {
+            const el = lines.find(l => l.textContent?.includes(text))!;
+            const range = document.createRange();
+            range.selectNodeContents(el);
+            boxes[text] = range.getBoundingClientRect();
+            sizes[text] = parseFloat(getComputedStyle(el).fontSize);
+        }
+        return {
+            above: boxes['Big heading'].top - boxes['Para before'].bottom,
+            below: boxes['Para after'].top - boxes['Big heading'].bottom,
+            h6: sizes['Small heading'],
+            body: sizes['Body text'],
+        };
+    });
+    assert.ok(m.above - m.below >= 8, `space above the heading ${m.above}px vs below ${m.below}px`);
+    assert.ok(m.h6 < m.body, `H6 is ${m.h6}px, body text ${m.body}px`);
+});

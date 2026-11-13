@@ -539,3 +539,22 @@ test('the callout type picker follows the cursor into another callout without an
     await webview.page.waitForTimeout(100);
     assert.deepEqual(await picker(), []);
 });
+
+// @@F13
+test('a Mermaid diagram with an error keeps its controls and offers Edit code', async () => {
+    await openDoc('Para.\n\n```mermaid\ngraph TD\n  A -->\n```\n\nAfter.\n');
+    await line('After').click();
+    await webview.page.waitForSelector('.cm-md-mermaid-error', { timeout: 20000 });
+    const card = await webview.page.evaluate(() => {
+        const select = document.querySelector('.cm-md-mermaid-block-error .cm-md-mermaid-mode-select');
+        return {
+            text: document.querySelector('.cm-md-mermaid-error-message')?.textContent ?? null,
+            selectShown: select ? getComputedStyle(select).opacity === '1' : false,
+        };
+    });
+    assert.equal(card.text, 'This diagram has a syntax error.');
+    assert.ok(card.selectShown, 'the Diagram/Code switch is missing or hidden on the error card');
+    await webview.page.click('.cm-md-mermaid-error-edit');
+    // The code is now shown for editing (openDoc puts the next test back in Diagram mode).
+    await webview.page.waitForSelector('.cm-content > .cm-line:has-text("graph TD")', { timeout: 5000 });
+});

@@ -16,6 +16,7 @@ import {
 import { createFenceChrome } from './fenceChromeWidget';
 import {
     createMermaidModeSelect,
+    dispatchMermaidPreviewMode,
     shouldRebuildMermaidDecorations,
 } from './mermaidPreviewActions';
 
@@ -204,6 +205,36 @@ function attachZoomPan(diagramWrap: HTMLElement, mermaidEl: HTMLElement): HTMLEl
     return controls;
 }
 
+/** Error card body: what went wrong (Mermaid's first message line, as text) and an Edit code button. */
+function createMermaidError(view: EditorView, err: unknown): HTMLElement {
+    const errorEl = document.createElement('div');
+    errorEl.className = 'cm-md-mermaid-error';
+    errorEl.setAttribute('role', 'alert');
+    const message = document.createElement('span');
+    message.className = 'cm-md-mermaid-error-message';
+    message.textContent = 'This diagram has a syntax error.';
+    errorEl.appendChild(message);
+    const detail = err instanceof Error ? err.message.split('\n')[0].trim().slice(0, 160) : '';
+    if (detail) {
+        const detailEl = document.createElement('span');
+        detailEl.className = 'cm-md-mermaid-error-detail';
+        detailEl.textContent = detail;
+        errorEl.appendChild(detailEl);
+    }
+    const edit = document.createElement('button');
+    edit.type = 'button';
+    edit.className = 'cm-md-mermaid-error-edit';
+    edit.textContent = 'Edit code';
+    edit.disabled = view.state.readOnly;
+    edit.addEventListener('mousedown', (event) => { event.preventDefault(); event.stopPropagation(); });
+    edit.addEventListener('click', (event) => {
+        event.stopPropagation();
+        dispatchMermaidPreviewMode(view, 'code');
+    });
+    errorEl.appendChild(edit);
+    return errorEl;
+}
+
 class MermaidDiagramWidget extends WidgetType {
     private readonly mode: MermaidPreviewMode;
     private readonly langLabel: string;
@@ -261,11 +292,10 @@ class MermaidDiagramWidget extends WidgetType {
             return mermaid.run({ nodes: [mermaidEl] });
         }).catch((err: unknown) => {
             console.error('Mermaid render error:', err);
-            diagramWrap.textContent = '';
-            const errorEl = document.createElement('div');
-            errorEl.className = 'cm-md-mermaid-error';
-            errorEl.textContent = 'Mermaid syntax error — switch to Code to edit';
-            diagramWrap.appendChild(errorEl);
+            // Keep the card's controls (copy, Diagram/Code) and offer the way out right here.
+            mermaidEl.remove();
+            block.classList.add('cm-md-mermaid-block-error');
+            diagramWrap.insertBefore(createMermaidError(view, err), chrome);
         });
 
         return block;

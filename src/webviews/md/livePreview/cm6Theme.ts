@@ -434,10 +434,54 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             maxWidth: '100%',
             height: 'auto',
         },
+        // Error card: icon, message, Mermaid's own detail, and an Edit code button. The right
+        // padding keeps clear of the card's Diagram/Code switch and copy button, always shown here.
         '.cm-md-mermaid-error': {
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            gap: '4px 8px',
             fontSize: '13px',
+            color: 'var(--color-text-primary)',
+            padding: '8px 120px 8px 0',
+        },
+        '.cm-md-mermaid-error::before': {
+            content: '""',
+            width: '16px',
+            height: '16px',
+            flex: 'none',
+            backgroundColor: 'var(--color-status-error)',
+            maskImage: CALLOUT_ICONS.error,
+            maskSize: 'contain',
+            maskRepeat: 'no-repeat',
+        },
+        '.cm-md-mermaid-error-detail': {
+            flexBasis: '100%',
+            paddingLeft: '24px',
+            fontFamily: 'var(--font-mono)',
+            fontSize: '12px',
             color: 'var(--color-text-secondary)',
-            padding: '8px 0',
+            overflowWrap: 'anywhere',
+            order: '1',
+        },
+        '.cm-md-mermaid-error-edit': {
+            fontSize: '12px',
+            fontFamily: 'var(--font-family)',
+            padding: '2px 8px',
+            color: 'var(--color-text-primary)',
+            background: 'transparent',
+            border: '1px solid var(--color-border-default)',
+            borderRadius: 'var(--surface-radius)',
+            cursor: 'pointer',
+        },
+        '.cm-md-mermaid-error-edit:hover': {
+            background: 'color-mix(in srgb, var(--color-text-primary) 8%, transparent)',
+        },
+        '.cm-md-mermaid-block-error .cm-md-mermaid-zoom-controls': {
+            display: 'none',
+        },
+        '.cm-md-mermaid-block-error .cm-md-fence-chrome-overlay .cm-md-mermaid-mode-select': {
+            opacity: '1',
         },
         '.cm-md-table-widget': {
             // flow-root keeps the scroll wrapper's bottom margin inside the widget box. CodeMirror

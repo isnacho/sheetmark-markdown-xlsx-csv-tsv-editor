@@ -107,6 +107,8 @@ const MUTATIONS = [
       find: 'maskImage: CALLOUT_ICONS.info,', replace: "maskImage: 'none', outline: CALLOUT_ICONS.info," },
     { id: 'md-callout-picker-follows-cursor', file: 'src/webviews/md/livePreview/calloutWidget.ts',
       find: 'if (!tr.docChanged && !tr.selection) {', replace: 'if (!tr.docChanged) {' },
+    { id: 'md-mermaid-error-actions', file: 'src/webviews/md/livePreview/mermaidWidget.ts',
+      find: 'diagramWrap.insertBefore(createMermaidError(view, err), chrome);', replace: 'diagramWrap.textContent = \'\'; diagramWrap.appendChild(createMermaidError(view, err)); void chrome;' },
     { id: 'mermaid-lazy-load', file: 'src/webviews/md/livePreview/mermaidWidget.ts',
       find: "import { Icons } from '../../shared/icons';", replace: "import { Icons } from '../../shared/icons';\nimport * as eagerMermaid from 'mermaid';\nvoid eagerMermaid;" },
     { id: 'resize-listeners-once', file: 'src/webviews/spreadsheet/spreadsheetWebview.ts',

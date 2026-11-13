@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Markdown Preview Edit: table headers now line up with the cells below them. They used to be centred even when the column was left-aligned; a column aligned in the Markdown (`:-:` or `--:`) still aligns its header the same way.
 - Markdown Preview Edit: selecting text over several lines no longer paints the highlight into the empty margins on both sides, and selecting just a line break no longer draws a box in the left margin.
 - Markdown Preview Edit: the handle that appears when you hover a toggle is now six drawn dots, as in Notion, centred on the title next to the arrow (it used to sit a few pixels low).
 - Markdown Preview Edit: the find box (Cmd/Ctrl+F) now says "Find in document" instead of "Search in preview...", and screen readers announce it by that name.

@@ -1139,6 +1139,12 @@ body.cm6-preview-active .markdown-preview .yaml-frontmatter-card {
     white-space: normal;
 }
 
+/* Header cells follow their column: left unless the delimiter row aligns it (markdown-it then puts
+   an inline text-align on th and td alike). The browser default would centre only the header. */
+.cm-md-table-scroll table.md-table th {
+    text-align: left;
+}
+
 .cm-md-table-scroll table.md-table th,
 .cm-md-table-scroll table.md-table td {
     border: none;

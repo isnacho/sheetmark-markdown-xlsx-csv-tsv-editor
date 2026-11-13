@@ -81,6 +81,8 @@ const MUTATIONS = [
       find: "margin: '0.1em auto 0',\n            fill: 'currentColor',", replace: "margin: '0.4em auto 0',\n            fill: 'currentColor'," },
     { id: 'md-selection-text-column', file: 'src/webviews/md/livePreview/selectionColumn.ts',
       find: 'const left = Math.max(box.left, columnLeft);\n    const right = Math.min(box.left + box.width, columnRight);', replace: 'const left = Math.max(box.left, columnLeft - 1e6);\n    const right = Math.min(box.left + box.width, columnRight + 1e6);' },
+    { id: 'md-table-header-align', file: 'resources/md/mdWebview.css',
+      find: '.cm-md-table-scroll table.md-table th {\n    text-align: left;', replace: '.cm-md-table-scroll table.md-table th {\n    text-align: center;' },
     { id: 'mermaid-lazy-load', file: 'src/webviews/md/livePreview/mermaidWidget.ts',
       find: "import { Icons } from '../../shared/icons';", replace: "import { Icons } from '../../shared/icons';\nimport * as eagerMermaid from 'mermaid';\nvoid eagerMermaid;" },
     { id: 'resize-listeners-once', file: 'src/webviews/spreadsheet/spreadsheetWebview.ts',

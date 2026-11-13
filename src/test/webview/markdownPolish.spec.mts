@@ -418,3 +418,12 @@ test('a selection stays inside the text column, also when it only covers a line 
     assert.ok(multi.count > 0, 'no selection drawn');
     assert.deepEqual(multi.outside, [], 'a multi-line selection painted into the gutters');
 });
+
+// @@F19
+test('table headers line up with their column: left by default, as set by the delimiter row', async () => {
+    await openDoc('Para.\n\n| Notes | Mid |\n| --- | :-: |\n| a | b |\n\nAfter.\n');
+    await line('After').click();
+    await webview.page.waitForSelector('.cm-md-table-widget th');
+    const align = await webview.page.evaluate(() => [...document.querySelectorAll('.cm-md-table-widget th')].map(th => getComputedStyle(th).textAlign));
+    assert.deepEqual(align, ['left', 'center']);
+});

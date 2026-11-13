@@ -667,3 +667,25 @@ test('toggles work from the keyboard: arrow and handle take focus with a ring, C
     await webview.page.keyboard.press('Escape');
     await line('After').click();
 });
+
+// @@F18b
+test('with the toolbar not sticky (the page scrolls), arrow keys move the cursor without scrolling the page', async () => {
+    await webview.send({ command: 'initSettings', settings: { ...SETTINGS, stickyToolbar: false } } satisfies HostToMarkdownWebview);
+    try {
+        await openDoc(Array.from({ length: 200 }, (_, i) => `Line number ${i}`).join('\n\n') + '\n');
+        const scrollTop = () => webview.page.evaluate(() => document.getElementById('content')!.scrollTop);
+        await webview.page.evaluate(() => { document.getElementById('content')!.scrollTop = 1500; });
+        await webview.page.waitForTimeout(200);
+        // A line near the top of the window, so the cursor is nowhere near the stats pill.
+        const target = await webview.page.evaluate(() => [...document.querySelectorAll('.cm-content > .cm-line')]
+            .find(l => { const r = l.getBoundingClientRect(); return r.top > 120 && r.top < 300 && l.textContent; })!.textContent!);
+        await line(target).click();
+        await webview.page.waitForTimeout(200);
+        const before = await scrollTop();
+        for (let i = 0; i < 3; i++) { await webview.page.keyboard.press('ArrowDown'); }
+        await webview.page.waitForTimeout(200);
+        assert.equal(await scrollTop(), before, 'the page scrolled while moving the cursor down a few lines');
+    } finally {
+        await webview.send({ command: 'initSettings', settings: SETTINGS } satisfies HostToMarkdownWebview);
+    }
+});

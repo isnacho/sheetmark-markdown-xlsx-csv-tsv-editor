@@ -126,6 +126,8 @@ const MUTATIONS = [
       find: "section: 'end',\n            onClick: options.onOpenSettings", replace: "onClick: options.onOpenSettings" },
     { id: 'sheet-edit-strip-in-start-group', file: 'src/webviews/spreadsheet/spreadsheetWebview.ts',
       find: '(startGroup ?? toolbar).appendChild(strip);', replace: 'void startGroup; toolbar.appendChild(strip);' },
+    { id: 'md-cursor-clearance-visible-bottom', file: 'src/webviews/md/livePreview/statusBarClearance.ts',
+      find: 'const visibleBottom = Math.min(scrollerBottom, windowHeight);\n    return Math.min(Math.max(0, visibleBottom - pill.top + gap), windowHeight / 4);', replace: 'const visibleBottom = scrollerBottom + 0 * windowHeight;\n    return Math.max(0, visibleBottom - pill.top + gap);' },
     { id: 'mermaid-lazy-load', file: 'src/webviews/md/livePreview/mermaidWidget.ts',
       find: "import { Icons } from '../../shared/icons';", replace: "import { Icons } from '../../shared/icons';\nimport * as eagerMermaid from 'mermaid';\nvoid eagerMermaid;" },
     { id: 'resize-listeners-once', file: 'src/webviews/spreadsheet/spreadsheetWebview.ts',

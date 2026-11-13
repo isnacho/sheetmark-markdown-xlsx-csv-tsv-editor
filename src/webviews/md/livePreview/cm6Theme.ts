@@ -145,6 +145,11 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             width: '2px',
             backgroundColor: 'var(--color-text-primary)',
         },
+        // Scroll-spy current heading (outline rail active); defers to cursor active line above.
+        '.cm-lineNumbers .cm-gutterElement.cm-md-outline-active-heading-gutter': {
+            color: 'var(--color-text-primary)',
+            fontWeight: '700',
+        },
         // Hover sibling to the active-line bar above (hoverLineGutter.ts
         // toggles the `cm-md-hover-line-gutter` class): same left-edge
         // geometry as the active line, but the bar color matches the

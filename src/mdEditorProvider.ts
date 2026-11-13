@@ -240,6 +240,7 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                 detailsOpenState: this.prefs.detailsOpenState.get(currentUri),
                 mermaidPreviewMode: this.prefs.mermaidPreviewMode.get(),
                 calloutDefaultType: this.prefs.calloutDefaultType.get(),
+                outlinePinned: this.prefs.outlinePinned.get(),
             });
 
             // Set up webview
@@ -454,6 +455,14 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                             await this.prefs.calloutDefaultType.set(message.type);
                         } catch (err) {
                             vscode.window.showErrorMessage(`Error saving callout default type: ${err}`);
+                        }
+                        break;
+
+                    case 'saveOutlinePinned':
+                        try {
+                            await this.prefs.outlinePinned.set(!!message.pinned);
+                        } catch (err) {
+                            vscode.window.showErrorMessage(`Error saving outline layout: ${err}`);
                         }
                         break;
 

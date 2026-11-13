@@ -18,7 +18,7 @@ function markdownDocument(content: string): HostToMarkdownWebview {
     return {
         command: 'initMarkdown', content, fileName: 'test.md', documentUri: 'file:///tmp/test.md',
         documentDirUri: 'file:///tmp', workspaceFolderUri: null, tableColumnWidths: {},
-        frontmatterPanelCollapsed: false, detailsOpenState: {}, mermaidPreviewMode: 'diagram', calloutDefaultType: 'info',
+        frontmatterPanelCollapsed: false, detailsOpenState: {}, mermaidPreviewMode: 'diagram', calloutDefaultType: 'info', outlinePinned: false,
     };
 }
 
@@ -453,5 +453,34 @@ test('toggle: the arrow is centred on the title text and does not move when it t
         const closed = await measure();
         assert.ok(Math.abs(closed.x - open.x) < 0.5 && Math.abs(closed.y - open.y) < 0.5,
             `"${title}": arrow moved from (${open.x}, ${open.y}) to (${closed.x}, ${closed.y})`);
+    }
+});
+
+test('with the toolbar not sticky, the outline rail starts below whichever toolbar is on screen', async () => {
+    await webview.send({ command: 'initSettings', settings: { ...SETTINGS, stickyToolbar: false } } satisfies HostToMarkdownWebview);
+    try {
+        await webview.send(markdownDocument(Array.from({ length: 60 }, (_, i) => `## Heading ${i}\n\nText ${i}.\n`).join('\n')));
+        await webview.page.waitForSelector('.outline-rail-widget');
+        await webview.page.waitForTimeout(300);
+        const gap = () => webview.page.evaluate(() => {
+            const bottoms = ['toolbar', 'formattingToolbar'].map(id => document.getElementById(id)!.getBoundingClientRect().bottom);
+            return document.querySelector('.outline-rail-widget')!.getBoundingClientRect().top - Math.max(0, ...bottoms);
+        });
+        // Top of the document: the toolbar is in the page.
+        assert.ok(Math.abs(await gap() - 10) <= 1, `rail is ${await gap()}px below the toolbar at the top of the file`);
+        // Half scrolled away.
+        await webview.page.evaluate(() => { document.getElementById('content')!.scrollTop = 50; });
+        await webview.page.waitForTimeout(200);
+        assert.ok(Math.abs(await gap() - 10) <= 1, `rail is ${await gap()}px below the toolbar while it scrolls away`);
+        // Scrolled far, then the toolbar revealed from the top edge.
+        await webview.page.evaluate(() => { document.getElementById('content')!.scrollTop = 1500; });
+        await webview.page.waitForFunction(() => document.body.classList.contains('toolbar-hover-reveal-armed'));
+        await webview.page.mouse.move(300, 2);
+        await webview.page.waitForFunction(() => document.body.classList.contains('toolbar-hover-reveal-visible'));
+        await webview.page.waitForTimeout(400);
+        assert.ok(Math.abs(await gap() - 10) <= 1, `rail is ${await gap()}px below the revealed toolbar`);
+    } finally {
+        await webview.page.mouse.move(500, 500);
+        await webview.send({ command: 'initSettings', settings: SETTINGS } satisfies HostToMarkdownWebview);
     }
 });

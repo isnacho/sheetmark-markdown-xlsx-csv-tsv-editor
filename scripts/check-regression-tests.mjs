@@ -135,6 +135,11 @@ const MUTATIONS = [
     { id: 'md-table-header-text-select', file: 'src/webviews/md/livePreview/tableWidget.ts',
       find: 'if (tableCellEditingAtPointer(event)) { return; }\n        event.preventDefault();\n        event.stopPropagation();\n\n        const tableNode = findTableNodeByIndex(view.state, tableIndex);\n        if (!tableNode) { return; }\n        const col = colTarget.col;',
       replace: 'event.preventDefault();\n        event.stopPropagation();\n        if (document.activeElement?.classList.contains(\'cm-md-table-cell-editing\')) { return; }\n\n        const tableNode = findTableNodeByIndex(view.state, tableIndex);\n        if (!tableNode) { return; }\n        const col = colTarget.col;' },
+    { id: 'outline-rail-active-line', file: 'src/webviews/md/outlineToc.ts',
+      find: 'const active = item.id === activeId ? \' active\' : \'\';',
+      replace: 'void activeId; const active = \'\';' },
+    { id: 'outline-rail-below-toolbar', file: 'src/webviews/md/outlineRailOverlay.ts',
+      find: 'return Math.max(0, ...toolbarBottoms) + gap;', replace: 'return 0 * Math.max(0, ...toolbarBottoms) + gap;' },
 ];
 
 const repo = execSync('git rev-parse --show-toplevel', { encoding: 'utf8' }).trim();

@@ -37,7 +37,7 @@ Section headers in the file look like `// ===== Name =====`. Grep for the header
 | Imports | (top of file) | the `livePreviewEditor` import list is the full public CM6 API used by the shell |
 | rAF throttle | `Throttle Utility` | `throttleRAF`, `throttleRAFEvent` |
 | Small utilities | `Utilities` | `livePreviewGutterLineNumbersEnabled`, `slugify`, `escapeHtmlAttr`, `isRemoteOrInlineUri`, `shouldResolveLocalImage` |
-| markdown-it (TOC only) | `Markdown-it (TOC parse only` | `md`, `addHeadingIds`, `buildToc`, `updateToc`, `refreshCm6Toc`, `tocIdToLine`, `tocLineToId`, `resolveTocLineForAnchor`, `scrollToAnchor`. CM6 renders the document; markdown-it only builds the outline |
+| markdown-it (TOC only) | `Markdown-it (TOC parse only` | `md`, `addHeadingIds`, `updateToc`, `refreshCm6Toc`, `outlineToc.ts` (`collectTocItems`, list/rail HTML), `applyOutlineChrome`, `tocIdToLine`, `tocLineToId`, `resolveTocLineForAnchor`, `scrollToAnchor`. CM6 renders the document; markdown-it only builds the outline; default UX is `outlineRailOverlay.ts` (viewport overlay on `#outlineRailHost`) |
 | Image URI resolution | (same section) | `wireImageUriResolver`, `applyResolvedImageUris`, `resolvedImageUriCache` (sends `resolveImageUris`) |
 | Per-file / global prefs | (same section) | `persistFrontmatterPanelCollapsed`, `onDetailsStateChanged` (toggle state), `persistMermaidPreviewMode`, `persistCalloutDefaultType`, `applyFrontmatterBlockToDocument` |
 | Edit toolbar state | (same section) | `updateEditToolbarButtons` (uses `isEditorDirty` / `canReloadFromDisk` from `saveSync.ts`) |
@@ -46,7 +46,7 @@ Section headers in the file look like `// ===== Name =====`. Grep for the header
 | Disk-vs-editor diff | `Disk-vs-editor diff` | `hasDiskDiffBaseline`, `showDiskDiff`, `hideDiskDiff`, `toggleDiskDiff`, `revealDiskChanges`, `acceptAllDiskChanges`, `rejectAllDiskChanges`, `handleDiffChunkResolved`, `diffResolutionSummary`, `syncDiskDiffAfterDocChange`, `updateDiffChrome`, `updateDiffChunkRuler`, `wireDiskDiffBulkActions`. UX flow: [flow.md](../flow.md) |
 | Status bar and stats | (same section) | `getCurrentCursorPosition`, `getCurrentSelectionStats`, `getWholeDocumentStats`, `updateStatusInfo` |
 | Progress bar | `Reading Progress Bar` | `updateProgressBar` (the bar is a scroll indicator, not a reading mode) |
-| Scroll spy | `Scroll Spy (Active TOC Tracking)` | `updateScrollSpy`, `throttledScrollSpy`, `nearestTocIdForLine`, `initScrollSpy` |
+| Scroll spy | `Scroll Spy (Active TOC Tracking)` | `updateScrollSpy`, `throttledScrollSpy`, `nearestTocIdForLine`, `initScrollSpy` (sidebar + line rail active state) |
 | Lightbox | `Lightbox` | `initLightbox`, `showLightbox`, `closeLightbox` |
 | Search overlay | `Search in Preview` | `openSearch`, `closeSearch`, `toggleSearchOverlay`, `doSearch`, `navigateSearch`, `reapplySearch`, `initSearchOverlay` (match finding is delegated to `findLivePreviewMatches`) |
 | Settings panel | `Settings` | `applySettings` (sends `updateSettings`), `initializeSettings` (settings definitions, `enableAsDefault` / `disableDefaultEditor`, `showVersionHistory`), `renderVersionHistorySettingItem`, `applyFormattingToolbarLayout` |

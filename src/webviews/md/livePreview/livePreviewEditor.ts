@@ -69,6 +69,7 @@ import { frontmatterWidgetField, seedFrontmatterCollapsed, seedFrontmatterEditin
 import { cursorPosAfterFrontmatter } from '../frontmatter';
 import { headingLineDecorationField } from './headingGutterSync';
 import { hoverLineGutter, hoverGutterDomEventHandlers } from './hoverLineGutter';
+import { outlineActiveHeadingGutter, syncOutlineActiveHeadingLine } from './outlineActiveHeadingGutter';
 import { resolveLinePosAtPointer } from './pointerLineResolution';
 import { normalizeClipboardPasteText } from './pasteNormalization';
 import {
@@ -286,6 +287,7 @@ export function mountLivePreview(opts: LivePreviewMountOptions): EditorView {
             statusBarScrollMargins,
             highlightActiveLineGutter(),
             hoverLineGutter(),
+            outlineActiveHeadingGutter(),
             markdown({ extensions: GFM, addKeymap: false }),
             // No `syntaxHighlighting(defaultHighlightStyle)` here — it was
             // unused boilerplate, not a real dependency: no `codeLanguages` is
@@ -473,6 +475,10 @@ export function setLivePreviewDetailsState(detailsState: DetailsOpenState): void
     view.dispatch({ effects: replaceDetailsStateEffect.of(detailsState) });
 }
 
+export function setLivePreviewOutlineActiveHeadingLine(lineNumber: number | null): void {
+    syncOutlineActiveHeadingLine(view, lineNumber);
+}
+
 /** Version-history preview: block doc edits while keeping scroll/selection/search. */
 export function setLivePreviewReadOnly(on: boolean): void {
     view?.dispatch({
@@ -572,9 +578,14 @@ export function getLivePreviewScrollMetrics(): { scrollTop: number; scrollHeight
 /** 1-indexed line number nearest the top of the viewport, for scroll-spy. */
 export function getLivePreviewTopLine(): number | null {
     if (!view) { return null; }
-    const top = view.scrollDOM.scrollTop + 8;
-    const block = view.lineBlockAtHeight(Math.min(top, view.scrollDOM.scrollHeight));
-    return view.state.doc.lineAt(block.from).number;
+    const scroller = view.scrollDOM;
+    const rect = scroller.getBoundingClientRect();
+    if (rect.bottom <= rect.top) { return null; }
+    const x = Math.min(rect.left + 24, rect.right - 8);
+    const y = rect.top + 8;
+    const pos = view.posAtCoords({ x, y });
+    if (pos === null) { return null; }
+    return view.state.doc.lineAt(pos).number;
 }
 
 /** 1-indexed line + 1-indexed column of the current selection head. null when not mounted. */

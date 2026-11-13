@@ -55,6 +55,7 @@ export const state = {
     detailsOpenState: {} as Record<string, boolean>,
     mermaidPreviewMode: 'diagram' as 'diagram' | 'code',
     calloutDefaultType: 'info',
+    outlinePinned: false,
 
     currentSettings: {
         stickyToolbar: true,

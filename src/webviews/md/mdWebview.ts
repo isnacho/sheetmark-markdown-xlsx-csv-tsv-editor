@@ -1,6 +1,7 @@
 import MarkdownIt from 'markdown-it';
 
 import { ThemeManager, renderThemeToggleSettingItem } from '../shared/themeManager';
+import { applyFontChoice, applyLocalFonts, onFontApplied, renderFontSettingItem, wireFontPicker } from '../shared/fontManager';
 import { renderMenuActionRow } from '../shared/menuPanel';
 import { SettingsManager } from '../shared/settingsManager';
 import { ToolbarManager, type ToolbarButton } from '../shared/toolbarManager';
@@ -46,6 +47,7 @@ import {
     goToPrevLivePreviewDiffChunk,
     acceptAllLivePreviewDiffChunks,
     rejectAllLivePreviewDiffChunks,
+    remeasureLivePreview,
 } from './livePreview/livePreviewEditor';
 import { setImageUriResolver } from './livePreview/imageWidget';
 import { diffLineStats, formatDiffLineStats } from './diffStats';
@@ -1239,6 +1241,13 @@ function initializeSettings() {
             onChange: () => {}
         },
         {
+            id: 'fontSelect',
+            section: 'General',
+            label: 'Font',
+            html: renderFontSettingItem('fontSelect'),
+            onChange: () => {}
+        },
+        {
             id: 'chkStickyToolbar',
             section: 'Layout',
             label: 'Enable Sticky Toolbar',
@@ -1371,6 +1380,10 @@ function initializeSettings() {
     new ThemeManager('themeSelect', {
         onBeforeCycle: () => true
     }, vscode);
+
+    // Font picker (the setting is shared with the spreadsheet editor)
+    wireFontPicker('fontSelect', post);
+    onFontApplied(remeasureLivePreview);
 }
 
 // ===== Header Height =====
@@ -1507,6 +1520,14 @@ window.addEventListener('message', (event) => {
 
         case 'openRelativeFileFailed':
             showToast(m.message || 'File not found', undefined, { icon: 'warning' });
+            break;
+
+        case 'fontFamilyChanged':
+            applyFontChoice(m.font);
+            break;
+
+        case 'localFonts':
+            applyLocalFonts(m.fonts);
             break;
 
         case 'diskDeletedExternally':

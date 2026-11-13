@@ -7,8 +7,10 @@ import type { IncomingMessage } from 'http';
 import type { CommonHostToWebview, CommonWebviewToHost, MessageOf } from '../protocol/common';
 import { isAllowedExternalUrl } from './externalLinks';
 import { disableOpenByDefault, enableOpenByDefault, SheetmarkAssociationType } from './editorAssociationUtils';
+import { isFontChoice, normalizeFontChoice } from './fontChoice';
+import { listLocalFonts } from './localFonts';
 
-const SHARED_COMMANDS = ['openExternal', 'getSystemDetails', 'submitFeedback', 'enableAsDefault', 'disableDefaultEditor'] as const;
+const SHARED_COMMANDS = ['openExternal', 'getSystemDetails', 'submitFeedback', 'enableAsDefault', 'disableDefaultEditor', 'setFontFamily', 'requestLocalFonts'] as const;
 export type SharedHostMessage = MessageOf<CommonWebviewToHost, typeof SHARED_COMMANDS[number]>;
 
 /** True for messages handleSharedHostMessage owns; narrows the editor's union for its own handlers. */
@@ -52,6 +54,23 @@ export async function handleSharedHostMessage(message: SharedHostMessage, ctx: S
 
         case 'submitFeedback': {
             ctx.post({ command: 'feedbackResult', ok: await submitFeedbackForm(message.data) });
+            return;
+        }
+
+        case 'requestLocalFonts': {
+            const fonts = await listLocalFonts();
+            try { ctx.post({ command: 'localFonts', fonts }); } catch { /* the editor was closed while the list loaded */ }
+            return;
+        }
+
+        case 'setFontFamily': {
+            // Webview input is untrusted: only a built-in font or a safe family name is written into the user's settings.
+            if (!isFontChoice(message.font)) { return; }
+            try {
+                await vscode.workspace.getConfiguration('xlsxViewer').update('fontFamily', message.font, vscode.ConfigurationTarget.Global);
+            } catch (err) {
+                console.error('Failed to persist font:', err);
+            }
             return;
         }
 
@@ -114,6 +133,22 @@ export function syncColorTheme(panel: vscode.WebviewPanel, post: (message: Commo
         try { post({ type: 'setTheme', kind: vscode.window.activeColorTheme.kind }); } catch { /* panel gone */ }
     };
     const subscription = vscode.window.onDidChangeActiveColorTheme(send);
+    panel.onDidDispose(() => subscription.dispose());
+    return send;
+}
+
+/**
+ * Push the `xlsxViewer.fontFamily` setting to the webview now (call the returned function on
+ * webviewReady) and whenever it changes, in this panel or any other, until the panel closes.
+ */
+export function syncFontFamily(panel: vscode.WebviewPanel, post: (message: CommonHostToWebview) => void): () => void {
+    const send = () => {
+        const value = vscode.workspace.getConfiguration('xlsxViewer').get('fontFamily');
+        try { post({ command: 'fontFamilyChanged', font: normalizeFontChoice(value) }); } catch { /* panel gone */ }
+    };
+    const subscription = vscode.workspace.onDidChangeConfiguration(e => {
+        if (e.affectsConfiguration('xlsxViewer.fontFamily')) { send(); }
+    });
     panel.onDidDispose(() => subscription.dispose());
     return send;
 }

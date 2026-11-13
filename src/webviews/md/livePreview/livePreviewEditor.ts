@@ -351,6 +351,11 @@ export function refreshLivePreviewImages(): void {
     view?.dispatch({ effects: refreshImageWidgetsEffect.of(undefined) });
 }
 
+/** Re-measure line heights and widths after the page font changed (CM6 does not notice CSS changes). */
+export function remeasureLivePreview(): void {
+    view?.requestMeasure();
+}
+
 /** Destroy the view and clear its DOM. Idempotent — safe to call when unmounted. */
 export function unmountLivePreview(): void {
     if (view) {

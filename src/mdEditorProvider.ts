@@ -8,7 +8,7 @@ import { renderMarkdownHtml } from './shared/webviewHtml';
 import { createSerialQueue, type SerialQueue } from './shared/serialQueue';
 import { createMessageDispatcher, MARKDOWN_FILE_WRITING_COMMANDS } from './shared/messageDispatch';
 import { recordSentInTests, trackOpenEditor, type OpenEditorHandle } from './shared/editorTestHooks';
-import { handleSharedHostMessage, isSharedHostMessage, syncColorTheme, type SharedHostContext } from './shared/commonHostMessages';
+import { handleSharedHostMessage, isSharedHostMessage, syncColorTheme, syncFontFamily, type SharedHostContext } from './shared/commonHostMessages';
 import type { MessageOf } from './protocol/common';
 import type { HostToMarkdownWebview, MarkdownSettings, MarkdownWebviewToHost } from './protocol/markdown';
 import { createExternalFileChangeWatcher } from './shared/fileExternalChangeWatcher';
@@ -252,6 +252,7 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
             // Handle messages from webview
             // Pushes the VS Code theme now (on webviewReady) and on every theme change.
             const sendTheme = syncColorTheme(webviewPanel, post);
+            const sendFont = syncFontFamily(webviewPanel, post);
 
             const sharedContext: SharedHostContext = {
                 post,
@@ -282,6 +283,7 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                             post({ command: 'initSettings', settings: buildMdWebviewSettings() });
 
                             sendTheme();
+                            sendFont();
                         } catch (err) {
                             vscode.window.showErrorMessage(`Error reading Markdown file: ${err}`);
                             try {

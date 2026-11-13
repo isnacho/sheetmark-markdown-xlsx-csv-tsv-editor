@@ -95,6 +95,7 @@ is untrusted. Details: [.docs/dev/MESSAGE-PROTOCOL.md](.docs/dev/MESSAGE-PROTOCO
 | Commands, activation, provider registration | [src/extension.ts](src/extension.ts) |
 | User-visible settings | `contributes.configuration` in [package.json](package.json) |
 | Shared webview building blocks (theme, toolbar, settings, menus, virtual scroll) | `src/webviews/shared/**` (see [guide.md](src/webviews/shared/guide.md)) |
+| Font choices (Settings picker, `xlsxViewer.fontFamily`) | [guide.md](src/webviews/shared/guide.md) (`fontManager.ts` row lists every place a new built-in font touches); installed-font list: [localFonts.ts](src/shared/localFonts.ts) |
 | Static styling | `resources/**/*.css` |
 
 **Large files: do not read end-to-end.** Use the MAPs and grep for symbol names:

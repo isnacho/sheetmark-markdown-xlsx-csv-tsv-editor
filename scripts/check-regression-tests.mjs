@@ -93,6 +93,8 @@ const MUTATIONS = [
       find: "'.cm-content .cm-line.cm-md-heading-line.cm-md-h1': { paddingTop: '16px' },", replace: "'.cm-content .cm-line.cm-md-heading-line.cm-md-h1': { paddingTop: '0px' }," },
     { id: 'md-heading-h6-size', file: 'src/webviews/md/livePreview/cm6Theme.ts',
       find: "'.cm-content .cm-md-h6': { fontSize: '0.875em',", replace: "'.cm-content .cm-md-h6': { fontSize: '1em'," },
+    { id: 'md-cursor-clear-of-stats', file: 'src/webviews/md/livePreview/statusBarClearance.ts',
+      find: 'return Math.max(0, scrollerBottom - pill.top + gap);', replace: 'return 0 * Math.max(0, scrollerBottom - pill.top + gap);' },
     { id: 'mermaid-lazy-load', file: 'src/webviews/md/livePreview/mermaidWidget.ts',
       find: "import { Icons } from '../../shared/icons';", replace: "import { Icons } from '../../shared/icons';\nimport * as eagerMermaid from 'mermaid';\nvoid eagerMermaid;" },
     { id: 'resize-listeners-once', file: 'src/webviews/spreadsheet/spreadsheetWebview.ts',

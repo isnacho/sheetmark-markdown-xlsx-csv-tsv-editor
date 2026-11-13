@@ -453,3 +453,18 @@ test('headings group with their section: more room above than below, and H6 is n
     assert.ok(m.above - m.below >= 8, `space above the heading ${m.above}px vs below ${m.below}px`);
     assert.ok(m.h6 < m.body, `H6 is ${m.h6}px, body text ${m.body}px`);
 });
+
+// @@F18
+test('typing near the bottom of the window keeps the cursor clear of the stats pill', async () => {
+    await openDoc(Array.from({ length: 80 }, (_, i) => `Line number ${i}`).join('\n') + '\n');
+    await line('Line number 0').click();
+    for (let i = 0; i < 45; i++) { await webview.page.keyboard.press('ArrowDown'); }
+    await webview.page.waitForTimeout(150);
+    const m = await webview.page.evaluate(() => {
+        const pill = document.getElementById('statusInfo')!.getBoundingClientRect();
+        const caret = document.querySelector('.cm-cursor')!.getBoundingClientRect();
+        return { pillTop: pill.top, pillHeight: pill.height, caretBottom: caret.bottom };
+    });
+    assert.ok(m.pillHeight > 0, 'the stats pill is not shown');
+    assert.ok(m.caretBottom <= m.pillTop, `cursor bottom ${m.caretBottom} is under the pill (top ${m.pillTop})`);
+});

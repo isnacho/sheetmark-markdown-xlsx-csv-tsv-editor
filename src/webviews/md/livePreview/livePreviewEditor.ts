@@ -29,6 +29,7 @@
 import { EditorState, Compartment, Annotation, EditorSelection, Prec } from '@codemirror/state';
 import { EditorView, keymap, drawSelection, highlightActiveLine, highlightActiveLineGutter, lineNumbers } from '@codemirror/view';
 import { textColumnSelection } from './selectionColumn';
+import { statusBarScrollMargins } from './statusBarClearance';
 import { history, historyKeymap, defaultKeymap, undo, redo, undoDepth, redoDepth, selectAll } from '@codemirror/commands';
 import { markdown } from '@codemirror/lang-markdown';
 import { GFM } from '@lezer/markdown';
@@ -281,6 +282,7 @@ export function mountLivePreview(opts: LivePreviewMountOptions): EditorView {
             EditorView.clipboardInputFilter.of((text, state) => normalizeClipboardPasteText(state, text)),
             highlightActiveLine(),
             textColumnSelection,
+            statusBarScrollMargins,
             highlightActiveLineGutter(),
             hoverLineGutter(),
             markdown({ extensions: GFM, addKeymap: false }),

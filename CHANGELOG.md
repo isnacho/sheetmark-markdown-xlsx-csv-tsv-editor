@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Markdown Preview Edit: when you type or move down near the bottom of the window, the page now scrolls early enough that the cursor stays above the word count pill instead of disappearing behind it.
 - Markdown Preview Edit: level 1 to 3 headings get extra space above them (16, 12 and 8px), so each heading sits with the section it starts, as in Notion. Level 6 headings are now a little smaller than body text instead of the same size.
 - Markdown Preview Edit: spellcheck no longer underlines web addresses, email addresses, link targets or HTML tags, and accepts common technical words such as Markdown, callout, blockquote, frontmatter, URL and GFM.
 - Markdown Preview Edit: table headers now line up with the cells below them. They used to be centred even when the column was left-aligned; a column aligned in the Markdown (`:-:` or `--:`) still aligns its header the same way.

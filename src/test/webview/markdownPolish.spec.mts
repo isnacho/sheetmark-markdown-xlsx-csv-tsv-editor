@@ -387,3 +387,34 @@ test('a toggle\'s hover handle is drawn dots, centred on the title like the arro
     assert.ok(centres.grip !== null, 'the handle is a text glyph, not drawn dots');
     assert.ok(Math.abs(centres.grip - centres.arrow) <= 1, `handle centre ${centres.grip} vs arrow centre ${centres.arrow}`);
 });
+
+// @@F26
+test('a selection stays inside the text column, also when it only covers a line break', async () => {
+    await openDoc('First line of text.\n\nSecond line of text.\n\nThird line.\n');
+    const outside = () => webview.page.evaluate(() => {
+        const content = document.querySelector('.cm-content')!;
+        const box = content.getBoundingClientRect();
+        const style = getComputedStyle(content);
+        const left = box.left + parseFloat(style.paddingLeft) - 0.5;
+        const right = box.right - parseFloat(style.paddingRight) + 0.5;
+        const pieces = [...document.querySelectorAll('.cm-selectionBackground')]
+            .map(el => el.getBoundingClientRect()).filter(r => r.width > 0 && r.height > 0);
+        return { count: pieces.length, outside: pieces.filter(r => r.left < left || r.right > right).map(r => `${r.left}-${r.right}`) };
+    });
+    // Just the line break after the first line.
+    await line('First line').click();
+    await webview.page.keyboard.press('End');
+    await webview.page.keyboard.press('Shift+ArrowRight');
+    await webview.page.waitForTimeout(100);
+    assert.deepEqual((await outside()).outside, [], 'a line-break selection painted into the gutter');
+    // Three lines.
+    await line('First line').click();
+    await webview.page.keyboard.press('Home');
+    await webview.page.keyboard.press('Shift+ArrowDown');
+    await webview.page.keyboard.press('Shift+ArrowDown');
+    await webview.page.keyboard.press('Shift+End');
+    await webview.page.waitForTimeout(100);
+    const multi = await outside();
+    assert.ok(multi.count > 0, 'no selection drawn');
+    assert.deepEqual(multi.outside, [], 'a multi-line selection painted into the gutters');
+});

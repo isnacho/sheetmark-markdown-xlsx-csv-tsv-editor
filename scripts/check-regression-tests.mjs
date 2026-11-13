@@ -79,6 +79,8 @@ const MUTATIONS = [
       find: 'placeholder="Find in document" aria-label="Find in document"', replace: 'placeholder="Search in preview..."' },
     { id: 'md-toggle-handle-centred', file: 'src/webviews/md/livePreview/cm6Theme.ts',
       find: "margin: '0.1em auto 0',\n            fill: 'currentColor',", replace: "margin: '0.4em auto 0',\n            fill: 'currentColor'," },
+    { id: 'md-selection-text-column', file: 'src/webviews/md/livePreview/selectionColumn.ts',
+      find: 'const left = Math.max(box.left, columnLeft);\n    const right = Math.min(box.left + box.width, columnRight);', replace: 'const left = Math.max(box.left, columnLeft - 1e6);\n    const right = Math.min(box.left + box.width, columnRight + 1e6);' },
     { id: 'mermaid-lazy-load', file: 'src/webviews/md/livePreview/mermaidWidget.ts',
       find: "import { Icons } from '../../shared/icons';", replace: "import { Icons } from '../../shared/icons';\nimport * as eagerMermaid from 'mermaid';\nvoid eagerMermaid;" },
     { id: 'resize-listeners-once', file: 'src/webviews/spreadsheet/spreadsheetWebview.ts',

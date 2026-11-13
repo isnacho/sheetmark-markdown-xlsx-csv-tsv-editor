@@ -65,6 +65,8 @@ import type { DecorationSet, ViewUpdate } from '@codemirror/view';
 import { syntaxTree } from '@codemirror/language';
 import type { SyntaxNode } from '@lezer/common';
 import { appendCalloutDecorationSpecs } from './calloutDecorations';
+import { fenceDisplayLang } from './fenceExtraction';
+import { isMermaidFence } from './mermaidDetection';
 import { isSetextUnderlineListMarker } from './listSetextAmbiguity';
 import { listItemMarkerIsActivated, orderedListStartNumber, listItemPositionInSegment } from './listMarkerEditing';
 
@@ -176,6 +178,26 @@ const blockquoteLineDeco = Decoration.line({ class: 'cm-md-blockquote-line' });
  * (the styled border sits in a block widget, so a bare click would otherwise
  * miss the tiny hidden source text and land on the next line).
  */
+/**
+ * Language label shown in place of a code fence's opening "```lang" line while the cursor is off
+ * that line, the way Notion labels code blocks. Clicking it puts the cursor on the opener, which
+ * reveals the raw marker for editing. Text only (never HTML): the label comes from the file.
+ */
+export class FenceLanguageWidget extends WidgetType {
+    constructor(readonly label: string) { super(); }
+
+    eq(other: FenceLanguageWidget): boolean { return other.label === this.label; }
+
+    toDOM(): HTMLElement {
+        const el = document.createElement('span');
+        el.className = 'cm-md-fence-lang';
+        el.textContent = this.label;
+        return el;
+    }
+
+    ignoreEvent(): boolean { return false; }
+}
+
 export class HorizontalRuleWidget extends WidgetType {
     readonly nodeFrom: number;
     readonly nodeTo: number;
@@ -349,6 +371,12 @@ function wrapInListMarkerSlot(marker: HTMLElement, extraClass?: string): HTMLEle
 // to the max below).
 export const LIST_INDENT_FLOOR_CHARS = 3; // "12." — two digits + delimiter
 
+// One indent step per list level, the same 20px step toggles use (4px grid). Labels up to
+// LIST_INDENT_FLOOR_CHARS fit it: ordered labels are right-aligned and a two-digit one hangs a
+// little into the margin on its left (as in Notion) instead of pushing its text right. Only
+// longer labels ("100.", "xiii.") widen the column, by one mono character each.
+export const LIST_INDENT_STEP_PX = 20;
+
 // `--font-mono` is fixed-pitch (unlike `.cm-content`'s proportional
 // `--font-family`), so its character count converts to pixels exactly once
 // its real rendered advance width is known. This constant is a deterministic
@@ -356,12 +384,10 @@ export const LIST_INDENT_FLOOR_CHARS = 3; // "12." — two digits + delimiter
 // getMonoCharWidthPx() below (never per-list, never per-render — see there).
 export const DEFAULT_MONO_CHAR_WIDTH_PX = 8;
 
-// A top-level bullet/checkbox has no parent list to cascade from, so it gets
-// NO leading inset — its own left edge lines up exactly with plain paragraph
-// text at the same depth. A nested one needs a small inset so it doesn't sit
-// flush against the cascade boundary (the parent's own text start) — see the
-// "clear gap on the left" requirement in the idea this feature comes from.
-export const LIST_MARKER_NESTED_INSET_PX = 4;
+// Markers sit flush with the text edge of their level: a top-level bullet or checkbox lines up
+// with plain paragraph text, a nested one with its parent item's text, the way a toggle arrow
+// lines up with the text around it (Notion does the same). The old 4px nested inset is gone.
+export const LIST_MARKER_NESTED_INSET_PX = 0;
 
 /** Widest ordered-marker label among `list`'s direct ListItem children, floored at LIST_INDENT_FLOOR_CHARS. */
 export function computeListOwnColumnChars(state: EditorState, list: SyntaxNode): number {
@@ -409,7 +435,7 @@ export function getListColumnMetrics(
     const cached = cache.get(list.from);
     if (cached) { return cached; }
     const columnChars = computeListOwnColumnChars(state, list);
-    const columnPx = columnChars * monoCharWidthPx;
+    const columnPx = LIST_INDENT_STEP_PX + Math.max(0, columnChars - LIST_INDENT_FLOOR_CHARS) * monoCharWidthPx;
     const parentList = enclosingListContainer(list.parent);
     const offsetPx = parentList ? getListColumnMetrics(state, parentList, monoCharWidthPx, cache).totalPx : 0;
     const totalPx = offsetPx + columnPx;
@@ -545,9 +571,16 @@ export function computeRevealDecorations(
         // it. Marker + its trailing gap space are one combined span so the
         // space doesn't sit at yet another (base) size between the two.
         const dimHeadingMark = Decoration.mark({ class: `cm-md-reveal-mark cm-md-h${level}` });
+        // The revealed opening "## " hangs in the left margin (cm6Theme: .cm-md-heading-marker), so
+        // the heading text does not jump right when the cursor lands on it; Notion never shows the
+        // marker at all. A heading with no text yet keeps it inline: an out-of-flow marker alone
+        // would leave the line with no content and collapse its height while typing "# ".
+        const openMark = gapEnd < node.to
+            ? Decoration.mark({ class: `cm-md-reveal-mark cm-md-h${level} cm-md-heading-marker` })
+            : dimHeadingMark;
 
         if (active) {
-            specs.push({ from: open.from, to: gapEnd, value: dimHeadingMark });
+            specs.push({ from: open.from, to: gapEnd, value: openMark });
         } else {
             specs.push({ from: open.from, to: open.to, value: hiddenMark });
             if (hasGapSpace) {
@@ -584,6 +617,34 @@ export function computeRevealDecorations(
         if (open.to < close.from) {
             specs.push({ from: open.to, to: close.from, value: Decoration.mark({ class: contentClass }) });
         }
+    }
+
+    // Fenced code: the opening "```lang" line shows a language label and the closing "```" is
+    // hidden, unless the cursor is on that very line (then both show dimmed, for editing). Line by
+    // line, so typing code inside the block keeps the label. The closer line is a fixed short band
+    // (cm6Theme: .cm-md-fence-closer-line) in both states, so revealing it moves nothing. Mermaid
+    // fences are left to their own widget.
+    function handleFencedCode(node: SyntaxNode) {
+        const marks = node.getChildren('CodeMark');
+        if (marks.length === 0 || isMermaidFence(state, node)) { return; }
+        const open = marks[0];
+        const openLine = state.doc.lineAt(open.from);
+        const onLine = (lineFrom: number, lineTo: number) => selFrom <= lineTo && selTo >= lineFrom;
+        if (open.from < openLine.to) {
+            specs.push({
+                from: open.from,
+                to: openLine.to,
+                value: onLine(openLine.from, openLine.to)
+                    ? dimMark
+                    : Decoration.replace({ widget: new FenceLanguageWidget(fenceDisplayLang(state, node)) }),
+            });
+        }
+        if (marks.length < 2) { return; }
+        const close = marks[marks.length - 1];
+        const closeLine = state.doc.lineAt(close.from);
+        if (closeLine.number === openLine.number) { return; }
+        specs.push({ from: closeLine.from, to: closeLine.from, value: Decoration.line({ class: 'cm-md-fence-closer-line' }) });
+        specs.push({ from: close.from, to: close.to, value: onLine(closeLine.from, closeLine.to) ? dimMark : hiddenMark });
     }
 
     // InlineCode already gets its baseline monospace/background look from
@@ -807,6 +868,8 @@ export function computeRevealDecorations(
                     handlePairedMarks(node.node, 'StrikethroughMark', 'cm-md-strike-content');
                 } else if (node.name === 'InlineCode') {
                     handleInlineCode(node.node);
+                } else if (node.name === 'FencedCode') {
+                    handleFencedCode(node.node);
                 } else if (node.name === 'Link') {
                     handleLink(node.node);
                 } else if (node.name === 'Image') {

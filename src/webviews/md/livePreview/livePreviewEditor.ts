@@ -28,6 +28,8 @@
 
 import { EditorState, Compartment, Annotation, EditorSelection, Prec } from '@codemirror/state';
 import { EditorView, keymap, drawSelection, highlightActiveLine, highlightActiveLineGutter, lineNumbers } from '@codemirror/view';
+import { textColumnSelection } from './selectionColumn';
+import { statusBarScrollMargins } from './statusBarClearance';
 import { history, historyKeymap, defaultKeymap, undo, redo, undoDepth, redoDepth, selectAll } from '@codemirror/commands';
 import { markdown } from '@codemirror/lang-markdown';
 import { GFM } from '@lezer/markdown';
@@ -82,6 +84,8 @@ import {
     type MermaidPreviewMode,
 } from './mermaidPreviewMode';
 import { calloutWidgetField, setCalloutDefaultTypeCallback } from './calloutWidget';
+import { detailsExtensions, moveCursorOutOfHiddenRuns, replaceDetailsStateEffect, setDetailsStateCallback } from './detailsExtension';
+import type { DetailsOpenState } from './detailsExtension';
 import {
     imageWidgetField,
     refreshImageWidgetsEffect,
@@ -136,6 +140,10 @@ export interface LivePreviewMountOptions {
     frontmatterCollapsed?: boolean;
     /** Fired when the user toggles the YAML card — mdWebview.ts persists it to the host. */
     onFrontmatterCollapsedChanged?: (collapsed: boolean) => void;
+    /** Persisted toggle open/closed choices (block id -> open), read from the host on load. */
+    detailsOpenState?: DetailsOpenState;
+    /** Fired when the user opens or closes a toggle — mdWebview.ts persists it to the host. */
+    onDetailsStateChanged?: (state: DetailsOpenState) => void;
     /** Persisted global Mermaid preview mode, read from the host on load. */
     mermaidPreviewMode?: MermaidPreviewMode;
     /** Fired when the user changes Mermaid preview mode — mdWebview.ts persists it to the host. */
@@ -200,12 +208,14 @@ export function mountLivePreview(opts: LivePreviewMountOptions): EditorView {
         frontmatterCollapsed = false, onFrontmatterCollapsedChanged,
         mermaidPreviewMode = 'diagram', onMermaidPreviewModeChanged,
         calloutDefaultType = 'info', onCalloutDefaultTypeChanged,
+        detailsOpenState = {}, onDetailsStateChanged,
         onFenceCopied,
     } = opts;
     parent.innerHTML = '';
     setFrontmatterCollapsedCallback(onFrontmatterCollapsedChanged);
     setMermaidPreviewModeCallback(onMermaidPreviewModeChanged);
     setCalloutDefaultTypeCallback(onCalloutDefaultTypeChanged);
+    setDetailsStateCallback(onDetailsStateChanged);
     setFenceCopyCallback(onFenceCopied);
     void loadSpellDictionary();
 
@@ -271,6 +281,8 @@ export function mountLivePreview(opts: LivePreviewMountOptions): EditorView {
             drawSelection(),
             EditorView.clipboardInputFilter.of((text, state) => normalizeClipboardPasteText(state, text)),
             highlightActiveLine(),
+            textColumnSelection,
+            statusBarScrollMargins,
             highlightActiveLineGutter(),
             hoverLineGutter(),
             markdown({ extensions: GFM, addKeymap: false }),
@@ -312,6 +324,7 @@ export function mountLivePreview(opts: LivePreviewMountOptions): EditorView {
             seedCalloutDefaultType(calloutDefaultType),
             calloutDefaultTypeField,
             calloutWidgetField,
+            ...detailsExtensions(detailsOpenState),
             imageWidgetField,
             revealCompartment.of(reveal ? [livePreviewRevealPlugin, tableWidgetField, ...tableBoundaryExtensions, mermaidWidgetField, mermaidAtomicRanges, ...listMarkerBoundaryExtensions] : []),
             fenceChromeWidgetField,
@@ -328,6 +341,7 @@ export function mountLivePreview(opts: LivePreviewMountOptions): EditorView {
     });
 
     view = new EditorView({ state, parent });
+    moveCursorOutOfHiddenRuns(view);
     return view;
 }
 
@@ -348,6 +362,7 @@ export function unmountLivePreview(): void {
     setFrontmatterCollapsedCallback(undefined);
     setMermaidPreviewModeCallback(undefined);
     setCalloutDefaultTypeCallback(undefined);
+    setDetailsStateCallback(undefined);
     setFenceCopyCallback(undefined);
     setImageUriResolver(undefined);
 }
@@ -443,6 +458,12 @@ export function setLivePreviewMermaidMode(mode: MermaidPreviewMode): void {
 export function setLivePreviewCalloutDefaultType(type: string): void {
     if (!view) { return; }
     view.dispatch({ effects: setCalloutDefaultTypeEffect.of(type) });
+}
+
+/** Replace toggle open/closed choices after a host reload without rebuilding the view. */
+export function setLivePreviewDetailsState(detailsState: DetailsOpenState): void {
+    if (!view) { return; }
+    view.dispatch({ effects: replaceDetailsStateEffect.of(detailsState) });
 }
 
 /** Version-history preview: block doc edits while keeping scroll/selection/search. */

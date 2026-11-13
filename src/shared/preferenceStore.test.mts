@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createMarkdownPreferences, filePreference, globalPreference } from './preferenceStore.ts';
+import { createMarkdownPreferences, filePreference, globalPreference, sanitizeDetailsOpenState } from './preferenceStore.ts';
 
 function fakeMemento(initial: Record<string, unknown> = {}) {
     const data = new Map(Object.entries(initial));
@@ -55,4 +55,20 @@ test('Markdown preferences keep their persisted storage keys and rules', async (
     for (const pref of prefs.perFile) { await pref.migrate(file('/notes/a.md'), file('/archive/a.md')); }
     assert.deepEqual(prefs.tableColumnWidths.get(file('/archive/a.md')), { 0: [120, 80] });
     assert.equal(prefs.frontmatterPanelCollapsed.get(file('/archive/a.md')), true);
+});
+
+test('Toggle open state is stored per file, follows a move, and is sanitized', async () => {
+    const workspace = fakeMemento({});
+    const prefs = createMarkdownPreferences(workspace, fakeMemento({}));
+
+    await prefs.detailsOpenState.set(file('/notes/a.md'), { 'Intro#0': false });
+    assert.deepEqual(workspace.data.get('xlsxViewer.detailsOpenState./notes/a.md'), { 'Intro#0': false });
+
+    for (const pref of prefs.perFile) { await pref.migrate(file('/notes/a.md'), file('/archive/a.md')); }
+    assert.deepEqual(prefs.detailsOpenState.get(file('/archive/a.md')), { 'Intro#0': false });
+
+    assert.deepEqual(sanitizeDetailsOpenState({ a: true, b: 'x', '': true, c: false }), { a: true, c: false });
+    assert.deepEqual(sanitizeDetailsOpenState(null), {});
+    assert.deepEqual(sanitizeDetailsOpenState([true]), {});
+    assert.deepEqual(sanitizeDetailsOpenState({ ['x'.repeat(301)]: true }), {});
 });

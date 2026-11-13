@@ -518,12 +518,14 @@ body.cm6-preview-active .cm-md-fenced-code-line {
     background-color: var(--md-surface-sunken);
     border-left: 1px solid var(--md-border-subtle);
     border-right: 1px solid var(--md-border-subtle);
+    padding-left: var(--cm-md-fence-inset);
+    padding-right: var(--cm-md-fence-inset);
 }
 
 body.cm6-preview-active {
     --cm-md-fence-inset: 12px;
     --cm-md-fence-chrome-inset: 6px;
-    --cm-md-fence-external-gap: 32px;
+    --cm-md-fence-external-gap: 4px;
 }
 
 body.cm6-preview-active .cm-md-fenced-code-line-first {
@@ -566,6 +568,12 @@ body.cm6-preview-active .cm-md-fence-chrome {
     gap: 6px;
     padding: 0 var(--cm-md-fence-chrome-inset);
     box-sizing: border-box;
+}
+
+/* Plain code blocks: the chrome is only as wide as its buttons, so the language label and the rest
+   of the first line stay clickable. Mermaid overlays keep the full-width bar. */
+body.cm6-preview-active .cm-md-fence-chrome:not(.cm-md-fence-chrome-overlay) {
+    left: auto;
 }
 
 body.cm6-preview-active .cm-md-fence-chrome-overlay {
@@ -662,7 +670,7 @@ body.cm6-preview-active .cm-md-bullet-marker {
     display: inline-block;
     width: 6px;
     height: 6px;
-    margin-left: 4px;
+    margin-left: var(--list-marker-inset, 0px);
     margin-right: 6px;
     border-radius: 50%;
     background-color: var(--color-text-primary);
@@ -675,7 +683,7 @@ body.cm6-preview-active .cm-md-bullet-marker-nested {
 }
 
 body.cm6-preview-active .cm-md-ordered-marker {
-    margin-left: 4px;
+    margin-left: var(--list-marker-inset, 0px);
     margin-right: 6px;
     color: var(--color-text-primary);
     font-weight: 600;
@@ -684,7 +692,7 @@ body.cm6-preview-active .cm-md-ordered-marker {
 body.cm6-preview-active .cm-md-checkbox-bullet-hidden { display: none; }
 
 body.cm6-preview-active .cm-md-task-checkbox {
-    margin-left: 4px;
+    margin-left: var(--list-marker-inset, 0px);
     margin-right: 6px;
     vertical-align: middle;
     accent-color: var(--color-action);
@@ -696,9 +704,9 @@ body.cm6-preview-active .cm-md-task-done-content {
 }
 
 body.cm6-preview-active .cm-md-blockquote-line {
-    margin-left: 4px;
-    padding-left: 8px;
-    border-left: 2px solid var(--color-text-primary);
+    margin-left: 0;
+    padding-left: 17px;
+    border-left: 3px solid var(--color-text-primary);
     color: var(--color-text-secondary);
 }
 
@@ -897,7 +905,7 @@ body.cm6-preview-active .markdown-preview .yaml-frontmatter-card {
 /* Measured as part of the block widget root — reserve space below the card border. */
 .markdown-preview .yaml-frontmatter-tail-spacer {
     display: block;
-    height: 40px;
+    height: 4px;
     pointer-events: none;
 }
 
@@ -1131,6 +1139,12 @@ body.cm6-preview-active .markdown-preview .yaml-frontmatter-card {
     white-space: normal;
 }
 
+/* Header cells follow their column: left unless the delimiter row aligns it (markdown-it then puts
+   an inline text-align on th and td alike). The browser default would centre only the header. */
+.cm-md-table-scroll table.md-table th {
+    text-align: left;
+}
+
 .cm-md-table-scroll table.md-table th,
 .cm-md-table-scroll table.md-table td {
     border: none;
@@ -1175,7 +1189,7 @@ body.preview-edit-mode .markdown-preview table.md-table td {
    applies to every row (tableWidget.ts). Horizontal scroll lives on
    `.cm-md-table-scroll`, which also clips rounded corners. */
 body.preview-edit-mode .markdown-preview .cm-md-table-widget .cm-md-table-scroll {
-    margin: 8px 0;
+    margin: 4px 0;
 }
 
 body.preview-edit-mode .markdown-preview .cm-md-table-widget table.md-table {
@@ -1306,7 +1320,6 @@ body.preview-edit-mode .markdown-preview .cm-md-table-widget table.md-table td:e
     max-width: calc(100% + var(--cm-md-row-grip-gutter));
     margin-left: calc(-1 * var(--cm-md-row-grip-gutter));
     padding-left: var(--cm-md-row-grip-gutter);
-    padding-top: 8px;
 }
 
 .cm-md-mermaid-block {
@@ -1542,7 +1555,7 @@ body.preview-edit-mode .markdown-preview .table-tool-btn[data-table-action="tabl
        to the bottom of the page should match. */
     bottom: 12px;
     left: 50%;
-    transform: translateX(-50%) translateY(8px) scale(0.9);
+    transform: translateX(-50%) translateY(8px);
     background-color: #1e1e20;
     color: var(--color-toast-text);
     padding: 9px 16px;
@@ -1565,7 +1578,7 @@ body.preview-edit-mode .markdown-preview .table-tool-btn[data-table-action="tabl
     box-sizing: border-box;
     opacity: 0;
     visibility: hidden;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: opacity var(--motion-fast) var(--motion-ease), transform var(--motion-fast) var(--motion-ease), visibility var(--motion-fast);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
     pointer-events: none;
@@ -1576,7 +1589,7 @@ body.preview-edit-mode .markdown-preview .table-tool-btn[data-table-action="tabl
 .toast-notification.show {
     opacity: 1;
     visibility: visible;
-    transform: translateX(-50%) translateY(0) scale(1);
+    transform: translateX(-50%) translateY(0);
 }
 
 .toast-header {
@@ -1894,6 +1907,8 @@ html::-webkit-scrollbar-corner,
 }
 
 /* ===== Formatting Toolbar ===== */
+/* One row. In a narrow window it scrolls sideways; the thin scrollbar shows there is more and
+   works with a mouse (it used to be hidden, so the cut-off icons looked like the end of the row). */
 .formatting-toolbar {
     display: flex;
     flex-direction: row;
@@ -1904,7 +1919,8 @@ html::-webkit-scrollbar-corner,
     background: var(--md-surface-raised);
     border-bottom: 1px solid var(--md-border);
     overflow-x: auto;
-    scrollbar-width: none;
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-scrollbar-thumb) transparent;
     z-index: 19;
 }
 
@@ -1912,9 +1928,6 @@ html::-webkit-scrollbar-corner,
     display: none;
 }
 
-.formatting-toolbar::-webkit-scrollbar {
-    display: none;
-}
 
 .fmt-group {
     display: flex;
@@ -2178,12 +2191,12 @@ body.lightbox-open {
 /* ===== Zoomable Images ===== */
 .markdown-preview .zoomable {
     cursor: zoom-in;
-    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    transition: box-shadow var(--motion-fast) var(--motion-ease);
     border-radius: var(--surface-radius);
 }
 
+/* A shadow only: the image does not grow on hover (that moved it under the pointer). */
 .markdown-preview .zoomable:hover {
-    transform: scale(1.02);
     box-shadow: var(--shadow-md);
 }
 
@@ -2322,14 +2335,14 @@ body:not(.show-line-numbers) .markdown-preview .code-line::before {
        green-500 for the vscode-theme block — so this needs no light-only
        override; each theme already carries its own correct shade. */
     background: var(--palette-green-100);
-    /* .cm-content has its own 16px left padding (cm6Theme.ts, so the live
+    /* .cm-content has its own left padding (--cm-md-content-inset in cm6Theme.ts, so the live
        document reads at a comfortable width) — that padding sits *inside*
-       the line's box, so the line's own background stops 16px short of the
+       the line's box, so the line's own background stops that far short of the
        gutter. box-shadow paints past the box edge without moving it (a
        margin/width change would shift this line's text out of alignment
        with every other line), bleeding the tint out to meet the gutter
        marker exactly at the boundary. */
-    box-shadow: -16px 0 0 0 var(--palette-green-100);
+    box-shadow: calc(-1 * var(--cm-md-content-inset, 40px)) 0 0 0 var(--palette-green-100);
 }
 
 /* The editor host carries .markdown-preview for live-preview typography, so
@@ -2362,7 +2375,7 @@ body:not(.show-line-numbers) .markdown-preview .code-line::before {
        would flatten it and misalign deleted lines against the document. */
     padding: 2px 0 2px 6px;
     /* Same content-padding bleed as .cm-changedLine above. */
-    box-shadow: -16px 0 0 0 var(--palette-red-100);
+    box-shadow: calc(-1 * var(--cm-md-content-inset, 40px)) 0 0 0 var(--palette-red-100);
 }
 
 .cm-deletedChunk .cm-deletedText {
@@ -2405,7 +2418,7 @@ body:not(.show-line-numbers) .markdown-preview .code-line::before {
 
 .cm-inlineChangedLine {
     background: color-mix(in srgb, var(--color-status-warning-subtle) 60%, transparent);
-    box-shadow: -16px 0 0 0 color-mix(in srgb, var(--color-status-warning-subtle) 60%, transparent);
+    box-shadow: calc(-1 * var(--cm-md-content-inset, 40px)) 0 0 0 color-mix(in srgb, var(--color-status-warning-subtle) 60%, transparent);
 }
 
 /* Per-chunk accept/reject controls.

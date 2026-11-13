@@ -122,7 +122,7 @@ export function renderMarkdownHtml({ asset, cspSource, nonce }: WebviewHtmlOptio
 
             <div id="searchOverlay" class="search-overlay">
                 <div class="search-bar">
-                    <input type="text" id="searchInput" class="search-input" placeholder="Search in preview..." autocomplete="off" />
+                    <input type="text" id="searchInput" class="search-input" placeholder="Find in document" aria-label="Find in document" autocomplete="off" />
                     <span id="searchCount" class="search-count"></span>
                     <button id="searchPrev" class="search-nav-btn" title="Previous (Shift+Enter)">&#9650;</button>
                     <button id="searchNext" class="search-nav-btn" title="Next (Enter)">&#9660;</button>

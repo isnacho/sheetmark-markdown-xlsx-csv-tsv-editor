@@ -44,7 +44,9 @@ function buildHeadingLineDecorations(state: EditorState): DecorationSet {
 export const headingLineDecorationField = StateField.define<DecorationSet>({
     create: (state) => buildHeadingLineDecorations(state),
     update(value, tr) {
-        if (!tr.docChanged) {
+        // Long files are parsed in the background after opening; a longer tree is not a doc
+        // change, but it reaches headings that had no decoration yet.
+        if (!tr.docChanged && syntaxTree(tr.state).length <= syntaxTree(tr.startState).length) {
             return value;
         }
         return buildHeadingLineDecorations(tr.state);

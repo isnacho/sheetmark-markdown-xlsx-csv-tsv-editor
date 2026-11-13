@@ -55,7 +55,7 @@ test('option table includes every block transform named in the plan', () => {
     const labels = slashMenuCompletions.map(c => c.label);
     assert.deepEqual(labels, [
         'Text', 'Heading 1', 'Heading 2', 'Heading 3', 'Heading 4',
-        'Bulleted List', 'Numbered List', 'To-do List', 'Callout', 'Quote', 'Table', 'Divider',
+        'Bulleted List', 'Numbered List', 'To-do List', 'Callout', 'Toggle', 'Toggle Heading 1', 'Toggle Heading 2', 'Toggle Heading 3', 'Quote', 'Table', 'Divider',
     ]);
 });
 
@@ -96,6 +96,17 @@ test('slash completions expose Notion-style markdown hints except plain Text', (
     assert.equal(byLabel['Heading 4'], '####');
     assert.equal(byLabel['Bulleted List'], '-');
     assert.equal(byLabel['Divider'], '---');
+    // Typing "> " makes a toggle; a quote is typed as '" '.
+    assert.equal(byLabel['Toggle'], '>');
+    assert.equal(byLabel['Quote'], '"');
+});
+
+test('slash completions keep their listed order in the menu (descending boost)', () => {
+    const boosts = slashMenuCompletions.map(c => c.boost ?? 0);
+    for (let i = 1; i < boosts.length; i++) {
+        assert.ok(boosts[i] < boosts[i - 1], `"${slashMenuCompletions[i].label}" would not sort after "${slashMenuCompletions[i - 1].label}"`);
+    }
+    assert.ok(boosts.every(b => b >= -99 && b <= 99), 'CodeMirror boosts must stay within -99..99');
 });
 
 test('computeSlashApply: "Text" just removes the trigger, leaving an empty line', () => {
@@ -103,4 +114,18 @@ test('computeSlashApply: "Text" just removes the trigger, leaving an empty line'
     const tr = state.update(computeSlashApply(option('Text'), 1, 5));
     assert.equal(tr.state.doc.toString(), '');
     assert.equal(tr.state.selection.main.from, 0);
+});
+
+test('computeSlashApply: "Toggle" inserts an open toggle with the cursor in the empty title', () => {
+    const state = stateFor('/tog');
+    const tr = state.update(computeSlashApply(option('Toggle'), 1, 4));
+    assert.equal(tr.state.doc.toString(), '<details open>\n<summary>\n\n\n\n</summary>\n\n\n</details>');
+    assert.equal(tr.state.selection.main.from, '<details open>\n<summary>\n\n'.length);
+});
+
+test('computeSlashApply: "Toggle Heading 2" puts the cursor after the ## prefix', () => {
+    const state = stateFor('/tog');
+    const tr = state.update(computeSlashApply(option('Toggle Heading 2'), 1, 4));
+    assert.ok(tr.state.doc.toString().includes('\n\n## \n\n</summary>'));
+    assert.equal(tr.state.sliceDoc(0, tr.state.selection.main.from).endsWith('\n\n## '), true);
 });

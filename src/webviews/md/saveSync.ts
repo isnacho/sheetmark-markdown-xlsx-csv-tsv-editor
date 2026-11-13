@@ -8,6 +8,7 @@ import {
     isLivePreviewActive,
     refreshLivePreviewImages,
     setLivePreviewCalloutDefaultType,
+    setLivePreviewDetailsState,
     setLivePreviewContent,
     setLivePreviewMermaidMode,
     setLivePreviewReadOnly,
@@ -262,6 +263,7 @@ export function onDiskChangedExternally(m: MessageOf<HostToMarkdownWebview, 'dis
     state.documentDirUri = m.documentDirUri || state.documentDirUri;
     state.workspaceFolderUri = m.workspaceFolderUri || state.workspaceFolderUri;
     state.currentTableColumnWidths = m.tableColumnWidths || state.currentTableColumnWidths;
+    state.detailsOpenState = m.detailsOpenState || state.detailsOpenState;
     state.mermaidPreviewMode = m.mermaidPreviewMode === 'code' ? 'code' : state.mermaidPreviewMode;
     if (typeof m.calloutDefaultType === 'string' && /^[\w-]*$/.test(m.calloutDefaultType)) {
         state.calloutDefaultType = m.calloutDefaultType.toLowerCase();
@@ -269,6 +271,7 @@ export function onDiskChangedExternally(m: MessageOf<HostToMarkdownWebview, 'dis
     if (isLivePreviewActive()) {
         setLivePreviewMermaidMode(state.mermaidPreviewMode);
         setLivePreviewCalloutDefaultType(state.calloutDefaultType);
+        setLivePreviewDetailsState(state.detailsOpenState);
     }
 
     const wasManualReload = state.isReloadingFromDisk;

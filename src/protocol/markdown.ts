@@ -33,6 +33,8 @@ export interface MarkdownDocumentPayload {
     /** Per table (document order index), column widths in px. */
     tableColumnWidths: Record<number, readonly number[]>;
     frontmatterPanelCollapsed: boolean;
+    /** Toggle (`<details>`) blocks the user opened or closed, by block id; blocks not listed use their `open` attribute. */
+    detailsOpenState: Record<string, boolean>;
     mermaidPreviewMode: MermaidPreviewMode;
     calloutDefaultType: string;
 }
@@ -47,6 +49,7 @@ export type MarkdownWebviewToHost =
     | { command: 'restoreVersion'; versionId?: string; force?: boolean }
     | { command: 'saveTableColumnWidths'; widths: Record<number, readonly number[]> }
     | { command: 'saveFrontmatterPanelCollapsed'; collapsed: boolean }
+    | { command: 'saveDetailsOpenState'; state: Record<string, boolean> }
     | { command: 'saveMermaidPreviewMode'; mode: MermaidPreviewMode }
     | { command: 'saveCalloutDefaultType'; type: string };
 

@@ -17,7 +17,7 @@ const SETTINGS: MarkdownSettings = {
 function payload(content: string) {
     return {
         content, fileName: 'test.md', documentUri: 'file:///tmp/test.md', documentDirUri: 'file:///tmp',
-        workspaceFolderUri: null, tableColumnWidths: {}, frontmatterPanelCollapsed: false,
+        workspaceFolderUri: null, tableColumnWidths: {}, frontmatterPanelCollapsed: false, detailsOpenState: {},
         mermaidPreviewMode: 'diagram' as const, calloutDefaultType: 'info',
     };
 }

@@ -14,6 +14,7 @@ import { EditorState, StateField, StateEffect } from '@codemirror/state';
 import { EditorView, Decoration } from '@codemirror/view';
 import type { DecorationSet } from '@codemirror/view';
 import { SearchCursor } from '@codemirror/search';
+import { findDetailsBlocks, toggleTagRanges } from './detailsTypes';
 
 export interface Cm6Match {
     from: number;
@@ -55,8 +56,12 @@ export function findCm6Matches(state: EditorState, query: string): Cm6Match[] {
     const lower = query.toLowerCase();
     const cursor = new SearchCursor(state.doc, lower, 0, state.doc.length, s => s.toLowerCase());
     const matches: Cm6Match[] = [];
+    // Hidden toggle tags are never shown, so a match inside one would select nothing visible.
+    const hidden = toggleTagRanges(findDetailsBlocks(state.doc, state));
     while (!cursor.next().done) {
-        matches.push({ from: cursor.value.from, to: cursor.value.to });
+        const { from, to } = cursor.value;
+        if (hidden.some((r) => from < r.to && to > r.from)) { continue; }
+        matches.push({ from, to });
     }
     return matches;
 }

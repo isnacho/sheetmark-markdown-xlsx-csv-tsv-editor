@@ -1,3 +1,5 @@
+import { stripToggleTags } from './livePreview/detailsTypes';
+
 export interface TextStats {
     lines: number;
     words: number;
@@ -13,7 +15,7 @@ export interface TextStats {
 export function stripMarkdownToPlainText(source: string): string {
     // Line-anchored block markers first (a bare "***" horizontal rule must be
     // recognized before the inline emphasis passes below would mangle it).
-    let text = source
+    let text = stripToggleTags(source)
         .split('\n')
         .map(line => {
             if (/^\s{0,3}([*_-] ?){3,}$/.test(line.trim())) {

@@ -13,16 +13,17 @@ import type { TransactionSpec } from '@codemirror/state';
 import { autocompletion, CompletionContext, pickedCompletion, selectedCompletionIndex, setSelectedCompletion } from '@codemirror/autocomplete';
 import type { Completion, CompletionResult, CompletionSource } from '@codemirror/autocomplete';
 import type { Extension } from '@codemirror/state';
-import { ViewPlugin } from '@codemirror/view';
-import type { EditorView, ViewUpdate } from '@codemirror/view';
+import { tooltips, ViewPlugin } from '@codemirror/view';
+import type { EditorView, Rect, ViewUpdate } from '@codemirror/view';
 import { Icons } from '../../shared/icons';
 import { renderMenuIcon } from '../../shared/menuPanel';
 import { calloutDefaultTypeField } from './calloutDefaultType';
 import { buildCalloutSnippet, calloutCursorOffsetForType } from './calloutTypes';
+import { toggleSlashSnippet } from './detailsEditing';
 
 type SlashIconKey = keyof Pick<typeof Icons,
     'Paragraph' | 'Heading' | 'ListBullet' | 'ListOrdered' | 'Checkbox' |
-    'Callout' | 'Quote' | 'TableInsert' | 'HorizontalRule'
+    'Callout' | 'Toggle' | 'Quote' | 'TableInsert' | 'HorizontalRule'
 >;
 
 interface SlashOption {
@@ -49,7 +50,11 @@ export const SLASH_OPTIONS: SlashOption[] = [
     { label: 'Numbered List', insert: '1. ', cursorOffset: 3, icon: 'ListOrdered', hint: '1.' },
     { label: 'To-do List', insert: '- [ ] ', cursorOffset: 6, icon: 'Checkbox', hint: '[ ]' },
     { label: 'Callout', insert: ':::info\n\n:::', cursorOffset: 8, icon: 'Callout', hint: ':::' },
-    { label: 'Quote', insert: '> ', cursorOffset: 2, icon: 'Quote', hint: '>' },
+    { label: 'Toggle', ...toggleSlashSnippet(''), icon: 'Toggle', hint: '>' },
+    { label: 'Toggle Heading 1', ...toggleSlashSnippet('# '), icon: 'Toggle', hint: '> #' },
+    { label: 'Toggle Heading 2', ...toggleSlashSnippet('## '), icon: 'Toggle', hint: '> ##' },
+    { label: 'Toggle Heading 3', ...toggleSlashSnippet('### '), icon: 'Toggle', hint: '> ###' },
+    { label: 'Quote', insert: '> ', cursorOffset: 2, icon: 'Quote', hint: '"' },
     { label: 'Table', insert: TABLE_SNIPPET, cursorOffset: TABLE_SNIPPET.length, icon: 'TableInsert', hint: '|' },
     { label: 'Divider', insert: '---', cursorOffset: 3, icon: 'HorizontalRule', hint: '---' },
 ];
@@ -68,9 +73,11 @@ export function computeSlashApply(option: SlashOption, from: number, to: number)
     };
 }
 
-export const slashMenuCompletions: Completion[] = SLASH_OPTIONS.map((option) => ({
+export const slashMenuCompletions: Completion[] = SLASH_OPTIONS.map((option, index) => ({
     label: option.label,
     type: 'text',
+    // CodeMirror sorts equal matches alphabetically; a descending boost keeps the order above.
+    boost: SLASH_OPTIONS.length - index,
     ...(option.hint ? { detail: option.hint } : {}),
     apply: (view, completion, from, to) => {
         if (option.label === 'Callout') {
@@ -173,9 +180,25 @@ class SlashMenuPointerPlugin {
 
 const slashMenuPointerPlugin = ViewPlugin.fromClass(SlashMenuPointerPlugin);
 
+/**
+ * Room for editor tooltips: the editor's visible area, not the whole window. The toolbar sits
+ * above the scroller, so a menu that flips upward would otherwise open under it. CodeMirror
+ * shrinks a tooltip to fit this space; the slash list then scrolls inside (menuPanel.css).
+ */
+export function editorTooltipSpace(view: EditorView): Rect {
+    const scroller = view.scrollDOM.getBoundingClientRect();
+    return {
+        top: Math.max(0, scroller.top),
+        left: 0,
+        right: window.innerWidth,
+        bottom: Math.min(window.innerHeight, scroller.bottom),
+    };
+}
+
 /** CM6 autocomplete extension: slash source + icon row + themed tooltip classes. */
 export function slashMenuAutocompletion(): Extension {
     return [
+        tooltips({ tooltipSpace: editorTooltipSpace }),
         autocompletion({
             override: [livePreviewSlashSource],
             icons: false,

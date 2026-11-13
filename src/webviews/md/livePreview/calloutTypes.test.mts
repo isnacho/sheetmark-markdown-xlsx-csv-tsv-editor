@@ -5,6 +5,7 @@ import { markdown } from '@codemirror/lang-markdown';
 import { GFM } from '@lezer/markdown';
 import { fullyParsed } from './testState.ts';
 import {
+    calloutTitleOffset,
     findCalloutBlocks,
     calloutTypeClass,
     parseCalloutOpener,
@@ -98,4 +99,13 @@ test('callout opener rewrite preserves optional title suffix for built-ins', () 
     const parsed = parseCalloutOpener(state.doc.line(block.openLine).text);
     assert.ok(parsed);
     assert.equal(formatCalloutOpener('warning', parsed.leading, parsed.titleSuffix), ':::warning Title');
+});
+
+test('calloutTitleOffset: finds the title after the type, none without one', () => {
+    assert.equal(calloutTitleOffset('::: custom Custom title'), 11);
+    assert.equal(calloutTitleOffset(':::info Read this'), 8);
+    assert.equal(calloutTitleOffset('  ::: warning   Careful'), 16);
+    assert.equal(calloutTitleOffset('::: info'), null);
+    assert.equal(calloutTitleOffset('::: info   '), null);
+    assert.equal(calloutTitleOffset(':::'), null);
 });

@@ -51,6 +51,8 @@ export const state = {
     // live in the .md file's own table syntax.
     currentTableColumnWidths: {} as Record<number, readonly number[]>,
     frontmatterPanelCollapsed: false,
+    /** Toggle (`<details>`) open/closed choices for this file, by block id. */
+    detailsOpenState: {} as Record<string, boolean>,
     mermaidPreviewMode: 'diagram' as 'diagram' | 'code',
     calloutDefaultType: 'info',
 

@@ -19,6 +19,9 @@ the codebase; not product roadmap or feature ideas.
 Entry point for agents: [AGENTS.md](../AGENTS.md) at the repo root. Shared webview modules:
 [src/webviews/shared/guide.md](../src/webviews/shared/guide.md).
 
+To see a Markdown file in the real editor, run `npm run shot -- <file.md> --theme dark`: it saves a
+screenshot of a real VS Code window to `.vscode-test/ui-shots/` (options in [src/test/ui/shot.mts](../src/test/ui/shot.mts)).
+
 ## `product/`: Product documentation
 
 Product rules, roadmap, and history. Not architecture reference.
@@ -26,6 +29,7 @@ Product rules, roadmap, and history. Not architecture reference.
 | File | Status |
 |------|--------|
 | [MARKDOWN-TABLES.md](product/MARKDOWN-TABLES.md) | **Active**: canonical product rules for Markdown tables; update it with any table behavior change |
+| [UI-REVIEW-2026-11-12.md](product/UI-REVIEW-2026-11-12.md) | **Done**: Markdown editor UI review (findings F01 to F28) and the log of every fix, commit and test |
 | [PLAN.md](product/PLAN.md) | **Historical, partly stale**: original fork → publish plan. Its checklists predate publishing (the extension now ships via GitHub Actions); use for background only |
 | [completed/PLAN-obsidian-live-preview.md](product/completed/PLAN-obsidian-live-preview.md) | **Done**: CM6 live-preview rebuild (phases 1 to 8) |
 | [completed/REVIEW-wysiwyg-architecture.md](product/completed/REVIEW-wysiwyg-architecture.md) | **Done**: one-time architecture review brief |

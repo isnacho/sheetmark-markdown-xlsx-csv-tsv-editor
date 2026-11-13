@@ -468,7 +468,9 @@
         "lint": "eslint \"src/**/*.{ts,mts}\"",
         "test:unit": "node --import tsx --test \"src/**/*.test.mts\"",
         "test:webview": "node esbuild.js && npm run test:webview:run",
-        "test:webview:run": "node --import tsx --test \"src/test/webview/*.spec.mts\"",
+        "test:webview:run": "node --import tsx --test --test-timeout=120000 \"src/test/webview/*.spec.mts\"",
+        "test:ui": "node esbuild.js && node --import tsx --test \"src/test/ui/*.spec.mts\"",
+        "shot": "node esbuild.js && node --import tsx src/test/ui/shot.mts",
         "test:integration": "node esbuild.js && node esbuild.js --integration && vscode-test",
         "test:regressions": "node scripts/check-regression-tests.mjs"
     },

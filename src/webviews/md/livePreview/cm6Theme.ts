@@ -13,6 +13,34 @@
 
 import { EditorView } from '@codemirror/view';
 
+/** Callout icons as CSS mask images (so they take the status colour). Allowed by `img-src data:`. */
+const calloutIcon = (body: string): string =>
+    `url("data:image/svg+xml,${encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'>${body}</svg>`)}")`;
+const CALLOUT_ICONS = {
+    info: calloutIcon("<circle cx='12' cy='12' r='10'/><path d='M12 16v-5M12 8h.01'/>"),
+    warning: calloutIcon("<path d='M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z'/><path d='M12 9v4M12 17h.01'/>"),
+    error: calloutIcon("<circle cx='12' cy='12' r='10'/><path d='m15 9-6 6M9 9l6 6'/>"),
+    success: calloutIcon("<circle cx='12' cy='12' r='10'/><path d='m8.5 12.5 2.5 2.5 4.5-5'/>"),
+};
+
+/**
+ * Cards (tables, images, diagrams) replace their source lines, so the toggle body's line indent
+ * never reaches them and they sat at the toggle's own left edge. A card takes the indent of the
+ * line just before it instead: a body line at depth d, or a title line at depth d (body d + 1).
+ */
+function toggleCardIndent(): Record<string, { marginLeft: string }> {
+    const cards = ['.cm-md-table-widget', '.cm-md-image-block', '.cm-md-mermaid-block'];
+    const rules: Record<string, { marginLeft: string }> = {};
+    for (let d = 1; d <= 6; d++) {
+        const after = [
+            `.cm-content > .cm-line.cm-md-details-body.cm-md-details-d${d} + `,
+            `.cm-content > .cm-line.cm-md-details-title-line.cm-md-details-d${d - 1} + `,
+        ];
+        rules[after.flatMap(prefix => cards.map(card => prefix + card)).join(', ')] = { marginLeft: `${d * 20}px` };
+    }
+    return rules;
+}
+
 export function cm6Theme(): ReturnType<typeof EditorView.theme> {
     return EditorView.theme({
         '&': {
@@ -22,7 +50,13 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             fontSize: '15px',
             '--cm-md-fence-inset': '12px',
             '--cm-md-fence-chrome-inset': '6px',
-            '--cm-md-fence-external-gap': '32px',
+            // Blocks are separated by the blank line in the source; cards add only this much
+            // around themselves (it was 32px, so code blocks sat far from their paragraphs).
+            '--cm-md-fence-external-gap': '4px',
+            // Left and right gutter of the text column, the same in every document (it used to
+            // grow 24px once a document had a toggle, shifting all text). The left side holds the
+            // toggle hover handle. mdWebview.css reads it for diff tints that bleed to the gutter.
+            '--cm-md-content-inset': '40px',
         },
         '.cm-scroller': {
             fontFamily: 'var(--font-family)',
@@ -38,9 +72,16 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             minWidth: '0',
             margin: '0 auto',
             paddingTop: '8px',
-            paddingRight: '16px',
+            paddingRight: 'var(--cm-md-content-inset)',
             paddingBottom: '64px',
-            paddingLeft: '16px',
+            paddingLeft: 'var(--cm-md-content-inset)',
+        },
+        // CodeMirror pads every text line 6px on the left but not block widgets (tables, YAML,
+        // images, Mermaid), so every card sat 6px left of the text. Text now starts at the line
+        // edge, the same x as card edges; cards set their own inner inset. Keep this rule above
+        // the line rules below that set their own padding.
+        '.cm-line': {
+            paddingLeft: '0',
         },
         '.cm-editor': {
             position: 'relative',
@@ -52,6 +93,12 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             borderLeftColor: 'var(--color-text-primary)',
         },
         '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': {
+            backgroundColor: 'var(--color-selection-bg)',
+        },
+        // CodeMirror's base theme sets a light selection colour (#d7d4f0 focused) with a more
+        // specific selector, and the editor is never created as a dark theme, so dark VS Code
+        // themes got light lavender behind light text. One class more than the base rule wins.
+        '&.cm-editor .cm-selectionBackground, &.cm-editor.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground': {
             backgroundColor: 'var(--color-selection-bg)',
         },
         '.cm-activeLine': {
@@ -164,15 +211,36 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
         },
         '.cm-md-heading-line': {
             fontWeight: '600',
+            position: 'relative',
+        },
+        // Revealed "## " on the cursor's heading line: out of the text flow and shifted left by
+        // its own width, so it ends where the heading text starts and the text stays put. In a
+        // toggle title the arrow sits in that space, so there it stays inline.
+        '.cm-md-heading-marker': {
+            position: 'absolute',
+            transform: 'translateX(-100%)',
+            whiteSpace: 'pre',
+        },
+        '.cm-md-details-title-line .cm-md-heading-marker': {
+            position: 'static',
+            transform: 'none',
         },
         // Preview Edit: smaller than static-render h1–h3 defaults in mdWebview.css
         // so headings stay hierarchical without dominating the editor canvas.
+        // H5 is body size in bold (like GitHub's H4); H6 is a step smaller and muted, so no
+        // heading level looks like plain text.
         '.cm-content .cm-md-h1': { fontSize: '1.6em' },
         '.cm-content .cm-md-h2': { fontSize: '1.4em' },
         '.cm-content .cm-md-h3': { fontSize: '1.2em' },
         '.cm-content .cm-md-h4': { fontSize: '1.1em' },
         '.cm-content .cm-md-h5': { fontSize: '1em' },
-        '.cm-content .cm-md-h6': { fontSize: '1em', color: 'var(--color-text-secondary)' },
+        '.cm-content .cm-md-h6': { fontSize: '0.875em', color: 'var(--color-text-secondary)' },
+        // Extra room above the big headings (as in Notion), so a heading sits with the section
+        // it starts rather than halfway between two sections. Padding, not margin: CodeMirror
+        // measures line boxes, and a margin outside them would throw its height map off.
+        '.cm-content .cm-line.cm-md-heading-line.cm-md-h1': { paddingTop: '16px' },
+        '.cm-content .cm-line.cm-md-heading-line.cm-md-h2': { paddingTop: '12px' },
+        '.cm-content .cm-line.cm-md-heading-line.cm-md-h3': { paddingTop: '8px' },
         '.cm-md-inline-code': {
             fontFamily: 'var(--font-mono)',
             fontWeight: 'var(--font-mono-weight)',
@@ -188,6 +256,20 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             backgroundColor: 'var(--color-surface-sunken)',
             borderLeft: '1px solid var(--color-border-subtle)',
             borderRight: '1px solid var(--color-border-subtle)',
+            paddingLeft: 'var(--cm-md-fence-inset)',
+            paddingRight: 'var(--cm-md-fence-inset)',
+        },
+        // Shown in place of the opening ```lang line (revealDecorations.ts: FenceLanguageWidget).
+        '.cm-md-fence-lang': {
+            fontFamily: 'var(--font-family)',
+            fontSize: '12px',
+            color: 'var(--color-text-secondary)',
+            userSelect: 'none',
+        },
+        // The closing ``` line is a short band whether its marker is hidden or shown dimmed.
+        '.cm-md-fenced-code-line.cm-md-fence-closer-line': {
+            fontSize: '11px',
+            lineHeight: '16px',
         },
         '.cm-md-fenced-code-line-first': {
             borderTop: '1px solid var(--color-border-subtle)',
@@ -370,13 +452,59 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             maxWidth: '100%',
             height: 'auto',
         },
+        // Error card: icon, message, Mermaid's own detail, and an Edit code button. The right
+        // padding keeps clear of the card's Diagram/Code switch and copy button, always shown here.
         '.cm-md-mermaid-error': {
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            gap: '4px 8px',
             fontSize: '13px',
+            color: 'var(--color-text-primary)',
+            padding: '8px 120px 8px 0',
+        },
+        '.cm-md-mermaid-error::before': {
+            content: '""',
+            width: '16px',
+            height: '16px',
+            flex: 'none',
+            backgroundColor: 'var(--color-status-error)',
+            maskImage: CALLOUT_ICONS.error,
+            maskSize: 'contain',
+            maskRepeat: 'no-repeat',
+        },
+        '.cm-md-mermaid-error-detail': {
+            flexBasis: '100%',
+            paddingLeft: '24px',
+            fontFamily: 'var(--font-mono)',
+            fontSize: '12px',
             color: 'var(--color-text-secondary)',
-            padding: '8px 0',
+            overflowWrap: 'anywhere',
+            order: '1',
+        },
+        '.cm-md-mermaid-error-edit': {
+            fontSize: '12px',
+            fontFamily: 'var(--font-family)',
+            padding: '2px 8px',
+            color: 'var(--color-text-primary)',
+            background: 'transparent',
+            border: '1px solid var(--color-border-default)',
+            borderRadius: 'var(--surface-radius)',
+            cursor: 'pointer',
+        },
+        '.cm-md-mermaid-error-edit:hover': {
+            background: 'color-mix(in srgb, var(--color-text-primary) 8%, transparent)',
+        },
+        '.cm-md-mermaid-block-error .cm-md-mermaid-zoom-controls': {
+            display: 'none',
+        },
+        '.cm-md-mermaid-block-error .cm-md-fence-chrome-overlay .cm-md-mermaid-mode-select': {
+            opacity: '1',
         },
         '.cm-md-table-widget': {
-            display: 'block',
+            // flow-root keeps the scroll wrapper's bottom margin inside the widget box. CodeMirror
+            // measures that box; a margin escaping it made the page jump 8px per table on scroll.
+            display: 'flow-root',
             cursor: 'text',
             overflow: 'visible',
             boxSizing: 'border-box',
@@ -435,7 +563,7 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
         },
         '.yaml-frontmatter-tail-spacer': {
             display: 'block',
-            height: '40px',
+            height: '4px',
             pointerEvents: 'none',
         },
         // Phase 7: extended reveal set (strikethrough/inline-code marker hide/
@@ -454,12 +582,16 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
         '.cm-md-image-block': {
             display: 'block',
             margin: '0',
-            paddingTop: '16px',
-            paddingBottom: '16px',
+            paddingTop: '4px',
+            paddingBottom: '4px',
         },
         '.cm-md-image-inline': {
             display: 'inline-block',
             verticalAlign: 'middle',
+        },
+        // mdWebview.css gives .md-image a 16px margin for the old reading view; not in the editor.
+        '.cm-md-image-block .cm-md-image-preview': {
+            margin: '0',
         },
         '.cm-md-image-preview': {
             maxWidth: '100%',
@@ -480,17 +612,122 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             color: 'var(--color-status-error)',
             background: 'color-mix(in srgb, var(--color-status-error) 8%, transparent)',
         },
+        // `display: block` above would otherwise beat the `hidden` attribute that imageWidget.ts
+        // sets once an image has a source, leaving an alt-text bar under every image.
+        '.cm-md-image-placeholder[hidden]': {
+            display: 'none',
+        },
+        // Same for the image while its local path is still unresolved (or the file is missing):
+        // without this the browser draws an empty broken-picture box above the placeholder.
+        '.cm-md-image-preview[hidden]': {
+            display: 'none',
+        },
+        // Bar on the text edge, text one 20px step in (3px bar + 17px), like list and toggle text.
         '.cm-md-blockquote-line': {
             backgroundColor: 'transparent',
-            marginLeft: '4px',
-            borderLeft: '2px solid var(--color-text-primary)',
-            paddingLeft: '8px',
+            marginLeft: '0',
+            borderLeft: '3px solid var(--color-text-primary)',
+            paddingLeft: '17px',
             color: 'var(--color-text-secondary)',
+        },
+        '.cm-md-details-run': {
+            height: '0',
+            overflow: 'hidden',
+        },
+        '.cm-md-details-d0': { '--d': '0' },
+        '.cm-md-details-d1': { '--d': '1' },
+        '.cm-md-details-d2': { '--d': '2' },
+        '.cm-md-details-d3': { '--d': '3' },
+        '.cm-md-details-d4': { '--d': '4' },
+        '.cm-md-details-d5': { '--d': '5' },
+        '.cm-md-details-d6': { '--d': '6' },
+        ...toggleCardIndent(),
+        // Indent with MARGIN, not padding: list lines set their own inline padding-left (hanging indent),
+        // so padding would indent the text but leave bullets behind. The doubled selector beats the
+        // callout and blockquote line rules, which also set a margin.
+        // One 20px step (4px grid) per level. The arrow sits flush with normal text in the first step, the
+        // title text starts after it, and the body starts at the same x as the title text.
+        '.cm-content .cm-line.cm-md-details-title-line': {
+            position: 'relative',
+            marginLeft: 'calc(var(--d) * 20px + 20px)',
+        },
+        '.cm-content .cm-line.cm-md-details-body': {
+            marginLeft: 'calc(var(--d) * 20px)',
+        },
+        // The arrow is an inline-block on the title's own text line. An inline-block with a block child and no
+        // text has its bottom edge on the BASELINE, so a 1em-tall box with vertical-align -0.16em has its middle
+        // 0.34em above the baseline: the visual middle of the title text, whatever the line box does around it.
+        // (An inline-flex box takes its baseline from its child instead, which put the arrow too low.)
+        // The -20px margin pulls it into the 20px step left of the title, starting exactly where normal text
+        // starts; net advance is zero.
+        '.cm-md-details-chevron': {
+            '--chev': '0.5',
+            display: 'inline-block',
+            boxSizing: 'border-box',
+            width: '20px',
+            height: '1em',
+            lineHeight: '1',
+            marginLeft: '-20px',
+            marginRight: '0',
+            verticalAlign: '-0.16em',
+            cursor: 'pointer',
+            userSelect: 'none',
+            color: 'var(--color-text-primary)',
+            opacity: '0.7',
+        },
+        '.cm-md-details-chevron svg': {
+            display: 'block',
+            marginTop: 'calc((1 - var(--chev)) * 0.5em)',
+            height: 'calc(var(--chev) * 1em)',
+            width: 'calc(var(--chev) * 0.8em)',
+            overflow: 'visible',
+            transition: 'transform 0.12s ease',
+        },
+        '.cm-md-details-chevron:hover': {
+            opacity: '1',
+        },
+        '.cm-md-details-chevron.is-open svg': {
+            transform: 'rotate(90deg)',
+        },
+        '.cm-content .cm-md-h1 .cm-md-details-chevron, .cm-content .cm-md-h2 .cm-md-details-chevron': { '--chev': '0.6' },
+        '.cm-content .cm-md-h3 .cm-md-details-chevron': { '--chev': '0.55' },
+        '.cm-md-details-handle': {
+            display: 'inline-block',
+            boxSizing: 'border-box',
+            width: '16px',
+            height: '1em',
+            lineHeight: '1',
+            marginLeft: '-36px',
+            marginRight: '20px',
+            verticalAlign: '-0.16em',
+            cursor: 'pointer',
+            userSelect: 'none',
+            color: 'var(--color-text-secondary)',
+            opacity: '0',
+        },
+        // Same box rule as the arrow (1em tall, bottom 0.16em under the baseline), so both centres
+        // sit at the middle of the title text.
+        '.cm-md-details-handle svg': {
+            display: 'block',
+            height: '0.8em',
+            width: '0.5em',
+            margin: '0.1em auto 0',
+            fill: 'currentColor',
+        },
+        '.cm-md-details-title-line:hover .cm-md-details-handle, .cm-md-details-handle:focus-visible': {
+            opacity: '0.8',
         },
         '.cm-md-callout-line': {
             margin: '0',
             padding: '0 12px 0 16px',
             borderLeft: 'none',
+        },
+        // The ::: lines are hidden (or dimmed while the cursor is in the callout); as short bands
+        // they give the box Notion-like inner padding instead of a full empty line each, and the
+        // band keeps its height when the dimmed markup shows, so nothing moves on click.
+        '.cm-md-callout-fence': {
+            fontSize: '11px',
+            lineHeight: '16px',
         },
         '.cm-md-callout-line-first': {
             borderRadius: 'var(--surface-radius) var(--surface-radius) 0 0',
@@ -507,6 +744,10 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
         },
         '.cm-md-callout-content-first': {
             position: 'relative',
+        },
+        // Built-in types draw an icon on the first content line; every content line starts after
+        // it, so a second line does not slide back under the icon. Other types have no icon.
+        '.cm-md-callout-content.cm-md-callout-info, .cm-md-callout-content.cm-md-callout-warning, .cm-md-callout-content.cm-md-callout-error, .cm-md-callout-content.cm-md-callout-success': {
             paddingLeft: '36px',
         },
         '.cm-md-callout-empty': {
@@ -527,46 +768,39 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
         '.cm-md-callout-neutral': {
             backgroundColor: 'color-mix(in srgb, var(--color-surface-panel) 70%, var(--color-surface-default))',
         },
-        '.cm-md-callout-content-first.cm-md-callout-warning::before': {
-            content: '"\\26A0"',
+        // One drawn icon per built-in type (16px, coloured by its status token), centred where the
+        // text starts after it. Drawn, not text glyphs: the glyphs mixed a letter "i" with emoji.
+        '.cm-md-callout-content-first.cm-md-callout-info::before, .cm-md-callout-content-first.cm-md-callout-warning::before, .cm-md-callout-content-first.cm-md-callout-error::before, .cm-md-callout-content-first.cm-md-callout-success::before': {
+            content: '""',
             position: 'absolute',
-            left: '14px',
+            left: '12px',
             top: '50%',
+            width: '16px',
+            height: '16px',
             transform: 'translateY(-50%)',
-            fontSize: '15px',
-            lineHeight: '1',
+            maskPosition: 'center',
+            maskRepeat: 'no-repeat',
+            maskSize: 'contain',
         },
         '.cm-md-callout-content-first.cm-md-callout-info::before': {
-            content: '"\\2139"',
-            position: 'absolute',
-            left: '14px',
-            top: '50%',
-            transform: 'translateY(-50%)',
-            fontSize: '15px',
-            lineHeight: '1',
-            color: 'var(--color-status-info)',
+            backgroundColor: 'var(--color-status-info)',
+            maskImage: CALLOUT_ICONS.info,
+        },
+        '.cm-md-callout-content-first.cm-md-callout-warning::before': {
+            backgroundColor: 'var(--color-status-warning)',
+            maskImage: CALLOUT_ICONS.warning,
         },
         '.cm-md-callout-content-first.cm-md-callout-error::before': {
-            content: '"\\2717"',
-            position: 'absolute',
-            left: '14px',
-            top: '50%',
-            transform: 'translateY(-50%)',
-            fontSize: '15px',
-            lineHeight: '1',
-            color: 'var(--color-status-error)',
-            fontWeight: '700',
+            backgroundColor: 'var(--color-status-error)',
+            maskImage: CALLOUT_ICONS.error,
         },
         '.cm-md-callout-content-first.cm-md-callout-success::before': {
-            content: '"\\2713"',
-            position: 'absolute',
-            left: '14px',
-            top: '50%',
-            transform: 'translateY(-50%)',
-            fontSize: '15px',
-            lineHeight: '1',
-            color: 'var(--color-status-success)',
-            fontWeight: '700',
+            backgroundColor: 'var(--color-status-success)',
+            maskImage: CALLOUT_ICONS.success,
+        },
+        // A title written on the opener (`::: info Read this`) shows as the callout's first line.
+        '.cm-md-callout-title': {
+            fontWeight: '600',
         },
         '.cm-md-callout-type-toolbar': {
             display: 'inline-flex',
@@ -601,7 +835,7 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             // plain paragraph text); a small fixed inset once nested (set by
             // getListColumnMetrics in revealDecorations.ts), so the dot doesn't
             // sit flush against the cascade boundary (the parent's own text).
-            marginLeft: 'var(--list-marker-inset, 4px)',
+            marginLeft: 'var(--list-marker-inset, 0px)',
             borderRadius: '50%',
             backgroundColor: 'var(--color-text-primary)',
             verticalAlign: 'middle',
@@ -619,7 +853,7 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             display: 'none',
         },
         '.cm-md-task-checkbox': {
-            marginLeft: 'var(--list-marker-inset, 4px)',
+            marginLeft: 'var(--list-marker-inset, 0px)',
             verticalAlign: 'middle',
             cursor: 'pointer',
             accentColor: 'var(--color-action)',
@@ -666,7 +900,13 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             position: 'relative',
             top: '-3.3px',
         },
+        // Fixed-width slot, label pushed to its right edge: a label wider than the step (say "10.")
+        // overflows to the LEFT into the margin, so its text stays in the list's column.
         '.cm-md-list-marker-slot-numeric': {
+            display: 'inline-flex',
+            justifyContent: 'flex-end',
+            width: 'var(--list-col, 0px)',
+            whiteSpace: 'nowrap',
             textAlign: 'right',
             top: '-3px',
         },
@@ -674,17 +914,20 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             textDecoration: 'line-through',
             color: 'var(--color-text-secondary)',
         },
+        // A box exactly one line tall with the rule drawn through its middle: centred between
+        // the text above and below in any font (a middle-aligned border sat 6px high, and
+        // middle alignment alone still sits on the lowercase midline, not the line's).
         '.cm-md-hr-widget': {
             display: 'inline-block',
             width: '100%',
-            height: '0',
-            boxSizing: 'content-box',
-            padding: '6px 0',
+            height: '1lh',
+            boxSizing: 'border-box',
+            padding: '0',
             border: 'none',
-            borderTop: '1px solid var(--color-text-secondary)',
+            background: 'linear-gradient(var(--color-text-secondary), var(--color-text-secondary)) center / 100% 1px no-repeat',
             opacity: '0.6',
             cursor: 'text',
-            verticalAlign: 'middle',
+            verticalAlign: 'top',
         },
         // Slash menu styling lives in resources/shared/menuPanel.css (shared with settings panel).
         '.cm-lintRange-error': {

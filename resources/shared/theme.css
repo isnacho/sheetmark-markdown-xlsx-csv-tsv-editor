@@ -54,7 +54,9 @@
     --color-text-on-action: var(--palette-white);
     --color-text-link: var(--palette-blue-500);
     --color-text-code: var(--palette-blue-500);
-    --color-toolbar-icon: var(--palette-icon-muted);
+    /* Every toolbar icon, drawn or text (H1, AB), in one colour: the muted grey pulled halfway
+       toward the text colour, so the small text icons reach 4.5:1 in light, dark and VS Code themes. */
+    --color-toolbar-icon: color-mix(in srgb, var(--palette-icon-muted) 50%, var(--palette-neutral-900));
 
     --color-surface-default: var(--palette-neutral-50);
     --color-surface-raised: var(--palette-neutral-100);
@@ -125,6 +127,9 @@
     --space-3: 12px;
     --space-4: 16px;
     --space-5: 20px;
+    /* Motion: one short duration for UI feedback (menus, toasts, hovers) */
+    --motion-fast: 120ms;
+    --motion-ease: ease;
     --settings-panel-min-width: 360px;
 
     /* Shared menu panel (settings gear panel, slash / menu, …) */
@@ -195,7 +200,7 @@ body.dark-mode {
     --color-text-on-action: var(--palette-white);
     --color-text-link: var(--palette-blue-400);
     --color-text-code: var(--palette-blue-400);
-    --color-toolbar-icon: var(--palette-icon-muted);
+    --color-toolbar-icon: color-mix(in srgb, var(--palette-icon-muted) 50%, var(--palette-neutral-900));
 
     --color-surface-default: var(--palette-neutral-950);
     --color-surface-raised: var(--palette-neutral-100);
@@ -304,7 +309,7 @@ body.vscode-theme {
     --color-text-on-action: var(--vscode-button-foreground, #ffffff);
     --color-text-link: var(--vscode-textLink-foreground, var(--color-action));
     --color-text-code: var(--vscode-textPreformat-foreground, var(--color-text-primary));
-    --color-toolbar-icon: var(--palette-icon-muted);
+    --color-toolbar-icon: color-mix(in srgb, var(--palette-icon-muted) 50%, var(--palette-neutral-900));
 
     --color-surface-default: var(--palette-neutral-50);
     --color-surface-raised: var(--palette-neutral-100);
@@ -680,6 +685,9 @@ body:not(.sticky-toolbar-enabled) .toolbar {
 
 .toolbar-group-start {
     flex: 1 1 auto;
+    /* Without this a flex item never shrinks below its buttons, so a long start group (the
+       spreadsheet in edit mode) ran under the end group instead of scrolling. */
+    min-width: 0;
     overflow-x: auto;
     overflow-y: visible;
     scrollbar-width: thin;
@@ -818,6 +826,9 @@ body:not(.sticky-toolbar-enabled) .toolbar {
     opacity: 1;
     visibility: visible;
     transform: translateY(0);
+    /* Visible at once when opening, so the input can take focus in the same tick (a transitioning
+       `visibility` is still hidden then and focus() is ignored). Closing keeps the fade. */
+    transition: opacity 0.2s ease, transform 0.2s ease, visibility 0s;
 }
 
 body:not(.sticky-toolbar-enabled) .search-overlay,
@@ -919,4 +930,36 @@ body:not(.sticky-toolbar-enabled) #tableContainer {
     height: auto;
     max-height: none;
     overflow: visible;
+}
+
+/* Keyboard focus ring for the small controls that had none (or only the browser's default):
+   VS Code's focus colour, outside the control so it never covers its icon. */
+.cm-md-details-chevron:focus-visible,
+.cm-md-details-handle:focus-visible,
+.cm-md-fence-copy-btn:focus-visible,
+.cm-md-mermaid-zoom-btn:focus-visible,
+.cm-md-mermaid-mode-select:focus-visible,
+.cm-md-mermaid-error-edit:focus-visible,
+.cm-md-callout-type-select:focus-visible,
+.cm-md-table-context-item:focus-visible,
+.search-nav-btn:focus-visible,
+.search-close-btn:focus-visible,
+.disk-diff-nav-btn:focus-visible,
+.toast-actions button:focus-visible {
+    outline: 2px solid var(--vscode-focusBorder, var(--palette-blue-500));
+    outline-offset: 1px;
+}
+
+/* Reduced motion (an OS setting): no animated movement anywhere in either editor. Transitions
+   still end in the same state, just at once, so nothing that waits for one is left hanging. */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        transition-delay: 0s !important;
+        scroll-behavior: auto !important;
+    }
 }

@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import { VERSION_HISTORY_RETENTION_MS, VERSION_HISTORY_SNAPSHOT_DEBOUNCE_MS, getVersionHistoryFile, pickVersionHistoryEntry } from './shared/versionHistory';
-import { createMarkdownPreferences, type MarkdownPreferences } from './shared/preferenceStore';
+import { createMarkdownPreferences, sanitizeDetailsOpenState, type MarkdownPreferences } from './shared/preferenceStore';
 import { createCspNonce } from './shared/webviewCsp';
 import { renderMarkdownHtml } from './shared/webviewHtml';
 import { createSerialQueue, type SerialQueue } from './shared/serialQueue';
@@ -237,6 +237,7 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                 workspaceFolderUri: workspaceFolderUri(),
                 tableColumnWidths: this.prefs.tableColumnWidths.get(currentUri),
                 frontmatterPanelCollapsed: this.prefs.frontmatterPanelCollapsed.get(currentUri),
+                detailsOpenState: this.prefs.detailsOpenState.get(currentUri),
                 mermaidPreviewMode: this.prefs.mermaidPreviewMode.get(),
                 calloutDefaultType: this.prefs.calloutDefaultType.get(),
             });
@@ -427,6 +428,14 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                             await this.prefs.frontmatterPanelCollapsed.set(currentUri, !!message.collapsed);
                         } catch (err) {
                             vscode.window.showErrorMessage(`Error saving frontmatter panel state: ${err}`);
+                        }
+                        break;
+
+                    case 'saveDetailsOpenState':
+                        try {
+                            await this.prefs.detailsOpenState.set(currentUri, sanitizeDetailsOpenState(message.state));
+                        } catch (err) {
+                            vscode.window.showErrorMessage(`Error saving toggle state: ${err}`);
                         }
                         break;
 

@@ -404,7 +404,9 @@ export function onSaveResult(m: MessageOf<HostToMarkdownWebview, 'saveResult'>) 
     state.isSaving = false;
     setButtonsEnabled(true);
     if (m.ok) {
-        showToast(m.isAutosave ? 'Autosaved' : 'Saved');
+        if (!m.isAutosave) {
+            showToast('Saved');
+        }
         if (state.pendingSaveContent !== null) {
             state.originalContent = state.pendingSaveContent;
         }

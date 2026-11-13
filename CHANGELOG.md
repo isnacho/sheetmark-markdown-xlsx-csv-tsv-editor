@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Markdown Preview Edit: the find box (Cmd/Ctrl+F) now says "Find in document" instead of "Search in preview...", and screen readers announce it by that name.
 - Markdown Preview Edit: code blocks show a small language label instead of their ``` lines, as in Notion. Click the label to edit the language; the ``` marks show, dimmed, only while the cursor is on that line, and nothing moves when they appear.
 - Markdown Preview Edit: clicking into a heading no longer pushes its text to the right. The `#` marks now appear in the margin to the left of the heading (except in toggle titles, where the arrow sits).
 - Markdown Preview Edit: an image whose file is missing or not loaded yet shows only its placeholder, without the browser's broken-picture icon above it.

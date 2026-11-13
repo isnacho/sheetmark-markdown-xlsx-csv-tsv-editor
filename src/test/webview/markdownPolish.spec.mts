@@ -367,3 +367,10 @@ test('a code block shows a language label instead of its ``` markers, and reveal
     assert.ok(Math.abs(onOpener.openerHeight - idle.openerHeight) <= 0.5, `opener line height changed ${idle.openerHeight} -> ${onOpener.openerHeight}`);
     assert.ok(Math.abs(onOpener.closerHeight - idle.closerHeight) <= 0.5, `closer line height changed ${idle.closerHeight} -> ${onOpener.closerHeight}`);
 });
+
+// @@F24
+test('the search box says what it does: find in this document', async () => {
+    await openDoc('Some text.\n');
+    assert.equal(await webview.page.getAttribute('#searchInput', 'placeholder'), 'Find in document');
+    assert.equal(await webview.page.getAttribute('#searchInput', 'aria-label'), 'Find in document');
+});

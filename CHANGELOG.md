@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Markdown Preview Edit: toggles work from the keyboard. Cmd/Ctrl+Enter in a toggle's title opens or closes it, as in Notion; the toggle arrow and its handle can be reached with Tab and used with Enter or Space. These and other small controls (copy, diagram zoom, callout type, table menu, find and toast buttons) now show a clear focus ring in VS Code's focus colour.
 - Markdown Preview Edit: tables, images and Mermaid diagrams inside a toggle are now indented with the toggle's text, like everything else in it. Before, they sat at the toggle's left edge and looked as if they were outside it.
 - Markdown Preview Edit: the text-style toolbar buttons (H1, H2, H3, AB, ab, Ab) are now darker in light themes and lighter in dark ones, so their small labels are easy to read (they were below the 4.5:1 contrast that small text needs).
 - Markdown Preview Edit: in a narrow window the formatting toolbar now wraps onto a second row, so every button stays visible. Before, the last button was cut in half and the rest were hidden off the edge.

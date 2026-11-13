@@ -93,13 +93,23 @@ class ChevronWidget extends WidgetType {
         el.setAttribute('role', 'button');
         el.setAttribute('aria-label', this.open ? 'Collapse toggle' : 'Expand toggle');
         el.setAttribute('aria-expanded', String(this.open));
+        el.tabIndex = 0;
         // A drawn triangle, not a text glyph: a glyph's box is off-centre, so rotating it would make the arrow shift.
         el.innerHTML = '<svg viewBox="0 0 8 10" aria-hidden="true"><polygon points="1,1 7,5 1,9" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>';
+        const toggle = () => {
+            const block = findBlock(view, this.id);
+            if (block) { setOpen(view, block, !this.open); }
+        };
         el.addEventListener('mousedown', (event) => {
             event.preventDefault();
             event.stopPropagation();
-            const block = findBlock(view, this.id);
-            if (block) { setOpen(view, block, !this.open); }
+            toggle();
+        });
+        el.addEventListener('keydown', (event) => {
+            if (event.key !== 'Enter' && event.key !== ' ') { return; }
+            event.preventDefault();
+            event.stopPropagation();
+            toggle();
         });
         return el;
     }
@@ -114,12 +124,20 @@ class HandleWidget extends WidgetType {
         el.className = 'cm-md-details-handle';
         el.setAttribute('role', 'button');
         el.setAttribute('aria-label', 'Toggle options');
+        el.setAttribute('aria-haspopup', 'menu');
+        el.tabIndex = 0;
         // Six drawn dots (Notion's grip), centred like the arrow's triangle; a text glyph such as
         // the vertical ellipsis sits low in its box.
         el.innerHTML = '<svg viewBox="0 0 10 16" aria-hidden="true">'
             + [3, 8, 13].map(y => `<circle cx="3" cy="${y}" r="1.5"/><circle cx="7" cy="${y}" r="1.5"/>`).join('')
             + '</svg>';
         el.addEventListener('mousedown', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            showToggleMenu(view, this.id, el.getBoundingClientRect());
+        });
+        el.addEventListener('keydown', (event) => {
+            if (event.key !== 'Enter' && event.key !== ' ') { return; }
             event.preventDefault();
             event.stopPropagation();
             showToggleMenu(view, this.id, el.getBoundingClientRect());
@@ -392,7 +410,16 @@ function deleteNearToggle(view: EditorView): boolean {
     return true;
 }
 
+/** Cmd/Ctrl+Enter in a toggle's title opens or closes it (as in Notion). */
+function toggleFromTitle(view: EditorView): boolean {
+    const block = titleBlockAt(view, view.state.selection.main.head);
+    if (!block) { return false; }
+    setOpen(view, block, !isDetailsOpen(block, view.state.field(detailsOpenField)));
+    return true;
+}
+
 const detailsKeymap = Prec.highest(keymap.of([
+    { key: 'Mod-Enter', run: toggleFromTitle },
     { key: 'Enter', run: enterInTitle },
     { key: 'Backspace', run: backspaceNearToggle },
     { key: 'Delete', run: deleteNearToggle },

@@ -622,3 +622,36 @@ test('a table inside a toggle is indented with the toggle body text', async () =
     });
     assert.ok(Math.abs(m.table - m.text) <= 1, `table left ${m.table} vs toggle body text ${m.text}`);
 });
+
+// @@F21
+test('toggles work from the keyboard: arrow and handle take focus with a ring, Cmd/Ctrl+Enter in the title', async () => {
+    await openDoc('Para.\n\n<details open>\n<summary>\n\nA toggle\n\n</summary>\n\nBody text.\n\n</details>\n\nAfter.\n');
+    const expanded = () => webview.page.getAttribute('.cm-md-details-chevron', 'aria-expanded');
+    assert.equal(await expanded(), 'true');
+    // Cmd/Ctrl+Enter with the cursor in the title closes and reopens it.
+    await line('A toggle').click();
+    await webview.page.keyboard.press('ControlOrMeta+Enter');
+    await webview.page.waitForTimeout(100);
+    assert.equal(await expanded(), 'false');
+    await webview.page.keyboard.press('ControlOrMeta+Enter');
+    await webview.page.waitForTimeout(100);
+    assert.equal(await expanded(), 'true');
+    // The arrow is focusable, shows a focus ring, and Enter toggles it.
+    await webview.page.keyboard.press('Shift');
+    await webview.page.focus('.cm-md-details-chevron');
+    const ring = await webview.page.evaluate(() => {
+        const el = document.activeElement!;
+        return { cls: el.className, outline: getComputedStyle(el).outlineStyle };
+    });
+    assert.match(ring.cls, /cm-md-details-chevron/);
+    assert.equal(ring.outline, 'solid', 'no focus ring on the toggle arrow');
+    await webview.page.keyboard.press('Enter');
+    await webview.page.waitForTimeout(100);
+    assert.equal(await expanded(), 'false');
+    // The handle opens its menu from the keyboard.
+    await webview.page.focus('.cm-md-details-handle');
+    await webview.page.keyboard.press('Enter');
+    await webview.page.waitForSelector('.cm-md-details-menu:not(.hidden)', { timeout: 2000 });
+    await webview.page.keyboard.press('Escape');
+    await line('After').click();
+});

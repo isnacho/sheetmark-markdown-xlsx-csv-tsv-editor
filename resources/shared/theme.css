@@ -927,6 +927,24 @@ body:not(.sticky-toolbar-enabled) #tableContainer {
     overflow: visible;
 }
 
+/* Keyboard focus ring for the small controls that had none (or only the browser's default):
+   VS Code's focus colour, outside the control so it never covers its icon. */
+.cm-md-details-chevron:focus-visible,
+.cm-md-details-handle:focus-visible,
+.cm-md-fence-copy-btn:focus-visible,
+.cm-md-mermaid-zoom-btn:focus-visible,
+.cm-md-mermaid-mode-select:focus-visible,
+.cm-md-mermaid-error-edit:focus-visible,
+.cm-md-callout-type-select:focus-visible,
+.cm-md-table-context-item:focus-visible,
+.search-nav-btn:focus-visible,
+.search-close-btn:focus-visible,
+.disk-diff-nav-btn:focus-visible,
+.toast-actions button:focus-visible {
+    outline: 2px solid var(--vscode-focusBorder, var(--palette-blue-500));
+    outline-offset: 1px;
+}
+
 /* Reduced motion (an OS setting): no animated movement anywhere in either editor. Transitions
    still end in the same state, just at once, so nothing that waits for one is left hanging. */
 @media (prefers-reduced-motion: reduce) {

@@ -714,7 +714,7 @@ export function cm6Theme(): ReturnType<typeof EditorView.theme> {
             margin: '0.1em auto 0',
             fill: 'currentColor',
         },
-        '.cm-md-details-title-line:hover .cm-md-details-handle': {
+        '.cm-md-details-title-line:hover .cm-md-details-handle, .cm-md-details-handle:focus-visible': {
             opacity: '0.8',
         },
         '.cm-md-callout-line': {

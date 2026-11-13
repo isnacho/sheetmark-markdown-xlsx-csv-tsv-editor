@@ -521,3 +521,21 @@ test('a callout shows the title written on its opener, and every type has a draw
         assert.match(icon, /^""\|url\("data:image\/svg\+xml.*\|16px$/, `${type} icon: ${icon}`);
     }
 });
+
+// @@PICKER
+test('the callout type picker follows the cursor into another callout without an edit', async () => {
+    await openDoc('Para.\n\n::: info\nFirst callout.\n:::\n\n::: warning\nSecond callout.\n:::\n\nAfter.\n');
+    const picker = () => webview.page.evaluate(() => {
+        const selects = [...document.querySelectorAll('.cm-md-callout-type-select')] as HTMLSelectElement[];
+        return selects.map(s => s.value);
+    });
+    await line('First callout').click();
+    await webview.page.waitForTimeout(100);
+    assert.deepEqual(await picker(), ['info']);
+    await line('Second callout').click();
+    await webview.page.waitForTimeout(100);
+    assert.deepEqual(await picker(), ['warning']);
+    await line('After').click();
+    await webview.page.waitForTimeout(100);
+    assert.deepEqual(await picker(), []);
+});

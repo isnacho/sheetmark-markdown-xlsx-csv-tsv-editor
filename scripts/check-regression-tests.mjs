@@ -105,6 +105,8 @@ const MUTATIONS = [
       find: 'to: titleFrom ?? block.openTo, value: fenceMark', replace: 'to: block.openTo, value: fenceMark' },
     { id: 'md-callout-drawn-icons', file: 'src/webviews/md/livePreview/cm6Theme.ts',
       find: 'maskImage: CALLOUT_ICONS.info,', replace: "maskImage: 'none', outline: CALLOUT_ICONS.info," },
+    { id: 'md-callout-picker-follows-cursor', file: 'src/webviews/md/livePreview/calloutWidget.ts',
+      find: 'if (!tr.docChanged && !tr.selection) {', replace: 'if (!tr.docChanged) {' },
     { id: 'mermaid-lazy-load', file: 'src/webviews/md/livePreview/mermaidWidget.ts',
       find: "import { Icons } from '../../shared/icons';", replace: "import { Icons } from '../../shared/icons';\nimport * as eagerMermaid from 'mermaid';\nvoid eagerMermaid;" },
     { id: 'resize-listeners-once', file: 'src/webviews/spreadsheet/spreadsheetWebview.ts',

@@ -102,8 +102,11 @@ function buildFromState(state: EditorState): DecorationSet {
 
 export const calloutWidgetField = StateField.define<DecorationSet>({
     create: (state) => buildFromState(state),
+    // Rebuilt on cursor moves too, so the picker follows the cursor into another callout (it used
+    // to stay on the first one until the text changed). Same block and type: the widget's `eq`
+    // keeps its DOM.
     update(value, tr) {
-        if (!tr.docChanged) {
+        if (!tr.docChanged && !tr.selection) {
             return value;
         }
         return buildFromState(tr.state);

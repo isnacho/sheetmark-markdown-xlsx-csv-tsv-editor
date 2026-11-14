@@ -4,8 +4,8 @@ Sheetmark is a VS Code extension with custom editors for spreadsheets (`.xlsx`/`
 Markdown (`.md`). It started as a fork of upstream `xlsx-viewer` v1.9.91 and is published as
 `iggyinc.sheetmark`. TypeScript, bundled with esbuild. Read this file fully before editing.
 
-**Verify every change with `npm run verify`** (types for all three tsconfigs, lint, unit tests,
-bundle). It must end green before you call work done. See §5.
+**Verify every change with `npm run verify`** (types for all four tsconfig projects, lint, unit
+tests, bundle, webview tests). It must end green before you call work done. See §5.
 
 Deep references (load on demand):
 
@@ -69,7 +69,8 @@ is untrusted. Details: [.docs/dev/MESSAGE-PROTOCOL.md](.docs/dev/MESSAGE-PROTOCO
   and ancestor directories (local images). Anything else is silently blocked.
 - **Do not bump `@types/vscode` on its own.** It is pinned to the `engines.vscode` floor (1.67) so
   tsc rejects VS Code APIs that older supported versions lack. Raising it means raising `engines` too.
-- **Do not change esbuild output paths** without updating the providers, which hardcode
+- **Do not change esbuild output paths** without updating
+  [src/shared/webviewHtml.ts](src/shared/webviewHtml.ts), which hardcodes
   `dist/spreadsheet/spreadsheetWebview.js` and `dist/md/mdWebview.js`.
 - **Do not stage, stash, reset or reformat files you did not change.** The owner often has
   uncommitted work in the tree. Commit only your own files, by path.

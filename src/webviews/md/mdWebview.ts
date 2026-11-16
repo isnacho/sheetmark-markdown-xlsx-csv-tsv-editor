@@ -11,6 +11,7 @@ import { Utils } from '../shared/utils';
 import { Icons } from '../shared/icons';
 import { vscode, debounce } from '../shared/common';
 import { FeedbackModal } from '../shared/feedbackModal';
+import { isInsidePopup } from '../shared/popupFocus';
 import {
     mountLivePreview,
     isLivePreviewActive,
@@ -71,7 +72,6 @@ import { confirmDiscardAndReload } from './dialogs';
 import { sanitizeMarkdownCopyLinkArtifacts, stripHeadingCopyLinkArtifacts } from './copyLinkArtifacts';
 import {
     applyReloadedContent,
-    cancelEdit,
     canReloadFromDisk,
     doSave,
     getActiveEditorContent,
@@ -1794,8 +1794,16 @@ document.addEventListener('keydown', (e) => {
         return;
     }
 
+    // This listener runs in the capture phase, before any popup sees the key: Escape inside an open
+    // menu or dialog belongs to that popup (popupFocus.ts) and must not also close the find bar or
+    // lightbox behind it.
+    if (e.key === 'Escape' && isInsidePopup(e.target)) {
+        return;
+    }
+
     if (e.key === 'Escape') {
-        // Close lightbox first, then search, then edit mode
+        // Close lightbox first, then search. Escape never discards edits: it used to revert the
+        // document to the last saved text, with no undo.
         const lightbox = $('lightboxOverlay');
         if (lightbox && lightbox.classList.contains('active')) {
             e.preventDefault();
@@ -1806,11 +1814,6 @@ document.addEventListener('keydown', (e) => {
         if (searchOverlay && searchOverlay.classList.contains('active')) {
             e.preventDefault();
             closeSearch();
-            return;
-        }
-        if (state.isEditMode) {
-            e.preventDefault();
-            cancelEdit();
             return;
         }
     }

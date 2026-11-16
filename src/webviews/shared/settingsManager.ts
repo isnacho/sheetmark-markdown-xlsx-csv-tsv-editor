@@ -1,5 +1,6 @@
  
 import { Icons } from './icons';
+import { DialogKeyboard } from './popupFocus';
 import {
     groupMenuSections,
     renderMenuCheckboxRow,
@@ -32,6 +33,7 @@ export class SettingsManager {
     private panelOriginalNext: Node | null = null;
     private onReposition?: () => void;
     private escapeHandler: ((e: KeyboardEvent) => void) | null = null;
+    private keyboard: DialogKeyboard | null = null;
 
     constructor(buttonId: string, panelId: string, cancelId: string, settings: SettingDefinition[], onReposition?: () => void) {
         this.openBtn = document.getElementById(buttonId);
@@ -107,6 +109,16 @@ export class SettingsManager {
     private init() {
         if (!this.openBtn || !this.panel) {return;}
 
+        this.openBtn.setAttribute('aria-haspopup', 'dialog');
+        this.openBtn.setAttribute('aria-expanded', 'false');
+        if (this.panel.id) { this.openBtn.setAttribute('aria-controls', this.panel.id); }
+
+        // Escape inside the panel closes it and puts focus back on the gear button.
+        this.keyboard = new DialogKeyboard(this.panel, {
+            modal: false,
+            requestClose: () => this.closePanel({ restoreFocus: true }),
+        });
+
         this.openBtn.addEventListener('click', () => {
             if (this.panel!.classList.contains('hidden')) {
                 this.openPanel();
@@ -116,9 +128,12 @@ export class SettingsManager {
         });
 
         if (this.cancelBtn) {
-            this.cancelBtn.addEventListener('click', () => this.closePanel());
+            // `detail` is 0 when the button was pressed from the keyboard rather than clicked.
+            this.cancelBtn.addEventListener('click', (e) => this.closePanel({ restoreFocus: e.detail === 0 }));
         }
 
+        // Escape with focus elsewhere in the page (the panel opened by mouse, then the user clicked
+        // back into the document) still closes it, without moving focus.
         this.escapeHandler = (e: KeyboardEvent) => {
             if (e.key !== 'Escape' || this.panel!.classList.contains('hidden')) {return;}
             e.preventDefault();
@@ -214,6 +229,7 @@ export class SettingsManager {
         this.panel!.classList.remove('hidden');
         this.panel!.classList.add('floating');
         this.panel!.setAttribute('aria-hidden', 'false');
+        this.openBtn?.setAttribute('aria-expanded', 'true');
         document.body.classList.add('settings-open');
 
         const container = document.querySelector('.toolbar');
@@ -232,12 +248,19 @@ export class SettingsManager {
         };
         window.addEventListener('resize', this.repositionHandlers);
         window.addEventListener('scroll', this.repositionHandlers, true);
+        this.keyboard?.opened();
     }
 
-    private closePanel() {
+    /**
+     * `restoreFocus` sends focus back to the gear button. Only for keyboard closes: after a mouse
+     * close, a focused gear would keep a hover-revealed toolbar on screen.
+     */
+    private closePanel(options: { restoreFocus?: boolean } = {}) {
+        if (this.panel!.classList.contains('hidden')) {return;}
         this.panel!.classList.add('hidden');
         this.panel!.classList.remove('floating');
         this.panel!.setAttribute('aria-hidden', 'true');
+        this.openBtn?.setAttribute('aria-expanded', 'false');
         document.body.classList.remove('settings-open');
 
         const container = document.querySelector('.toolbar');
@@ -283,5 +306,7 @@ export class SettingsManager {
             window.removeEventListener('scroll', this.repositionHandlers, true);
             this.repositionHandlers = null;
         }
+
+        this.keyboard?.closed({ restore: options.restoreFocus === true });
     }
 }

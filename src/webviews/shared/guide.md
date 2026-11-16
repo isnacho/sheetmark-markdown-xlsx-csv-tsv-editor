@@ -15,6 +15,7 @@ the spreadsheet webview (xlsx, csv, tsv) and the Markdown webview. A change here
 | `toolbarLayout.ts` | `applyToolbarLayout`: applies the sticky/non-sticky toolbar setting via `ToolbarManager` |
 | `menuPanel.ts` | Markup helpers for menu-panel rows (settings gear panel, slash menu icons): `renderMenuCheckboxRow`, `renderMenuActionRow`, `renderMenuSelectRow`, `renderMenuSection`, `renderMenuPanelShell` |
 | `delayedTitleTooltip.ts` | Delayed hover tooltips for icon-only controls: `wireDelayedToolbarTooltips`, `applyDelayedTitle`, `setDelayedTitleText` |
+| `popupFocus.ts` | Keyboard and focus for popups, after the WAI-ARIA / Radix patterns: `MenuKeyboard` (role `menu`, arrows/Home/End between items, Escape and Tab close, focus goes back on close; construct once per singleton menu, call `opened()` after building items and `closed()` from the hide function), `DialogKeyboard` (role `dialog`, focus moves to the dialog itself on open, Escape closes, `modal` keeps Tab inside, focus goes back on close), `isInsidePopup` (page-wide shortcuts skip keys pressed in an open popup). Use these for any new menu or dialog |
 | `feedbackModal.ts` | `FeedbackModal`: feedback dialog; sends `getSystemDetails`, `submitFeedback`, `openExternal`; handles `systemDetails`, `feedbackResult` |
 | `utils.ts` | `Utils` static helpers: `Utils.$` (element by id), `Utils.showToast`, `Utils.escapeHtml` |
 | `icons.ts` | `Icons`: SVG icon strings for toolbars and menus |

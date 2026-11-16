@@ -357,7 +357,7 @@ class BlockDragView implements PluginValue {
         event.preventDefault();
         event.stopPropagation();
         if (block.kind === 'toggle' && block.toggleId) {
-            showToggleMenu(this.view, block.toggleId, this.grip.getBoundingClientRect());
+            showToggleMenu(this.view, block.toggleId, this.grip.getBoundingClientRect(), { fromKeyboard: true });
         } else {
             this.select(block, event.shiftKey);
         }

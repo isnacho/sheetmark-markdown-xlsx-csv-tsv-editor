@@ -2,11 +2,14 @@ import type { CommonHostToWebview } from '../../protocol/common';
 import { vscode } from './common';
 import { Utils } from './utils';
 import { Icons } from './icons';
+import { DialogKeyboard } from './popupFocus';
 
 export class FeedbackModal {
     private static isInitialized = false;
     private static container: HTMLElement | null = null;
     private static overlay: HTMLElement | null = null;
+    private static keyboard: DialogKeyboard | null = null;
+    private static hideTimer: ReturnType<typeof setTimeout> | null = null;
 
     public static initialize() {
         if (this.isInitialized) {return;}
@@ -20,8 +23,8 @@ export class FeedbackModal {
         this.container.className = 'feedback-modal hidden';
         this.container.innerHTML = `
             <div class="feedback-header">
-                <h2>Help & Feedback</h2>
-                <button class="feedback-close" title="Close">${Icons.Cancel}</button>
+                <h2 id="feedbackTitle">Help &amp; Feedback</h2>
+                <button type="button" class="feedback-close" title="Close" aria-label="Close">${Icons.Cancel}</button>
             </div>
             <div class="feedback-body">
                 <div class="github-section">
@@ -33,13 +36,13 @@ export class FeedbackModal {
                 
                 <form id="feedbackForm">
                     <div class="form-group">
-                        <label>System Information</label>
+                        <label for="feedbackSystemDetails">System Information</label>
                         <textarea id="feedbackSystemDetails" name="entry.1173041044" readonly rows="4"></textarea>
                     </div>
 
                     <div class="form-group">
-                        <label>What brings you here today? *</label>
-                        <div class="radio-group">
+                        <label id="feedbackReasonLabel">What brings you here today? *</label>
+                        <div class="radio-group" role="radiogroup" aria-labelledby="feedbackReasonLabel">
                             <label class="radio-label">
                                 <input type="radio" name="entry.500729934" value="Found a bug/issue" required>
                                 <span>Found a bug/issue</span>
@@ -56,13 +59,13 @@ export class FeedbackModal {
                     </div>
 
                     <div class="form-group">
-                        <label>Please describe your issue or suggestion *</label>
-                        <textarea name="entry.1328099188" required rows="5" placeholder="Describe your issue, bug, feedback, or feature suggestion..."></textarea>
+                        <label for="feedbackDescription">Please describe your issue or suggestion *</label>
+                        <textarea id="feedbackDescription" name="entry.1328099188" required rows="5" placeholder="Describe your issue, bug, feedback, or feature suggestion..."></textarea>
                     </div>
 
                     <div class="form-group">
-                        <label>How satisfied are you overall? *</label>
-                        <div class="linear-scale">
+                        <label id="feedbackSatisfactionLabel">How satisfied are you overall? *</label>
+                        <div class="linear-scale" role="radiogroup" aria-labelledby="feedbackSatisfactionLabel">
                             <span>Very Dissatisfied</span>
                             <label><input type="radio" name="entry.2123855879" value="1" required> 1</label>
                             <label><input type="radio" name="entry.2123855879" value="2" required> 2</label>
@@ -74,8 +77,8 @@ export class FeedbackModal {
                     </div>
 
                     <div class="form-group">
-                        <label>Okay if I follow up?</label>
-                        <input type="email" name="entry.1729939963" placeholder="your.email@example.com (optional)">
+                        <label for="feedbackEmail">Okay if I follow up?</label>
+                        <input id="feedbackEmail" type="email" name="entry.1729939963" placeholder="your.email@example.com (optional)">
                     </div>
                 </form>
             </div>
@@ -86,6 +89,11 @@ export class FeedbackModal {
             </div>
         `;
         document.body.appendChild(this.container);
+        this.keyboard = new DialogKeyboard(this.container, {
+            modal: true,
+            labelledBy: 'feedbackTitle',
+            requestClose: () => this.hide(),
+        });
 
         this.bindEvents();
 
@@ -177,8 +185,13 @@ export class FeedbackModal {
         // Request system details
         vscode.postMessage({ command: 'getSystemDetails' });
 
+        if (this.hideTimer) {
+            clearTimeout(this.hideTimer);
+            this.hideTimer = null;
+        }
         this.overlay?.classList.remove('hidden');
         this.container?.classList.remove('hidden');
+        this.keyboard?.opened();
 
         // Allow animation
         setTimeout(() => {
@@ -188,10 +201,13 @@ export class FeedbackModal {
     }
 
     public static hide() {
+        if (!this.container || this.container.classList.contains('hidden')) { return; }
         this.overlay?.classList.remove('active');
-        this.container?.classList.remove('active');
+        this.container.classList.remove('active');
+        this.keyboard?.closed();
 
-        setTimeout(() => {
+        this.hideTimer = setTimeout(() => {
+            this.hideTimer = null;
             this.overlay?.classList.add('hidden');
             this.container?.classList.add('hidden');
         }, 300); // match transition duration

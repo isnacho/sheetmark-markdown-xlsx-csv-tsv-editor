@@ -1,10 +1,15 @@
 // Confirm dialogs for the Markdown webview. Runtime: WEBVIEW (browser).
 
 import { Utils } from '../shared/utils';
+import { DialogKeyboard } from '../shared/popupFocus';
 
 // VS Code webviews are sandboxed without `allow-modals` — window.confirm()/alert()/
 // prompt() are silently blocked, so a real dialog is built here reusing the shared
 // .feedback-overlay/.feedback-modal pattern (same one FeedbackModal uses).
+// Focus moves to the dialog itself (not a button), so a keystroke meant for the editor
+// cannot press "Keep mine" or "Overwrite" by accident; Escape is the passive cancel.
+let dialogCount = 0;
+
 export type ModalOutcome = 'confirm' | 'secondary' | 'cancel';
 
 export function confirmModal(
@@ -18,9 +23,10 @@ export function confirmModal(
         overlay.className = 'feedback-overlay reload-confirm-overlay';
         const modal = document.createElement('div');
         modal.className = 'feedback-modal';
+        const titleId = `confirmModalTitle${++dialogCount}`;
         modal.innerHTML = `
             <div class="feedback-header">
-                <h2>${Utils.escapeHtml(title)}</h2>
+                <h2 id="${titleId}">${Utils.escapeHtml(title)}</h2>
             </div>
             <div class="feedback-body" style="padding: 20px 24px 24px 24px; gap: 20px;">
                 <p style="margin: 0; font-size: 13.5px; color: var(--color-text-primary); line-height: 1.5;">
@@ -34,16 +40,22 @@ export function confirmModal(
         `;
         document.body.appendChild(overlay);
         document.body.appendChild(modal);
+        let settled = false;
+        const keyboard = new DialogKeyboard(modal, { modal: true, labelledBy: titleId, requestClose: () => finish('cancel') });
+        keyboard.opened();
         requestAnimationFrame(() => {
             overlay.classList.add('active');
             modal.classList.add('active');
         });
 
-        const finish = (result: ModalOutcome) => {
+        function finish(result: ModalOutcome): void {
+            if (settled) { return; }
+            settled = true;
             overlay.remove();
             modal.remove();
+            keyboard.closed();
             resolve(result);
-        };
+        }
         overlay.addEventListener('click', () => finish('cancel'));
         modal.querySelector('.reload-confirm-cancel')?.addEventListener('click', () => finish(secondaryLabel ? 'secondary' : 'cancel'));
         modal.querySelector('.reload-confirm-ok')?.addEventListener('click', () => finish('confirm'));

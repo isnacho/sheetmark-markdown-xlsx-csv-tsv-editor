@@ -1030,12 +1030,20 @@ body:not(.sticky-toolbar-enabled) #tableContainer {
 .cm-md-mermaid-error-edit:focus-visible,
 .cm-md-callout-type-select:focus-visible,
 .cm-md-table-context-item:focus-visible,
+.header-context-item:focus-visible,
 .search-nav-btn:focus-visible,
 .search-close-btn:focus-visible,
 .disk-diff-nav-btn:focus-visible,
 .toast-actions button:focus-visible {
     outline: 2px solid var(--vscode-focusBorder, var(--palette-blue-500));
     outline-offset: 1px;
+}
+
+/* Menus and dialogs take focus on their own container when they open (popupFocus.ts), so the
+   arrow keys and Escape reach them. The container draws no ring; the controls inside do. */
+[role="menu"]:focus,
+[role="dialog"]:focus {
+    outline: none;
 }
 
 /* Reduced motion (an OS setting): no animated movement anywhere in either editor. Transitions

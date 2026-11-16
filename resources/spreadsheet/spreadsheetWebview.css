@@ -1223,7 +1223,9 @@ body.edit-mode td[contenteditable="true"] *::-moz-selection {
     cursor: pointer;
 }
 
-.header-context-item:hover {
+/* An item reached with the arrow keys highlights like a hovered one. */
+.header-context-item:hover,
+.header-context-item:focus-visible {
     background: var(--color-interactive-row-hover);
 }
 

@@ -92,6 +92,7 @@ export {
 import type { VisibleRange } from './revealDecorations';
 import { Icons } from '../../shared/icons';
 import { sanitizeHtml } from '../../shared/sanitizeHtml';
+import { MenuKeyboard } from '../../shared/popupFocus';
 
 function remapColumnWidths(widths: readonly number[], fromCol: number, toCol: number): readonly number[] {
     if (fromCol === toCol || fromCol < 0 || toCol < 0 || fromCol >= widths.length) { return widths; }
@@ -1636,11 +1637,13 @@ function wireActiveCell(td: HTMLElement, view: EditorView, active: ActiveCell, g
 // ever be open at a time, and keeping it outside any TableWidget's own `wrap`
 // means it survives that widget's DOM being torn down/rebuilt mid-session.
 let tableContextMenuEl: HTMLElement | null = null;
+let tableContextMenuKeys: MenuKeyboard | null = null;
 
 function hideTableContextMenu(): void {
     if (!tableContextMenuEl) { return; }
     tableContextMenuEl.classList.add('hidden');
     tableContextMenuEl.innerHTML = '';
+    tableContextMenuKeys?.closed();
 }
 
 function ensureTableContextMenu(): HTMLElement {
@@ -1649,6 +1652,7 @@ function ensureTableContextMenu(): HTMLElement {
     menu.className = 'cm-md-table-context-menu hidden';
     document.body.appendChild(menu);
     tableContextMenuEl = menu;
+    tableContextMenuKeys = new MenuKeyboard(menu, '.cm-md-table-context-item', hideTableContextMenu);
     document.addEventListener('mousedown', (event) => {
         if (!tableContextMenuEl || tableContextMenuEl.classList.contains('hidden')) { return; }
         if (event.target instanceof Node && !tableContextMenuEl.contains(event.target)) { hideTableContextMenu(); }
@@ -1709,6 +1713,7 @@ function showTableContextMenu(event: MouseEvent, view: EditorView, tableIndex: n
     const rect = menu.getBoundingClientRect();
     menu.style.left = Math.min(Math.max(8, event.clientX), window.innerWidth - rect.width - 8) + 'px';
     menu.style.top = Math.min(Math.max(8, event.clientY), window.innerHeight - rect.height - 8) + 'px';
+    tableContextMenuKeys?.opened();
 }
 
 export class TableWidget extends WidgetType {

@@ -176,6 +176,25 @@ test('a toggle moves as a whole; right-click on its grip opens the toggle menu',
     await webview.page.keyboard.press('Escape');
 });
 
+test('Enter on a toggle grip opens its menu with the first item focused; Escape returns focus to the grip', async () => {
+    await openDoc(TOGGLE);
+    await hoverControls('A toggle title');
+    await webview.page.locator('.cm-md-block-grip').focus();
+    await webview.page.keyboard.press('Enter');
+    await webview.page.waitForSelector('.cm-md-details-menu:not(.hidden)', { timeout: 2000 });
+    const active = () => webview.page.evaluate(() => ({
+        text: document.activeElement?.textContent?.trim(),
+        role: document.activeElement?.getAttribute('role'),
+        grip: document.activeElement?.classList.contains('cm-md-block-grip'),
+    }));
+    assert.deepEqual(await active(), { text: 'Turn into text', role: 'menuitem', grip: false });
+    await webview.page.keyboard.press('ArrowDown');
+    assert.match((await active()).text ?? '', /^Start (open|closed)$/);
+    await webview.page.keyboard.press('Escape');
+    await webview.page.waitForSelector('.cm-md-details-menu.hidden', { state: 'attached' });
+    assert.equal((await active()).grip, true);
+});
+
 test('a table shows the block grip on its header row; body rows keep the row grip', async () => {
     await openDoc('Before.\n\n| H1 | H2 |\n| --- | --- |\n| c1 | c2 |\n| d1 | d2 |\n\nAfter.\n');
     await webview.page.waitForSelector('.cm-md-table-widget thead', { timeout: 5000 });

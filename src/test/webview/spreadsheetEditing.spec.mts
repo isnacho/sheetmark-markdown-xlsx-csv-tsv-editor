@@ -121,6 +121,27 @@ test('header menu Sort A to Z reorders rows (requestAllRows + filterAndSortRows)
     await sheet.stop();
 });
 
+test('header menu: arrow keys move between its items, not the grid selection; Escape closes it', async () => {
+    const sheet = await bootSpreadsheet({ values: [['a', '1'], ['b', '2'], ['c', '3']] });
+    await sheet.page.click('th.col-header[data-col="0"]', { button: 'right' });
+    await sheet.page.waitForSelector('#headerContextMenu:not(.hidden)');
+    assert.equal(await sheet.page.locator('#headerContextMenu').getAttribute('role'), 'menu');
+    const selection = () => sheet.page.evaluate(() => [...document.querySelectorAll('td.selected, td.active-cell')].map(td => `${td.getAttribute('data-row')}:${td.getAttribute('data-col')}`).join(','));
+    const before = await selection();
+    const items = await sheet.page.$$eval('#headerContextMenu .header-context-item', els => els.map(el => el.textContent?.trim()));
+    const active = () => sheet.page.evaluate(() => document.activeElement?.textContent?.trim());
+
+    await sheet.page.keyboard.press('ArrowDown');
+    assert.equal(await active(), items[0]);
+    await sheet.page.keyboard.press('ArrowDown');
+    assert.equal(await active(), items[1]);
+    assert.equal(await selection(), before, 'the grid selection did not move');
+
+    await sheet.page.keyboard.press('Escape');
+    await sheet.page.waitForSelector('#headerContextMenu.hidden', { state: 'attached' });
+    await sheet.stop();
+});
+
 test('undo and redo a text edit (Ctrl+Z / Ctrl+Y), and Save sends the redone value', async () => {
     const sheet = await bootSpreadsheet({ values: VALUES });
     await sheet.page.click('#toggleTableEditButton');

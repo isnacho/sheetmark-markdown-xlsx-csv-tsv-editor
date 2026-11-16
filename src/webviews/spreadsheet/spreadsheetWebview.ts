@@ -58,6 +58,7 @@ import { getMutableRowsSnapshot, getEffectiveRowHeightFromValue, invalidateRowMe
 import { recordLogicalStyleEdit, recordCellStyleEdit, cloneCellStyleEdit } from './styleEdits';
 import { captureCellUndoState, captureWorksheetStateSnapshot, pushEditUndoEntry, pushSheetUndoEntry, undoEditAction, redoEditAction, pushSingleCellUndo, initUndo } from './undo';
 import { hideLinkTooltip, showImagePreview, hideImagePreview, initializeHyperlinkHover } from './linkPreview';
+import { MenuKeyboard } from '../shared/popupFocus';
 import { confirmMergePreserveTopLeftContent, hideStyleModeNoticePopup, showStyleModeNoticePopup } from './notices';
 import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateRatingCellPresentation, updateDateCellPresentation, areInteractiveControlsEnabled, applyInteractiveControlState, hideInsertControlPopup, showInsertControlPopup, hideDropdownOptionsPopup, getDropdownOptionsFromCell, editDropdownOptionsForCell, initInteractiveControls } from './interactiveControls';
 
@@ -621,6 +622,8 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
         persistStructureChange();
     }
 
+    let headerContextMenuKeys: MenuKeyboard | null = null;
+
     function ensureHeaderContextMenu() {
         if (state.headerContextMenuEl) {return state.headerContextMenuEl;}
 
@@ -629,13 +632,16 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
         menu.className = 'header-context-menu hidden';
         document.body.appendChild(menu);
         state.headerContextMenuEl = menu;
+        headerContextMenuKeys = new MenuKeyboard(menu, '.header-context-item', hideHeaderContextMenu);
         return menu;
     }
+
 
     function hideHeaderContextMenu() {
         if (!state.headerContextMenuEl) {return;}
         state.headerContextMenuEl.classList.add('hidden');
         state.headerContextMenuEl.innerHTML = '';
+        headerContextMenuKeys?.closed();
     }
 
     function showHeaderContextMenu(e: MouseEvent, targetType: 'row' | 'column', targetIndexZeroBased: number) {
@@ -966,6 +972,7 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
         const top = Math.min(Math.max(8, e.clientY), window.innerHeight - rect.height - 8);
         menu.style.left = left + 'px';
         menu.style.top = top + 'px';
+        headerContextMenuKeys?.opened();
     }
 
     function showCellContextMenu(e: MouseEvent, cell: HTMLElement) {
@@ -1058,6 +1065,7 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
         const top = Math.min(Math.max(8, e.clientY), window.innerHeight - rect.height - 8);
         menu.style.left = left + 'px';
         menu.style.top = top + 'px';
+        headerContextMenuKeys?.opened();
     }
 
     function captureEditSelectionRange() {

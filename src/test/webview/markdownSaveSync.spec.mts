@@ -96,6 +96,32 @@ test('an external change to a dirty editor asks; Load disk changes then Discard 
     await webview.close();
 });
 
+test('the confirm dialog takes focus, so typing does not reach the editor; Escape cancels and returns focus', async () => {
+    const webview = await boot('one\n');
+    await typeAtEndOfFirstLine(webview, ' local');
+    await webview.send({ command: 'diskChangedExternally', ...payload('two\n') } satisfies HostToMarkdownWebview);
+    await clickToastAction(webview, 'Load disk changes');
+    const dialog = webview.page.locator('.feedback-modal:has(.reload-confirm-ok)');
+    await dialog.waitFor();
+    assert.equal(await dialog.getAttribute('role'), 'dialog');
+    assert.equal(await dialog.getAttribute('aria-modal'), 'true');
+    assert.equal(await dialog.evaluate(el => document.activeElement === el), true);
+
+    // Neither reaches the editor behind, and Space or Enter cannot press a dialog button by accident.
+    await webview.page.keyboard.type('x ');
+    await webview.page.keyboard.press('Enter');
+    assert.equal(await dialog.count(), 1);
+    assert.equal(await editorText(webview), 'one local');
+
+    await webview.page.keyboard.press('Escape');
+    await dialog.waitFor({ state: 'detached' });
+    assert.equal(await editorText(webview), 'one local');
+    assert.deepEqual(await webview.postedOf('saveMarkdown'), []);
+    // Focus goes back to the toast button that opened the dialog.
+    assert.equal(await webview.page.evaluate(() => document.activeElement?.textContent), 'Load disk changes');
+    await webview.close();
+});
+
 test('Keep local version writes the local text with force', async () => {
     const webview = await boot('one\n');
     await typeAtEndOfFirstLine(webview, ' local');

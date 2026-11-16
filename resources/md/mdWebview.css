@@ -1565,11 +1565,14 @@ body.preview-edit-mode .markdown-preview .cm-md-table-widget table.md-table td:e
     min-width: 0;
 }
 
-.cm-md-table-context-item:hover:not(:disabled) {
+/* An item reached with the arrow keys highlights like a hovered one. */
+.cm-md-table-context-item:hover:not(:disabled),
+.cm-md-table-context-item:focus-visible {
     background: var(--color-interactive-row-hover);
 }
 
-.cm-md-table-context-item:hover:not(:disabled) .cm-md-table-context-icon {
+.cm-md-table-context-item:hover:not(:disabled) .cm-md-table-context-icon,
+.cm-md-table-context-item:focus-visible .cm-md-table-context-icon {
     color: var(--color-text-primary);
 }
 

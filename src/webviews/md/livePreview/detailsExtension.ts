@@ -14,6 +14,7 @@ import { findDetailsBlocks, isDetailsOpen } from './detailsTypes';
 import type { DetailsBlock, Range } from './detailsTypes';
 import { computeDeleteToggle, computeSetStartOpen, computeUnwrapToggle, structureEdit } from './detailsEditing';
 import { toggleInputHandler } from './toggleInputRules';
+import { MenuKeyboard } from '../../shared/popupFocus';
 
 /** Open/closed choices by block id; ids absent here use the block's own `open` attribute. */
 export type DetailsOpenState = Readonly<Record<string, boolean>>;
@@ -124,8 +125,13 @@ class ChevronWidget extends WidgetType {
 // ----- Menu (singleton on document.body, same look as the table context menu) -----
 
 let menuEl: HTMLElement | null = null;
+let menuKeys: MenuKeyboard | null = null;
 
-function hideToggleMenu(): void { menuEl?.classList.add('hidden'); }
+function hideToggleMenu(): void {
+    if (!menuEl || menuEl.classList.contains('hidden')) { return; }
+    menuEl.classList.add('hidden');
+    menuKeys?.closed();
+}
 
 function ensureToggleMenu(): HTMLElement {
     if (menuEl) { return menuEl; }
@@ -133,6 +139,7 @@ function ensureToggleMenu(): HTMLElement {
     menu.className = 'cm-md-table-context-menu cm-md-details-menu hidden';
     document.body.appendChild(menu);
     menuEl = menu;
+    menuKeys = new MenuKeyboard(menu, '.cm-md-table-context-item', hideToggleMenu);
     document.addEventListener('mousedown', (event) => {
         if (menuEl && !menuEl.classList.contains('hidden') && event.target instanceof Node && !menuEl.contains(event.target)) { hideToggleMenu(); }
     });
@@ -147,7 +154,7 @@ function dispatchStructure(view: EditorView, spec: TransactionSpec): void {
 }
 
 /** The toggle's options menu, opened from its block grip (right-click, or Enter on the focused grip). */
-export function showToggleMenu(view: EditorView, id: string, anchor: DOMRect): void {
+export function showToggleMenu(view: EditorView, id: string, anchor: DOMRect, options: { fromKeyboard?: boolean } = {}): void {
     const block = findBlock(view, id);
     if (!block) { return; }
     const menu = ensureToggleMenu();
@@ -189,6 +196,7 @@ export function showToggleMenu(view: EditorView, id: string, anchor: DOMRect): v
     const rect = menu.getBoundingClientRect();
     menu.style.left = `${Math.min(Math.max(8, anchor.left), window.innerWidth - rect.width - 8)}px`;
     menu.style.top = `${Math.min(Math.max(8, anchor.bottom + 4), window.innerHeight - rect.height - 8)}px`;
+    menuKeys?.opened({ focusFirstItem: options.fromKeyboard });
 }
 
 // ----- Decorations -----

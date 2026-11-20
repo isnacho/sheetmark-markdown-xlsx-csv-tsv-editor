@@ -2887,6 +2887,9 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
 
     function renderVirtualRows(startIndex: number, endIndex: number, rowsData: any[], cacheRows = true) {
         if (state.isRendering) {return;}
+        // Rendering replaces the rows, including a cell that is being typed in: commit it first so the
+        // typing is recorded and not lost.
+        if (state.isCellEditing) {exitCellEditMode();}
         state.isRendering = true;
 
         const tbody = document.querySelector('#xlsxTable tbody');
@@ -3211,6 +3214,7 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
 
     function renderWorksheet(index: number) {
         if (!state.worksheetsMeta || !state.worksheetsMeta.length) {return;}
+        if (state.isCellEditing) {exitCellEditMode();}
 
         showLoading();
 
@@ -4400,6 +4404,13 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
                     return;
                 }
             } else {
+                // Inside a cell being edited, Home and End move the caret (the browser would scroll the grid instead,
+                // which removes the cell and loses what was typed).
+                if (e.key === 'Home' || e.key === 'End') {
+                    e.preventDefault();
+                    window.getSelection()?.modify(e.shiftKey ? 'extend' : 'move', e.key === 'End' ? 'forward' : 'backward', (e.ctrlKey || e.metaKey) ? 'documentboundary' : 'lineboundary');
+                    return;
+                }
                 if (e.key === 'Enter') {
                     e.preventDefault();
                     if (e.shiftKey) {

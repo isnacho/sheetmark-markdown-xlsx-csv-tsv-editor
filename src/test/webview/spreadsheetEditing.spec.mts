@@ -135,6 +135,47 @@ test('bug: an edited cell scrolled out of view and back is still saved', async (
     await sheet.stop();
 });
 
+const MANY_ROWS = Array.from({ length: 400 }, (_, i) => [`r${i + 1}a`, `r${i + 1}b`]);
+
+async function startTyping(sheet: SpreadsheetFixture, typed: string) {
+    await sheet.page.waitForTimeout(600); // a big sheet keeps loading rows for a moment
+    await sheet.page.click(sheet.cell(1, 0));
+    await sheet.page.keyboard.press('F2');
+    await sheet.page.keyboard.press('ArrowRight'); // collapses the selected text to its end
+    await sheet.page.keyboard.type(typed);
+}
+
+test('bug: End and Home inside a cell being edited move the caret, not the grid', async () => {
+    const sheet = await bootSpreadsheet({ values: MANY_ROWS });
+    await startTyping(sheet, 'X');
+    await sheet.page.keyboard.press('Home');
+    await sheet.page.keyboard.type('H');
+    await sheet.page.keyboard.press('End');
+    await sheet.page.keyboard.type('Y');
+    const scrollTop = await sheet.page.evaluate(() => ((document.querySelector('#tableContainer .table-scroll') || document.getElementById('content')) as HTMLElement).scrollTop);
+    assert.equal(scrollTop, 0, 'the grid did not scroll');
+    await sheet.page.keyboard.press('Enter');
+    assert.equal(await sheet.page.locator(sheet.cell(1, 0)).textContent(), 'Hr2aXY');
+    await sheet.page.click('#saveEditsButton');
+    const save = await sheet.waitForPosted('saveXlsxEdits');
+    assert.deepEqual(save.edits, [{ row: 2, col: 1, value: 'Hr2aXY' }]);
+    await sheet.stop();
+});
+
+test('bug: scrolling a cell that is being edited out of view commits it instead of losing it', async () => {
+    const sheet = await bootSpreadsheet({ values: MANY_ROWS });
+    await startTyping(sheet, 'X');
+    await sheet.page.mouse.move(300, 300);
+    await sheet.page.mouse.wheel(0, 6000);
+    await sheet.page.waitForFunction(() => !document.querySelector('td[data-row="1"][data-col="0"]'));
+    assert.equal(await sheet.page.locator('td[contenteditable="true"]').count(), 0, 'no cell is left half-edited');
+    await sheet.page.waitForFunction(() => !(document.getElementById('saveEditsButton') as HTMLButtonElement).disabled);
+    await sheet.page.click('#saveEditsButton');
+    const save = await sheet.waitForPosted('saveXlsxEdits');
+    assert.deepEqual(save.edits, [{ row: 2, col: 1, value: 'r2aX' }]);
+    await sheet.stop();
+});
+
 test('bug: a save result keeps the edits made while the save was in flight', async () => {
     const sheet = await bootSpreadsheet({ values: VALUES, settings: { autoSave: true } });
     await editCell(sheet, 0, 0, '1');

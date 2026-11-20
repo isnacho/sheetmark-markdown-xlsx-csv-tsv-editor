@@ -1,10 +1,10 @@
 // Cell style edits made in the spreadsheet webview: convert toolbar style values to the CSS-like
 // shape the renderer and the host expect (styleToRendererCss, normalizeStyleForStorage), and record
-// them as pending edits (state.pendingCellStyleEdits) plus the cached row data. Runtime: WEBVIEW (browser).
+// them as pending edits (the edit ledger) plus the cached row data. Runtime: WEBVIEW (browser).
 
-import { state } from './state';
 import { getOrCreateRowCellData } from './cellValues';
-import { scheduleAutoSave } from './persistence';
+import { recordChange } from './persistence';
+import { getPendingStyle, setPendingStyle } from './ledger';
 import type { CellStyleEdit } from './components/spreadsheetTypes';
 
 export function styleToRendererCss(style: Record<string, any>): Record<string, any> {
@@ -125,34 +125,37 @@ export function normalizeStyleForStorage(style: Record<string, any>): Record<str
     return stored;
 }
 
-export function updateRowCacheStyle(row: number, col: number, style: Partial<CellStyleEdit>) {
-    const cellData = getOrCreateRowCellData(row, col);
-    if (cellData) {
-        const normalized = styleToRendererCss(style);
-        cellData.style = { ...cellData.style, ...normalized };
-        if ('backgroundColor' in normalized) {
-            cellData.hasDefaultBg = !normalized.backgroundColor;
-        }
-        if ('color' in normalized) {
-            cellData.isDefaultColor = !normalized.color;
-        }
-        if (style.clearFormatting) {
-            cellData.style = {};
-            cellData.hasDefaultBg = true;
-            cellData.isDefaultColor = true;
-        }
+/** Puts a style edit onto a cached cell object (also used for rows fetched again while edits are pending). */
+export function applyStyleToCellData(cellData: any, style: Partial<CellStyleEdit>) {
+    if (!cellData) {return;}
+    const normalized = styleToRendererCss(style);
+    cellData.style = { ...cellData.style, ...normalized };
+    if ('backgroundColor' in normalized) {
+        cellData.hasDefaultBg = !normalized.backgroundColor;
     }
+    if ('color' in normalized) {
+        cellData.isDefaultColor = !normalized.color;
+    }
+    if (style.clearFormatting) {
+        cellData.style = {};
+        cellData.hasDefaultBg = true;
+        cellData.isDefaultColor = true;
+    }
+}
+
+export function updateRowCacheStyle(row: number, col: number, style: Partial<CellStyleEdit>) {
+    applyStyleToCellData(getOrCreateRowCellData(row, col), style);
 }
 
 export function recordLogicalStyleEdit(row: number, col: number, style: Partial<CellStyleEdit>) {
     const rowNum = row + 1;
     const colNum = col + 1;
     const key = rowNum + ':' + colNum;
-    const existing = state.pendingCellStyleEdits.get(key) || { row: rowNum, col: colNum };
+    const existing = getPendingStyle(key) || { row: rowNum, col: colNum };
     const merged = normalizeStyleForStorage({ ...existing, ...style, row: rowNum, col: colNum });
-    state.pendingCellStyleEdits.set(key, merged as CellStyleEdit);
+    setPendingStyle(key, merged as CellStyleEdit);
     updateRowCacheStyle(row, col, style);
-    scheduleAutoSave('format');
+    recordChange('format');
 }
 
 export function recordCellStyleEdit(cell: HTMLElement, style: Partial<CellStyleEdit>) {
@@ -161,11 +164,11 @@ export function recordCellStyleEdit(cell: HTMLElement, style: Partial<CellStyleE
     if (!rowNum || !colNum) {return;}
 
     const key = rowNum + ':' + colNum;
-    const existing = state.pendingCellStyleEdits.get(key) || { row: rowNum, col: colNum };
+    const existing = getPendingStyle(key) || { row: rowNum, col: colNum };
     const merged = normalizeStyleForStorage({ ...existing, ...style, row: rowNum, col: colNum });
-    state.pendingCellStyleEdits.set(key, merged as CellStyleEdit);
+    setPendingStyle(key, merged as CellStyleEdit);
     updateRowCacheStyle(rowNum - 1, colNum - 1, style);
-    scheduleAutoSave('format');
+    recordChange('format');
 }
 
 export function cloneCellStyleEdit(style: CellStyleEdit | null | undefined): CellStyleEdit | null {

@@ -1,13 +1,18 @@
-// Undo/redo for the spreadsheet webview. Two kinds of entries on state.editUndoStack:
-// 'style' (per-cell DOM + pending style snapshots, used for text, formatting and controls) and
-// 'sheet' (whole-worksheet snapshots, used for structure edits, merges, paste and inserted controls).
+// Undo/redo for the spreadsheet webview, one stack pair per sheet. Three kinds of entries:
+// 'style' (per-cell DOM + pending style snapshots, used for text, formatting and controls),
+// 'values' (cell values only: paste and clear) and 'sheet' (whole-worksheet snapshots, used for
+// structure edits, merges and inserted controls). Undoing or redoing records the restored state into
+// the edit ledger and saves it like any other edit, so history survives a save; only 'sheet' entries
+// and formatting that are already on disk are dropped when a save succeeds (dropUnrecoverableUndoEntries),
+// because restoring a snapshot would no longer match the file.
 // Runtime: WEBVIEW (browser).
 
 import { state } from './state';
-import { getCellType, normalizeCellText } from './cellValues';
-import { persistInteractiveControlEdit } from './persistence';
-import type { CellUndoState, WorksheetStateSnapshot } from './components/spreadsheetTypes';
-import { cloneCellData, normalizeRowsAfterStructureChange, cloneWorksheetOps } from './components/spreadsheetSheetDataComponent';
+import { getCellNormalizedValue, normalizeCellText } from './cellValues';
+import { recordCellValue, recordChange } from './persistence';
+import { deletePendingStyle, getPendingStyle, ledger, setPendingStyle } from './ledger';
+import type { CellUndoState, EditUndoEntry, WorksheetStateSnapshot } from './components/spreadsheetTypes';
+import { cloneCellData, normalizeRowsAfterStructureChange } from './components/spreadsheetSheetDataComponent';
 import { getMutableRowsSnapshot, invalidateRowMetrics } from './rowLayout';
 import { cloneCellStyleEdit } from './styleEdits';
 import { applyInteractiveControlState } from './interactiveControls';
@@ -35,9 +40,7 @@ export function captureCellUndoState(cell: HTMLElement): CellUndoState | null {
     if (row < 0 || col < 0 || !rowNum || !colNum) {return null;}
 
     const key = `${rowNum}:${colNum}`;
-    const pendingStyle = state.pendingCellStyleEdits.has(key)
-        ? cloneCellStyleEdit(state.pendingCellStyleEdits.get(key) || null)
-        : null;
+    const pendingStyle = cloneCellStyleEdit(getPendingStyle(key) || null);
     const dropdown = cell.querySelector('.xlsx-cell-dropdown') as HTMLSelectElement | null;
     const dropdownValue = dropdown
         ? normalizeCellText(dropdown.value || '')
@@ -54,7 +57,8 @@ export function captureCellUndoState(cell: HTMLElement): CellUndoState | null {
         dataDropdownValue: dropdownValue,
         dataRatingValue: cell.getAttribute('data-rating-value') || '',
         dataDateValue: cell.getAttribute('data-date-value') || '',
-        pendingStyle
+        pendingStyle,
+        value: getCellNormalizedValue(cell).replace(/\u00a0/g, '')
     };
 }
 
@@ -99,9 +103,15 @@ export function applyCellUndoState(undoState: CellUndoState) {
     }
 
     if (undoState.pendingStyle) {
-        state.pendingCellStyleEdits.set(undoState.key, cloneCellStyleEdit(undoState.pendingStyle)!);
+        setPendingStyle(undoState.key, cloneCellStyleEdit(undoState.pendingStyle)!);
     } else {
-        state.pendingCellStyleEdits.delete(undoState.key);
+        deletePendingStyle(undoState.key);
+    }
+
+    // The restored value goes into the ledger too, so an undo is saved like any other edit.
+    if (undoState.value !== undefined) {
+        const [rowNum, colNum] = undoState.key.split(':').map(Number);
+        recordCellValue(rowNum, colNum, undoState.value);
     }
 }
 
@@ -113,59 +123,90 @@ export function captureWorksheetStateSnapshot(): WorksheetStateSnapshot {
         columnWidths: cloneCellData(state.columnWidths),
         allRowHeights: cloneCellData(state.allRowHeights),
         mergedCells: cloneCellData(state.mergedCells || []),
-        pendingWorksheetOps: cloneWorksheetOps(state.pendingWorksheetOps)
+        pending: ledger.snapshot(state.currentWorksheet)
     };
 }
 
-export function restoreWorksheetStateSnapshot(snapshot: WorksheetStateSnapshot) {
+/** Puts a snapshot's rows and sizes back into `state` (no re-render, the ledger is untouched). */
+export function applyWorksheetSnapshotState(snapshot: WorksheetStateSnapshot) {
     state.totalRows = snapshot.totalRows;
     state.columnCount = snapshot.columnCount;
     state.columnWidths = cloneCellData(snapshot.columnWidths || []);
     state.allRowHeights = cloneCellData(snapshot.allRowHeights || []);
     invalidateRowMetrics();
     state.mergedCells = cloneCellData(snapshot.mergedCells || []);
-    state.pendingWorksheetOps = cloneWorksheetOps(snapshot.pendingWorksheetOps || []);
-
     normalizeRowsAfterStructureChange(cloneCellData(snapshot.rows || []), state.rowCache);
+}
+
+export function restoreWorksheetStateSnapshot(snapshot: WorksheetStateSnapshot) {
+    applyWorksheetSnapshotState(snapshot);
+    ledger.restore(state.currentWorksheet, snapshot.pending);
     hooks.clearSelection();
     hooks.hideHeaderContextMenu();
     hooks.rerenderCurrentSheetFromLocalState();
 }
 
-export function pushEditUndoEntry(entry: { before: CellUndoState[]; after: CellUndoState[] }) {
-    if (!entry.before.length || !entry.after.length) {return;}
-    state.editUndoStack.push({ kind: 'style', before: entry.before, after: entry.after });
+let undoSeq = 0;
+
+/** The sequence number of the most recent undo entry (entries made later have a higher one). */
+export function lastUndoSeq(): number {
+    return undoSeq;
+}
+
+function pushEntry(entry: EditUndoEntry) {
+    state.editUndoStack.push(entry);
     if (state.editUndoStack.length > 100) {
         state.editUndoStack.shift();
     }
     state.editRedoStack.length = 0;
 }
 
+export function pushEditUndoEntry(entry: { before: CellUndoState[]; after: CellUndoState[] }) {
+    if (!entry.before.length || !entry.after.length) {return;}
+    pushEntry({ kind: 'style', seq: ++undoSeq, before: entry.before, after: entry.after });
+}
+
 export function pushSheetUndoEntry(before: WorksheetStateSnapshot, after: WorksheetStateSnapshot) {
-    state.editUndoStack.push({ kind: 'sheet', before, after });
-    if (state.editUndoStack.length > 100) {
-        state.editUndoStack.shift();
+    pushEntry({ kind: 'sheet', seq: ++undoSeq, before, after });
+}
+
+/** Paste and clear: the values of the cells they changed, before and after (1-based addresses). */
+export function pushValuesUndoEntry(before: Array<{ row: number; col: number; value: string }>, after: Array<{ row: number; col: number; value: string }>) {
+    if (!before.length) {return;}
+    pushEntry({ kind: 'values', seq: ++undoSeq, before, after });
+}
+
+function applyValuesEntry(values: Array<{ row: number; col: number; value: string }>) {
+    values.forEach(({ row, col, value }) => recordCellValue(row, col, value));
+    hooks.rerenderCurrentSheetFromLocalState();
+}
+
+function applyEntry(entry: EditUndoEntry, direction: 'before' | 'after') {
+    if (entry.kind === 'style') {
+        entry[direction].forEach((undoState: CellUndoState) => applyCellUndoState(undoState));
+    } else if (entry.kind === 'values') {
+        applyValuesEntry(entry[direction]);
+    } else {
+        restoreWorksheetStateSnapshot(entry[direction]);
     }
-    state.editRedoStack.length = 0;
+}
+
+export function canUndo(): boolean {
+    return state.editUndoStack.length > 0;
+}
+
+export function canRedo(): boolean {
+    return state.editRedoStack.length > 0;
 }
 
 export function undoEditAction() {
     const entry = state.editUndoStack.pop();
     if (!entry) {return false;}
 
-    if (entry.kind === 'style') {
-        entry.before.forEach((undoState: CellUndoState) => applyCellUndoState(undoState));
-    } else {
-        restoreWorksheetStateSnapshot(entry.before);
-    }
-
+    applyEntry(entry, 'before');
     state.editRedoStack.push(entry);
     hooks.applyFindHighlightsInVisibleCells();
-
-    if (!state.isEditMode && entry.kind === 'style') {
-        syncControlEditsAfterUndoRedo(entry.before);
-    }
-
+    recordChange(entry.kind === 'sheet' ? 'structure' : 'text');
     return true;
 }
 
@@ -173,41 +214,64 @@ export function redoEditAction() {
     const entry = state.editRedoStack.pop();
     if (!entry) {return false;}
 
-    if (entry.kind === 'style') {
-        entry.after.forEach((undoState: CellUndoState) => applyCellUndoState(undoState));
-    } else {
-        restoreWorksheetStateSnapshot(entry.after);
-    }
-
+    applyEntry(entry, 'after');
     state.editUndoStack.push(entry);
     hooks.applyFindHighlightsInVisibleCells();
-
-    if (!state.isEditMode && entry.kind === 'style') {
-        syncControlEditsAfterUndoRedo(entry.after);
-    }
-
+    recordChange(entry.kind === 'sheet' ? 'structure' : 'text');
     return true;
-}
-
-export function syncControlEditsAfterUndoRedo(states: CellUndoState[]) {
-    if (state.isEditMode || state.isVersionPreviewMode || !Array.isArray(states) || !states.length) {
-        return;
-    }
-
-    states.forEach((undoState) => {
-        const cell = document.querySelector(`td[data-row="${undoState.row}"][data-col="${undoState.col}"]`) as HTMLElement | null;
-        if (!cell) {
-            return;
-        }
-
-        const cellType = getCellType(cell);
-        if (cellType === 'checkbox' || cellType === 'dropdown' || cellType === 'rating' || cellType === 'date') {
-            persistInteractiveControlEdit(cell);
-        }
-    });
 }
 
 export function pushSingleCellUndo(before: CellUndoState | null, after: CellUndoState | null) {
     if (!before || !after) {return;}
     pushEditUndoEntry({ before: [before], after: [after] });
+}
+
+/** Switching sheets: each sheet keeps its own undo and redo history. */
+export function switchUndoSheet(fromSheet: number, toSheet: number) {
+    if (fromSheet === toSheet) {return;}
+    state.undoStacksBySheet.set(fromSheet, { undo: state.editUndoStack, redo: state.editRedoStack });
+    const next = state.undoStacksBySheet.get(toSheet);
+    state.editUndoStack = next ? next.undo : [];
+    state.editRedoStack = next ? next.redo : [];
+    state.undoStacksBySheet.delete(toSheet);
+}
+
+/** The file was reloaded from disk (or restored): no sheet has history any more. */
+export function resetUndoHistory() {
+    state.editUndoStack = [];
+    state.editRedoStack = [];
+    state.undoStacksBySheet.clear();
+}
+
+function changesFormatting(entry: EditUndoEntry): boolean {
+    if (entry.kind !== 'style') {return false;}
+    return entry.before.some((before, index) => {
+        const after = entry.after[index];
+        return !after
+            || before.styleAttr !== after.styleAttr
+            || JSON.stringify(before.pendingStyle) !== JSON.stringify(after.pendingStyle);
+    });
+}
+
+/**
+ * A save of `sheetIndex` succeeded. Entries made up to `upToSeq` that restore a snapshot ('sheet') or
+ * formatting can no longer be undone correctly, because what they would restore is not on disk any
+ * more and no inverse operation exists yet. They are dropped so Undo disables instead of misleading.
+ * Text and control edits stay undoable: undoing them records the old value, which is then saved.
+ */
+export function dropUnrecoverableUndoEntries(sheetIndex: number, upToSeq: number) {
+    const keep = (entry: EditUndoEntry) => entry.seq > upToSeq || !(entry.kind === 'sheet' || changesFormatting(entry));
+    const filterStacks = (stacks: { undo: EditUndoEntry[]; redo: EditUndoEntry[] }) => {
+        stacks.undo = stacks.undo.filter(keep);
+        stacks.redo = stacks.redo.filter(keep);
+    };
+    if (sheetIndex === state.currentWorksheet) {
+        const stacks = { undo: state.editUndoStack, redo: state.editRedoStack };
+        filterStacks(stacks);
+        state.editUndoStack = stacks.undo;
+        state.editRedoStack = stacks.redo;
+    } else {
+        const stacks = state.undoStacksBySheet.get(sheetIndex);
+        if (stacks) {filterStacks(stacks);}
+    }
 }

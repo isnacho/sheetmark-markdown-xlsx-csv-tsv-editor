@@ -63,7 +63,8 @@ export async function bootSpreadsheet(options: {
             ...options.initVirtualTable,
             ...overrides,
         } satisfies HostToSpreadsheetWebview);
-        await webview.page.waitForSelector(cell(rows.length - 1, columnCount - 1), { timeout: 10000 });
+        // Big sheets are virtualized: only the first rows exist in the page.
+        await webview.page.waitForSelector(cell(Math.min(rows.length - 1, 15), columnCount - 1), { timeout: 10000 });
     };
 
     await webview.send({ command: 'initSettings', settings } satisfies HostToSpreadsheetWebview);

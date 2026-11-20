@@ -5,9 +5,7 @@ export interface CreateXlsxToolbarButtonsOptions {
     onFind: () => void;
     textColorIcon: string;
     bgColorIcon: string;
-    onToggleTableEdit: () => void;
     onSaveTableEdits: () => void;
-    onCancelTableEdits: () => void;
     onInsertControl: () => void;
     onFormatBold: () => void;
     onFormatItalic: () => void;
@@ -26,32 +24,16 @@ export function createXlsxToolbarButtons(options: CreateXlsxToolbarButtonsOption
         {
             id: 'refreshButton',
             icon: Icons.Refresh,
-            tooltip: 'Reload file from disk',
+            tooltip: 'Reload from Disk',
             cls: 'icon-only',
             onClick: options.onRefresh
         },
         {
-            id: 'toggleTableEditButton',
-            icon: '',
-            label: 'Edit Table',
-            tooltip: 'Edit XLSX directly in the table (text only)',
-            onClick: options.onToggleTableEdit
-        },
-        {
             id: 'saveTableEditsButton',
             icon: Icons.Save,
-            tooltip: 'Save table edits',
+            tooltip: 'Save Changes (Ctrl/Cmd+S)',
             cls: 'icon-only',
-            hidden: true,
             onClick: options.onSaveTableEdits
-        },
-        {
-            id: 'cancelTableEditsButton',
-            icon: Icons.Cancel,
-            label: 'Cancel',
-            tooltip: 'Cancel table edits',
-            hidden: true,
-            onClick: options.onCancelTableEdits
         },
         {
             id: 'formatBoldButton',

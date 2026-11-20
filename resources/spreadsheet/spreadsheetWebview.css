@@ -1377,7 +1377,7 @@ body.spacious-cells.sticky-header-enabled tbody tr.header-row th.row-header {
    PLAIN VIEW MODE
    Removes all XLSX styling to display like CSV/TSV
    ========================= */
-body.plain-view table {
+body.data-only table {
     border-collapse: separate;
     width: max-content;
     min-width: 0;
@@ -1392,8 +1392,8 @@ body.plain-view table {
     overflow-anchor: none;
 }
 
-body.plain-view.spacious-cells #xlsxTable th,
-body.plain-view.spacious-cells #xlsxTable td {
+body.data-only.spacious-cells #xlsxTable th,
+body.data-only.spacious-cells #xlsxTable td {
     height: 24px;
     line-height: 24px;
     padding: 2px 6px;
@@ -1401,14 +1401,14 @@ body.plain-view.spacious-cells #xlsxTable td {
     font-size: 10.5pt;
 }
 
-body.plain-view th {
+body.data-only th {
     background-color: var(--color-surface-raised);
     font-weight: 500;
     color: var(--color-text-secondary);
     text-align: center;
 }
 
-body.plain-view td {
+body.data-only td {
     background-color: var(--color-surface-default);
     color: var(--color-text-primary);
     font-weight: normal;
@@ -1418,11 +1418,11 @@ body.plain-view td {
     vertical-align: top;
 }
 
-body.plain-view td.merged-cell {
+body.data-only td.merged-cell {
     display: table-cell;
 }
 
-body.plain-view td span.cell-content {
+body.data-only td span.cell-content {
     display: block;
     user-select: none;
     pointer-events: none;
@@ -1430,28 +1430,28 @@ body.plain-view td span.cell-content {
     text-overflow: ellipsis;
 }
 
-body.plain-view.first-row-as-header tbody tr.header-row td {
+body.data-only.first-row-as-header tbody tr.header-row td {
     font-weight: 700;
     background-color: var(--color-surface-raised);
 }
 
-body.plain-view.sticky-header-enabled tbody tr.header-row td,
-body.plain-view.sticky-header-enabled tbody tr.header-row th {
+body.data-only.sticky-header-enabled tbody tr.header-row td,
+body.data-only.sticky-header-enabled tbody tr.header-row th {
     position: sticky;
     top: 24px;
     z-index: 10;
     background-color: var(--color-surface-raised);
 }
 
-body.plain-view.spacious-cells.sticky-header-enabled tbody tr.header-row td,
-body.plain-view.spacious-cells.sticky-header-enabled tbody tr.header-row th {
+body.data-only.spacious-cells.sticky-header-enabled tbody tr.header-row td,
+body.data-only.spacious-cells.sticky-header-enabled tbody tr.header-row th {
     position: sticky;
     top: 28px;
     z-index: 10;
     background-color: var(--color-surface-raised);
 }
 
-body.plain-view.sticky-header-enabled tbody tr.header-row th.row-header {
+body.data-only.sticky-header-enabled tbody tr.header-row th.row-header {
     position: sticky;
     top: 24px;
     left: 0 !important;
@@ -1459,7 +1459,7 @@ body.plain-view.sticky-header-enabled tbody tr.header-row th.row-header {
     background-color: var(--color-surface-raised);
 }
 
-body.plain-view.spacious-cells.sticky-header-enabled tbody tr.header-row th.row-header {
+body.data-only.spacious-cells.sticky-header-enabled tbody tr.header-row th.row-header {
     position: sticky;
     top: 28px;
     left: 0 !important;

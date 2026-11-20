@@ -96,3 +96,21 @@ test('applyStoredMetadataToWorksheet skips an invalid merge instead of failing t
     ] });
     assert.equal(ws.getRow(1).getCell(2).isMerged, true);
 });
+
+test('applyStyleEditToCell applies the CSS-form edits the webview really sends (bug: colours and fonts were never written to the XLSX)', () => {
+    const ws = sheet();
+    const cell = ws.getRow(1).getCell(1);
+    applyStyleEditToCell(cell, {
+        row: 1, col: 1, backgroundColor: '#FFEEAA', color: '#112233', fontWeight: 'bold', fontStyle: 'italic', fontSize: '14pt',
+        textAlign: 'center', whiteSpace: 'pre-wrap', paddingLeft: '16px', textDecorationLine: 'line-through',
+    });
+    assert.equal((cell.fill as ExcelJS.FillPattern).fgColor?.argb, 'FFFFEEAA');
+    assert.equal(cell.font.color?.argb, 'FF112233');
+    assert.equal(cell.font.bold, true);
+    assert.equal(cell.font.italic, true);
+    assert.equal(cell.font.size, 14);
+    assert.equal(cell.font.strike, true);
+    assert.equal(cell.alignment.horizontal, 'center');
+    assert.equal(cell.alignment.wrapText, true);
+    assert.equal(cell.alignment.indent, 2);
+});

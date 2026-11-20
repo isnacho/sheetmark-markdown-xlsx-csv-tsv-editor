@@ -378,7 +378,37 @@ export function applyStoredMetadataToWorksheet(worksheet: Excel.Worksheet, metad
  * Apply one live style edit from the webview (`saveXlsxEdits` `styleEdits[]`, raw format:
  * bgColor, textColor, bold, wrapMode, border flags, ...) to an exceljs cell.
  */
-export function applyStyleEditToCell(cell: Excel.Cell, s: any): void {
+/**
+ * The webview stores style edits in CSS form (`backgroundColor`, `fontWeight`, `textAlign`, `14pt`...).
+ * This adds the logical names `applyStyleEditToCell` reads (`bgColor`, `bold`, `horizontalAlign`...) for any
+ * CSS property that has no logical twin, so both shapes reach the file.
+ */
+export function withLogicalStyleFields(s: any): any {
+    if (!s || typeof s !== 'object') { return s; }
+    const out: any = { ...s };
+    if (out.bgColor === undefined && typeof s.backgroundColor === 'string') { out.bgColor = s.backgroundColor; }
+    if (out.textColor === undefined && typeof s.color === 'string') { out.textColor = s.color; }
+    if (out.bold === undefined && typeof s.fontWeight === 'string') { out.bold = s.fontWeight === 'bold' || Number(s.fontWeight) >= 600; }
+    if (out.italic === undefined && typeof s.fontStyle === 'string') { out.italic = s.fontStyle === 'italic'; }
+    if (out.strike === undefined) {
+        const line = String(s.textDecorationLine ?? s.textDecoration ?? '');
+        if (typeof s.textDecorationLine === 'string' || typeof s.textDecoration === 'string') { out.strike = line.includes('line-through'); }
+    }
+    if (typeof s.fontSize === 'string') {
+        const size = parseFloat(s.fontSize);
+        if (Number.isFinite(size) && size > 0) { out.fontSize = size; }
+    }
+    if (out.horizontalAlign === undefined && typeof s.textAlign === 'string') { out.horizontalAlign = s.textAlign; }
+    if (out.wrapMode === undefined && typeof s.whiteSpace === 'string') { out.wrapMode = s.whiteSpace === 'pre-wrap' ? 'wrap' : 'overflow'; }
+    if (out.indent === undefined && typeof s.paddingLeft === 'string') {
+        const px = parseFloat(s.paddingLeft);
+        if (Number.isFinite(px)) { out.indent = Math.max(0, Math.round(px / 8)); }
+    }
+    return out;
+}
+
+export function applyStyleEditToCell(cell: Excel.Cell, edit: any): void {
+    const s = withLogicalStyleFields(edit);
     if (s?.clearFormatting) {
         (cell as any).fill = undefined;
         (cell as any).font = undefined;

@@ -150,7 +150,6 @@ export function initializeHyperlinkHover() {
     if (!table) {return;}
 
     table.addEventListener('mouseover', (e) => {
-        if (state.isEditMode) {return;}
         const t = e && (e.target as HTMLElement);
         const el = t && t.nodeType === 3 ? t.parentElement : t;
         const cell = el && el.closest ? el.closest('td[data-hyperlink]') : null;
@@ -163,7 +162,6 @@ export function initializeHyperlinkHover() {
     });
 
     table.addEventListener('mouseout', (e) => {
-        if (state.isEditMode) {return;}
         const toEl = e.relatedTarget as HTMLElement;
         if (!toEl) {
             scheduleHideLinkTooltip();

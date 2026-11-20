@@ -26,7 +26,7 @@ function renderRow(cell: Record<string, unknown>, dataOnly = false): Element {
         columnCount: 1,
         columnWidths: [80],
         dataOnly,
-        isEditMode: false,
+        editable: true,
         allowInteractiveControls: true,
     });
     const table = document.createElement('table');

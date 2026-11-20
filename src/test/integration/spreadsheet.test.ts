@@ -195,4 +195,25 @@ suite('Spreadsheet editor (host)', () => {
         assert.strictEqual(workbook.worksheets[0].getRow(2).getCell(1).font?.bold, true);
         assert.strictEqual(workbook.worksheets[0].getRow(1).getCell(2).isMerged, true);
     });
+
+    test('XLSX formatting sent in CSS form (as the webview sends it) is written to the file', async () => {
+        const api = await sheetmark();
+        const book = new Excel.Workbook();
+        book.addWorksheet('Sheet1').addRow(['a', 'b']);
+        const buffer = Buffer.from(await book.xlsx.writeBuffer());
+        const file = path.join(fixtureDir({ 'format.xlsx': buffer }), 'format.xlsx');
+        const editor = await openInSheetmark(api, file, 'xlsxViewer.xlsx');
+
+        await editor.dispatch({
+            command: 'saveXlsxEdits', sheetIndex: 0, edits: [], richEdits: [], operations: [], isAutosave: false,
+            styleEdits: [{ row: 1, col: 1, backgroundColor: '#FFEEAA', fontWeight: 'bold', color: '#112233' }],
+        });
+
+        const saved = new Excel.Workbook();
+        await saved.xlsx.readFile(file);
+        const cell = saved.worksheets[0].getRow(1).getCell(1);
+        assert.strictEqual(cell.font?.bold, true);
+        assert.strictEqual(cell.font?.color?.argb, 'FF112233');
+        assert.strictEqual((cell.fill as Excel.FillPattern | undefined)?.fgColor?.argb, 'FFFFEEAA');
+    });
 });

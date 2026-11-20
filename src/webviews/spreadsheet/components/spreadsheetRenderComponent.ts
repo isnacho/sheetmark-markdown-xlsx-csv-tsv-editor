@@ -186,7 +186,7 @@ export function renderDropdownCellContent(options: DropdownCellContentOptions): 
         + '</span>';
 }
 
-function renderCellContent(cellData: any, dataOnly: boolean, allowInteractiveControls: boolean, isEditMode: boolean): string {
+function renderCellContent(cellData: any, dataOnly: boolean, allowInteractiveControls: boolean, editable: boolean): string {
     const cellType = toCellType(cellData);
     const cellDisplayValue = toCellDisplayValue(cellData);
 
@@ -215,7 +215,7 @@ function renderCellContent(cellData: any, dataOnly: boolean, allowInteractiveCon
             options,
             selectedValue,
             allowInteractiveControls,
-            showEditButton: isEditMode
+            showEditButton: editable
         });
     }
 
@@ -276,7 +276,7 @@ export interface XlsxRowHtmlParams {
     columnCount: number;
     columnWidths: number[];
     dataOnly: boolean;
-    isEditMode: boolean;
+    editable: boolean;
     allowInteractiveControls: boolean;
 }
 
@@ -288,7 +288,7 @@ export function createXlsxRowHtml(params: XlsxRowHtmlParams): string {
         columnCount,
         columnWidths,
         dataOnly,
-        isEditMode,
+        editable,
         allowInteractiveControls
     } = params;
 
@@ -356,7 +356,7 @@ export function createXlsxRowHtml(params: XlsxRowHtmlParams): string {
 
             let classes = [];
             if (!dataOnly && cellData.isMerged) {classes.push('merged-cell');}
-            if (isEditMode) {classes.push('editable-cell');}
+            if (editable) {classes.push('editable-cell');}
             
             if (classes.length > 0) {
                 html += ' class="' + classes.join(' ') + '"';
@@ -373,7 +373,7 @@ export function createXlsxRowHtml(params: XlsxRowHtmlParams): string {
                 html += ' style="' + escapeAttribute(cellStyleStr) + '"';
             }
             html += '>';
-            html += renderCellContent(cellData, dataOnly, allowInteractiveControls, isEditMode);
+            html += renderCellContent(cellData, dataOnly, allowInteractiveControls, editable);
             html += '</td>';
         } else {
             html += '<td data-row="' + rowIndex + '" data-col="' + virtualColIndex + '"';
@@ -385,7 +385,7 @@ export function createXlsxRowHtml(params: XlsxRowHtmlParams): string {
             }
             html += ' data-empty="true"';
             html += ' data-original-color="rgb(0, 0, 0)"';
-            if (isEditMode) {
+            if (editable) {
                 html += ' class="editable-cell"';
             }
             html += ' style="height: ' + rowHeight + 'px;">';

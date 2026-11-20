@@ -6,7 +6,7 @@
 import type { ToolbarManager } from '../shared/toolbarManager';
 import { defaultXlsxViewSettings, type XlsxViewSettings } from './components/spreadsheetSettingsComponent';
 import type { BorderLineStyle, BorderMode, BorderPattern, BorderThickness } from './components/spreadsheetBorderComponent';
-import type { CellStyleEdit, CellUndoState, ColumnFilterState, EditUndoEntry, SortDirection, WorksheetOp } from './components/spreadsheetTypes';
+import type { CellStyleEdit, CellUndoState, ColumnFilterState, EditUndoEntry, SortDirection, WorksheetStateSnapshot } from './components/spreadsheetTypes';
 import type { XlsxFindManager } from './components/spreadsheetFindComponent';
 
 export const MIN_ROW_HEADER_WIDTH = 40;
@@ -62,13 +62,10 @@ export const state = {
     // Settings (persisted by extension)
     currentSettings: { ...defaultXlsxViewSettings } as XlsxViewSettings,
     hasVirtualTableInit: false,
-    // Table edit mode (text-only)
-    isEditMode: false,
+    // True while a cell is being typed into (contenteditable).
     isCellEditing: false,
     activeTextEditBeforeState: null as CellUndoState | null,
     lastEditRange: null as Range | null,
-    pendingWorksheetOps: [] as WorksheetOp[],
-    pendingCellStyleEdits: new Map<string, CellStyleEdit>(),
     headerContextMenuEl: null as HTMLElement | null,
     colorPaletteEl: null as HTMLElement | null,
     activeColorTarget: null as 'text' | 'background' | 'border' | null,
@@ -89,16 +86,19 @@ export const state = {
     formatPainterStyle: null as Partial<CellStyleEdit> | null,
     formatPainterArmed: false,
     formatPainterExecuting: false,
+    // Undo/redo of the sheet on screen; the other sheets' stacks wait in undoStacksBySheet.
     editUndoStack: [] as EditUndoEntry[],
     editRedoStack: [] as EditUndoEntry[],
+    undoStacksBySheet: new Map<number, { undo: EditUndoEntry[]; redo: EditUndoEntry[] }>(),
+    // A sheet with unsaved structure edits keeps its local rows here while another sheet is on screen.
+    sheetStash: new Map<number, WorksheetStateSnapshot>(),
     pendingControlUndoState: new WeakMap<HTMLElement, CellUndoState>(),
     findManager: null as XlsxFindManager | null,
     // Save state (CSV-parity)
     isSaving: false,
-    exitAfterSave: false,
+    // Another save was asked for while one was in flight: run it when that one ends.
+    saveQueued: null as null | { manual: boolean },
     autoSaveTimer: null as any,
-    manualSaveReminderUntil: 0,
-    pendingOutsideControlEdits: [] as Array<{ row: number; col: number; value: string }>,
     isVersionPreviewMode: false,
     previewVersionId: null as string | null,
     imagePreviewOverlayEl: null as HTMLElement | null,

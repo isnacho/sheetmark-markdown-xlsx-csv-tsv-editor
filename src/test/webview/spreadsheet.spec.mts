@@ -42,7 +42,7 @@ async function initTable(fileType: 'xlsx' | 'csv' = 'csv') {
     await webview.send({
         command: 'initVirtualTable',
         worksheets: [{ name: 'Sheet1', index: 0, totalRows: ROWS.length, columnCount: 2, columnWidths: [120, 120], mergedCells: [], rowHeights: ROWS.map(() => 21) }],
-        rowHeaderWidth: 40, fileType, previewMode: false, versionId: null, timestamp: null,
+        rowHeaderWidth: 40, fileType, reason: 'open', previewMode: false, versionId: null, timestamp: null,
     } satisfies HostToSpreadsheetWebview);
     await webview.page.waitForSelector('table:not([data-stale]) td[data-row="2"][data-col="1"]', { timeout: 10000 });
 }

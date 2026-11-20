@@ -98,6 +98,8 @@ export const state = {
     isSaving: false,
     // Another save was asked for while one was in flight: run it when that one ends.
     saveQueued: null as null | { manual: boolean },
+    // The file changed on disk and the user has not chosen yet (see diskSync.ts): autosave waits.
+    diskChanged: false,
     autoSaveTimer: null as any,
     isVersionPreviewMode: false,
     previewVersionId: null as string | null,

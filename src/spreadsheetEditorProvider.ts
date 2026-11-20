@@ -9,11 +9,12 @@ import { convertARGBToRGBA, isShadeOfBlack, isShadeOfWhite } from './spreadsheet
 import { applyStoredMetadataToWorksheet, applyStyleEditToCell } from './spreadsheet/excelStyle';
 import { convertTabularFile, readTabularFile, detectTabularFileType, writeTabularFile, TabularFileType } from './shared/fileConversionService';
 import { StyleStorageService } from './shared/styleStorageService';
+import { changedSinceBaseline, hashFile } from './shared/fileHash';
 import { createSerialQueue, type SerialQueue } from './shared/serialQueue';
 import { createMessageDispatcher, SPREADSHEET_FILE_WRITING_COMMANDS } from './shared/messageDispatch';
 import { recordSentInTests, trackOpenEditor, type OpenEditorHandle } from './shared/editorTestHooks';
 import { handleSharedHostMessage, isSharedHostMessage, syncColorTheme, syncFontFamily, type SharedHostContext } from './shared/commonHostMessages';
-import type { HostToSpreadsheetWebview, SpreadsheetSettings, SpreadsheetWebviewToHost } from './protocol/spreadsheet';
+import type { HostToSpreadsheetWebview, SpreadsheetInitReason, SpreadsheetSettings, SpreadsheetWebviewToHost } from './protocol/spreadsheet';
 import { createExternalFileChangeWatcher } from './shared/fileExternalChangeWatcher';
 import { isSheetmarkConfiguredAsDefault } from './shared/editorAssociationUtils';
 
@@ -77,7 +78,9 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
         const fileQueueKey = document.uri.fsPath.toLowerCase();
         this.fileQueues.set(fileQueueKey, fileQueue);
         webviewPanel.onDidDispose(() => this.fileQueues.delete(fileQueueKey));
-        let lastSaveTime = 0;
+        // Hash of the file as this editor last loaded or saved it. A different hash on disk means someone
+        // else changed it: the watcher tells the webview instead of reloading, and a save asks first.
+        let diskBaseline: string | null = null;
 
         type VersionHistoryEntry = {
             id: string;
@@ -236,7 +239,6 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
             await writeTabularFile(currentUri.fsPath, {
                 sheets: [{ name: 'Sheet1', rows }]
             }, sourceType);
-            lastSaveTime = Date.now();
 
             // Keep the provider-side worksheet cache in sync with the file.
             await loadWorkbookPayload();
@@ -420,7 +422,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
         const sendTheme = syncColorTheme(webviewPanel, post);
         const sendFont = syncFontFamily(webviewPanel, post);
 
-        const trySendInit = () => {
+        const trySendInit = (reason: SpreadsheetInitReason) => {
             if (!isWebviewReady || !worksheetsData.length) {return;}
             try {
                 // Send metadata for virtual scrolling instead of full data
@@ -439,6 +441,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                     worksheets: worksheetsMeta,
                     rowHeaderWidth,
                     fileType: currentFileType,
+                    reason,
                     legacyStylesNotice: legacyStylesNotice || undefined,
                     previewMode: !!previewVersionId,
                     versionId: previewVersionId,
@@ -453,6 +456,9 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
             const fileType = sourceTypeOverride || detectTabularFileType(sourcePath) || 'xlsx';
             currentFileType = fileType;
             legacyStylesNotice = false;
+            if (sourcePath === filePath) {
+                diskBaseline = await hashFile(sourcePath);
+            }
             const workbook = new Excel.Workbook();
 
             if (fileType === 'xlsx') {
@@ -511,7 +517,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                 await pruneHistory();
                 await persistVersionSnapshot();
                 trySendSettings();
-                trySendInit();
+                trySendInit('open');
                 sendTheme();
                 sendFont();
                 return;
@@ -538,7 +544,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                     await loadWorkbookPayload(getSnapshotPath(pickedEntry.snapshotFile), snapshotFileType);
                     previewVersionId = pickedEntry.id;
                     previewVersionTimestamp = pickedEntry.timestamp;
-                    trySendInit();
+                    trySendInit('preview');
                 } catch (err) {
                     post({
                         command: 'versionHistoryError',
@@ -554,7 +560,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                     previewVersionTimestamp = null;
                     restoredVersionId = null;
                     await loadWorkbookPayload(filePath, currentFileType);
-                    trySendInit();
+                    trySendInit('previewEnd');
                     post({ command: 'versionPreviewCancelledXlsx' });
                 }
                 return;
@@ -584,7 +590,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                     previewVersionTimestamp = null;
                     restoredVersionId = entry.id;
                     await loadWorkbookPayload(filePath, currentFileType);
-                    trySendInit();
+                    trySendInit('restore');
                     await persistVersionSnapshot();
 
                     post({
@@ -668,7 +674,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
             if (message?.command === 'requestFreshData') {
                 try {
                     await loadWorkbookPayload();
-                    trySendInit();
+                    trySendInit('reload');
                 } catch {
                     // ignore reload errors
                 }
@@ -698,6 +704,13 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                 try {
                     if (previewVersionId) {
                         post({ command: 'saveResult', ok: false, error: 'Preview mode is read-only' });
+                        return;
+                    }
+
+                    // A save writes into the file as it is on disk now. If someone else changed it since it was
+                    // loaded or last saved, ask first (the webview confirms, then sends the save again with `force`).
+                    if (!message.force && changedSinceBaseline(diskBaseline, await hashFile(currentUri.fsPath))) {
+                        post({ command: 'saveConflict' });
                         return;
                     }
 
@@ -1031,7 +1044,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                     }
 
                     await workbook.xlsx.writeFile(currentUri.fsPath);
-                    lastSaveTime = Date.now();
+                    diskBaseline = await hashFile(currentUri.fsPath);
                     await persistVersionSnapshot();
                     previewVersionId = null;
                     previewVersionTimestamp = null;
@@ -1045,7 +1058,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                         // Keep insert-control autosave smooth by avoiding a full webview re-init.
                         await loadWorkbookPayload();
                         if (requiresFullRefresh) {
-                            trySendInit();
+                            trySendInit('save');
                         }
                     } else {
                         // For pure text/style edits, update worksheetsData internally but don't force a full webview re-render
@@ -1087,15 +1100,15 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
             filePath,
             documentUri: currentUri,
             onChange: async () => {
-                if (fileQueue.busy || Date.now() - lastSaveTime < 1000) {
+                // Our own save is being written, or has just been: its hash is the baseline, so the echo is ignored.
+                if (fileQueue.busy) {
                     return;
                 }
-                try {
-                    await loadWorkbookPayload();
-                    trySendInit();
-                } catch {
-                    // ignore reload errors
+                if (!changedSinceBaseline(diskBaseline, await hashFile(filePath))) {
+                    return;
                 }
+                // Never applied silently: the webview shows "File changed on disk" and lets the user choose.
+                try { post({ command: 'diskChangedExternally' }); } catch { }
             },
             onDelete: () => {
                 if (fileQueue.busy) {
@@ -1111,7 +1124,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
         try {
             await loadWorkbookPayload();
             trySendSettings();
-            trySendInit();
+            trySendInit('open');
         } catch (error) {
             vscode.window.showErrorMessage(`Error reading XLSX file: ${error}`);
         }

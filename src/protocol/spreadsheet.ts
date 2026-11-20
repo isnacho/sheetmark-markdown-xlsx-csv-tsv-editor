@@ -3,6 +3,7 @@
 import type { CommonHostToWebview, CommonWebviewToHost } from './common';
 
 export type SpreadsheetFileType = 'xlsx' | 'csv' | 'tsv';
+export type SpreadsheetInitReason = 'open' | 'reload' | 'save' | 'preview' | 'previewEnd' | 'restore';
 
 export interface SpreadsheetSettings {
     firstRowIsHeader: boolean;
@@ -46,6 +47,8 @@ export type SpreadsheetWebviewToHost =
         styleEdits: any[];
         operations: any[];
         isAutosave: boolean;
+        /** Save even though the file changed on disk since it was loaded (the user confirmed). */
+        force?: boolean;
     }
     | { command: 'updateSettings'; settings: Partial<SpreadsheetSettings> }
     | { command: 'restoreVersion'; versionId: string | null }
@@ -62,6 +65,8 @@ export type HostToSpreadsheetWebview =
         worksheets: WorksheetMeta[];
         rowHeaderWidth: number;
         fileType: SpreadsheetFileType;
+        /** Why the table is (re)sent: the webview keeps its unsaved edits across 'save', and drops them for 'reload' and 'restore'. */
+        reason: SpreadsheetInitReason;
         /** CSV/TSV only: the file has formatting that only Sheetmark stored (it is no longer shown). */
         legacyStylesNotice?: boolean;
         previewMode: boolean;
@@ -73,5 +78,9 @@ export type HostToSpreadsheetWebview =
     | ({ command: 'initSettings' } & SpreadsheetSettingsPayload)
     | ({ command: 'settingsUpdated' } & SpreadsheetSettingsPayload)
     | { command: 'saveResult'; ok: boolean; isAutosave?: boolean; error?: string }
+    /** The file changed on disk and is no longer the one that was loaded or last saved. Nothing was reloaded. */
+    | { command: 'diskChangedExternally' }
+    /** A save was refused because the file changed on disk; nothing was written. Send it again with `force` to save over it. */
+    | { command: 'saveConflict' }
     | { command: 'versionRestoredXlsx'; versionId: string; timestamp: number }
     | { command: 'versionPreviewCancelledXlsx' };

@@ -7,6 +7,7 @@ import { Utils } from '../shared/utils';
 import { getOrCreateRowCellData } from './cellValues';
 import { getCellFromRow } from './components/spreadsheetSheetDataComponent';
 import { dropUnrecoverableUndoEntries, lastUndoSeq } from './undo';
+import { isDiskChangePending } from './diskSync';
 import { ledger } from './ledger';
 import { post } from './messaging';
 import { state } from './state';
@@ -25,6 +26,8 @@ export interface PersistenceHooks {
     updateToolbarState(): void;
     /** Commit the cell being typed in, so a save includes it. */
     commitActiveCellEdit(): void;
+    /** The host refused a save because the file changed on disk. */
+    onSaveConflict(wasAutosave: boolean): void;
 }
 
 let hooks: PersistenceHooks;
@@ -120,9 +123,11 @@ export function recordChange(kind: ChangeKind = 'text'): void {
  * Saves the unsaved changes, one sheet per message. A save asked for while one is in flight waits for
  * it. A manual save continues through every dirty sheet; autosave only saves what is dirty now.
  */
-export function saveEdits(isAutosave = false): void {
+export function saveEdits(isAutosave = false, force = false): void {
     if (state.isVersionPreviewMode) {return;}
     if (isAutosave && !state.currentSettings.autoSave) {return;}
+    // The file changed on disk: autosave waits until the user has chosen what to do.
+    if (isAutosave && isDiskChangePending()) {return;}
     if (state.isSaving) {
         state.saveQueued = { manual: !!state.saveQueued?.manual || !isAutosave };
         return;
@@ -154,7 +159,20 @@ export function saveEdits(isAutosave = false): void {
         styleEdits: payload.styleEdits,
         operations: payload.operations,
         isAutosave,
+        ...(force ? { force: true } : {}),
     });
+}
+
+/** The host did not save because the file changed on disk. The edits stay pending; the user decides. */
+export function onSaveConflictResult() {
+    hideLoading();
+    setLoadingText('Rendering worksheet...');
+    state.isSaving = false;
+    const sent = inFlight;
+    inFlight = null;
+    state.saveQueued = null;
+    hooks.updateToolbarState();
+    hooks.onSaveConflict(!!sent?.isAutosave);
 }
 
 export function onSaveResult(message: MessageOf<HostToSpreadsheetWebview, 'saveResult'>) {

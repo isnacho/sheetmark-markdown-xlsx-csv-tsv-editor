@@ -216,4 +216,43 @@ suite('Spreadsheet editor (host)', () => {
         assert.strictEqual(cell.font?.color?.argb, 'FF112233');
         assert.strictEqual((cell.fill as Excel.FillPattern | undefined)?.fgColor?.argb, 'FFFFEEAA');
     });
+
+    test('a change made outside is announced, never loaded silently; the editor\'s own save is not announced', async () => {
+        const api = await sheetmark();
+        const file = path.join(fixtureDir({ 'watch.csv': CSV }), 'watch.csv');
+        const editor = await openInSheetmark(api, file, 'xlsxViewer.csv');
+        await waitFor('initVirtualTable', () => editor.sent().find((m: any) => m?.command === 'initVirtualTable'));
+        const count = (command: string) => editor.sent().filter((m: any) => m?.command === command).length;
+
+        // Our own save: the watcher fires, but the file is the one this editor wrote.
+        await editor.dispatch(save([{ row: 2, col: 1, value: 'ada lovelace' }]));
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        assert.strictEqual(count('diskChangedExternally'), 0, 'own save is ignored');
+
+        const initsBefore = count('initVirtualTable');
+        fs.writeFileSync(file, 'name,score\nada lovelace,1\nbob,2\ncarol,3\n');
+        await waitFor('diskChangedExternally', () => count('diskChangedExternally') > 0);
+        assert.strictEqual(count('initVirtualTable'), initsBefore, 'the grid was not reloaded');
+    });
+
+    test('a save over a file that changed on disk is refused until forced, and keeps the other changes', async () => {
+        const api = await sheetmark();
+        const file = path.join(fixtureDir({ 'conflict.csv': CSV }), 'conflict.csv');
+        const editor = await openInSheetmark(api, file, 'xlsxViewer.csv');
+        await waitFor('initVirtualTable', () => editor.sent().find((m: any) => m?.command === 'initVirtualTable'));
+
+        fs.writeFileSync(file, 'name,score\nada,1\nbob,2\ncarol,3\n');
+        await editor.dispatch(save([{ row: 2, col: 2, value: '99' }]));
+        assert.ok(editor.sent().some((m: any) => m?.command === 'saveConflict'), 'the host said there is a conflict');
+        assert.strictEqual(fs.readFileSync(file, 'utf8').trim(), 'name,score\nada,1\nbob,2\ncarol,3', 'nothing was written');
+
+        await editor.dispatch({ ...save([{ row: 2, col: 2, value: '99' }]), force: true });
+        assert.strictEqual(fs.readFileSync(file, 'utf8').trim(), 'name,score\nada,99\nbob,2\ncarol,3', 'edited cell gets our value, the rest of the disk change is kept');
+
+        // The forced save is the new baseline: the next save goes through without a question.
+        const conflictsBefore = editor.sent().filter((m: any) => m?.command === 'saveConflict').length;
+        await editor.dispatch(save([{ row: 3, col: 2, value: '7' }]));
+        assert.strictEqual(editor.sent().filter((m: any) => m?.command === 'saveConflict').length, conflictsBefore);
+        assert.strictEqual(fs.readFileSync(file, 'utf8').trim(), 'name,score\nada,99\nbob,7\ncarol,3');
+    });
 });

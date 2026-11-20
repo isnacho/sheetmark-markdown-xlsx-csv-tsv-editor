@@ -16,7 +16,8 @@ import { filterAndSortRows } from './dataOps';
 import { post } from './messaging';
 import { hideLoading, setLoadingText, showLoading } from './ui';
 import { getCellNormalizedValue, getCellType, getOrCreateRowCellData, normalizeCellText, normalizeDateInputValue, normalizeRatingValue, parseBooleanCellValue } from './cellValues';
-import { clearAutoSaveTimer, initPersistence, isDirty, onSaveResult, recordCellValue, recordChange, saveEdits } from './persistence';
+import { initDiskSync, onDiskChangedExternally, onSaveConflict, refreshDiskChangedToast } from './diskSync';
+import { clearAutoSaveTimer, initPersistence, isDirty, onSaveConflictResult, onSaveResult, recordCellValue, recordChange, saveEdits } from './persistence';
 import { getPendingStyle, ledger } from './ledger';
 import { confirmModal } from '../shared/confirmModal';
 import type { HostToSpreadsheetWebview } from '../../protocol/spreadsheet';
@@ -67,7 +68,12 @@ import { confirmMergePreserveTopLeftContent, showLegacyStylesNotice } from './no
 import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateRatingCellPresentation, updateDateCellPresentation, areInteractiveControlsEnabled, applyInteractiveControlState, hideInsertControlPopup, showInsertControlPopup, hideDropdownOptionsPopup, editDropdownOptionsForCell, initInteractiveControls } from './interactiveControls';
 
 (function () {
-    initPersistence({ updateToolbarState, commitActiveCellEdit: () => exitCellEditMode() });
+    initPersistence({ updateToolbarState, commitActiveCellEdit: () => exitCellEditMode(), onSaveConflict: (wasAutosave) => { void onSaveConflict(wasAutosave); } });
+    initDiskSync({
+        isDirty: () => isDirty() || state.isCellEditing,
+        saveOverChangedFile: () => saveEdits(false, true),
+        reloadFromDisk: () => { discardUnsavedEdits(); post({ command: 'requestFreshData' }); },
+    });
     initUndo({ clearSelection, hideHeaderContextMenu, rerenderCurrentSheetFromLocalState, applyFindHighlightsInVisibleCells });
     initInteractiveControls({ getLogicalSelectionBounds, ensureAllRowsLoadedForStructureEdits });
 
@@ -1148,6 +1154,7 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
         manager.setButtonEnabled('undoEditsButton', canUndo() && !preview);
         manager.setButtonEnabled('redoEditsButton', canRedo() && !preview);
         manager.setButtonEnabled('refreshButton', !state.isSaving);
+        refreshDiskChangedToast();
     }
 
     function consumeIncomingSettingsPayload(message: any) {
@@ -3150,8 +3157,15 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
             const restoreBtn = document.getElementById('restoreVersionButton') as HTMLButtonElement | null;
             const cancelBtn = document.getElementById('cancelVersionPreviewButton') as HTMLButtonElement | null;
             restoreBtn?.addEventListener('click', () => {
-                if (!state.previewVersionId) {return;}
-                post({ command: 'restoreVersion', versionId: state.previewVersionId });
+                const versionId = state.previewVersionId;
+                if (!versionId) {return;}
+                void (async () => {
+                    if (isDirty()) {
+                        const outcome = await confirmModal('Restore Version', 'Discard unsaved changes and restore this version?', 'Discard & Restore');
+                        if (outcome !== 'confirm') {return;}
+                    }
+                    post({ command: 'restoreVersion', versionId });
+                })();
             });
             cancelBtn?.addEventListener('click', () => {
                 post({ command: 'cancelVersionPreview' });
@@ -4962,6 +4976,16 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
             return;
         }
 
+        if (message.command === 'diskChangedExternally') {
+            onDiskChangedExternally();
+            return;
+        }
+
+        if (message.command === 'saveConflict') {
+            onSaveConflictResult();
+            return;
+        }
+
         if (message.command === 'saveResult') {
             onSaveResult(message);
             return;
@@ -5015,6 +5039,13 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
             state.worksheetsMeta = Array.isArray(message.worksheets) ? message.worksheets : [];
             state.currentWorksheet = Math.min(Math.max(previousWorksheet, 0), Math.max(state.worksheetsMeta.length - 1, 0));
             clearDataTransforms();
+
+            // The file was loaded again (Reload from Disk, Restore): unsaved edits and undo history belong to the old one.
+            if (message.reason === 'reload' || message.reason === 'restore') {
+                discardUnsavedEdits();
+                state.diskChanged = false;
+                if (message.reason === 'reload') {showToast('Reloaded from disk');}
+            }
 
             state.hasVirtualTableInit = true;
             state.isDataOnly = message.fileType === 'csv' || message.fileType === 'tsv';

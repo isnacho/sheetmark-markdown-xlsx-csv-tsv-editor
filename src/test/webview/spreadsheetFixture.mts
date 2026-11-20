@@ -59,7 +59,7 @@ export async function bootSpreadsheet(options: {
         await webview.send({
             command: 'initVirtualTable',
             worksheets: [{ name: 'Sheet1', index: 0, totalRows: rows.length, columnCount, columnWidths: Array(columnCount).fill(120), mergedCells: [], rowHeights: rows.map(() => 21) }],
-            rowHeaderWidth: 40, fileType: options.fileType ?? 'xlsx', previewMode: false, versionId: null, timestamp: null,
+            rowHeaderWidth: 40, fileType: options.fileType ?? 'xlsx', reason: 'open', previewMode: false, versionId: null, timestamp: null,
             ...options.initVirtualTable,
             ...overrides,
         } satisfies HostToSpreadsheetWebview);

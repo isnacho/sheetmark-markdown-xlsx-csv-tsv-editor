@@ -197,6 +197,23 @@ test('bug: undo is saved, even after the edit it undoes was already saved', asyn
     await sheet.stop();
 });
 
+test('bug: a value typed back to the original while its save is in flight is saved again', async () => {
+    const sheet = await bootSpreadsheet({ values: VALUES, settings: { autoSave: true } });
+    await editCell(sheet, 0, 0, 'Q');
+    const first = await sheet.waitForPosted('saveXlsxEdits', 5000);
+    assert.deepEqual(first.edits, [{ row: 1, col: 1, value: 'a1Q' }]);
+
+    await sheet.page.keyboard.press('Control+z'); // back to a1 before the host answers
+    assert.equal(await sheet.page.locator(sheet.cell(0, 0)).textContent(), 'a1');
+    await sheet.send({ command: 'saveResult', ok: true, isAutosave: true } satisfies HostToSpreadsheetWebview);
+    await sheet.page.waitForFunction(() => !(document.getElementById('saveEditsButton') as HTMLButtonElement).disabled);
+    await sheet.page.waitForTimeout(1800);
+    const saves = await sheet.postedOf('saveXlsxEdits');
+    assert.equal(saves.length, 2, 'the file got a1Q, so a1 is sent next');
+    assert.deepEqual(saves[1].edits, [{ row: 1, col: 1, value: 'a1' }]);
+    await sheet.stop();
+});
+
 test('bug: Escape inside a cell cancels only that cell, never the other unsaved edits', async () => {
     const sheet = await bootSpreadsheet({ values: VALUES });
     await editCell(sheet, 0, 0, 'kept');

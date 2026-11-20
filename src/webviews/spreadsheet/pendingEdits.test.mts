@@ -135,3 +135,48 @@ test('snapshot and restore bring back an earlier ledger, including ops', () => {
     ledger.restore(0, { values: [], rich: [], styles: [], ops: [] });
     assert.equal(ledger.isDirty(), false);
 });
+
+test('bug: a value changed back while its save is in flight is still sent (the file is about to get the earlier value)', () => {
+    const ledger = new PendingEdits();
+    ledger.recordValue(0, 1, 1, 'B', 'A');
+    const { mark } = ledger.takePayload(0);
+    ledger.recordValue(0, 1, 1, 'A', 'B'); // typed back to the original before the host answered
+    assert.equal(ledger.isDirty(), true, 'the entry is not dropped');
+    ledger.settleSaved(mark);
+    assert.equal(ledger.isDirty(), true, 'the file holds B, so A still has to be saved');
+    assert.deepEqual(ledger.takePayload(0).payload.edits, [{ row: 1, col: 1, value: 'A' }]);
+});
+
+test('bug: after a save settles, an entry kept because it changed in flight has the saved value as its original', () => {
+    const ledger = new PendingEdits();
+    ledger.recordValue(0, 1, 1, 'B', 'A');
+    const { mark } = ledger.takePayload(0);
+    ledger.recordValue(0, 1, 1, 'C', 'B'); // changed while in flight
+    ledger.settleSaved(mark);
+    // The file holds B. Typing the pre-save value A must not look like "unchanged".
+    ledger.recordValue(0, 1, 1, 'A', 'B');
+    assert.deepEqual(ledger.takePayload(0).payload.edits, [{ row: 1, col: 1, value: 'A' }]);
+    ledger.releaseInFlight(0); // (that payload was only inspected, not sent)
+    // And typing B (what the file holds) is clean again.
+    ledger.recordValue(0, 1, 1, 'B', 'A');
+    assert.equal(ledger.isDirty(), false);
+});
+
+test('settleSaved drops a kept entry whose value now equals what was saved', () => {
+    const ledger = new PendingEdits();
+    ledger.recordValue(0, 1, 1, 'B', 'A');
+    const { mark } = ledger.takePayload(0);
+    ledger.recordValue(0, 1, 1, 'X', 'B');
+    ledger.recordValue(0, 1, 1, 'B', 'X'); // back to what was sent
+    ledger.settleSaved(mark);
+    assert.equal(ledger.isDirty(), false);
+});
+
+test('releaseInFlight (a failed or refused save) lets an entry drop again', () => {
+    const ledger = new PendingEdits();
+    ledger.recordValue(0, 1, 1, 'B', 'A');
+    ledger.takePayload(0);
+    ledger.releaseInFlight(0);
+    ledger.recordValue(0, 1, 1, 'A', 'B');
+    assert.equal(ledger.isDirty(), false, 'nothing was written, so A is the file value again');
+});

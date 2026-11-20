@@ -170,6 +170,7 @@ export function onSaveConflictResult() {
     state.isSaving = false;
     const sent = inFlight;
     inFlight = null;
+    if (sent) {ledger.releaseInFlight(sent.mark.sheet);}
     state.saveQueued = null;
     hooks.updateToolbarState();
     hooks.onSaveConflict(!!sent?.isAutosave);
@@ -183,6 +184,7 @@ export function onSaveResult(message: MessageOf<HostToSpreadsheetWebview, 'saveR
     inFlight = null;
 
     if (!message.ok) {
+        if (sent) {ledger.releaseInFlight(sent.mark.sheet);}
         state.saveQueued = null;
         hooks.updateToolbarState();
         const isAutosaveResult = !!message.isAutosave;

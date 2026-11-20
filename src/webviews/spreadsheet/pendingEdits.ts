@@ -39,6 +39,8 @@ export interface SavePayload {
 export interface SentMark {
     sheet: number;
     values: Map<string, number>;
+    /** The text that was sent for each value, so settling can tell what the file holds now. */
+    sentValues: Map<string, string>;
     rich: Map<string, number>;
     styles: Map<string, number>;
     opCount: number;
@@ -116,6 +118,8 @@ function clone<T>(value: T): T {
 export class PendingEdits {
     private sheets = new Map<number, SheetLedger>();
     private clock = 0;
+    /** The save waiting for the host, per sheet: its keys must stay in the ledger until the result is known. */
+    private inFlight = new Map<number, SentMark>();
 
     private sheet(index: number): SheetLedger {
         let ledger = this.sheets.get(index);
@@ -135,13 +139,15 @@ export class PendingEdits {
     /**
      * Records a cell value. `original` is what the file holds for that cell, used the first time the
      * cell is edited; editing a value back to its original drops the entry, so `isDirty` is exact.
+     * A key that is in the save still in flight is never dropped: the file is about to get the value that
+     * was sent, so the entry must survive to send the change back.
      */
     recordValue(sheet: number, row: number, col: number, value: string, original: string | undefined): void {
         const ledger = this.sheet(sheet);
         const key = addressKey(row, col);
         const existing = ledger.values.get(key);
         const baseline = existing ? existing.data.original : original;
-        if (baseline !== undefined && value === baseline && !ledger.rich.has(key)) {
+        if (baseline !== undefined && value === baseline && !ledger.rich.has(key) && !this.inFlight.get(sheet)?.values.has(key)) {
             ledger.values.delete(key);
             return;
         }
@@ -222,23 +228,26 @@ export class PendingEdits {
 
     clearSheet(sheet: number): void {
         this.sheets.delete(sheet);
+        this.inFlight.delete(sheet);
     }
 
     clearAll(): void {
         this.sheets.clear();
+        this.inFlight.clear();
     }
 
     // ---- saving ----------------------------------------------------------------------------
 
     takePayload(sheet: number): { payload: SavePayload; mark: SentMark } {
         const ledger = this.sheets.get(sheet) ?? emptySheet();
-        const mark: SentMark = { sheet, values: new Map(), rich: new Map(), styles: new Map(), opCount: ledger.ops.length };
+        const mark: SentMark = { sheet, values: new Map(), sentValues: new Map(), rich: new Map(), styles: new Map(), opCount: ledger.ops.length };
         const edits: ValueEdit[] = [];
         const richEdits: RichEdit[] = [];
         const styleEdits: CellStyleEdit[] = [];
         for (const [key, entry] of ledger.values) {
             edits.push({ row: entry.data.row, col: entry.data.col, value: entry.data.value });
             mark.values.set(key, entry.version);
+            mark.sentValues.set(key, entry.data.value);
         }
         for (const [key, entry] of ledger.rich) {
             richEdits.push(clone(entry.data));
@@ -248,15 +257,34 @@ export class PendingEdits {
             styleEdits.push(clone(entry.data));
             mark.styles.set(key, entry.version);
         }
+        this.inFlight.set(sheet, mark);
         return { payload: { edits, richEdits, styleEdits, operations: clone(ledger.ops.slice(0, mark.opCount)) }, mark };
+    }
+
+    /** The save did not happen (it failed, or the host refused it): nothing was written, forget the mark. */
+    releaseInFlight(sheet: number): void {
+        this.inFlight.delete(sheet);
     }
 
     /** The host saved `mark`: drop exactly those entries, keep anything recorded or changed since. */
     settleSaved(mark: SentMark): void {
+        if (this.inFlight.get(mark.sheet) === mark) { this.inFlight.delete(mark.sheet); }
         const ledger = this.sheets.get(mark.sheet);
         if (!ledger) { return; }
         for (const [key, version] of mark.values) {
-            if (ledger.values.get(key)?.version === version) { ledger.values.delete(key); }
+            const entry = ledger.values.get(key);
+            if (!entry) { continue; }
+            if (entry.version === version) {
+                ledger.values.delete(key);
+                continue;
+            }
+            // Changed while the save was in flight: the file now holds what was sent, so that is the new
+            // original. If the cell was changed back to it, there is nothing left to save.
+            const sent = mark.sentValues.get(key);
+            if (sent !== undefined) {
+                entry.data.original = sent;
+                if (entry.data.value === sent && !ledger.rich.has(key)) { ledger.values.delete(key); }
+            }
         }
         for (const [key, version] of mark.rich) {
             if (ledger.rich.get(key)?.version === version) { ledger.rich.delete(key); }

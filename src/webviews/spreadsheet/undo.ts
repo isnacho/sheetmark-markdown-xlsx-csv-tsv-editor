@@ -7,6 +7,7 @@
 // because restoring a snapshot would no longer match the file.
 // Runtime: WEBVIEW (browser).
 
+import { Utils } from '../shared/utils';
 import { state } from './state';
 import { getCellNormalizedValue, normalizeCellText } from './cellValues';
 import { recordCellValue, recordChange } from './persistence';
@@ -199,7 +200,20 @@ export function canRedo(): boolean {
     return state.editRedoStack.length > 0;
 }
 
+/**
+ * While a save is in flight, a structure or formatting step cannot be undone or redone: restoring its
+ * snapshot would replace the pending operations the host is writing right now. Text and value steps are
+ * safe (the ledger keeps what was sent), so they still go through.
+ */
+function blockedBySave(entry: EditUndoEntry | undefined): boolean {
+    if (!entry || !state.isSaving) {return false;}
+    if (entry.kind !== 'sheet' && !changesFormatting(entry)) {return false;}
+    Utils.showToast('Saving, try again in a moment');
+    return true;
+}
+
 export function undoEditAction() {
+    if (blockedBySave(state.editUndoStack[state.editUndoStack.length - 1])) {return false;}
     const entry = state.editUndoStack.pop();
     if (!entry) {return false;}
 
@@ -211,6 +225,7 @@ export function undoEditAction() {
 }
 
 export function redoEditAction() {
+    if (blockedBySave(state.editRedoStack[state.editRedoStack.length - 1])) {return false;}
     const entry = state.editRedoStack.pop();
     if (!entry) {return false;}
 

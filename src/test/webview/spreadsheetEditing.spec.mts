@@ -214,6 +214,35 @@ test('bug: a value typed back to the original while its save is in flight is sav
     await sheet.stop();
 });
 
+test('bug: Undo of a structure edit or formatting waits while a save is in flight', async () => {
+    const sheet = await bootSpreadsheet({ values: VALUES, settings: { autoSave: true } });
+    await sheet.page.click('th.row-header[data-row="0"]', { button: 'right' });
+    await sheet.page.click('text=Insert row below');
+    await sheet.page.waitForFunction(() => document.querySelectorAll('td[data-col="0"]').length === 4);
+    const first = await sheet.waitForPosted('saveXlsxEdits', 5000);
+    assert.equal(first.operations.length, 1);
+
+    // The save is in flight (no result yet): Undo must not restore the old rows under the host's feet.
+    await sheet.page.click(sheet.cell(0, 1));
+    await sheet.page.keyboard.press('Control+z');
+    await sheet.page.waitForFunction(() => document.querySelector('#toastNotification .toast-text')?.textContent === 'Saving, try again in a moment');
+    assert.equal(await sheet.page.locator('td[data-col="0"]').count(), 4, 'the inserted row is still there');
+    await sheet.page.waitForTimeout(1500);
+    assert.equal((await sheet.postedOf('saveXlsxEdits')).length, 1, 'nothing else was saved');
+    await sheet.stop();
+});
+
+test('bug: Undo of a formatting step waits while a save is in flight', async () => {
+    const sheet = await bootSpreadsheet({ values: VALUES, settings: { autoSave: true } });
+    await sheet.page.click(sheet.cell(0, 0));
+    await sheet.page.keyboard.press('Control+b');
+    await sheet.waitForPosted('saveXlsxEdits', 5000);
+    await sheet.page.keyboard.press('Control+z');
+    await sheet.page.waitForFunction(() => document.querySelector('#toastNotification .toast-text')?.textContent === 'Saving, try again in a moment');
+    assert.equal(await sheet.page.locator(sheet.cell(0, 0)).evaluate(td => (td as HTMLElement).style.fontWeight), 'bold');
+    await sheet.stop();
+});
+
 test('bug: Escape inside a cell cancels only that cell, never the other unsaved edits', async () => {
     const sheet = await bootSpreadsheet({ values: VALUES });
     await editCell(sheet, 0, 0, 'kept');

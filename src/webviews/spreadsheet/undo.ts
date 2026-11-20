@@ -256,22 +256,26 @@ function changesFormatting(entry: EditUndoEntry): boolean {
 /**
  * A save of `sheetIndex` succeeded. Entries made up to `upToSeq` that restore a snapshot ('sheet') or
  * formatting can no longer be undone correctly, because what they would restore is not on disk any
- * more and no inverse operation exists yet. They are dropped so Undo disables instead of misleading.
- * Text and control edits stay undoable: undoing them records the old value, which is then saved.
+ * more and no inverse operation exists yet. When the save drops any such entry, every older entry of
+ * that sheet goes too: they hold cell addresses and styles from before the structure edit or the
+ * formatting, so undoing them would write into the wrong cell (a row was inserted above) or put back
+ * an unformatted style. Undo then disables instead of misleading. Entries made after the save was sent
+ * stay. When the save carried only text and control edits nothing is dropped: undoing those records
+ * the old value, which is then saved.
  */
 export function dropUnrecoverableUndoEntries(sheetIndex: number, upToSeq: number) {
-    const keep = (entry: EditUndoEntry) => entry.seq > upToSeq || !(entry.kind === 'sheet' || changesFormatting(entry));
-    const filterStacks = (stacks: { undo: EditUndoEntry[]; redo: EditUndoEntry[] }) => {
-        stacks.undo = stacks.undo.filter(keep);
-        stacks.redo = stacks.redo.filter(keep);
-    };
+    const stacksOf = () => sheetIndex === state.currentWorksheet
+        ? { undo: state.editUndoStack, redo: state.editRedoStack }
+        : state.undoStacksBySheet.get(sheetIndex);
+    const stacks = stacksOf();
+    if (!stacks) {return;}
+    const unrecoverable = (entry: EditUndoEntry) => entry.seq <= upToSeq && (entry.kind === 'sheet' || changesFormatting(entry));
+    if (![...stacks.undo, ...stacks.redo].some(unrecoverable)) {return;}
+    const keep = (entry: EditUndoEntry) => entry.seq > upToSeq;
+    stacks.undo = stacks.undo.filter(keep);
+    stacks.redo = stacks.redo.filter(keep);
     if (sheetIndex === state.currentWorksheet) {
-        const stacks = { undo: state.editUndoStack, redo: state.editRedoStack };
-        filterStacks(stacks);
         state.editUndoStack = stacks.undo;
         state.editRedoStack = stacks.redo;
-    } else {
-        const stacks = state.undoStacksBySheet.get(sheetIndex);
-        if (stacks) {filterStacks(stacks);}
     }
 }

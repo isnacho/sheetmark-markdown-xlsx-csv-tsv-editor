@@ -107,8 +107,9 @@ CSV/TSV), snapshots a version, and posts `saveResult { ok, isAutosave }`; on suc
 removes exactly the entries that were sent, so edits made while the save was in flight stay pending.
 Autosave defaults: on for CSV/TSV, off for XLSX (an XLSX save rewrites the whole workbook), set by
 `xlsxViewer.<type>.autoSave`. Undo and redo are kept per sheet and are recorded into the ledger too, so
-they are saved; undo of a structure edit or formatting that is already on disk is not available (the
-entry is dropped on save, see `dropUnrecoverableUndoEntries`).
+they are saved; undo of a structure edit or formatting that is already on disk is not available: when a
+save writes one, the sheet's undo history up to that save is cleared (`dropUnrecoverableUndoEntries`),
+because older entries hold addresses and styles from before it.
 
 Rows fetched again (`rowsData`) get the pending values laid over them (`overlayRows`), so an edit
 survives scrolling, sorting and switching sheets. A sheet with unsaved structure edits keeps its local

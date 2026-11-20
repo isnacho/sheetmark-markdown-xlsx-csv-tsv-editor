@@ -353,6 +353,29 @@ test('a structure edit that is already saved cannot be undone (Undo does nothing
     await sheet.stop();
 });
 
+test('bug: after a structure edit is saved, Undo does not write an old value into a shifted cell', async () => {
+    const rows = Array.from({ length: 6 }, (_, i) => [`a${i + 1}`, `b${i + 1}`]);
+    const sheet = await bootSpreadsheet({ values: rows, fileType: 'csv', settings: { autoSave: true } });
+    await editCell(sheet, 4, 1, 'X'); // B5
+    await sheet.page.click('th.row-header[data-row="2"]', { button: 'right' });
+    await sheet.page.click('text=Insert row above');
+    await sheet.page.waitForFunction(() => document.querySelectorAll('td[data-col="0"]').length === 7);
+    const save = await sheet.waitForPosted('saveXlsxEdits', 5000);
+    assert.deepEqual(save.operations, [{ type: 'insertRowAbove', index: 3 }]);
+    assert.deepEqual(save.edits, [{ row: 6, col: 2, value: 'b5X' }], 'the edit moved down with the inserted row');
+    await sheet.send({ command: 'saveResult', ok: true, isAutosave: true } satisfies HostToSpreadsheetWebview);
+    await sheet.page.waitForTimeout(150);
+
+    await sheet.page.click(sheet.cell(0, 0));
+    await sheet.page.keyboard.press('Control+z');
+    await sheet.page.keyboard.press('Control+y');
+    await sheet.page.waitForTimeout(1600);
+    assert.equal((await sheet.postedOf('saveXlsxEdits')).length, 1, 'neither Undo nor Redo wrote anything');
+    assert.equal(await sheet.page.locator(sheet.cell(4, 1)).textContent(), 'b4', 'the cell that now sits at row 5 is untouched');
+    assert.equal(await sheet.page.locator(sheet.cell(5, 1)).textContent(), 'b5X');
+    await sheet.stop();
+});
+
 test('hovering a hyperlink cell shows the link tooltip, and Open posts openExternal', async () => {
     const sheet = await bootSpreadsheet({ values: VALUES, cellProps: { '0:1': { hyperlink: 'https://example.com/a' } } });
     await sheet.page.hover(sheet.cell(0, 1));

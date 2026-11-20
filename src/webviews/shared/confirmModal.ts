@@ -1,0 +1,63 @@
+// Confirm dialog shared by the Markdown and spreadsheet webviews. Runtime: WEBVIEW (browser).
+
+import { Utils } from './utils';
+import { DialogKeyboard } from './popupFocus';
+
+// VS Code webviews are sandboxed without `allow-modals` — window.confirm()/alert()/
+// prompt() are silently blocked, so a real dialog is built here reusing the shared
+// .feedback-overlay/.feedback-modal pattern (same one FeedbackModal uses).
+// Focus moves to the dialog itself (not a button), so a keystroke meant for the editor
+// cannot press "Keep mine" or "Overwrite" by accident; Escape is the passive cancel.
+let dialogCount = 0;
+
+export type ModalOutcome = 'confirm' | 'secondary' | 'cancel';
+
+export function confirmModal(
+    title: string,
+    message: string,
+    confirmLabel: string,
+    secondaryLabel?: string
+): Promise<ModalOutcome> {
+    return new Promise((resolve) => {
+        const overlay = document.createElement('div');
+        overlay.className = 'feedback-overlay reload-confirm-overlay';
+        const modal = document.createElement('div');
+        modal.className = 'feedback-modal';
+        const titleId = `confirmModalTitle${++dialogCount}`;
+        modal.innerHTML = `
+            <div class="feedback-header">
+                <h2 id="${titleId}">${Utils.escapeHtml(title)}</h2>
+            </div>
+            <div class="feedback-body" style="padding: 20px 24px 24px 24px; gap: 20px;">
+                <p style="margin: 0; font-size: 13.5px; color: var(--color-text-primary); line-height: 1.5;">
+                    ${Utils.escapeHtml(message)}
+                </p>
+                <div style="display: flex; justify-content: flex-end; gap: 8px;">
+                    <button class="reload-confirm-cancel" type="button" style="background: none; border: 1px solid var(--color-border-default); border-radius: 6px; color: var(--color-text-primary); font-size: 13px; font-weight: 500; padding: 6px 14px; cursor: pointer;">${Utils.escapeHtml(secondaryLabel ?? 'Cancel')}</button>
+                    <button class="reload-confirm-ok" type="button" style="background: var(--color-status-warning); border: none; border-radius: 6px; color: var(--color-text-on-action); font-size: 13px; font-weight: 600; padding: 6px 14px; cursor: pointer;">${Utils.escapeHtml(confirmLabel)}</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+        document.body.appendChild(modal);
+        let settled = false;
+        const keyboard = new DialogKeyboard(modal, { modal: true, labelledBy: titleId, requestClose: () => finish('cancel') });
+        keyboard.opened();
+        requestAnimationFrame(() => {
+            overlay.classList.add('active');
+            modal.classList.add('active');
+        });
+
+        function finish(result: ModalOutcome): void {
+            if (settled) { return; }
+            settled = true;
+            overlay.remove();
+            modal.remove();
+            keyboard.closed();
+            resolve(result);
+        }
+        overlay.addEventListener('click', () => finish('cancel'));
+        modal.querySelector('.reload-confirm-cancel')?.addEventListener('click', () => finish(secondaryLabel ? 'secondary' : 'cancel'));
+        modal.querySelector('.reload-confirm-ok')?.addEventListener('click', () => finish('confirm'));
+    });
+}

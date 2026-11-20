@@ -18,7 +18,7 @@ import { sanitizeMarkdownCopyLinkArtifacts } from './copyLinkArtifacts';
 import { confirmDiscardAndReload, confirmOverwriteConflict, confirmOverwriteWithLocal, confirmRestoreConflict } from './dialogs';
 import { post } from './messaging';
 import { state } from './state';
-import { hideToast, showToast } from './toast';
+import { hideToast, showToast } from '../shared/toast';
 import type { MessageOf } from '../../protocol/common';
 import type { HostToMarkdownWebview } from '../../protocol/markdown';
 

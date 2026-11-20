@@ -1,7 +1,7 @@
 
-export class Utils {
-    private static toastHideTimer: ReturnType<typeof setTimeout> | null = null;
+import { showToast } from './toast';
 
+export class Utils {
     static $(id: string): HTMLElement | null {
         return document.getElementById(id);
     }
@@ -16,40 +16,12 @@ export class Utils {
             .replace(/'/g, '&#39;');
     }
 
+    /**
+     * Short confirmation toast (the shared toast in `./toast.ts`). `isAutosave` makes it brief (1 s),
+     * the default is 3 s; `durationMs` overrides both.
+     */
     static showToast(message: string, isAutosave = false, durationMs?: number) {
-        let toast = document.getElementById('saveToast');
-        if (!toast) {
-            toast = document.createElement('div');
-            toast.id = 'saveToast';
-            toast.className = 'toast-notification';
-            toast.innerHTML = `
-                <div class="toast-icon-wrapper">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-                        <polyline points="20 6 9 17 4 12"></polyline>
-                    </svg>
-                </div>
-                <span class="toast-text"></span>
-            `;
-            document.body.appendChild(toast);
-        }
-        
-        const textSpan = toast.querySelector('.toast-text');
-        if (textSpan) {textSpan.textContent = message;}
-        
-        if (isAutosave) {
-            toast.classList.add('autosave-toast');
-        } else {
-            toast.classList.remove('autosave-toast');
-        }
-        
-        toast.classList.add('show');
-        if (Utils.toastHideTimer) {
-            clearTimeout(Utils.toastHideTimer);
-        }
-        Utils.toastHideTimer = setTimeout(() => {
-            toast?.classList.remove('show');
-            Utils.toastHideTimer = null;
-        }, typeof durationMs === 'number' ? durationMs : (isAutosave ? 1000 : 3000));
+        showToast(message, undefined, { durationMs: typeof durationMs === 'number' ? durationMs : (isAutosave ? 1000 : 3000) });
     }
 
 }

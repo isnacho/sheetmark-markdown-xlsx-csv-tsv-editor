@@ -67,7 +67,7 @@ import type { HostToMarkdownWebview } from '../../protocol/markdown';
 import type { HandledByFeedbackModal } from '../../protocol/common';
 import { state } from './state';
 import { post } from './messaging';
-import { hideToast, showToast } from './toast';
+import { hideToast, showToast } from '../shared/toast';
 import { confirmDiscardAndReload } from './dialogs';
 import { sanitizeMarkdownCopyLinkArtifacts, stripHeadingCopyLinkArtifacts } from './copyLinkArtifacts';
 import { revealAndApplyInitialMessages } from './initialMessages';

@@ -1,9 +1,8 @@
-// The Markdown webview's single toast (bottom-center): message, up to three action buttons,
-// optional persistence. Runtime: WEBVIEW (browser).
+// The single toast both webviews share (bottom-center): message, up to three action buttons,
+// optional persistence. Styles: `.toast-*` in resources/shared/theme.css. Runtime: WEBVIEW (browser).
+// Does not import `Utils` (which wraps this for the spreadsheet), so there is no import cycle.
 
-import { Utils } from '../shared/utils';
-
-const $ = Utils.$;
+const $ = (id: string): HTMLElement | null => document.getElementById(id);
 
 let toastDismissTimer: number | null = null;
 let toastOnDismiss: (() => void) | null = null;
@@ -35,7 +34,7 @@ export interface ToastAction {
 export function showToast(
     message: string,
     action?: ToastAction | ToastAction[],
-    opts?: { persistent?: boolean; onDismiss?: () => void; icon?: 'success' | 'warning'; hideCloseButton?: boolean }
+    opts?: { persistent?: boolean; onDismiss?: () => void; icon?: 'success' | 'warning'; hideCloseButton?: boolean; durationMs?: number }
 ) {
     // Three slots: the disk-change toast carries Load disk changes, Review changes,
     // and Keep local version.
@@ -103,7 +102,7 @@ export function showToast(
                 toast!.classList.remove('show');
                 toastDismissTimer = null;
                 toastOnDismiss = null;
-            }, actions.length ? 8000 : 6000);
+            }, opts?.durationMs ?? (actions.length ? 8000 : 6000));
         }
     }
 }

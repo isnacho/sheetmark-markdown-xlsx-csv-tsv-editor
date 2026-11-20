@@ -17,7 +17,9 @@ the spreadsheet webview (xlsx, csv, tsv) and the Markdown webview. A change here
 | `delayedTitleTooltip.ts` | Delayed hover tooltips for icon-only controls: `wireDelayedToolbarTooltips`, `applyDelayedTitle`, `setDelayedTitleText` |
 | `popupFocus.ts` | Keyboard and focus for popups, after the WAI-ARIA / Radix patterns: `MenuKeyboard` (role `menu`, arrows/Home/End between items, Escape and Tab close, focus goes back on close; construct once per singleton menu, call `opened()` after building items and `closed()` from the hide function), `DialogKeyboard` (role `dialog`, focus moves to the dialog itself on open, Escape closes, `modal` keeps Tab inside, focus goes back on close), `isInsidePopup` (page-wide shortcuts skip keys pressed in an open popup). Use these for any new menu or dialog |
 | `feedbackModal.ts` | `FeedbackModal`: feedback dialog; sends `getSystemDetails`, `submitFeedback`, `openExternal`; handles `systemDetails`, `feedbackResult` |
-| `utils.ts` | `Utils` static helpers: `Utils.$` (element by id), `Utils.showToast`, `Utils.escapeHtml` |
+| `toast.ts` | `showToast(message, action | action[], { persistent, onDismiss, icon, hideCloseButton, durationMs })` and `hideToast`: the one bottom-center toast (`#toastNotification`) both webviews use; styles are `.toast-*` in `resources/shared/theme.css` |
+| `confirmModal.ts` | `confirmModal(title, message, confirmLabel, secondaryLabel?)`: promise-based confirm dialog (window.confirm is blocked in webviews); Markdown wraps it in `md/dialogs.ts` |
+| `utils.ts` | `Utils` static helpers: `Utils.$` (element by id), `Utils.showToast` (thin wrapper over `toast.ts`), `Utils.escapeHtml` |
 | `icons.ts` | `Icons`: SVG icon strings for toolbars and menus |
 
 Message details for the shared modules are in

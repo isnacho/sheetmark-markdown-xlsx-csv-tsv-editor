@@ -18,7 +18,7 @@ async function editCell(sheet: SpreadsheetFixture, row: number, col: number, app
     await sheet.page.keyboard.press('Enter');
 }
 
-const toastText = (sheet: SpreadsheetFixture) => sheet.page.locator('#saveToast .toast-text').textContent();
+const toastText = (sheet: SpreadsheetFixture) => sheet.page.locator('#toastNotification .toast-text').textContent();
 
 test('edit mode: Save posts the changed cell, and a successful result leaves edit mode', async () => {
     const sheet = await bootSpreadsheet({ values: VALUES });
@@ -90,7 +90,7 @@ test('a failed save shows an error and stays in edit mode', async () => {
     await sheet.page.click('#saveTableEditsButton');
     await sheet.waitForPosted('saveXlsxEdits');
     await sheet.send({ command: 'saveResult', ok: false, error: 'disk full', isAutosave: false } satisfies HostToSpreadsheetWebview);
-    await sheet.page.waitForFunction(() => document.querySelector('#saveToast .toast-text')?.textContent === 'Error saving');
+    await sheet.page.waitForFunction(() => document.querySelector('#toastNotification .toast-text')?.textContent === 'Error saving');
     assert.ok(await sheet.page.locator('td.editable-cell').count() > 0);
     await sheet.stop();
 });

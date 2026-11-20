@@ -14,18 +14,20 @@ grep for function names.
 
 | File | Contains |
 |---|---|
-| [state.ts](../../src/webviews/spreadsheet/state.ts) | All mutable webview state, accessed as `state.x` (`state.rowCache`, `state.isEditMode`, `state.currentSettings`, selection sets, pending edits, popup elements). `MIN_ROW_HEADER_WIDTH` |
-| [persistence.ts](../../src/webviews/spreadsheet/persistence.ts) | `saveEdits` (builds `saveXlsxEdits`), `scheduleAutoSave`, `persistPlainTextEdit` / `persistInteractiveControlEdit`, pending outside-edit-mode edits, `onSaveResult`. Gets `setEditMode` via `initPersistence`. Pinned by `src/test/webview/spreadsheetEditing.spec.mts` |
+| [state.ts](../../src/webviews/spreadsheet/state.ts) | All mutable webview state, accessed as `state.x` (`state.rowCache`, `state.isDataOnly`, `state.currentSettings`, selection sets, undo stacks, popup elements). `MIN_ROW_HEADER_WIDTH` |
+| [pendingEdits.ts](../../src/webviews/spreadsheet/pendingEdits.ts), [ledger.ts](../../src/webviews/spreadsheet/ledger.ts) | The edit ledger: unsaved values, rich runs, styles and structure ops per sheet (`recordValue`, `recordOp` with `remapAddress`, `takePayload`, `settleSaved`, `overlayRows`, `snapshot`/`restore`). Pure and unit-tested; `ledger.ts` is the instance plus current-sheet helpers |
+| [persistence.ts](../../src/webviews/spreadsheet/persistence.ts) | `recordCellValue`, `recordChange` (autosave debounce), `saveEdits` (one sheet per `saveXlsxEdits`, queued while a save runs, `force`), `onSaveResult`, `onSaveConflictResult`. Gets toolbar refresh and conflict handling via `initPersistence`. Pinned by `spreadsheetEditing.spec.mts` |
+| [diskSync.ts](../../src/webviews/spreadsheet/diskSync.ts) | "File changed on disk" toast (Load disk changes, Keep my edits), the conflict confirm, `isDiskChangePending` (autosave waits). Pinned by `spreadsheetDiskSync.spec.mts` |
 | [cellValues.ts](../../src/webviews/spreadsheet/cellValues.ts) | `getCellType`, `getCellNormalizedValue`, `getOrCreateRowCellData`, value normalizers (`normalizeCellText`, rating, date, boolean) |
 | [dataOps.ts](../../src/webviews/spreadsheet/dataOps.ts) | Sort and filter: `readCellTextForDataOps`, `compareDataOpValues`, `filterAndSortRows` (unit-tested) |
 | [rowMetrics.ts](../../src/webviews/spreadsheet/rowMetrics.ts) | Row-height prefix sums and `rowIndexAtOffset` for virtual scrolling (unit-tested) |
 | [rowLayout.ts](../../src/webviews/spreadsheet/rowLayout.ts) | The same math bound to `state`: `getRowTopOffset`, `getRowHeightRange`, `findRowIndexByOffset`, `invalidateRowMetrics`, `getMutableRowsSnapshot` |
-| [styleEdits.ts](../../src/webviews/spreadsheet/styleEdits.ts) | `styleToRendererCss`, `normalizeStyleForStorage` (unit-tested), `recordCellStyleEdit` / `recordLogicalStyleEdit` (pending style edits) |
-| [undo.ts](../../src/webviews/spreadsheet/undo.ts) | Undo/redo: `captureCellUndoState`, `captureWorksheetStateSnapshot`, `pushEditUndoEntry`, `pushSheetUndoEntry`, `pushSingleCellUndo`, `undoEditAction`, `redoEditAction`. Gets four helpers (selection, menu, re-render, find highlights) via `initUndo` |
+| [styleEdits.ts](../../src/webviews/spreadsheet/styleEdits.ts) | `styleToRendererCss`, `normalizeStyleForStorage` (unit-tested), `recordCellStyleEdit` / `recordLogicalStyleEdit` (record style edits into the ledger), `applyStyleToCellData` |
+| [undo.ts](../../src/webviews/spreadsheet/undo.ts) | Undo/redo, one stack pair per sheet (`switchUndoSheet`): `captureCellUndoState`, `captureWorksheetStateSnapshot`, `pushEditUndoEntry` (cells), `pushValuesUndoEntry` (paste, clear), `pushSheetUndoEntry` (structure), `undoEditAction`, `redoEditAction` (both record into the ledger), `dropUnrecoverableUndoEntries`. Gets four helpers (selection, menu, re-render, find highlights) via `initUndo` |
 | [interactiveControls.ts](../../src/webviews/spreadsheet/interactiveControls.ts) | Checkbox, dropdown, rating and date cells: `applyInteractiveControlState`, `update*CellPresentation`, the Insert Control and dropdown-options popups, `insertControlIntoSelection`. Gets two helpers via `initInteractiveControls`. Pinned by `spreadsheetControls.spec.mts` |
-| [notices.ts](../../src/webviews/spreadsheet/notices.ts) | Merge warning (`confirmMergePreserveTopLeftContent`) and the styled-mode notice (`showStyleModeNoticePopup`, sends `styleModeDecision`) |
+| [notices.ts](../../src/webviews/spreadsheet/notices.ts) | Merge warning (`confirmMergePreserveTopLeftContent`) and the CSV/TSV legacy-formatting notice (`showLegacyStylesNotice`: Convert to XLSX / Dismiss) |
 | [linkPreview.ts](../../src/webviews/spreadsheet/linkPreview.ts) | Hyperlink tooltip (`showLinkTooltipForCell`, sends `openExternal`), `initializeHyperlinkHover`, image preview overlay |
-| [ui.ts](../../src/webviews/spreadsheet/ui.ts), [messaging.ts](../../src/webviews/spreadsheet/messaging.ts) | Loading overlay, `setButtonsEnabled`, `captureOriginalCellValues`; the typed `post` to the host |
+| [ui.ts](../../src/webviews/spreadsheet/ui.ts), [messaging.ts](../../src/webviews/spreadsheet/messaging.ts) | Loading overlay; the typed `post` to the host |
 
 To move more code out, see [scripts/refactor/](../../scripts/refactor/): `cluster-deps.cjs` shows what a group of functions needs from the rest of the file, and `move-functions.cjs` moves it and fixes the imports.
 
@@ -41,8 +43,8 @@ To move more code out, see [scripts/refactor/](../../scripts/refactor/): `cluste
 | Structure operations (insert/delete rows, columns, cells) | `applyStructureOperation`, `applyCellInsertOperation`, `applyCellDeleteOperation`, `persistStructureChange`, `canApplyStructureEdits` |
 | Header context menu and column filters | `ensureHeaderContextMenu`, `showHeaderContextMenu`, `hideHeaderContextMenu`, `activeColumnFilters`, `activeSortState` |
 | Cell context menu and edit selection | `showCellContextMenu`, `captureEditSelectionRange`, `restoreEditSelectionRange` |
-| Inline styling and plain-view toolbar state | `applyInlineStyleToSelection`, `syncPlainViewUiState`, `updatePlainViewButtonLabel`, `syncSheetSelectorVisibility`, `syncTemporaryFileToolbarActions` |
-| Settings scope and styled-mode gating | `resolveSettingsScope`, `normalizeSettingsForScope`, `applySettingsForScope`, `consumeIncomingSettingsPayload`, `requestStyledMode` (sends `requestStyleMode`), `activateStyledMode` (sends `setPreferredViewMode`), `cancelStyledModeRequest` |
+| Inline styling, editable surface and toolbar state | `applyInlineStyleToSelection`, `syncEditableSurface`, `updateToolbarState`, `syncSheetSelectorVisibility`, `switchWorksheet`, `reloadFromDisk`, `discardUnsavedEdits` |
+| Settings payload | `consumeIncomingSettingsPayload` (one `settings` per file type; there are no scopes) |
 | Edit formatting core | `applyEditFormatting`, `getEditTargetCells`, `applyFormatToLogicalSelection`, `getLogicalSelectionBounds` |
 | Align, font, wrap, indent, strikethrough | `applyHorizontalAlign`, `applyVerticalAlign`, `applyFontSize`, `applyFontFamily`, `applyWrapMode`, `applyIndent`, `applyStrikeThrough` |
 | Borders | `applyBorderPreset`, `applyBorderColorToSelection`, `applyCurrentBorderMode` |
@@ -50,7 +52,7 @@ To move more code out, see [scripts/refactor/](../../scripts/refactor/): `cluste
 | Merge operations | `queueMergeOperation` (queues `mergeRange` / `unmergeRange` ops) |
 | Format painter | `copyFormattingFromCell`, `applyStyleToCellFromPainter`, `toggleFormatPainter` |
 | Color palette | `applyCellBackgroundColor`, `applyTextColor`, `ensureColorPalette`, `showColorPalette` |
-| Edit-formatting toolbar wiring | `wireEditFormattingControls`, `ensureEditFormattingStrip`, `reorderToolbarAroundFind` |
+| Edit-formatting toolbar wiring | `wireEditFormattingControls`, `ensureEditFormattingStrip` (builds row 2, `#formattingToolbar`) |
 | Persist edits and autosave | moved to `persistence.ts` |
 | Virtual-scroll core, sort and filter | `Virtual Scrolling Core`; `requestRows`, `requestAllRows` (via `VirtualLoader`, sends `getRows`), `rebuildFilteredRows`, `applyDataOpsRowsToViewport` (sort/filter logic: `filterAndSortRows` in `dataOps.ts`) |
 | Row rendering and viewport | `createRowHtml`, `adjustColumnWidths`, `setRowHeaderWidth`, `renderVirtualRows`, `updateVisibleRows` |
@@ -58,10 +60,9 @@ To move more code out, see [scripts/refactor/](../../scripts/refactor/): `cluste
 | Resize and auto-fit | `initializeResize`, `autoFitColumn`, `autoFitRow` |
 | Selection and clipboard | `selectCell`, `selectRange`, `selectRow`, `selectColumn`, `pasteTextAtSelection` (sends `saveXlsxEdits`) |
 | Selection interaction handlers | `initializeSelection` (mouse and keyboard navigation; Escape in version preview sends `cancelVersionPreview`), `startAutoScroll`, `autoScrollLoop` |
-| Settings visibility and apply | `hideStyledOnlySettingsForPlainMode`, `applySettings`, `postSettings` (sends `updateSettings`) |
-| Cell edit mode and navigation | `enterCellEditMode`, `exitCellEditMode`, `moveSelection` (multi-line cell text uses `spreadsheetCellTextComponent.ts`) |
-| Edit-mode toggle | `setEditMode` (save is `saveEdits` in `persistence.ts`) |
-| Expanded mode, settings UI, toolbar handlers | `setExpandedMode`, `wireSettingsUI` (sends `enableAsDefault` / `disableDefaultEditor`), `attachHandlersOnce` (toolbar buttons: `showVersionHistory`, `convertFile`, `requestFreshData`, `setPreferredViewMode`) |
+| Settings visibility and apply | `syncSettingsVisibilityForFileType`, `applySettings`, `postSettings` (sends `updateSettings`) |
+| Cell editing and navigation | `enterCellEditMode`, `exitCellEditMode` (records the value into the ledger), `commitControlEdit`, `moveSelection` (multi-line cell text uses `spreadsheetCellTextComponent.ts`) |
+| Expanded mode, settings UI, toolbar handlers | `setExpandedMode`, `wireSettingsUI` (sends `enableAsDefault` / `disableDefaultEditor`), `attachHandlersOnce` (toolbar buttons: `showVersionHistory`, `convertFile`, `requestFreshData`) |
 | Sheet selector | `populateSheetSelector` |
 | **Message handler (host to webview)** | `window.addEventListener('message'`, then one `if (message.command === '<command>')` per message |
 | Bootstrap | `DOMContentLoaded` listener, posts `webviewReady` |
@@ -76,7 +77,7 @@ Imported by `spreadsheetWebview.ts`; they live in
 | spreadsheetRenderComponent.ts | Row HTML, cell style CSS, dropdown cell content | `createXlsxRowHtml`, `formatCellStyle`, `renderDropdownCellContent`, `getExcelColumnLabel` |
 | spreadsheetCellTextComponent.ts | Multi-line cell text: serialize editable DOM to `\n`, render with line breaks, Shift+Enter insert | `serializeEditableCellText`, `loadEditableCellContent`, `insertLineBreakAtCaret`, `formatCellTextHtml` |
 | spreadsheetSelectionComponent.ts | Selection state and bindings | `XlsxSelectionManager`, `XlsxSelectionBindings` |
-| spreadsheetToolbarComponent.ts | Toolbar button definitions | `createXlsxToolbarButtons` |
+| spreadsheetToolbarComponent.ts | Row 1 button definitions (Reload, Save, Undo, Redo, Column widths; Find ... Settings at the end). Row 2 is `ensureEditFormattingStrip` | `createXlsxToolbarButtons` |
 | spreadsheetFindComponent.ts | Find matches and navigation | `XlsxFindManager`, `XlsxFindMatch` |
 | spreadsheetBorderComponent.ts | Border style parse/compose to CSS | `buildBorderCss`, `borderStyleToCss`, `inferBorderModeFromStyle` |
 | spreadsheetRichTextComponent.ts | Rich-text runs inside a cell | `getCellRichRuns`, `hasRunFormatting`, `normalizeColorToHex` |

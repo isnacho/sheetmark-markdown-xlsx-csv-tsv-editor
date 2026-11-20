@@ -11,7 +11,7 @@ the spreadsheet webview (xlsx, csv, tsv) and the Markdown webview. A change here
 | `fontManager.ts` | The Font picker row in both Settings panels: a button that opens a searchable list inline under the row (`renderFontSettingItem`, `wireFontPicker`). Also `applyFontChoice` (handles `fontFamilyChanged`), `applyLocalFonts` (handles `localFonts`), `onFontApplied` (re-measure after a change). Adding a built-in font: `BuiltInFont` in `protocol/common.ts`, a label here, a `:root[data-font]` rule in `theme.css`, `src/shared/fontChoice.ts` |
 | `fontSearch.ts` | `filterFontNames`: the picker's search (case and accent blind, every word must match, best matches first) |
 | `settingsManager.ts` | `SettingsManager`, `SettingDefinition`: settings panel rendering and change wiring |
-| `toolbarManager.ts` | `ToolbarManager`, `ToolbarButton`: toolbar buttons, visibility, sticky layout, header height |
+| `toolbarManager.ts` | `ToolbarManager`, `ToolbarButton`: toolbar buttons, visibility, sticky layout, header height; `setStickyCompanion` adds a second row (the spreadsheet's formatting row) to the sticky height, `setHoverRevealCompanion` reveals it with the main toolbar |
 | `toolbarLayout.ts` | `applyToolbarLayout`: applies the sticky/non-sticky toolbar setting via `ToolbarManager` |
 | `menuPanel.ts` | Markup helpers for menu-panel rows (settings gear panel, slash menu icons): `renderMenuCheckboxRow`, `renderMenuActionRow`, `renderMenuSelectRow`, `renderMenuSection`, `renderMenuPanelShell` |
 | `delayedTitleTooltip.ts` | Delayed hover tooltips for icon-only controls: `wireDelayedToolbarTooltips`, `applyDelayedTitle`, `setDelayedTitleText` |

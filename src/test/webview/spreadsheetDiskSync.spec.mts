@@ -54,7 +54,7 @@ test('with unsaved edits, Load disk changes asks to discard them first', async (
     const sheet = await bootSpreadsheet({ values: VALUES });
     await editCell(sheet, 0, 0, 'mine');
     await diskChanged(sheet);
-    assert.equal(await toastAction(sheet, 'Keep my edits').count(), 1);
+    await sheet.page.waitForSelector('#toastNotification.show .toast-action:has-text("Keep my edits")');
     await toastAction(sheet, 'Load disk changes').click();
     await sheet.page.waitForSelector('.feedback-modal.active');
     assert.equal(await dialogTitle(sheet).textContent(), 'Reload from Disk');
@@ -75,6 +75,7 @@ test('with unsaved edits, Load disk changes asks to discard them first', async (
 test('the toast starts offering Keep my edits when an edit is made after it appeared', async () => {
     const sheet = await bootSpreadsheet({ values: VALUES });
     await diskChanged(sheet);
+    await sheet.page.waitForSelector('#toastNotification.show');
     assert.equal(await toastAction(sheet, 'Keep my edits').count(), 0);
     await editCell(sheet, 1, 1, '!');
     await sheet.page.waitForSelector('#toastNotification.show .toast-action:has-text("Keep my edits")');
@@ -85,6 +86,7 @@ test('Keep my edits asks, then saves into the changed file with force', async ()
     const sheet = await bootSpreadsheet({ values: VALUES });
     await editCell(sheet, 0, 1, 'K');
     await diskChanged(sheet);
+    await sheet.page.waitForSelector('#toastNotification.show .toast-action:has-text("Keep my edits")');
     await toastAction(sheet, 'Keep my edits').click();
     await sheet.page.waitForSelector('.feedback-modal.active');
     assert.equal(await dialogTitle(sheet).textContent(), 'Save your edits into the changed file?');

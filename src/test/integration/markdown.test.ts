@@ -2,6 +2,7 @@
 
 import * as assert from 'assert';
 import * as vscode from 'vscode';
+import * as fs from 'fs';
 import * as path from 'path';
 import { parseCsp } from '../../shared/webviewCsp';
 import { closeAllEditors, cspOf, fixtureDir, openInSheetmark, sheetmark, waitFor } from './helpers';
@@ -9,13 +10,34 @@ import { closeAllEditors, cspOf, fixtureDir, openInSheetmark, sheetmark, waitFor
 suite('Markdown editor (host)', () => {
     teardown(closeAllEditors);
 
-    test('the webview bundle loads and asks for the document (module script runs)', async () => {
+    test('the document is embedded in the page and the webview renders it without asking again', async () => {
         const api = await sheetmark();
         const file = path.join(fixtureDir({ 'boot.md': '# Boot\n\n```mermaid\ngraph TD\n  A --> B\n```\n' }), 'boot.md');
         const editor = await openInSheetmark(api, file, 'xlsxViewer.md');
-        // initMarkdown is only sent in reply to the webview's webviewReady, so this proves the
+        assert.ok(editor.panel.webview.html.includes('"content":"# Boot'), 'initMarkdown embedded in the HTML');
+        // setTheme is only sent in reply to the webview's webviewReady, so this proves the
         // ES-module bundle loaded under the CSP and ran.
-        await waitFor('initMarkdown reply to webviewReady', () => editor.sent().some((m: any) => m?.command === 'initMarkdown'));
+        await waitFor('setTheme reply to webviewReady', () => editor.sent().some((m: any) => m?.type === 'setTheme'));
+        // sent() also lists the embedded messages: exactly one copy of each means no resend.
+        const count = (command: string) => editor.sent().filter((m: any) => m?.command === command).length;
+        assert.deepEqual([count('initMarkdown'), count('initSettings')], [1, 1], 'the webview applied the embedded messages, so the host sends no copy');
+    });
+
+    test('a later webviewReady (Retry, webview reload) gets the current file, settings and font again', async () => {
+        const api = await sheetmark();
+        const file = path.join(fixtureDir({ 'again.md': '# First\n' }), 'again.md');
+        const editor = await openInSheetmark(api, file, 'xlsxViewer.md');
+        await waitFor('first webviewReady handled', () => editor.sent().some((m: any) => m?.type === 'setTheme'));
+
+        // The page's HTML still embeds "# First": a reload would show stale text without a fresh copy.
+        fs.writeFileSync(file, '# Second\n');
+        const before = editor.sent().length;
+        await editor.dispatch({ command: 'webviewReady', appliedInitialMessages: true });
+        const reply = editor.sent().slice(before) as any[];
+        const commands = reply.map(m => m?.command);
+        const init = reply.find(m => m?.command === 'initMarkdown');
+        assert.equal(init?.content, '# Second\n');
+        assert.ok(commands.includes('initSettings') && commands.includes('fontFamilyChanged'), commands.join(', '));
     });
 
     test('every script tag carries the CSP nonce and inline script is otherwise blocked', async () => {

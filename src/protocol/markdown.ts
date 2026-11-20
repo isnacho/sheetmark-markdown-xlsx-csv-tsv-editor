@@ -37,6 +37,8 @@ export interface MarkdownDocumentPayload {
     detailsOpenState: Record<string, boolean>;
     mermaidPreviewMode: MermaidPreviewMode;
     calloutDefaultType: string;
+    /** When true, use the sidebar outline panel instead of the minimal line rail. */
+    outlinePinned: boolean;
 }
 
 export type MarkdownWebviewToHost =
@@ -51,7 +53,8 @@ export type MarkdownWebviewToHost =
     | { command: 'saveFrontmatterPanelCollapsed'; collapsed: boolean }
     | { command: 'saveDetailsOpenState'; state: Record<string, boolean> }
     | { command: 'saveMermaidPreviewMode'; mode: MermaidPreviewMode }
-    | { command: 'saveCalloutDefaultType'; type: string };
+    | { command: 'saveCalloutDefaultType'; type: string }
+    | { command: 'saveOutlinePinned'; pinned: boolean };
 
 export type HostToMarkdownWebview =
     | CommonHostToWebview

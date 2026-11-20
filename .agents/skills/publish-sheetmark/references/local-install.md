@@ -17,25 +17,21 @@ windows, without publishing anywhere. This is a per-machine, per-editor setup.
 
 ## Identity
 
-`package.json` is renamed away from the upstream fork's published identity:
+`package.json` carries Sheetmark's own published identity, renamed from the upstream fork's:
 
-| field | upstream (published) | current (local dev) |
+| field | upstream fork | Sheetmark (published) |
 |---|---|---|
 | `name` | `xlsx-viewer` | `sheetmark` |
 | `publisher` | `muhammad-ahmad` | `iggyinc` |
 
-This makes the extension ID `iggyinc.sheetmark`. `displayName` and all `xlsxViewer.*` /
-`xlsx-viewer.*` IDs are untouched — protected per `AGENTS.md` §3, unrelated to this identity
-rename.
+This makes the extension ID `iggyinc.sheetmark`. The internal `xlsxViewer.*` /
+`xlsx-viewer.*` IDs kept the upstream names on purpose (protected per `AGENTS.md` §3).
 
-Two self-lookups read the extension by ID to report its own version (`getSystemDetails`
-handler, used for a diagnostics panel) and **must match `publisher.name` from `package.json`
-exactly**, or they silently return `undefined` (no crash, no error):
-
-- [src/mdEditorProvider.ts](../../../../src/mdEditorProvider.ts)
-- [src/spreadsheetEditorProvider.ts](../../../../src/spreadsheetEditorProvider.ts)
-
-Any future rename of `name`/`publisher` must update both call sites in the same commit.
+The `getSystemDetails` handler in
+[src/shared/commonHostMessages.ts](../../../../src/shared/commonHostMessages.ts) reads the
+extension by ID to report its own version (diagnostics panel). The ID **must match
+`publisher.name` from `package.json` exactly**, or it silently returns `undefined` (no crash, no
+error). `src/test/integration/helpers.ts` looks it up the same way; a rename updates both.
 
 ## Critical gotcha: the folder name is NOT cosmetic
 
@@ -77,8 +73,8 @@ doesn't, quit the editor first, then hand-edit `extensions.json`'s `location.pat
 
 1. Confirm editor + extensions dir: `ls ~/.cursor/extensions` (Cursor) or
    `ls ~/.vscode/extensions` (VS Code). Use the matching CLI (`cursor` or `code`) below.
-2. Confirm `package.json` has `name: "sheetmark"`, `publisher: "iggyinc"`, and that both
-   `getExtension('iggyinc.sheetmark')` call sites above match.
+2. Confirm `package.json` has `name: "sheetmark"`, `publisher: "iggyinc"`, and that the
+   `getExtension('iggyinc.sheetmark')` lookups above match.
 3. Uninstall any conflicting marketplace install of the original fork, if present — two
    extensions registering the same `viewType` (e.g. `xlsxViewer.xlsx`) conflict:
    ```bash
@@ -94,7 +90,7 @@ doesn't, quit the editor first, then hand-edit `extensions.json`'s `location.pat
    after a rebuild, run **"Developer: Reload Window"** in the target window.
 6. In any target window: Cmd+Shift+P → **Developer: Reload Window** to activate.
 
-## Reverse this (go back to the published upstream extension)
+## Reverse this (go back to the Marketplace install)
 
 1. Stop the `npm run watch` process, if running.
 2. Remove the symlink (does **not** touch the repo — only the extensions-dir entry):
@@ -102,16 +98,11 @@ doesn't, quit the editor first, then hand-edit `extensions.json`'s `location.pat
    VERSION="$(node -p "require('./package.json').version")"
    rm ~/.cursor/extensions/iggyinc.sheetmark-$VERSION
    ```
-3. Revert the identity fields in `package.json`: `name` → `xlsx-viewer`,
-   `publisher` → `muhammad-ahmad`.
-4. Revert the two self-lookup call sites (`getSystemDetails` handler) back to
-   `'muhammad-ahmad.xlsx-viewer'` in `mdEditorProvider.ts` and `spreadsheetEditorProvider.ts`.
-5. `npm run compile` to confirm clean.
-6. Reinstall the marketplace version if wanted day-to-day:
+3. Reinstall the published version if wanted day-to-day:
    ```bash
-   cursor --install-extension muhammad-ahmad.xlsx-viewer
+   cursor --install-extension iggyinc.sheetmark
    ```
-7. Fully quit and relaunch the editor.
+4. Fully quit and relaunch the editor.
 
 **Quick check both states aren't active at once:**
 `ls ~/.cursor/extensions | grep -iE "xlsx|sheetmark"` — exactly one of the two extension IDs

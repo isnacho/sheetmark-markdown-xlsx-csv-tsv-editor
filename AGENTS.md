@@ -4,8 +4,8 @@ Sheetmark is a VS Code extension with custom editors for spreadsheets (`.xlsx`/`
 Markdown (`.md`). It started as a fork of upstream `xlsx-viewer` v1.9.91 and is published as
 `iggyinc.sheetmark`. TypeScript, bundled with esbuild. Read this file fully before editing.
 
-**Verify every change with `npm run verify`** (types for all three tsconfigs, lint, unit tests,
-bundle). It must end green before you call work done. See §5.
+**Verify every change with `npm run verify`** (types for all four tsconfig projects, lint, unit
+tests, bundle, webview tests). It must end green before you call work done. See §5.
 
 Deep references (load on demand):
 
@@ -69,7 +69,8 @@ is untrusted. Details: [.docs/dev/MESSAGE-PROTOCOL.md](.docs/dev/MESSAGE-PROTOCO
   and ancestor directories (local images). Anything else is silently blocked.
 - **Do not bump `@types/vscode` on its own.** It is pinned to the `engines.vscode` floor (1.67) so
   tsc rejects VS Code APIs that older supported versions lack. Raising it means raising `engines` too.
-- **Do not change esbuild output paths** without updating the providers, which hardcode
+- **Do not change esbuild output paths** without updating
+  [src/shared/webviewHtml.ts](src/shared/webviewHtml.ts), which hardcodes
   `dist/spreadsheet/spreadsheetWebview.js` and `dist/md/mdWebview.js`.
 - **Do not stage, stash, reset or reformat files you did not change.** The owner often has
   uncommitted work in the tree. Commit only your own files, by path.
@@ -95,6 +96,7 @@ is untrusted. Details: [.docs/dev/MESSAGE-PROTOCOL.md](.docs/dev/MESSAGE-PROTOCO
 | Commands, activation, provider registration | [src/extension.ts](src/extension.ts) |
 | User-visible settings | `contributes.configuration` in [package.json](package.json) |
 | Shared webview building blocks (theme, toolbar, settings, menus, virtual scroll) | `src/webviews/shared/**` (see [guide.md](src/webviews/shared/guide.md)) |
+| Font choices (Settings picker, `xlsxViewer.fontFamily`) | [guide.md](src/webviews/shared/guide.md) (`fontManager.ts` row lists every place a new built-in font touches); installed-font list: [localFonts.ts](src/shared/localFonts.ts) |
 | Static styling | `resources/**/*.css` |
 
 **Large files: do not read end-to-end.** Use the MAPs and grep for symbol names:
@@ -157,12 +159,26 @@ npm run package           # production build (also runs unit tests); used by vsc
   the change → `Cmd+R` to reload after edits.
 - When reporting results, say exactly what ran ("verify + integration green, smoke-tested table
   paste") rather than "all tests pass".
+- **If verify is already red before you change anything**, say so at the start and name the failing
+  test. Don't try to fix it as part of your task, and don't spend runs proving it isn't yours: check
+  once (for example with your change switched off), then report it.
+- **Browser tests and animations:** a check that reads a style right after a class change can catch
+  a CSS transition halfway. Wait for it to finish first, for example
+  `waitForFunction(() => el.getAnimations().length === 0)`.
 - CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs `verify` and the integration tests
   on every push to `main` and every PR.
 
 ## 6. Workflow conventions
 
 - **Branches:** work on a branch, not `main`. Releases publish from pushed `main` only.
+- **The owner's uncommitted work:** before starting a feature on files that already hold
+  uncommitted changes, say which files overlap and ask whether to commit or stash that work first.
+  Otherwise the feature can only be committed by splitting files hunk by hunk, and can't be
+  reviewed or reverted on its own.
+- **Parallel and worktree sessions start from the last commit, not from the working tree.** If a
+  task builds on uncommitted work, either commit that work to a branch first and start from it, or
+  work in this checkout, or copy the files into the worktree, commit them there as a local
+  baseline, and hand back a patch against it (`git diff baseline`). Say which in the session brief.
 - **Commits:** imperative, sentence case, describes the user-visible effect
   ("Fix drag-to-select on hanging-indent list lines."). Releases use `chore: release vX.Y.Z`.
 - **Changelog:** every user-facing change gets a bullet under `## Unreleased` in
@@ -175,9 +191,11 @@ npm run package           # production build (also runs unit tests); used by vsc
   an idea, move its file forward.
 - **Skills** live in `.agents/skills/` (`.claude/skills` and `.codex/skills` are symlinks to it).
   `mii-idea-lab` is a symlink into the `.docs/mii-ai` git submodule (`isnacho/mii-ai-resources`):
-  edits there must be committed and pushed inside the submodule (GitHub account `isnacho`; locally
-  `gh auth switch --user nachosdesign`), then the submodule pointer
-  bumped in this repo.
+  edits there must be committed and pushed inside the submodule, then the submodule pointer
+  bumped in this repo. The submodule pushes as GitHub account `isnacho`: give its clone a
+  repo-local credential helper (GitHub accounts in
+  [mii-ai-git-sparse](.docs/mii-ai/skills/mii-ai-git-sparse/SKILL.md)) rather than switching
+  `gh` accounts.
 - **Docs:** point at symbols (function, class, handler names), never line numbers, and don't
   record file sizes. Both drift within weeks. When you add a file or a message, update the MAP or
   MESSAGE-PROTOCOL doc in the same change.
@@ -189,6 +207,13 @@ npm run package           # production build (also runs unit tests); used by vsc
   `SpreadsheetEditorProvider` serves `xlsxViewer.xlsx/.csv/.tsv`; `MDEditorProvider` serves `xlsxViewer.md`.
 - **Markdown editing** is CM6 live preview only. `state.currentContent` (`src/webviews/md/state.ts`)
   is the single source of truth for save and disk reload.
+- **Callouts (`:::type` … `:::`) and toggles (`<details>`) are not syntax-tree nodes.** They are
+  found by line scanners (`findCalloutBlocks`, `findDetailsBlocks`). Without blank lines around a
+  fence, lezer merges the `:::` line into the next paragraph, so clip syntax nodes to the
+  container's lines. Frontmatter is also detected from text (`extractFrontmatter`), not the tree.
+- **Some Markdown state is keyed by position, not identity:** table column widths by table order
+  (`columnWidthsField`), toggle open state by `title#occurrence` (`detailsOpenField`). A feature that
+  reorders blocks must remap both (see `remapTableIndexMap` and `remapToggleState` in `blockModel.ts`).
 - **External disk sync** uses `fileExternalChangeWatcher.ts` (change, debounced delete).
 - **Renames:** VS Code closes an open Sheetmark editor when its file is renamed and opens a new one
   at the new path. Per-file state (styles, view mode, Markdown prefs, version history) moves in

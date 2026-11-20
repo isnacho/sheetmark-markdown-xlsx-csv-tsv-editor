@@ -2,6 +2,7 @@
  
 
 import { ThemeManager, renderThemeToggleSettingItem } from '../shared/themeManager';
+import { applyFontChoice, applyLocalFonts, onFontApplied, renderFontSettingItem, wireFontPicker } from '../shared/fontManager';
 import { SettingsManager } from '../shared/settingsManager';
 import { ToolbarManager } from '../shared/toolbarManager';
 import { applyToolbarLayout } from '../shared/toolbarLayout';
@@ -57,6 +58,7 @@ import { getMutableRowsSnapshot, getEffectiveRowHeightFromValue, invalidateRowMe
 import { recordLogicalStyleEdit, recordCellStyleEdit, cloneCellStyleEdit } from './styleEdits';
 import { captureCellUndoState, captureWorksheetStateSnapshot, pushEditUndoEntry, pushSheetUndoEntry, undoEditAction, redoEditAction, pushSingleCellUndo, initUndo } from './undo';
 import { hideLinkTooltip, showImagePreview, hideImagePreview, initializeHyperlinkHover } from './linkPreview';
+import { MenuKeyboard } from '../shared/popupFocus';
 import { confirmMergePreserveTopLeftContent, hideStyleModeNoticePopup, showStyleModeNoticePopup } from './notices';
 import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateRatingCellPresentation, updateDateCellPresentation, areInteractiveControlsEnabled, applyInteractiveControlState, hideInsertControlPopup, showInsertControlPopup, hideDropdownOptionsPopup, getDropdownOptionsFromCell, editDropdownOptionsForCell, initInteractiveControls } from './interactiveControls';
 
@@ -192,6 +194,7 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
         const popup = document.createElement('div');
         popup.id = 'xlsxBorderPopup';
         popup.className = 'xlsx-border-popup hidden';
+        popup.dataset.toolbarRevealRetain = '';
         popup.innerHTML = `
             <div class="border-popup-title">Borders</div>
             <div class="border-popup-grid">
@@ -619,6 +622,8 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
         persistStructureChange();
     }
 
+    let headerContextMenuKeys: MenuKeyboard | null = null;
+
     function ensureHeaderContextMenu() {
         if (state.headerContextMenuEl) {return state.headerContextMenuEl;}
 
@@ -627,13 +632,16 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
         menu.className = 'header-context-menu hidden';
         document.body.appendChild(menu);
         state.headerContextMenuEl = menu;
+        headerContextMenuKeys = new MenuKeyboard(menu, '.header-context-item', hideHeaderContextMenu);
         return menu;
     }
+
 
     function hideHeaderContextMenu() {
         if (!state.headerContextMenuEl) {return;}
         state.headerContextMenuEl.classList.add('hidden');
         state.headerContextMenuEl.innerHTML = '';
+        headerContextMenuKeys?.closed();
     }
 
     function showHeaderContextMenu(e: MouseEvent, targetType: 'row' | 'column', targetIndexZeroBased: number) {
@@ -964,6 +972,7 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
         const top = Math.min(Math.max(8, e.clientY), window.innerHeight - rect.height - 8);
         menu.style.left = left + 'px';
         menu.style.top = top + 'px';
+        headerContextMenuKeys?.opened();
     }
 
     function showCellContextMenu(e: MouseEvent, cell: HTMLElement) {
@@ -1056,6 +1065,7 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
         const top = Math.min(Math.max(8, e.clientY), window.innerHeight - rect.height - 8);
         menu.style.left = left + 'px';
         menu.style.top = top + 'px';
+        headerContextMenuKeys?.opened();
     }
 
     function captureEditSelectionRange() {
@@ -3041,7 +3051,9 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
             if (!ctx) {return;}
-            ctx.font = '10pt Arial, sans-serif';
+            // Measure in the font the table really uses (Inter, then the system font). Arial is
+            // narrower than Inter, so columns sized with it would clip text.
+            ctx.font = `10pt ${window.getComputedStyle(table).fontFamily || 'sans-serif'}`;
 
             const visibleRows = table.querySelectorAll('tbody tr:not(.virtual-spacer)');
             const limit = Math.min(visibleRows.length, 80);
@@ -5257,6 +5269,7 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
         const settingsGroup = document.querySelector('#settingsPanel .settings-group');
         if (settingsGroup) {
             settingsGroup.insertAdjacentHTML('beforeend', renderThemeToggleSettingItem('themeSelect'));
+            settingsGroup.insertAdjacentHTML('beforeend', renderFontSettingItem('fontSelect'));
         }
 
         new SettingsManager('openSettingsButton', 'settingsPanel', 'settingsCancelButton', settings, () => {
@@ -5268,6 +5281,11 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
                 onBeforeCycle: () => !state.isEditMode
             }, vscode);
         }
+
+        // Font picker (the setting is shared with the Markdown editor). Column widths were sized in
+        // the old font, so size them again once the new one is applied.
+        wireFontPicker('fontSelect', post);
+        onFontApplied(() => syncColumnWidthsToCurrentMode());
     }
 
     function attachHandlersOnce() {
@@ -5449,6 +5467,16 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
 
         if (message.command === 'versionHistoryError') {
             showToast(message.message || 'Version history failed');
+            return;
+        }
+
+        if (message.command === 'fontFamilyChanged') {
+            applyFontChoice(message.font);
+            return;
+        }
+
+        if (message.command === 'localFonts') {
+            applyLocalFonts(message.fonts);
             return;
         }
 

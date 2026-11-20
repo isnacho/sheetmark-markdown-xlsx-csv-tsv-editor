@@ -16,7 +16,7 @@ import {
     computeMoveRowUp, computeMoveRowDown, computeMoveRowTo, computeDeleteRow, computeInsertRow,
     computeMoveColumn, computeMoveColumnTo, computeDeleteColumn, computeInsertColumn,
     sanitizeTableCellInput, wrapTableCellTextSelection, insertTableCellLink,
-    collapsedClickPosForCell, selectionPosAfterTableInsert,
+    collapsedClickPosForCell, selectionPosAfterTableInsert, columnDragGripTarget,
 } from './tableWidget.ts';
 import type { CellRange, TableMenuItem } from './tableWidget.ts';
 import { fullyParsed } from './testState.ts';
@@ -598,4 +598,15 @@ test('second table cell positions stay valid after editing the first table', () 
     assert.notEqual(stalePos, freshPos);
     assert.equal(state2.sliceDoc(freshPos, grid2[1][0].to), '2');
     assert.notEqual(state2.sliceDoc(stalePos, stalePos + 1), '2');
+});
+
+test('columnDragGripTarget: header cell text is not a column-drag hit', () => {
+    const th = { top: 100, left: 50, right: 150 };
+    assert.equal(columnDragGripTarget(0, th, 80, 92, 16), true);
+    assert.equal(columnDragGripTarget(0, th, 80, 120, 16), false);
+});
+
+test('columnDragGripTarget: clicks in the column but below the grip band miss', () => {
+    const th = { top: 200, left: 0, right: 100 };
+    assert.equal(columnDragGripTarget(0, th, 50, 210, 16), false);
 });

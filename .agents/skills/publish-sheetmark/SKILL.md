@@ -27,10 +27,10 @@ Skip the question when the request already answers it ("let me test this in anot
 
 ## Shared rules across both modes
 
-- `displayName`, and all `xlsxViewer.*` viewTypes / `xlsx-viewer.*` command IDs are protected
-  identity — see `AGENTS.md` §3. Never touch them in either flow; only `name`/`publisher` in
-  `package.json` (and the two `getExtension(...)` self-lookup call sites) are fork-identity
-  fields that can move.
+- The `xlsxViewer.*` viewTypes and `xlsx-viewer.*` command IDs are protected (`AGENTS.md` §3):
+  neither flow touches them. Neither flow renames `name`/`publisher` either; if they ever
+  change, the `getExtension(...)` lookups in `src/shared/commonHostMessages.ts` and
+  `src/test/integration/helpers.ts` change with them.
 - Never expose `VSCE_PAT` or `OVSX_PAT` values in chat, commands, or logs — reference them
   only by name (env var / secret name), never their value.
 - **Release notes:** when drafting changelog entries or the confirmation prompt, follow the

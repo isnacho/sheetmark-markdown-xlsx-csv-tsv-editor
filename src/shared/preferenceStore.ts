@@ -100,6 +100,9 @@ export function createMarkdownPreferences(workspaceState: Memento, globalState: 
             if (!slug) { return 'info'; }
             return CALLOUT_SLUG.test(slug) ? slug : undefined;
         }),
+        /** Sidebar outline vs minimal preview-edit line rail. */
+        outlinePinned: globalPreference<boolean>(globalState, 'xlsxViewer.outlinePinned', false,
+            (raw) => (typeof raw === 'boolean' ? raw : undefined)),
         /** Per-file preferences that follow a file when it moves. */
         perFile: [tableColumnWidths, frontmatterPanelCollapsed, detailsOpenState] as FilePreference<unknown>[],
     };

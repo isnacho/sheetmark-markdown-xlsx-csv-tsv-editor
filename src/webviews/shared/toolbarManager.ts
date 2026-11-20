@@ -20,16 +20,148 @@ export class ToolbarManager {
     private resizeObserver: ResizeObserver | null = null;
     private isSticky: boolean = false;
     private headerHeightHook: (() => void) | null = null;
+    private hoverRevealObserver: IntersectionObserver | null = null;
+    private hoverRevealHotspot: HTMLElement | null = null;
+    private hoverRevealWrapper: HTMLElement | null = null;
+    private hoverRevealCompanion: HTMLElement | null = null;
+    private hoverRevealHideTimer: number | undefined;
+    private hoverRevealPointerInside = false;
 
     constructor(containerId: string) {
         const el = document.getElementById(containerId);
         if (!el) {throw new Error(`Toolbar container ${containerId} not found`);} 
         this.container = el;
+        this.wireHoverRevealSurface(this.container);
+    }
+
+    private wireHoverRevealSurface(element: HTMLElement) {
+        element.addEventListener('mouseenter', () => {
+            this.hoverRevealPointerInside = true;
+            this.cancelHoverRevealHide();
+        });
+        element.addEventListener('mouseleave', () => {
+            this.hoverRevealPointerInside = false;
+            this.scheduleHoverRevealHide();
+        });
+        element.addEventListener('focusin', () => {
+            this.cancelHoverRevealHide();
+            if (document.body.classList.contains('toolbar-hover-reveal-armed')) {
+                this.updateHoverRevealHeight();
+                document.body.classList.add('toolbar-hover-reveal-visible');
+            }
+        });
+        element.addEventListener('focusout', () => this.scheduleHoverRevealHide());
     }
 
     /** Optional hook fired after each header-height recompute (e.g. MD formatting bar). */
     setHeaderHeightHook(hook: (() => void) | null) {
         this.headerHeightHook = hook;
+    }
+
+    setHoverRevealCompanion(element: HTMLElement | null) {
+        if (!element || this.hoverRevealCompanion === element) {return;}
+        this.hoverRevealCompanion = element;
+        this.wireHoverRevealSurface(element);
+    }
+
+    private cancelHoverRevealHide() {
+        if (this.hoverRevealHideTimer !== undefined) {
+            window.clearTimeout(this.hoverRevealHideTimer);
+            this.hoverRevealHideTimer = undefined;
+        }
+    }
+
+    private hideHoverReveal() {
+        this.cancelHoverRevealHide();
+        document.body.classList.remove('toolbar-hover-reveal-visible');
+    }
+
+    private shouldRetainHoverReveal(): boolean {
+        return this.hoverRevealPointerInside
+            || this.container.contains(document.activeElement)
+            || !!this.hoverRevealCompanion?.contains(document.activeElement)
+            || document.querySelector('[data-toolbar-reveal-retain]:not(.hidden)') !== null;
+    }
+
+    private scheduleHoverRevealHide() {
+        if (!document.body.classList.contains('toolbar-hover-reveal-visible')) {return;}
+        this.cancelHoverRevealHide();
+        this.hoverRevealHideTimer = window.setTimeout(() => {
+            this.hoverRevealHideTimer = undefined;
+            if (this.shouldRetainHoverReveal()) {
+                this.scheduleHoverRevealHide();
+                return;
+            }
+            document.body.classList.remove('toolbar-hover-reveal-visible');
+        }, 750);
+    }
+
+    private updateHoverRevealHeight() {
+        if (!this.hoverRevealWrapper) {return;}
+        const mainHeight = Math.max(1, Math.ceil(this.container.getBoundingClientRect().height));
+        const companionHeight = this.hoverRevealCompanion && !this.hoverRevealCompanion.classList.contains('hidden')
+            ? Math.ceil(this.hoverRevealCompanion.getBoundingClientRect().height)
+            : 0;
+        const main = `${mainHeight}px`;
+        const total = `${mainHeight + companionHeight}px`;
+        this.hoverRevealWrapper.style.setProperty('--toolbar-hover-reveal-main-height', main);
+        this.hoverRevealWrapper.style.setProperty('--toolbar-hover-reveal-height', total);
+        document.documentElement.style.setProperty('--toolbar-hover-reveal-main-height', main);
+        document.documentElement.style.setProperty('--toolbar-hover-reveal-height', total);
+    }
+
+    private setHoverRevealEnabled(enabled: boolean, wrapper: HTMLElement) {
+        if (enabled && this.hoverRevealWrapper === wrapper && this.hoverRevealObserver) {
+            this.updateHoverRevealHeight();
+            return;
+        }
+
+        this.hoverRevealObserver?.disconnect();
+        this.hoverRevealObserver = null;
+        this.hoverRevealHotspot?.remove();
+        this.hoverRevealHotspot = null;
+        this.hoverRevealWrapper?.style.removeProperty('--toolbar-hover-reveal-height');
+        this.hoverRevealWrapper?.style.removeProperty('--toolbar-hover-reveal-main-height');
+        document.documentElement.style.removeProperty('--toolbar-hover-reveal-height');
+        document.documentElement.style.removeProperty('--toolbar-hover-reveal-main-height');
+        this.hoverRevealWrapper = null;
+        this.hoverRevealPointerInside = false;
+        this.hideHoverReveal();
+        document.body.classList.remove('toolbar-hover-reveal-armed');
+
+        if (!enabled || !window.matchMedia('(hover: hover)').matches) {return;}
+
+        this.hoverRevealWrapper = wrapper;
+        const hotspot = document.createElement('div');
+        hotspot.className = 'toolbar-hover-reveal-hotspot';
+        hotspot.setAttribute('aria-hidden', 'true');
+        hotspot.addEventListener('mouseenter', () => {
+            this.hoverRevealPointerInside = true;
+            this.cancelHoverRevealHide();
+            if (document.body.classList.contains('toolbar-hover-reveal-armed')) {
+                this.updateHoverRevealHeight();
+                document.body.classList.add('toolbar-hover-reveal-visible');
+            }
+        });
+        hotspot.addEventListener('mouseleave', () => {
+            this.hoverRevealPointerInside = false;
+            this.scheduleHoverRevealHide();
+        });
+        document.body.appendChild(hotspot);
+        this.hoverRevealHotspot = hotspot;
+
+        this.hoverRevealObserver = new IntersectionObserver(([entry]) => {
+            const armed = !entry.isIntersecting;
+            if (armed) {
+                this.updateHoverRevealHeight();
+            } else {
+                wrapper.style.removeProperty('--toolbar-hover-reveal-height');
+                wrapper.style.removeProperty('--toolbar-hover-reveal-main-height');
+                this.hideHoverReveal();
+            }
+            document.body.classList.toggle('toolbar-hover-reveal-armed', armed);
+        });
+        this.hoverRevealObserver.observe(wrapper);
     }
 
     applyStickyLayout(stickyToolbar: boolean, contentId: string = 'content', scrollQuery: string = '.table-scroll') {
@@ -90,6 +222,7 @@ export class ToolbarManager {
                 this.resizeObserver = null;
             }
         }
+        this.setHoverRevealEnabled(!stickyToolbar, layoutHost);
         this.updateHeaderHeight();
     }
 

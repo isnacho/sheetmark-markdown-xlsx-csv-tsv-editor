@@ -15,6 +15,7 @@ around it. This map anchors on names, not line numbers, because names don't drif
 | [saveSync.ts](../../src/webviews/md/saveSync.ts) | Save, autosave, reload from disk, external-change decisions (`onDiskChangedExternally`), save/restore conflicts, version preview. Gets UI callbacks via `initSaveSync(hooks)`. Pinned by `src/test/webview/markdownSaveSync.spec.mts` |
 | [toast.ts](../../src/webviews/md/toast.ts), [dialogs.ts](../../src/webviews/md/dialogs.ts), [messaging.ts](../../src/webviews/md/messaging.ts), [copyLinkArtifacts.ts](../../src/webviews/md/copyLinkArtifacts.ts) | `showToast` / `hideToast`; confirm dialogs (`confirmModal`, `confirmDiscardAndReload`, ...); the typed `post` to the host; heading copy-link cleanup |
 | [livePreview/](../../src/webviews/md/livePreview/) | CodeMirror 6 (CM6) editor plus widgets and keymaps: the only document surface |
+| [initialMessages.ts](../../src/webviews/md/initialMessages.ts) | Boot: reads the host messages embedded in the page (`readInitialMessages`), removes the boot style that keeps the page hidden until styled, and delivers the messages before `webviewReady` (`revealAndApplyInitialMessages`). Pinned by `src/test/webview/markdownBoot.spec.mts` |
 | `frontmatter.ts`, `frontmatterCardUi.ts`, `diffStats.ts`, `markdownStats.ts` | Small pure helpers next to `mdWebview.ts` (see table at the end) |
 
 **Content contract:** `state.currentContent` (in `state.ts`) is the single source of truth. The CM6
@@ -37,7 +38,7 @@ Section headers in the file look like `// ===== Name =====`. Grep for the header
 | Imports | (top of file) | the `livePreviewEditor` import list is the full public CM6 API used by the shell |
 | rAF throttle | `Throttle Utility` | `throttleRAF`, `throttleRAFEvent` |
 | Small utilities | `Utilities` | `livePreviewGutterLineNumbersEnabled`, `slugify`, `escapeHtmlAttr`, `isRemoteOrInlineUri`, `shouldResolveLocalImage` |
-| markdown-it (TOC only) | `Markdown-it (TOC parse only` | `md`, `addHeadingIds`, `buildToc`, `updateToc`, `refreshCm6Toc`, `tocIdToLine`, `tocLineToId`, `resolveTocLineForAnchor`, `scrollToAnchor`. CM6 renders the document; markdown-it only builds the outline |
+| markdown-it (TOC only) | `Markdown-it (TOC parse only` | `md`, `addHeadingIds`, `updateToc`, `refreshCm6Toc`, `outlineToc.ts` (`collectTocItems`, list/rail HTML), `applyOutlineChrome`, `tocIdToLine`, `tocLineToId`, `resolveTocLineForAnchor`, `scrollToAnchor`. CM6 renders the document; markdown-it only builds the outline; default UX is `outlineRailOverlay.ts` (viewport overlay on `#outlineRailHost`) |
 | Image URI resolution | (same section) | `wireImageUriResolver`, `applyResolvedImageUris`, `resolvedImageUriCache` (sends `resolveImageUris`) |
 | Per-file / global prefs | (same section) | `persistFrontmatterPanelCollapsed`, `onDetailsStateChanged` (toggle state), `persistMermaidPreviewMode`, `persistCalloutDefaultType`, `applyFrontmatterBlockToDocument` |
 | Edit toolbar state | (same section) | `updateEditToolbarButtons` (uses `isEditorDirty` / `canReloadFromDisk` from `saveSync.ts`) |
@@ -46,7 +47,7 @@ Section headers in the file look like `// ===== Name =====`. Grep for the header
 | Disk-vs-editor diff | `Disk-vs-editor diff` | `hasDiskDiffBaseline`, `showDiskDiff`, `hideDiskDiff`, `toggleDiskDiff`, `revealDiskChanges`, `acceptAllDiskChanges`, `rejectAllDiskChanges`, `handleDiffChunkResolved`, `diffResolutionSummary`, `syncDiskDiffAfterDocChange`, `updateDiffChrome`, `updateDiffChunkRuler`, `wireDiskDiffBulkActions`. UX flow: [flow.md](../flow.md) |
 | Status bar and stats | (same section) | `getCurrentCursorPosition`, `getCurrentSelectionStats`, `getWholeDocumentStats`, `updateStatusInfo` |
 | Progress bar | `Reading Progress Bar` | `updateProgressBar` (the bar is a scroll indicator, not a reading mode) |
-| Scroll spy | `Scroll Spy (Active TOC Tracking)` | `updateScrollSpy`, `throttledScrollSpy`, `nearestTocIdForLine`, `initScrollSpy` |
+| Scroll spy | `Scroll Spy (Active TOC Tracking)` | `updateScrollSpy`, `throttledScrollSpy`, `nearestTocIdForLine`, `initScrollSpy` (sidebar + line rail active state) |
 | Lightbox | `Lightbox` | `initLightbox`, `showLightbox`, `closeLightbox` |
 | Search overlay | `Search in Preview` | `openSearch`, `closeSearch`, `toggleSearchOverlay`, `doSearch`, `navigateSearch`, `reapplySearch`, `initSearchOverlay` (match finding is delegated to `findLivePreviewMatches`) |
 | Settings panel | `Settings` | `applySettings` (sends `updateSettings`), `initializeSettings` (settings definitions, `enableAsDefault` / `disableDefaultEditor`, `showVersionHistory`), `renderVersionHistorySettingItem`, `applyFormattingToolbarLayout` |
@@ -57,7 +58,7 @@ Section headers in the file look like `// ===== Name =====`. Grep for the header
 | Resizable panels and TOC | `Resizable Panels` | `initResizeHandles`, `wireResizeHandle`, `wireTocPanel` |
 | Toolbar tooltips | `Hover Tooltip` | `wireHoverTooltip` |
 | Formatting toolbar | `Formatting Toolbar` | `wireFormattingToolbar` (calls `applyLivePreviewFormat`) |
-| Bootstrap | `Initialize` | the init call list, ending with the final `webviewReady` post |
+| Bootstrap | `Initialize` | the init call list, then `revealAndApplyInitialMessages` and the final `webviewReady` post |
 
 ---
 
@@ -95,7 +96,7 @@ from the real DOM.
 
 | File | Responsibility | Grep for |
 |---|---|---|
-| contentClickPositioning.ts | DOM-accurate click and drag positioning in the content area | `contentClickHandlers`, `resolveContentClickPos`, `computeContentClickCorrection`, `selectionRangeForListLineClick` |
+| contentClickPositioning.ts | DOM-accurate click and drag positioning in the content area | `contentClickHandlers`, `resolveContentClickPos`, `computeContentClickCorrection`, `listLineMouseSelectionStyle`, `headingLineMouseSelectionStyle`, `selectionRangeForListLineClick`, `selectionRangeForHeadingLineClick` |
 | pointerLineResolution.ts | Screen Y to document line; triple-click line selection | `resolveLinePosAtPointer`, `closestCmLineElement`, `computeTripleClickLineSelection` |
 | hoverLineGutter.ts | Hover highlight on the line-number gutter | `hoverLineGutter`, `hoverGutterDomEventHandlers`, `setHoveredLine` |
 | headingGutterSync.ts | Heading line decorations so gutter rows align with heading sizes | `headingLineDecorationField` |
@@ -134,6 +135,16 @@ update that file.
 | mermaidPreviewActions.ts | Diagram/code mode select control and its dispatch | `createMermaidModeSelect`, `dispatchMermaidPreviewMode`, `setMermaidPreviewModeCallback` |
 | mermaidWidget.ts | Rendered mermaid diagram widget with zoom and pan; on a syntax error the card keeps its controls and offers Edit code | `mermaidWidgetField`, `mermaidAtomicRanges`, `attachZoomPan`, `createMermaidError` |
 
+### Block drag (Notion-style `+` and grip)
+
+Product spec: `.docs/ideas/*/notion-style-block-drag.md`. Logic is pure and unit-tested; the DOM layer only measures, positions and dispatches.
+
+| File | Responsibility | Grep for |
+|---|---|---|
+| blockModel.ts | Pure block tree (paragraphs, headings, list items with their children, code, quotes, callouts, toggles, tables), drop targets per gap, and the move itself: re-bases list indent and `> ` prefixes, keeps blank lines tidy, renumbers ordered lists; the `+` insert; remaps for table widths and toggle open state | `buildBlockTree`, `blockAtLine`, `blocksForRange`, `visibleBlocks`, `dropTargetsAtGap`, `isDropAllowed`, `computeMoveBlocks`, `computeInsertAfter`, `remapTableIndexMap`, `remapToggleState` |
+| blockSelection.ts | Click-to-select: a block selection is an ordinary text selection the field remembers came from a grip; layers paint the block highlight and the dimmed drag source | `blockSelectionField`, `selectBlocksEffect`, `selectBlocksSpec`, `dragSourceField`, `blockSelectionExtensions` |
+| blockDrag.ts | Hover controls (`+`, grip) as one overlay in `.cm-scroller`, click/Shift-click select, right-click toggle menu, drag with ghost and drop line, nesting depth from pointer x, edge auto-scroll while dragging (rAF, on whichever element scrolls), commit with remaps | `blockDragExtension`, `BlockDragView`, `hoverAt`, `trackDrag`, `edgeScrollVelocity`, `edgeScrollStep`, `commit` |
+
 ### Callouts, images, frontmatter, spellcheck
 
 | File | Responsibility | Grep for |
@@ -144,7 +155,7 @@ update that file.
 | calloutEditing.ts | Change a callout's type | `computeSetCalloutType` |
 | calloutDefaultType.ts | Default callout type state | `calloutDefaultTypeField`, `setCalloutDefaultTypeEffect`, `seedCalloutDefaultType` |
 | detailsTypes.ts | Toggle (`<details>`/`<summary>`) block detector: line-based, nesting-aware, reads Sheetmark's multi-line title shape and the one-line legacy shape; hidden-run ranges | `findDetailsBlocks`, `isDetailsOpen`, `plainTitle`, `toggleTagRanges`, `stripToggleTags` |
-| detailsExtension.ts | Toggle state, decorations that fully hide tag lines and a closed body (own `StateField`, outside `revealCompartment`), atomic ranges, chevron and hover handle (Tab stops, Enter/Space) + menu, structure guard (`changeFilter`), Enter/Backspace/Delete keys, Cmd/Ctrl+Enter toggles from the title | `detailsExtensions`, `detailsOpenField`, `computeDetailsDecorations`, `setDetailsStateCallback`, `moveCursorOutOfHiddenRuns` |
+| detailsExtension.ts | Toggle state, decorations that fully hide tag lines and a closed body (own `StateField`, outside `revealCompartment`), atomic ranges, chevron (Tab stop, Enter/Space), the toggle menu (opened from the block grip: right-click, or Enter on the focused grip), structure guard (`changeFilter`), Enter/Backspace/Delete keys, Cmd/Ctrl+Enter toggles from the title | `detailsExtensions`, `detailsOpenField`, `computeDetailsDecorations`, `setDetailsStateCallback`, `showToggleMenu`, `applyDetailsOpenState`, `moveCursorOutOfHiddenRuns` |
 | detailsEditing.ts | Pure toggle edits: build, unwrap, delete, set `open`, heading section scan | `toggleText`, `toggleSlashSnippet`, `computeUnwrapToggle`, `computeDeleteToggle`, `computeSetStartOpen`, `sectionEndLine`, `structureEdit` |
 | toggleInputRules.ts | Typed shortcuts: `> ` makes a toggle, `" ` makes a quote (inputHandler, undo restores the literal text) | `computeToggleFromMarker`, `computeQuoteFromMarker`, `toggleInputHandler` |
 | imageWidget.ts | Local image previews; URI resolution delegated to the shell | `imageWidgetField`, `setImageUriResolver`, `refreshImageWidgetsEffect`, `computeImageDecorations` |

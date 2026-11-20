@@ -58,7 +58,12 @@ the extension (`detectTabularFileType`) and branches internally.
    loading overlay immediately.
 3. Register `onDidReceiveMessage`: the host's half of the protocol.
 4. Webview boots, posts `webviewReady`; the host replies with the init payload
-   (`initVirtualTable` / `initMarkdown`) + `initSettings` + `setTheme`.
+   (`initVirtualTable` / `initMarkdown`) + `initSettings` + `setTheme`. **Markdown** skips most of
+   that round trip: the host reads the file before step 2 and embeds `initMarkdown`, `initSettings`
+   and `fontFamilyChanged` in the HTML as a JSON data block (`renderMarkdownHtml`), the webview
+   applies them at boot and posts `webviewReady` with `appliedInitialMessages: true`, and the host
+   then sends only `setTheme` (plus `initMarkdown` again if the file changed meanwhile). The version
+   history snapshot is written after that, off the critical path.
 5. Steady state: user actions in the webview post commands; the host mutates the file or state and
    posts results back.
 
@@ -140,12 +145,13 @@ Persisted outside the `.md` bytes by `createMarkdownPreferences` in
 | `frontmatterPanelCollapsed` | file | YAML card collapsed state |
 | `mermaidPreviewMode` | global | Mermaid diagram vs code preview |
 | `calloutDefaultType` | global | Default callout type slug |
+| `outlinePinned` | global | Sidebar outline vs minimal preview-edit line rail |
 
 Per-file preferences listed in `perFile` move with the file on rename (see Renames below).
 
 Loaded into `initMarkdown` / `diskChangedExternally`; webview persists edits via
 `saveTableColumnWidths`, `saveFrontmatterPanelCollapsed`, `saveDetailsOpenState`, `saveMermaidPreviewMode`,
-`saveCalloutDefaultType`.
+`saveCalloutDefaultType`, `saveOutlinePinned`.
 
 ### External disk changes
 **Markdown:** `createExternalFileChangeWatcher` in

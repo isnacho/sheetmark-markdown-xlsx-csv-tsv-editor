@@ -43,9 +43,13 @@ test('Markdown preferences keep their persisted storage keys and rules', async (
     assert.equal(prefs.frontmatterPanelCollapsed.get(file('/notes/a.md')), false);
     assert.equal(prefs.mermaidPreviewMode.get(), 'code');
     assert.equal(prefs.calloutDefaultType.get(), 'warning');
+    assert.equal(prefs.outlinePinned.get(), false);
 
     await prefs.frontmatterPanelCollapsed.set(file('/notes/a.md'), true);
     assert.equal(workspace.data.get('xlsxViewer.frontmatterPanel./notes/a.md'), true);
+
+    await prefs.outlinePinned.set(true);
+    assert.equal(prefs.outlinePinned.get(), true);
 
     await prefs.calloutDefaultType.set('not a slug!');
     assert.equal(prefs.calloutDefaultType.get(), 'warning');

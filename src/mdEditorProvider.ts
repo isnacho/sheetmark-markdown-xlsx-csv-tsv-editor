@@ -8,7 +8,7 @@ import { renderMarkdownHtml } from './shared/webviewHtml';
 import { createSerialQueue, type SerialQueue } from './shared/serialQueue';
 import { createMessageDispatcher, MARKDOWN_FILE_WRITING_COMMANDS } from './shared/messageDispatch';
 import { recordSentInTests, trackOpenEditor, type OpenEditorHandle } from './shared/editorTestHooks';
-import { handleSharedHostMessage, isSharedHostMessage, syncColorTheme, type SharedHostContext } from './shared/commonHostMessages';
+import { fontFamilyMessage, handleSharedHostMessage, isSharedHostMessage, syncColorTheme, syncFontFamily, type SharedHostContext } from './shared/commonHostMessages';
 import type { MessageOf } from './protocol/common';
 import type { HostToMarkdownWebview, MarkdownSettings, MarkdownWebviewToHost } from './protocol/markdown';
 import { createExternalFileChangeWatcher } from './shared/fileExternalChangeWatcher';
@@ -83,7 +83,7 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
         token: vscode.CancellationToken
     ): Promise<void> {
         // Typed send: the compiler checks every host-to-webview message against src/protocol/markdown.ts.
-        const { post, sent } = recordSentInTests<HostToMarkdownWebview>(
+        const { post, noteEmbedded, sent } = recordSentInTests<HostToMarkdownWebview>(
             this.context.extensionMode === vscode.ExtensionMode.Test,
             (message) => webviewPanel.webview.postMessage(message),
         );
@@ -240,6 +240,7 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                 detailsOpenState: this.prefs.detailsOpenState.get(currentUri),
                 mermaidPreviewMode: this.prefs.mermaidPreviewMode.get(),
                 calloutDefaultType: this.prefs.calloutDefaultType.get(),
+                outlinePinned: this.prefs.outlinePinned.get(),
             });
 
             // Set up webview
@@ -247,11 +248,27 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                 enableScripts: true,
                 localResourceRoots: markdownLocalResourceRoots,
             };
-            webviewPanel.webview.html = this.getWebviewContent(webviewPanel);
+            // Put the document, settings and font in the page itself, so the webview can render as
+            // soon as its bundle runs instead of waiting for a webviewReady round trip (slow while
+            // VS Code is still activating extensions). If the read fails, the webviewReady path
+            // below reads again and reports the error.
+            let embeddedContent: string | null = null;
+            try {
+                embeddedContent = await fs.promises.readFile(filePath, 'utf-8');
+                currentContent = embeddedContent;
+            } catch { /* handled on webviewReady */ }
+            const initialMessages: HostToMarkdownWebview[] = embeddedContent === null ? [] : [
+                buildInitMarkdownPayload(embeddedContent),
+                { command: 'initSettings', settings: buildMdWebviewSettings() },
+                fontFamilyMessage(),
+            ];
+            noteEmbedded(initialMessages);
+            webviewPanel.webview.html = this.getWebviewContent(webviewPanel, initialMessages);
 
             // Handle messages from webview
             // Pushes the VS Code theme now (on webviewReady) and on every theme change.
             const sendTheme = syncColorTheme(webviewPanel, post);
+            const sendFont = syncFontFamily(webviewPanel, post);
 
             const sharedContext: SharedHostContext = {
                 post,
@@ -267,21 +284,27 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                 }
 
                 switch (message.command) {
-                    case 'webviewReady':
+                    case 'webviewReady': {
+                        // The embedded messages count once: a later webviewReady (Retry, or VS Code
+                        // reloading the webview with the same, now stale, HTML) gets a fresh copy.
+                        const embedded = message.appliedInitialMessages === true ? embeddedContent : null;
+                        embeddedContent = null;
                         try {
-                            // Read the markdown file
                             const content = await fs.promises.readFile(filePath, 'utf-8');
                             currentContent = content;
-                            await pruneHistory();
-                            await persistVersionSnapshot(content);
-
-                            // Send content to webview
-                            post(buildInitMarkdownPayload(content));
-
-                            // Send settings
-                            post({ command: 'initSettings', settings: buildMdWebviewSettings() });
-
+                            // Resend the document only if the file changed since it was embedded.
+                            if (embedded === null || content !== embedded) {
+                                post(buildInitMarkdownPayload(content));
+                            }
+                            if (embedded === null) {
+                                post({ command: 'initSettings', settings: buildMdWebviewSettings() });
+                                sendFont();
+                            }
                             sendTheme();
+
+                            // After the document is on screen: the history file can hold many
+                            // full-text snapshots, so reading and pruning it is not free.
+                            persistVersionSnapshot(content).catch(err => console.error('Failed to save the opening version snapshot:', err));
                         } catch (err) {
                             vscode.window.showErrorMessage(`Error reading Markdown file: ${err}`);
                             try {
@@ -289,6 +312,7 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                             } catch { /* panel disposed mid-flight */ }
                         }
                         break;
+                    }
 
                     case 'resolveImageUris':
                         try {
@@ -452,6 +476,14 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
                             await this.prefs.calloutDefaultType.set(message.type);
                         } catch (err) {
                             vscode.window.showErrorMessage(`Error saving callout default type: ${err}`);
+                        }
+                        break;
+
+                    case 'saveOutlinePinned':
+                        try {
+                            await this.prefs.outlinePinned.set(!!message.pinned);
+                        } catch (err) {
+                            vscode.window.showErrorMessage(`Error saving outline layout: ${err}`);
                         }
                         break;
 
@@ -701,9 +733,10 @@ export class MDEditorProvider implements vscode.CustomReadonlyEditorProvider {
         }
     }
 
-    private getWebviewContent(webviewPanel: vscode.WebviewPanel): string {
+    private getWebviewContent(webviewPanel: vscode.WebviewPanel, initialMessages: HostToMarkdownWebview[]): string {
         const webview = webviewPanel.webview;
         return renderMarkdownHtml({
+            initialMessages,
             cspSource: webview.cspSource,
             // Only scripts carrying this nonce (plus bundled files) may run: inline handlers smuggled in
             // through document content (<img onerror>, javascript: links) are blocked by the CSP.

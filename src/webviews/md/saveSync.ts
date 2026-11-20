@@ -78,17 +78,6 @@ export function getActiveEditorContent(): string {
     return state.currentContent;
 }
 
-export function cancelEdit() {
-    state.currentContent = state.originalContent;
-    if (isLivePreviewActive()) {
-        setLivePreviewContent(state.originalContent);
-        hooks.refreshOutline(state.originalContent);
-        hooks.reapplySearch();
-        hooks.updateStatusInfo();
-    }
-    hooks.updateEditToolbarButtons();
-}
-
 function ensureVersionPreviewBanner(): HTMLElement {
     let banner = $('versionPreviewBanner');
     if (!banner) {
@@ -404,7 +393,9 @@ export function onSaveResult(m: MessageOf<HostToMarkdownWebview, 'saveResult'>) 
     state.isSaving = false;
     setButtonsEnabled(true);
     if (m.ok) {
-        showToast(m.isAutosave ? 'Autosaved' : 'Saved');
+        if (!m.isAutosave) {
+            showToast('Saved');
+        }
         if (state.pendingSaveContent !== null) {
             state.originalContent = state.pendingSaveContent;
         }

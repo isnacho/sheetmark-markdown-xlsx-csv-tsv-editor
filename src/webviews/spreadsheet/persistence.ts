@@ -342,7 +342,9 @@ export function onSaveResult(message: MessageOf<HostToSpreadsheetWebview, 'saveR
         const thead = document.querySelector('#xlsxTable thead') as HTMLElement | null;
         if (thead) {thead.style.display = 'table-header-group';}
         const isAutosaveResult = !!message.isAutosave;
-        showToast(isAutosaveResult ? 'Autosaved' : 'Saved', isAutosaveResult, 1000);
+        if (!isAutosaveResult) {
+            showToast('Saved', false, 1000);
+        }
         state.pendingWorksheetOps = [];
         state.pendingCellStyleEdits.clear();
         clearPendingOutsideControlEdits();

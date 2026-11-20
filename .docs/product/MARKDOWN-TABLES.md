@@ -102,6 +102,7 @@ Overflow detection compares table width to the **widget** width (parent of scrol
 | Drag column resize handle | Manual layout; commit widths on mouseup |
 | Double-click resize handle | Clear that column; revert to default when all cleared |
 | Drag row/column grips | Reorder in source; widths may misattach if table order changes (accepted limitation) |
+| Hover the header row, drag the block grip in the left margin | Moves the whole table like any other block (`blockDrag.ts`); column widths follow the table to its new place. Body rows show only the row grip, so the two grips never overlap |
 | Click inactive cell | Activate for inline edit |
 | Right-click cell | Row/column context menu |
 

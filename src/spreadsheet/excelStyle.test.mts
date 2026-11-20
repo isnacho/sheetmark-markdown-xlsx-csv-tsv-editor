@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import ExcelJS from 'exceljs';
-import { applyStoredStylesToWorksheet, applyStyleEditToCell, normalizeStoredStyle, parseStyleKey, toARGB } from './excelStyle.ts';
+import { applyStoredMetadataToWorksheet, applyStoredStylesToWorksheet, applyStyleEditToCell, normalizeStoredStyle, parseStyleKey, toARGB } from './excelStyle.ts';
 
 function sheet() {
     return new ExcelJS.Workbook().addWorksheet('Sheet1');
@@ -66,4 +66,33 @@ test('applyStyleEditToCell maps border styles and clears formatting', () => {
     applyStyleEditToCell(cell, { clearFormatting: true });
     assert.equal(cell.font?.bold, undefined);
     assert.equal(cell.border?.top, undefined);
+});
+
+test('applyStoredMetadataToWorksheet keeps styles, merges and controls when a CSV is converted', () => {
+    const ws = sheet();
+    ws.getRow(1).getCell(1).value = 'Title';
+    applyStoredMetadataToWorksheet(ws, {
+        cells: {
+            '1:1': { style: normalizeStoredStyle({ bold: true }) },
+            '2:1': { control: { controlType: 'checkbox' } },
+            '2:2': { control: { controlType: 'dropdown', dropdownOptions: ['a', 'b'] } },
+            '2:3': { control: { controlType: 'rating' } },
+        },
+        merges: [{ startRow: 1, startCol: 1, endRow: 1, endCol: 3 }],
+    });
+    assert.equal(ws.getRow(1).getCell(1).font.bold, true);
+    assert.equal(ws.getRow(1).getCell(3).isMerged, true);
+    assert.equal(ws.getRow(1).getCell(1).value, 'Title');
+    assert.deepEqual(ws.getRow(2).getCell(1).dataValidation.formulae, ['"TRUE,FALSE"']);
+    assert.deepEqual(ws.getRow(2).getCell(2).dataValidation.formulae, ['"a,b"']);
+    assert.deepEqual(ws.getRow(2).getCell(3).dataValidation.formulae, ['"1,2,3,4,5"']);
+});
+
+test('applyStoredMetadataToWorksheet skips an invalid merge instead of failing the conversion', () => {
+    const ws = sheet();
+    applyStoredMetadataToWorksheet(ws, { merges: [
+        { startRow: 1, startCol: 1, endRow: 2, endCol: 2 },
+        { startRow: 2, startCol: 2, endRow: 3, endCol: 3 },
+    ] });
+    assert.equal(ws.getRow(1).getCell(2).isMerged, true);
 });

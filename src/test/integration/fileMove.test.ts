@@ -73,8 +73,8 @@ suite('Renaming an open file', () => {
         await rename(from, to);
 
         const reopened = await waitFor('reopened CSV editor', () => api.openEditors().find(e => e.uri().fsPath === to.fsPath));
-        const init = await waitFor('initVirtualTable', () => firstSent<{ isPlainView: boolean }>(reopened, 'initVirtualTable'));
-        assert.strictEqual(init.isPlainView, false, 'the moved file should still open in styled mode');
+        const init = await waitFor('initVirtualTable', () => firstSent<{ legacyStylesNotice?: boolean }>(reopened, 'initVirtualTable'));
+        assert.strictEqual(init.legacyStylesNotice, true, 'the moved file still has its stored formatting, so it still shows the notice');
         assert.ok(await api.styleStorage.getStyles(to), 'styles stored under the new path');
         assert.ok(fs.existsSync(path.join(getVersionHistoryDir(api.globalStoragePath, to.fsPath, 'csv'), 'index.json')), 'history under the new path');
     });

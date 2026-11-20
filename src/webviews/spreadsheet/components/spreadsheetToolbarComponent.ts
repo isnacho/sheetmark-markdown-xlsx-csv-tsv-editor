@@ -14,7 +14,6 @@ export interface CreateXlsxToolbarButtonsOptions {
     onFormatTextColor: () => void;
     onFormatBackgroundColor: () => void;
     onToggleExpand: () => void;
-    onTogglePlainView: () => void;
     onVersionHistory: () => void;
     onOpenSettings: () => void;
     onHelp: () => void;
@@ -92,13 +91,6 @@ export function createXlsxToolbarButtons(options: CreateXlsxToolbarButtonsOption
             cls: 'icon-only',
             tooltip: 'Toggle Column Widths (Default / Expand All)',
             onClick: options.onToggleExpand
-        },
-        {
-            id: 'togglePlainViewButton',
-            icon: Icons.Table,
-            cls: 'icon-only',
-            tooltip: 'Toggle Plain View (removes all styling)',
-            onClick: options.onTogglePlainView
         },
         {
             id: 'insertControlButton',

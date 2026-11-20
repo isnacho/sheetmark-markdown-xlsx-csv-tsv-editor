@@ -30,11 +30,8 @@ export function initPersistence(h: PersistenceHooks): void {
 }
 
 export function showManualSaveReminderIfNeeded() {
-    const isAutosaveOff = !state.currentSettings.autoSave;
-    const shouldShowForPlain = state.isPlainView && !state.isVersionPreviewMode && isAutosaveOff;
-    const shouldShowForStyled = !state.isPlainView && !state.isEditMode && !state.isVersionPreviewMode && isAutosaveOff && state.currentSettings.showManualSavePopup;
-
-    if (!shouldShowForPlain && !shouldShowForStyled) {
+    // Only data-only files (CSV/TSV) edit outside Edit Table, so only they need the reminder.
+    if (!state.isDataOnly || state.isVersionPreviewMode || state.currentSettings.autoSave) {
         return;
     }
 
@@ -68,20 +65,8 @@ export function clearPendingOutsideControlEdits() {
 }
 
 export function shouldScheduleAutosaveForChange(kind: XlsxAutoSaveChangeKind): boolean {
-    if (state.isTemporaryStyleFile && (kind === 'format' || kind === 'structure')) {
-        return true;
-    }
-
-    if (!state.currentSettings.autoSave) {
-        return false;
-    }
-
-    const mode = state.currentSettings.autoSaveMode === 'controlsOnly' ? 'controlsOnly' : 'all';
-    if (mode === 'all') {
-        return true;
-    }
-
-    return kind === 'control';
+    void kind;
+    return !!state.currentSettings.autoSave;
 }
 
 export function persistInteractiveControlEdit(cell: HTMLElement) {
@@ -196,7 +181,7 @@ export function clearAutoSaveTimer() {
 
 export function scheduleAutoSave(kind: XlsxAutoSaveChangeKind = 'text') {
     if (!state.isEditMode || state.isVersionPreviewMode || state.isSaving) {
-        if (state.isPlainView && !state.isVersionPreviewMode && !state.currentSettings.autoSave) {
+        if (state.isDataOnly && !state.isVersionPreviewMode && !state.currentSettings.autoSave) {
             showManualSaveReminderIfNeeded();
         }
         return;
@@ -211,7 +196,7 @@ export function scheduleAutoSave(kind: XlsxAutoSaveChangeKind = 'text') {
     clearAutoSaveTimer();
     state.autoSaveTimer = setTimeout(() => {
         state.autoSaveTimer = null;
-        if ((!state.currentSettings.autoSave && !(state.isTemporaryStyleFile && (kind === 'format' || kind === 'structure'))) || !state.isEditMode || state.isVersionPreviewMode || state.isSaving) {
+        if (!state.currentSettings.autoSave || !state.isEditMode || state.isVersionPreviewMode || state.isSaving) {
             return;
         }
         if (!hasPendingXlsxEdits()) {

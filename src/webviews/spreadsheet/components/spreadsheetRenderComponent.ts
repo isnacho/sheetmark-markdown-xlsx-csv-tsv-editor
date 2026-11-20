@@ -186,11 +186,11 @@ export function renderDropdownCellContent(options: DropdownCellContentOptions): 
         + '</span>';
 }
 
-function renderCellContent(cellData: any, isPlainView: boolean, allowInteractiveControls: boolean, isEditMode: boolean): string {
+function renderCellContent(cellData: any, dataOnly: boolean, allowInteractiveControls: boolean, isEditMode: boolean): string {
     const cellType = toCellType(cellData);
     const cellDisplayValue = toCellDisplayValue(cellData);
 
-    if (isPlainView) {
+    if (dataOnly) {
         return '<span class="cell-content">' + toPlainCellContent(cellDisplayValue) + '</span>';
     }
 
@@ -275,7 +275,7 @@ export interface XlsxRowHtmlParams {
     rowHeight: number;
     columnCount: number;
     columnWidths: number[];
-    isPlainView: boolean;
+    dataOnly: boolean;
     isEditMode: boolean;
     allowInteractiveControls: boolean;
 }
@@ -287,7 +287,7 @@ export function createXlsxRowHtml(params: XlsxRowHtmlParams): string {
         rowHeight,
         columnCount,
         columnWidths,
-        isPlainView,
+        dataOnly,
         isEditMode,
         allowInteractiveControls
     } = params;
@@ -310,7 +310,7 @@ export function createXlsxRowHtml(params: XlsxRowHtmlParams): string {
         }
 
         if (cellData) {
-            const styleStr = isPlainView ? '' : formatCellStyle(cellData.style || {});
+            const styleStr = dataOnly ? '' : formatCellStyle(cellData.style || {});
             const cellHeight = rowHeight * (cellData.rowspan || 1);
             const cellWidth = columnWidths
                 .slice(actualCol - 1, actualCol - 1 + (cellData.colspan || 1))
@@ -336,7 +336,7 @@ export function createXlsxRowHtml(params: XlsxRowHtmlParams): string {
                 html += ' data-date-value="' + escapeAttribute(normalizeDateInputValue(cellData?.value)) + '"';
             }
 
-            if (!isPlainView) {
+            if (!dataOnly) {
                 if (cellData.hasDefaultBg) {html += ' data-default-bg="true"';}
                 if (cellData.hasWhiteBackground) {html += ' data-white-bg="true"';}
                 if (cellData.isDefaultColor) {html += ' data-default-color="true"';}
@@ -349,13 +349,13 @@ export function createXlsxRowHtml(params: XlsxRowHtmlParams): string {
             if (cellData.hyperlink) {html += ' data-hyperlink="' + String(cellData.hyperlink).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;') + '"';}
             html += ' data-original-color="' + escapeAttribute(String(cellData.originalColor || 'rgb(0, 0, 0)')) + '"';
 
-            if (!isPlainView) {
+            if (!dataOnly) {
                 if (cellData.rowspan > 1) {html += ' rowspan="' + cellData.rowspan + '"';}
                 if (cellData.colspan > 1) {html += ' colspan="' + cellData.colspan + '"';}
             }
 
             let classes = [];
-            if (!isPlainView && cellData.isMerged) {classes.push('merged-cell');}
+            if (!dataOnly && cellData.isMerged) {classes.push('merged-cell');}
             if (isEditMode) {classes.push('editable-cell');}
             
             if (classes.length > 0) {
@@ -363,7 +363,7 @@ export function createXlsxRowHtml(params: XlsxRowHtmlParams): string {
             }
 
             let cellStyleStr = styleStr;
-            if (!isPlainView && cellData.isMerged) {
+            if (!dataOnly && cellData.isMerged) {
                 cellStyleStr += 'height: ' + cellHeight + 'px; width: ' + cellWidth + 'px;';
             } else {
                 cellStyleStr += 'height: ' + rowHeight + 'px;';
@@ -373,14 +373,14 @@ export function createXlsxRowHtml(params: XlsxRowHtmlParams): string {
                 html += ' style="' + escapeAttribute(cellStyleStr) + '"';
             }
             html += '>';
-            html += renderCellContent(cellData, isPlainView, allowInteractiveControls, isEditMode);
+            html += renderCellContent(cellData, dataOnly, allowInteractiveControls, isEditMode);
             html += '</td>';
         } else {
             html += '<td data-row="' + rowIndex + '" data-col="' + virtualColIndex + '"';
             html += ' data-rownum="' + (rowIndex + 1) + '"';
             html += ' data-colnum="' + actualCol + '"';
             html += ' data-cell-type="text"';
-            if (!isPlainView) {
+            if (!dataOnly) {
                 html += ' data-default-bg="true" data-default-color="true" data-default-border="true"';
             }
             html += ' data-empty="true"';

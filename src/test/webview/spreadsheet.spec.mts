@@ -6,8 +6,7 @@ import { closeHarness, openWebview, type WebviewHarness } from './harness.mts';
 import type { HostToSpreadsheetWebview, SpreadsheetSettings } from '../../protocol/spreadsheet.ts';
 
 const SETTINGS: SpreadsheetSettings = {
-    firstRowIsHeader: false, stickyToolbar: true, stickyHeader: true, autoSave: true, autoSaveMode: 'all',
-    showManualSavePopup: false, allowInteractiveControlsOutsideEditMode: true, hyperlinkPreview: true,
+    firstRowIsHeader: false, stickyToolbar: true, stickyHeader: true, autoSave: true, hyperlinkPreview: true,
     spaciousCells: false, mergeWarningEnabled: true, isDefaultEditor: false, textWrap: false,
 };
 
@@ -37,13 +36,13 @@ const COUNT_LISTENERS = `
 let webview: WebviewHarness;
 let rowsServer: ReturnType<typeof setInterval>;
 
-async function initTable() {
+async function initTable(fileType: 'xlsx' | 'csv' = 'csv') {
     // Tag the current table so we can wait for the re-rendered one, not match the old DOM.
     await webview.page.evaluate(() => document.querySelectorAll('table').forEach(t => t.setAttribute('data-stale', '')));
     await webview.send({
         command: 'initVirtualTable',
         worksheets: [{ name: 'Sheet1', index: 0, totalRows: ROWS.length, columnCount: 2, columnWidths: [120, 120], mergedCells: [], rowHeights: ROWS.map(() => 21) }],
-        rowHeaderWidth: 40, fileType: 'csv', isPlainView: false, previewMode: false, versionId: null, timestamp: null,
+        rowHeaderWidth: 40, fileType, previewMode: false, versionId: null, timestamp: null,
     } satisfies HostToSpreadsheetWebview);
     await webview.page.waitForSelector('table:not([data-stale]) td[data-row="2"][data-col="1"]', { timeout: 10000 });
 }
@@ -62,7 +61,7 @@ before(async () => {
             }
         } catch { /* page closing */ }
     }, 25);
-    await webview.send({ command: 'initSettings', settings: SETTINGS, plainSettings: SETTINGS, styledSettings: SETTINGS, settingsScope: 'styled' } satisfies HostToSpreadsheetWebview);
+    await webview.send({ command: 'initSettings', settings: SETTINGS } satisfies HostToSpreadsheetWebview);
     await initTable();
 });
 after(async () => {
@@ -70,7 +69,8 @@ after(async () => {
     await closeHarness();
 });
 
-test('hostile cell values render inert and rich text keeps formatting', async () => {
+test('hostile cell values render inert and rich text keeps formatting (xlsx)', async () => {
+    await initTable('xlsx');
     await webview.page.waitForTimeout(300);
     assert.equal(await webview.page.evaluate(() => (window as any).__pwned), undefined);
     assert.equal(await webview.page.locator('td img[onerror]').count(), 0);
@@ -79,6 +79,17 @@ test('hostile cell values render inert and rich text keeps formatting', async ()
     // <img onerror> in its inert <template> (DOMParser does the same). Nothing runs (checked above),
     // so only that report is ignored here.
     assert.deepEqual((await webview.problems()).filter(p => !p.includes('img-src') && p !== 'CSP blocked script-src-attr: inline'), []);
+});
+
+test('CSV renders text only: no markup, no rich text', async () => {
+    await initTable('csv');
+    await webview.page.waitForTimeout(300);
+    assert.equal(await webview.page.evaluate(() => (window as any).__pwned), undefined);
+    assert.equal(await webview.page.locator('td img').count(), 0);
+    assert.equal(await webview.page.locator('td[data-row="1"][data-col="1"] b').count(), 0);
+    assert.equal((await webview.page.locator('td[data-row="1"][data-col="1"]').innerText()).trim(), 'bold');
+    assert.equal(await webview.page.evaluate(() => document.body.classList.contains('data-only')), true);
+    assert.equal(await webview.page.locator('#xlsxEditFormattingStrip:visible').count(), 0);
 });
 
 test('pasting a quoted multi-line cell writes it to one cell', async () => {
@@ -107,9 +118,6 @@ test('non-sticky spreadsheet toolbar reveals only after it scrolls away', async 
     await webview.send({
         command: 'initSettings',
         settings: nonStickySettings,
-        plainSettings: nonStickySettings,
-        styledSettings: nonStickySettings,
-        settingsScope: 'styled',
     } satisfies HostToSpreadsheetWebview);
     await webview.page.evaluate(() => {
         const spacer = document.createElement('div');
@@ -133,9 +141,6 @@ test('non-sticky spreadsheet toolbar reveals only after it scrolls away', async 
     await webview.send({
         command: 'initSettings',
         settings: SETTINGS,
-        plainSettings: SETTINGS,
-        styledSettings: SETTINGS,
-        settingsScope: 'styled',
     } satisfies HostToSpreadsheetWebview);
     assert.equal(await webview.page.locator('.toolbar-hover-reveal-hotspot').count(), 0);
 });

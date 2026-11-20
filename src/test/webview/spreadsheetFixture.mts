@@ -5,8 +5,8 @@ import { openWebview, type WebviewHarness } from './harness.mts';
 import type { HostToSpreadsheetWebview, SpreadsheetFileType, SpreadsheetSettings } from '../../protocol/spreadsheet.ts';
 
 export const SPREADSHEET_SETTINGS: SpreadsheetSettings = {
-    firstRowIsHeader: false, stickyToolbar: true, stickyHeader: true, autoSave: false, autoSaveMode: 'all',
-    showManualSavePopup: false, allowInteractiveControlsOutsideEditMode: true, hyperlinkPreview: true,
+    firstRowIsHeader: false, stickyToolbar: true, stickyHeader: true, autoSave: false,
+    hyperlinkPreview: true,
     spaciousCells: false, mergeWarningEnabled: true, isDefaultEditor: false, textWrap: false,
 };
 
@@ -59,14 +59,14 @@ export async function bootSpreadsheet(options: {
         await webview.send({
             command: 'initVirtualTable',
             worksheets: [{ name: 'Sheet1', index: 0, totalRows: rows.length, columnCount, columnWidths: Array(columnCount).fill(120), mergedCells: [], rowHeights: rows.map(() => 21) }],
-            rowHeaderWidth: 40, fileType: options.fileType ?? 'xlsx', isPlainView: false, previewMode: false, versionId: null, timestamp: null,
+            rowHeaderWidth: 40, fileType: options.fileType ?? 'xlsx', previewMode: false, versionId: null, timestamp: null,
             ...options.initVirtualTable,
             ...overrides,
         } satisfies HostToSpreadsheetWebview);
         await webview.page.waitForSelector(cell(rows.length - 1, columnCount - 1), { timeout: 10000 });
     };
 
-    await webview.send({ command: 'initSettings', settings, plainSettings: settings, styledSettings: settings, settingsScope: 'styled' } satisfies HostToSpreadsheetWebview);
+    await webview.send({ command: 'initSettings', settings } satisfies HostToSpreadsheetWebview);
     await reinit();
     return {
         ...webview,

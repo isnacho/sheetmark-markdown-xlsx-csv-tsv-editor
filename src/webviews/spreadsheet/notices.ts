@@ -1,8 +1,9 @@
-// Two small dialogs: the merge warning (merging keeps only the top-left value; can be snoozed for a
-// day) and the notice asking whether to switch a CSV/TSV to styled mode. Runtime: WEBVIEW (browser).
+// The merge warning dialog (merging keeps only the top-left value; can be snoozed for a day) and
+// the legacy-styles notice for CSV/TSV. Runtime: WEBVIEW (browser).
 
 import { state } from './state';
 import { post } from './messaging';
+import { hideToast, showToast } from '../shared/toast';
 
 export const MERGE_WARNING_SUPPRESS_UNTIL_KEY = 'xlsx.mergeWarningSuppressUntil';
 
@@ -92,70 +93,16 @@ export async function confirmMergePreserveTopLeftContent() {
     });
 }
 
-export function hideStyleModeNoticePopup() {
-    if (!state.styleModeNoticePopupEl) {return;}
-    state.styleModeNoticePopupEl.classList.add('hidden');
-}
+/** Shown for a CSV/TSV that still has formatting only older versions of Sheetmark stored. */
+export const LEGACY_STYLES_NOTICE_TEXT = "This file has formatting saved only in Sheetmark. CSV files can't store formatting, so it is no longer shown. Convert to XLSX to keep it.";
 
-export function submitStyleModeDecision(decision: 'continue' | 'convert' | 'cancel') {
-    hideStyleModeNoticePopup();
-    if (!state.styleModeRequestPending) {
-        return;
-    }
-    post({ command: 'styleModeDecision', decision });
-}
-
-export function ensureStyleModeNoticePopup() {
-    if (state.styleModeNoticePopupEl) {return state.styleModeNoticePopupEl;}
-
-    const popup = document.createElement('div');
-    popup.id = 'xlsxStyleModeNoticePopup';
-    popup.className = 'xlsx-style-mode-notice-popup hidden';
-    popup.innerHTML = `
-        <div class="xlsx-style-mode-notice-dialog" role="dialog" aria-modal="true" aria-labelledby="styleModeNoticeTitle">
-            <div id="styleModeNoticeTitle" class="style-mode-notice-title">Style Mode for CSV/TSV</div>
-            <div class="style-mode-notice-message">CSV/TSV files do not store formatting in the file itself.</div>
-            <div class="style-mode-notice-message">
-                Styled edits are saved only as local extension data and expire after 48 hours from the last styled edit.
-                To preserve formatting permanently, convert this file to XLSX.
-            </div>
-            <div class="style-mode-notice-actions">
-                <button id="styleModeNoticeCancel" type="button" class="toggle-button">Keep Plain Mode</button>
-                <button id="styleModeNoticeContinue" type="button" class="toggle-button">Continue Styled Mode</button>
-                <button id="styleModeNoticeConvert" type="button" class="toggle-button">Convert to XLSX</button>
-            </div>
-        </div>
-    `;
-
-    popup.addEventListener('click', (e) => {
-        if (e.target === popup) {
-            submitStyleModeDecision('cancel');
-        }
-    });
-
-    const cancelBtn = popup.querySelector('#styleModeNoticeCancel') as HTMLButtonElement | null;
-    const continueBtn = popup.querySelector('#styleModeNoticeContinue') as HTMLButtonElement | null;
-    const convertBtn = popup.querySelector('#styleModeNoticeConvert') as HTMLButtonElement | null;
-
-    cancelBtn?.addEventListener('click', () => submitStyleModeDecision('cancel'));
-    continueBtn?.addEventListener('click', () => submitStyleModeDecision('continue'));
-    convertBtn?.addEventListener('click', () => submitStyleModeDecision('convert'));
-
-    popup.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') {
-            e.preventDefault();
-            submitStyleModeDecision('cancel');
-        }
-    });
-
-    document.body.appendChild(popup);
-    state.styleModeNoticePopupEl = popup;
-    return popup;
-}
-
-export function showStyleModeNoticePopup() {
-    const popup = ensureStyleModeNoticePopup();
-    popup.classList.remove('hidden');
-    const continueBtn = popup.querySelector('#styleModeNoticeContinue') as HTMLButtonElement | null;
-    continueBtn?.focus();
+export function showLegacyStylesNotice() {
+    showToast(
+        LEGACY_STYLES_NOTICE_TEXT,
+        [
+            { label: 'Convert to XLSX', onClick: () => { hideToast(); post({ command: 'convertToXlsx' }); } },
+            { label: 'Dismiss', onClick: () => { hideToast(); post({ command: 'dismissLegacyStyles' }); } },
+        ],
+        { persistent: true, hideCloseButton: true, icon: 'warning' }
+    );
 }

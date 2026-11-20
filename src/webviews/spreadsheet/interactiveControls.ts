@@ -485,7 +485,7 @@ export function updateDateCellPresentation(cell: HTMLElement, value: string) {
 }
 
 export function canUseInteractiveControlsOutsideEditMode(): boolean {
-    return !!state.currentSettings.allowInteractiveControlsOutsideEditMode && !state.isVersionPreviewMode;
+    return !state.isVersionPreviewMode && !state.isDataOnly;
 }
 
 export function areInteractiveControlsEnabled(): boolean {

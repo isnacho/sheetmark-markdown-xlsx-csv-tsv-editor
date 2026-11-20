@@ -3,16 +3,12 @@
 import type { CommonHostToWebview, CommonWebviewToHost } from './common';
 
 export type SpreadsheetFileType = 'xlsx' | 'csv' | 'tsv';
-export type SpreadsheetSettingsScope = 'plain' | 'styled';
 
 export interface SpreadsheetSettings {
     firstRowIsHeader: boolean;
     stickyToolbar: boolean;
     stickyHeader: boolean;
     autoSave: boolean;
-    autoSaveMode: 'all' | 'controlsOnly';
-    showManualSavePopup: boolean;
-    allowInteractiveControlsOutsideEditMode: boolean;
     hyperlinkPreview: boolean;
     spaciousCells: boolean;
     mergeWarningEnabled: boolean;
@@ -20,11 +16,9 @@ export interface SpreadsheetSettings {
     textWrap: boolean;
 }
 
+/** The settings for this file's type: xlsx, csv and tsv each have their own `xlsxViewer.<type>.*` values. */
 export interface SpreadsheetSettingsPayload {
     settings: SpreadsheetSettings;
-    plainSettings: SpreadsheetSettings;
-    styledSettings: SpreadsheetSettings;
-    settingsScope: SpreadsheetSettingsScope;
 }
 
 /** One cell value edit; row and col are 1-based. */
@@ -53,12 +47,13 @@ export type SpreadsheetWebviewToHost =
         operations: any[];
         isAutosave: boolean;
     }
-    | { command: 'updateSettings'; settingsScope: SpreadsheetSettingsScope; settings: Partial<SpreadsheetSettings> }
-    | { command: 'setPreferredViewMode'; mode: SpreadsheetSettingsScope }
-    | { command: 'requestStyleMode' }
-    | { command: 'styleModeDecision'; decision: string }
+    | { command: 'updateSettings'; settings: Partial<SpreadsheetSettings> }
     | { command: 'restoreVersion'; versionId: string | null }
-    | { command: 'convertFile' };
+    | { command: 'convertFile' }
+    /** From the legacy-styles notice: convert this CSV/TSV to XLSX keeping its Sheetmark-only formatting. */
+    | { command: 'convertToXlsx' }
+    /** From the legacy-styles notice: forget the Sheetmark-only formatting stored for this CSV/TSV. */
+    | { command: 'dismissLegacyStyles' };
 
 export type HostToSpreadsheetWebview =
     | CommonHostToWebview
@@ -67,7 +62,8 @@ export type HostToSpreadsheetWebview =
         worksheets: WorksheetMeta[];
         rowHeaderWidth: number;
         fileType: SpreadsheetFileType;
-        isPlainView: boolean;
+        /** CSV/TSV only: the file has formatting that only Sheetmark stored (it is no longer shown). */
+        legacyStylesNotice?: boolean;
         previewMode: boolean;
         versionId: string | null;
         timestamp: number | null;
@@ -77,8 +73,5 @@ export type HostToSpreadsheetWebview =
     | ({ command: 'initSettings' } & SpreadsheetSettingsPayload)
     | ({ command: 'settingsUpdated' } & SpreadsheetSettingsPayload)
     | { command: 'saveResult'; ok: boolean; isAutosave?: boolean; error?: string }
-    | { command: 'styleModeActivated' }
-    | { command: 'showStyleModeNotice' }
-    | { command: 'styleModeCancelled' }
     | { command: 'versionRestoredXlsx'; versionId: string; timestamp: number }
     | { command: 'versionPreviewCancelledXlsx' };

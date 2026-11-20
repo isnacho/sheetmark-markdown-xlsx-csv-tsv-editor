@@ -326,6 +326,54 @@ export function applyStoredStylesToWorksheet(worksheet: Excel.Worksheet, storedS
     }
 }
 
+/** What `StyleStorageService` keeps for a CSV/TSV file: styles, controls (as cell metadata) and merges. */
+export interface StoredSheetMetadata {
+    cells?: Record<string, { style?: Record<string, any>; control?: { controlType: string; dropdownOptions?: string[]; defaultValue?: string } } | undefined>;
+    merges?: { startRow: number; startCol: number; endRow: number; endCol: number }[];
+}
+
+/** The XLSX data validation that makes a cell a checkbox, dropdown, rating or date control. */
+export function controlToDataValidation(control: { controlType: string; dropdownOptions?: string[] }): Excel.DataValidation | undefined {
+    const { controlType, dropdownOptions } = control;
+    if (controlType === 'checkbox') {
+        return { type: 'list', allowBlank: true, formulae: ['"TRUE,FALSE"'] } as Excel.DataValidation;
+    }
+    if (controlType === 'dropdown' && dropdownOptions) {
+        return { type: 'list', allowBlank: true, formulae: [`"${dropdownOptions.join(',')}"`] } as Excel.DataValidation;
+    }
+    if (controlType === 'rating') {
+        return { type: 'list', allowBlank: true, formulae: ['"1,2,3,4,5"'] } as Excel.DataValidation;
+    }
+    if (controlType === 'date') {
+        return { type: 'date', operator: 'between', allowBlank: true, formulae: [new Date(1900, 0, 1), new Date(2199, 11, 31)] } as unknown as Excel.DataValidation;
+    }
+    return undefined;
+}
+
+/** Apply everything Sheetmark stored for a CSV/TSV (styles, merges, controls) to the first sheet of its XLSX conversion. */
+export function applyStoredMetadataToWorksheet(worksheet: Excel.Worksheet, metadata: StoredSheetMetadata): void {
+    const styles: Record<string, any> = {};
+    for (const [key, cell] of Object.entries(metadata.cells ?? {})) {
+        if (cell?.style && typeof cell.style === 'object') { styles[key] = cell.style; }
+    }
+    applyStoredStylesToWorksheet(worksheet, styles);
+
+    for (const [key, cell] of Object.entries(metadata.cells ?? {})) {
+        if (!cell?.control) { continue; }
+        const address = parseStyleKey(key);
+        const validation = controlToDataValidation(cell.control);
+        if (address && validation) { worksheet.getRow(address.row).getCell(address.col).dataValidation = validation; }
+    }
+
+    for (const merge of metadata.merges ?? []) {
+        try {
+            worksheet.mergeCells(merge.startRow, merge.startCol, merge.endRow, merge.endCol);
+        } catch {
+            // overlapping or invalid merge: skip it
+        }
+    }
+}
+
 /**
  * Apply one live style edit from the webview (`saveXlsxEdits` `styleEdits[]`, raw format:
  * bgColor, textColor, bold, wrapMode, border flags, ...) to an exceljs cell.

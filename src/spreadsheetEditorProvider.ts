@@ -6,14 +6,14 @@ import * as path from 'path';
 import { createHash } from 'crypto';
 import { VERSION_HISTORY_RETENTION_MS, getVersionHistoryDir, pickVersionHistoryEntry } from './shared/versionHistory';
 import { convertARGBToRGBA, isShadeOfBlack, isShadeOfWhite } from './spreadsheet/spreadsheetUtilities';
-import { applyStoredStylesToWorksheet, applyStyleEditToCell, normalizeStoredStyle, parseStyleKey } from './spreadsheet/excelStyle';
+import { applyStoredMetadataToWorksheet, applyStyleEditToCell } from './spreadsheet/excelStyle';
 import { convertTabularFile, readTabularFile, detectTabularFileType, writeTabularFile, TabularFileType } from './shared/fileConversionService';
 import { StyleStorageService } from './shared/styleStorageService';
 import { createSerialQueue, type SerialQueue } from './shared/serialQueue';
 import { createMessageDispatcher, SPREADSHEET_FILE_WRITING_COMMANDS } from './shared/messageDispatch';
 import { recordSentInTests, trackOpenEditor, type OpenEditorHandle } from './shared/editorTestHooks';
 import { handleSharedHostMessage, isSharedHostMessage, syncColorTheme, syncFontFamily, type SharedHostContext } from './shared/commonHostMessages';
-import type { HostToSpreadsheetWebview, SpreadsheetSettings, SpreadsheetSettingsPayload, SpreadsheetWebviewToHost } from './protocol/spreadsheet';
+import type { HostToSpreadsheetWebview, SpreadsheetSettings, SpreadsheetWebviewToHost } from './protocol/spreadsheet';
 import { createExternalFileChangeWatcher } from './shared/fileExternalChangeWatcher';
 import { isSheetmarkConfiguredAsDefault } from './shared/editorAssociationUtils';
 
@@ -70,9 +70,8 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
         let currentUri = document.uri;
         let filePath = currentUri.fsPath;
         let currentFileType: TabularFileType = detectTabularFileType(filePath) || 'xlsx';
-        let hasActiveTemporaryStyles = false;
-        let shouldOpenDelimitedInStyledMode = false;
-        let currentIsPlainView = false;
+        // CSV/TSV only: Sheetmark still holds formatting for this file that the file itself cannot store.
+        let legacyStylesNotice = false;
         // Save and restore both read-modify-write the file; run them one at a time (see serialQueue.ts).
         const fileQueue = createSerialQueue();
         const fileQueueKey = document.uri.fsPath.toLowerCase();
@@ -107,207 +106,6 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
             }
 
             return fallbackType;
-        };
-
-        const remapStylesForOperation = (styles: Record<string, any>, op: any): Record<string, any> => {
-            const type = typeof op?.type === 'string' ? op.type : '';
-            const index = typeof op?.index === 'number' ? op.index : 0;
-            const row = typeof op?.row === 'number' ? op.row : 0;
-            const col = typeof op?.col === 'number' ? op.col : 0;
-
-            if (!type) {
-                return styles;
-            }
-
-            const remapped: Record<string, any> = {};
-
-            for (const [key, value] of Object.entries(styles)) {
-                const address = parseStyleKey(key);
-                if (!address) {continue;}
-
-                let nextRow = address.row;
-                let nextCol = address.col;
-                let keep = true;
-
-                switch (type) {
-                    case 'insertRowAbove':
-                        if (address.row >= index) {nextRow = address.row + 1;}
-                        break;
-                    case 'insertRowBelow':
-                        if (address.row > index) {nextRow = address.row + 1;}
-                        break;
-                    case 'deleteRow':
-                        if (address.row === index) {
-                            keep = false;
-                        } else if (address.row > index) {
-                            nextRow = address.row - 1;
-                        }
-                        break;
-                    case 'insertColumnLeft':
-                        if (address.col >= index) {nextCol = address.col + 1;}
-                        break;
-                    case 'insertColumnRight':
-                        if (address.col > index) {nextCol = address.col + 1;}
-                        break;
-                    case 'deleteColumn':
-                        if (address.col === index) {
-                            keep = false;
-                        } else if (address.col > index) {
-                            nextCol = address.col - 1;
-                        }
-                        break;
-                    case 'insertCellShiftRight':
-                        if (address.row === row && address.col >= col) {
-                            nextCol = address.col + 1;
-                        }
-                        break;
-                    case 'insertCellShiftDown':
-                        if (address.col === col && address.row >= row) {
-                            nextRow = address.row + 1;
-                        }
-                        break;
-                    case 'deleteCellShiftLeft':
-                        if (address.row === row && address.col === col) {
-                            keep = false;
-                        } else if (address.row === row && address.col > col) {
-                            nextCol = address.col - 1;
-                        }
-                        break;
-                    case 'deleteCellShiftUp':
-                        if (address.col === col && address.row === row) {
-                            keep = false;
-                        } else if (address.col === col && address.row > row) {
-                            nextRow = address.row - 1;
-                        }
-                        break;
-                    default:
-                        break;
-                }
-
-                if (keep) {
-                    remapped[`${nextRow}:${nextCol}`] = value;
-                }
-            }
-
-            return remapped;
-        };
-
-        const remapMergesForOperation = (
-            merges: { startRow: number; startCol: number; endRow: number; endCol: number }[],
-            op: any
-        ): { startRow: number; startCol: number; endRow: number; endCol: number }[] => {
-            const type = typeof op?.type === 'string' ? op.type : '';
-            const index = typeof op?.index === 'number' ? op.index : 0;
-            const row = typeof op?.row === 'number' ? op.row : 0;
-            const col = typeof op?.col === 'number' ? op.col : 0;
-
-            if (!type) {
-                return merges;
-            }
-
-            const remapped: { startRow: number; startCol: number; endRow: number; endCol: number }[] = [];
-
-            for (const merge of merges) {
-                let { startRow, startCol, endRow, endCol } = merge;
-                let keep = true;
-
-                switch (type) {
-                    case 'insertRowAbove':
-                        if (startRow >= index) {startRow += 1;}
-                        if (endRow >= index) {endRow += 1;}
-                        break;
-                    case 'insertRowBelow':
-                        if (startRow > index) {startRow += 1;}
-                        if (endRow > index) {endRow += 1;}
-                        break;
-                    case 'deleteRow':
-                        if (startRow === index && endRow === index) {
-                            keep = false;
-                        } else {
-                            if (startRow > index) {
-                                startRow -= 1;
-                            }
-                            if (endRow >= index) {
-                                endRow -= 1;
-                            }
-                            if (endRow < startRow) {
-                                keep = false;
-                            }
-                        }
-                        break;
-                    case 'insertColumnLeft':
-                        if (startCol >= index) {startCol += 1;}
-                        if (endCol >= index) {endCol += 1;}
-                        break;
-                    case 'insertColumnRight':
-                        if (startCol > index) {startCol += 1;}
-                        if (endCol > index) {endCol += 1;}
-                        break;
-                    case 'deleteColumn':
-                        if (startCol === index && endCol === index) {
-                            keep = false;
-                        } else {
-                            if (startCol > index) {
-                                startCol -= 1;
-                            }
-                            if (endCol >= index) {
-                                endCol -= 1;
-                            }
-                            if (endCol < startCol) {
-                                keep = false;
-                            }
-                        }
-                        break;
-                    case 'insertCellShiftRight':
-                        if (row >= startRow && row <= endRow && col <= endCol) {
-                            if (col <= startCol) {
-                                startCol += 1;
-                                endCol += 1;
-                            } else {
-                                keep = false;
-                            }
-                        }
-                        break;
-                    case 'insertCellShiftDown':
-                        if (col >= startCol && col <= endCol && row <= endRow) {
-                            if (row <= startRow) {
-                                startRow += 1;
-                                endRow += 1;
-                            } else {
-                                keep = false;
-                            }
-                        }
-                        break;
-                    case 'deleteCellShiftLeft':
-                        if (row >= startRow && row <= endRow && col <= endCol) {
-                            if (col < startCol) {
-                                startCol -= 1;
-                                endCol -= 1;
-                            } else {
-                                keep = false;
-                            }
-                        }
-                        break;
-                    case 'deleteCellShiftUp':
-                        if (col >= startCol && col <= endCol && row <= endRow) {
-                            if (row < startRow) {
-                                startRow -= 1;
-                                endRow -= 1;
-                            } else {
-                                keep = false;
-                            }
-                        }
-                        break;
-                    default:
-                        break;
-                }
-
-                if (keep && startRow <= endRow && startCol <= endCol) {
-                    remapped.push({ startRow, startCol, endRow, endCol });
-                }
-            }
-
-            return remapped;
         };
 
         const applyDelimitedOperationsToRows = (rows: string[][], op: any) => {
@@ -424,8 +222,8 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
             }
         };
 
-        const saveDelimitedFileAndStyles = async (sourceType: TabularFileType, edits: any[], richEdits: any[], styleEdits: any[], operations: any[], isAutosave: boolean) => {
-            const requiresWorkbookRefresh = edits.length > 0 || operations.length > 0 || styleEdits.length > 0 || richEdits.length > 0;
+        // CSV/TSV hold data only: the file is the whole truth, nothing is stored on the side.
+        const saveDelimitedFile = async (sourceType: TabularFileType, edits: any[], operations: any[], isAutosave: boolean) => {
             const { workbook: tabularData } = await readTabularFile(currentUri.fsPath, sourceType);
             const rows = tabularData.sheets[0]?.rows ? tabularData.sheets[0].rows.map(row => [...row]) : [];
 
@@ -435,170 +233,13 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
 
             applyDelimitedEditValues(rows, edits);
 
-            const metadata = (await this.styleStorage.getMetadata(currentUri)) || { cells: {}, merges: [] };
-            let cells = metadata.cells || {};
-            let merges = metadata.merges || [];
-
-            let nextStyles: Record<string, any> = {};
-            let nextControls: Record<string, any> = {};
-
-            for (const [key, cellMeta] of Object.entries(cells)) {
-                if (cellMeta?.style) {
-                    nextStyles[key] = cellMeta.style;
-                }
-                if (cellMeta?.control) {
-                    nextControls[key] = cellMeta.control;
-                }
-            }
-
-            for (const op of operations) {
-                nextStyles = remapStylesForOperation(nextStyles, op);
-                nextControls = remapStylesForOperation(nextControls, op);
-                merges = remapMergesForOperation(merges, op);
-
-                const opType = typeof op?.type === 'string' ? op.type : '';
-                if (opType === 'mergeRange') {
-                    const startRow = typeof op?.startRow === 'number' ? op.startRow : 0;
-                    const startCol = typeof op?.startCol === 'number' ? op.startCol : 0;
-                    const endRow = typeof op?.endRow === 'number' ? op.endRow : 0;
-                    const endCol = typeof op?.endCol === 'number' ? op.endCol : 0;
-                    if (startRow && startCol && endRow && endCol) {
-                        merges = merges.filter(m => !(m.startRow === startRow && m.startCol === startCol && m.endRow === endRow && m.endCol === endCol));
-                        merges.push({ startRow, startCol, endRow, endCol });
-                    }
-                } else if (opType === 'unmergeRange') {
-                    const startRow = typeof op?.startRow === 'number' ? op.startRow : 0;
-                    const startCol = typeof op?.startCol === 'number' ? op.startCol : 0;
-                    const endRow = typeof op?.endRow === 'number' ? op.endRow : 0;
-                    const endCol = typeof op?.endCol === 'number' ? op.endCol : 0;
-                    if (startRow && startCol && endRow && endCol) {
-                        merges = merges.filter(m => !(m.startRow === startRow && m.startCol === startCol && m.endRow === endRow && m.endCol === endCol));
-                    }
-                } else if (opType === 'insertControl') {
-                    const row = typeof op?.row === 'number' ? op.row : 0;
-                    const col = typeof op?.col === 'number' ? op.col : 0;
-                    const controlType = typeof op?.controlType === 'string' ? op.controlType : '';
-                    const defaultValue = typeof op?.defaultValue === 'string' ? op.defaultValue : '';
-                    const dropdownOptions = Array.isArray(op?.dropdownOptions)
-                        ? op.dropdownOptions.map((v: any) => String(v ?? '').trim()).filter((v: string) => !!v)
-                        : [];
-                    if (row && col && controlType) {
-                        nextControls[`${row}:${col}`] = {
-                            controlType,
-                            dropdownOptions: dropdownOptions.length ? dropdownOptions : undefined,
-                            defaultValue
-                        };
-                    }
-                }
-            }
-
-            for (const richEdit of richEdits) {
-                const row = typeof richEdit?.row === 'number' ? richEdit.row : 0;
-                const col = typeof richEdit?.col === 'number' ? richEdit.col : 0;
-                const runs = Array.isArray(richEdit?.runs) ? richEdit.runs : [];
-                if (!row || !col) {continue;}
-
-                const key = `${row}:${col}`;
-                const nextStyle = { ...(nextStyles[key] || {}) };
-
-                const boldValues: boolean[] = runs
-                    .filter((run: any) => typeof run?.bold === 'boolean')
-                    .map((run: any) => !!run.bold);
-                if (boldValues.length === 0) {
-                    delete nextStyle.bold;
-                } else if (boldValues.every((v: boolean) => v === boldValues[0])) {
-                    nextStyle.bold = boldValues[0];
-                } else {
-                    delete nextStyle.bold;
-                }
-
-                const italicValues: boolean[] = runs
-                    .filter((run: any) => typeof run?.italic === 'boolean')
-                    .map((run: any) => !!run.italic);
-                if (italicValues.length === 0) {
-                    delete nextStyle.italic;
-                } else if (italicValues.every((v: boolean) => v === italicValues[0])) {
-                    nextStyle.italic = italicValues[0];
-                } else {
-                    delete nextStyle.italic;
-                }
-
-                const colorValues = runs
-                    .map((run: any) => (typeof run?.color === 'string' ? String(run.color).trim() : ''))
-                    .filter((color: string) => color.length > 0);
-                if (colorValues.length === 0) {
-                    delete nextStyle.textColor;
-                } else if (colorValues.every((color: string) => color.toLowerCase() === colorValues[0].toLowerCase())) {
-                    nextStyle.textColor = colorValues[0];
-                } else {
-                    delete nextStyle.textColor;
-                }
-
-                if (Object.keys(nextStyle).length > 0) {
-                    nextStyles[key] = nextStyle;
-                } else {
-                    delete nextStyles[key];
-                }
-            }
-
-            for (const styleEdit of styleEdits) {
-                const row = typeof styleEdit?.row === 'number' ? styleEdit.row : 0;
-                const col = typeof styleEdit?.col === 'number' ? styleEdit.col : 0;
-                if (!row || !col) {continue;}
-
-                const key = `${row}:${col}`;
-                if (styleEdit?.clearFormatting) {
-                    delete nextStyles[key];
-                    continue;
-                }
-
-                const nextStyle = { ...(nextStyles[key] || {}) };
-                for (const [prop, value] of Object.entries(styleEdit)) {
-                    if (prop === 'row' || prop === 'col' || prop === 'clearFormatting') {
-                        continue;
-                    }
-
-                    if (value !== undefined) {
-                        nextStyle[prop] = value;
-                    }
-                }
-                nextStyles[key] = nextStyle;
-            }
-
             await writeTabularFile(currentUri.fsPath, {
                 sheets: [{ name: 'Sheet1', rows }]
             }, sourceType);
             lastSaveTime = Date.now();
 
-            const finalCells: Record<string, { style?: any; control?: any }> = {};
-            for (const key of new Set([...Object.keys(nextStyles), ...Object.keys(nextControls)])) {
-                const style = nextStyles[key];
-                const cssStyle = style ? normalizeStoredStyle(style) : null;
-                const control = nextControls[key];
-
-                const entry: { style?: any; control?: any } = {};
-                if (cssStyle && Object.keys(cssStyle).length > 0) {
-                    entry.style = cssStyle;
-                }
-                if (control) {
-                    entry.control = control;
-                }
-
-                if (Object.keys(entry).length > 0) {
-                    finalCells[key] = entry;
-                }
-            }
-
-            await this.styleStorage.saveMetadata(currentUri, {
-                cells: finalCells,
-                merges
-            });
-
-            // Keep provider-side worksheet cache in sync so plain/styled mode toggles
-            // re-render with the latest persisted style metadata.
-            if (requiresWorkbookRefresh) {
-                await loadWorkbookPayload();
-            }
+            // Keep the provider-side worksheet cache in sync with the file.
+            await loadWorkbookPayload();
 
             try {
                 post({ command: 'saveResult', ok: true, isAutosave });
@@ -633,21 +274,20 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                 targetType: 'xlsx'
             });
 
-            const storedStyles = (await this.styleStorage.getStyles(currentUri)) ?? {};
-            if (Object.keys(storedStyles).length > 0) {
+            // Keep everything Sheetmark stored for this file: styles, merges and controls.
+            const storedMetadata = await this.styleStorage.getMetadata(currentUri);
+            if (storedMetadata) {
                 const workbook = new Excel.Workbook();
                 await workbook.xlsx.readFile(targetPath);
                 const worksheet = workbook.worksheets[0];
                 if (worksheet) {
-                    applyStoredStylesToWorksheet(worksheet, storedStyles);
+                    applyStoredMetadataToWorksheet(worksheet, storedMetadata);
                     await workbook.xlsx.writeFile(targetPath);
                 }
             }
 
             await this.styleStorage.clearStyles(currentUri);
-            await this.styleStorage.clearPreferredViewMode(currentUri);
-            hasActiveTemporaryStyles = false;
-            shouldOpenDelimitedInStyledMode = false;
+            legacyStylesNotice = false;
 
             await vscode.commands.executeCommand('workbench.action.closeActiveEditor');
             await vscode.commands.executeCommand('vscode.openWith', vscode.Uri.file(targetPath), 'xlsxViewer.xlsx');
@@ -745,92 +385,32 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
             }
         };
 
-        type SettingsScope = 'plain' | 'styled';
-        type PersistedSpreadsheetSettings = SpreadsheetSettings;
-        type PersistedSettingsPayload = SpreadsheetSettingsPayload;
-
         const getAssociationType = (): 'xlsx' | 'csv' | 'tsv' =>
             currentFileType === 'csv' || currentFileType === 'tsv' ? currentFileType : 'xlsx';
 
-        const getStyledSettings = (): PersistedSpreadsheetSettings => {
+        // xlsx, csv and tsv each keep their own settings under `xlsxViewer.<type>.*`.
+        const getSettings = (fileType: TabularFileType = currentFileType): SpreadsheetSettings => {
             const cfg = vscode.workspace.getConfiguration('xlsxViewer');
-            const autoSaveModeSetting = cfg.get<string>('xlsx.autoSaveMode', 'all');
+            const delimited = fileType === 'csv' || fileType === 'tsv';
+            const prefix = delimited ? fileType : 'xlsx';
             return {
-                firstRowIsHeader: cfg.get('xlsx.firstRowIsHeader', true),
-                stickyToolbar: cfg.get('xlsx.stickyToolbar', true),
-                stickyHeader: cfg.get('xlsx.stickyHeader', false),
-                autoSave: cfg.get('xlsx.autoSave', false),
-                autoSaveMode: autoSaveModeSetting === 'controlsOnly' ? 'controlsOnly' : 'all',
-                showManualSavePopup: cfg.get('xlsx.showManualSavePopup', true),
-                allowInteractiveControlsOutsideEditMode: cfg.get('xlsx.allowInteractiveControlsOutsideEditMode', true),
-                hyperlinkPreview: cfg.get('xlsx.hyperlinkPreview', true),
-                spaciousCells: cfg.get('xlsx.spaciousCells', false),
-                mergeWarningEnabled: cfg.get('xlsx.mergeWarningEnabled', true),
-                isDefaultEditor: isSheetmarkConfiguredAsDefault('xlsx'),
-                textWrap: cfg.get('xlsx.textWrap', false)
-            };
-        };
-
-        const getPlainSettings = (fileType: TabularFileType): PersistedSpreadsheetSettings => {
-            const cfg = vscode.workspace.getConfiguration('xlsxViewer');
-
-            if (fileType === 'csv' || fileType === 'tsv') {
-                return {
-                    firstRowIsHeader: cfg.get(`${fileType}.firstRowIsHeader`, true),
-                    stickyToolbar: cfg.get(`${fileType}.stickyToolbar`, true),
-                    stickyHeader: cfg.get(`${fileType}.stickyHeader`, false),
-                    autoSave: cfg.get(`${fileType}.autoSave`, true),
-                    autoSaveMode: 'all',
-                    showManualSavePopup: false,
-                    allowInteractiveControlsOutsideEditMode: true,
-                    hyperlinkPreview: true,
-                    spaciousCells: cfg.get(`${fileType}.spaciousCells`, false),
-                    mergeWarningEnabled: true,
-                    isDefaultEditor: isSheetmarkConfiguredAsDefault(fileType),
-                    textWrap: cfg.get(`${fileType}.textWrap`, false)
-                };
-            }
-
-            return {
-                firstRowIsHeader: cfg.get('xlsx.firstRowIsHeader', true),
-                stickyToolbar: cfg.get('xlsx.stickyToolbar', true),
-                stickyHeader: cfg.get('xlsx.stickyHeader', false),
-                autoSave: cfg.get('xlsx.autoSave', true),
-                autoSaveMode: 'all',
-                showManualSavePopup: false,
-                allowInteractiveControlsOutsideEditMode: cfg.get('xlsx.allowInteractiveControlsOutsideEditMode', true),
-                hyperlinkPreview: cfg.get('xlsx.hyperlinkPreview', true),
-                spaciousCells: cfg.get('xlsx.spaciousCells', false),
-                mergeWarningEnabled: cfg.get('xlsx.mergeWarningEnabled', true),
-                isDefaultEditor: isSheetmarkConfiguredAsDefault('xlsx'),
-                textWrap: cfg.get('xlsx.textWrap', false)
-            };
-        };
-
-        const getPersistedSettings = (): PersistedSettingsPayload => {
-            const styledSettings = getStyledSettings();
-            const plainSettings = getPlainSettings(currentFileType);
-            if (currentFileType === 'csv' || currentFileType === 'tsv') {
-                styledSettings.isDefaultEditor = plainSettings.isDefaultEditor;
-            }
-            const settingsScope: SettingsScope = currentIsPlainView ? 'plain' : (currentFileType === 'xlsx' ? 'styled' : 'plain');
-
-            return {
-                settings: settingsScope === 'plain' ? plainSettings : styledSettings,
-                plainSettings,
-                styledSettings,
-                settingsScope
+                firstRowIsHeader: cfg.get(`${prefix}.firstRowIsHeader`, true),
+                stickyToolbar: cfg.get(`${prefix}.stickyToolbar`, true),
+                stickyHeader: cfg.get(`${prefix}.stickyHeader`, false),
+                // Autosave is on for CSV/TSV and off for XLSX: an XLSX save rewrites the whole workbook.
+                autoSave: cfg.get(`${prefix}.autoSave`, delimited),
+                hyperlinkPreview: delimited ? true : cfg.get('xlsx.hyperlinkPreview', true),
+                spaciousCells: cfg.get(`${prefix}.spaciousCells`, false),
+                mergeWarningEnabled: delimited ? true : cfg.get('xlsx.mergeWarningEnabled', true),
+                isDefaultEditor: isSheetmarkConfiguredAsDefault(prefix),
+                textWrap: cfg.get(`${prefix}.textWrap`, false)
             };
         };
 
         const trySendSettings = () => {
             if (!isWebviewReady) {return;}
             try {
-                const persisted = getPersistedSettings();
-                post({
-                    command: 'initSettings',
-                    ...persisted
-                });
+                post({ command: 'initSettings', settings: getSettings() });
             } catch {
                 // ignore
             }
@@ -859,7 +439,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                     worksheets: worksheetsMeta,
                     rowHeaderWidth,
                     fileType: currentFileType,
-                    isPlainView: currentIsPlainView,
+                    legacyStylesNotice: legacyStylesNotice || undefined,
                     previewMode: !!previewVersionId,
                     versionId: previewVersionId,
                     timestamp: previewVersionTimestamp
@@ -872,14 +452,14 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
         const loadWorkbookPayload = async (sourcePath: string = filePath, sourceTypeOverride?: TabularFileType) => {
             const fileType = sourceTypeOverride || detectTabularFileType(sourcePath) || 'xlsx';
             currentFileType = fileType;
-            hasActiveTemporaryStyles = false;
-            shouldOpenDelimitedInStyledMode = false;
+            legacyStylesNotice = false;
             const workbook = new Excel.Workbook();
 
             if (fileType === 'xlsx') {
                 await workbook.xlsx.readFile(sourcePath);
             } else {
-                // Load CSV/TSV data
+                // CSV/TSV hold data only. Formatting that older versions stored on the side is not
+                // shown; the webview offers to convert it into an XLSX or to forget it.
                 const { workbook: tabularData } = await readTabularFile(sourcePath, fileType);
                 const ws = workbook.addWorksheet('Data');
                 if (tabularData.sheets.length > 0) {
@@ -892,110 +472,15 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                     }
                 }
 
-                const preferredViewMode = this.styleStorage.getPreferredViewMode(currentUri);
-                shouldOpenDelimitedInStyledMode = preferredViewMode === 'styled';
-
                 const metadata = await this.styleStorage.getMetadata(currentUri);
-                if (metadata) {
-                    if (metadata.merges && metadata.merges.length > 0) {
-                        for (const merge of metadata.merges) {
-                            try {
-                                ws.mergeCells(merge.startRow, merge.startCol, merge.endRow, merge.endCol);
-                            } catch { }
-                        }
-                    }
-
-                    if (metadata.cells) {
-                        for (const [key, cellMeta] of Object.entries(metadata.cells)) {
-                            if (cellMeta?.control) {
-                                const address = parseStyleKey(key);
-                                if (!address) {continue;}
-                                const cell = ws.getRow(address.row).getCell(address.col);
-                                const { controlType, dropdownOptions } = cellMeta.control;
-                                if (controlType === 'checkbox') {
-                                    cell.dataValidation = {
-                                        type: 'list',
-                                        allowBlank: true,
-                                        formulae: ['"TRUE,FALSE"']
-                                    } as any;
-                                } else if (controlType === 'dropdown' && dropdownOptions) {
-                                    const inline = dropdownOptions.join(',');
-                                    cell.dataValidation = {
-                                        type: 'list',
-                                        allowBlank: true,
-                                        formulae: [`"${inline}"`]
-                                    } as any;
-                                } else if (controlType === 'rating') {
-                                    cell.dataValidation = {
-                                        type: 'list',
-                                        allowBlank: true,
-                                        formulae: ['"1,2,3,4,5"']
-                                    } as any;
-                                } else if (controlType === 'date') {
-                                    cell.dataValidation = {
-                                        type: 'date',
-                                        operator: 'between',
-                                        allowBlank: true,
-                                        formulae: [new Date(1900, 0, 1), new Date(2199, 11, 31)]
-                                    } as any;
-                                }
-                            }
-                        }
-                    }
-
-                    const storedStyles: Record<string, any> = {};
-                    if (metadata.cells) {
-                        for (const [key, cellMeta] of Object.entries(metadata.cells)) {
-                            if (cellMeta?.style) {
-                                storedStyles[key] = cellMeta.style;
-                            }
-                        }
-                    }
-                    hasActiveTemporaryStyles = Object.keys(storedStyles).length > 0;
-                    (workbook as any).__storedStyles = storedStyles;
-
-                    const hasMergesOrControls = (metadata.merges && metadata.merges.length > 0) ||
-                        (metadata.cells && Object.values(metadata.cells).some(c => !!c?.control));
-                    shouldOpenDelimitedInStyledMode = preferredViewMode === 'styled' || hasActiveTemporaryStyles || !!hasMergesOrControls;
-                }
+                legacyStylesNotice = !!metadata && (
+                    (metadata.merges?.length ?? 0) > 0
+                    || Object.values(metadata.cells ?? {}).some(cell => !!cell?.style || !!cell?.control)
+                );
             }
-
-            // Derive the initial plain-view state from file type and preferences.
-            // For XLSX: default to styled (false). For CSV/TSV: inverse of styled preference.
-            currentIsPlainView = currentFileType === 'xlsx' ? false : !shouldOpenDelimitedInStyledMode;
 
             worksheetsData = workbook.worksheets.map((worksheet, index) => {
                 const data = this.extractWorksheetData(worksheet, workbook);
-                // If we have stored styles for CSV/TSV, merge them into the extracted data
-                if ((workbook as any).__storedStyles) {
-                    const styles = (workbook as any).__storedStyles;
-                    for (const row of data.rows) {
-                        for (const cell of row.cells) {
-                            const key = `${cell.rowNumber}:${cell.colNumber}`;
-                            if (styles[key]) {
-                                // Normalize stored style format to CSS properties for rendering.
-                                const cssStyle = normalizeStoredStyle(styles[key]);
-                                cell.style = { ...cell.style, ...cssStyle };
-
-                                // Update default/theme flags so stylesheet "!important" rules
-                                // do not override the custom inline styling.
-                                if (cssStyle.backgroundColor) {
-                                    cell.hasDefaultBg = false;
-                                    cell.hasWhiteBackground = isShadeOfWhite(cssStyle.backgroundColor);
-                                    cell.hasBlackBackground = isShadeOfBlack(cssStyle.backgroundColor);
-                                    cell.isEmpty = false;
-                                }
-                                if (cssStyle.color) {
-                                    cell.isDefaultColor = false;
-                                    cell.originalColor = cssStyle.color;
-                                }
-                                if (cssStyle.border) {
-                                    cell.hasDefaultBorder = false;
-                                }
-                            }
-                        }
-                    }
-                }
                 return {
                     name: worksheet.name,
                     index,
@@ -1120,35 +605,23 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                 try {
                     const s = message.settings || {};
                     const cfg = vscode.workspace.getConfiguration('xlsxViewer');
-                    const scope = message.settingsScope === 'plain' ? 'plain' : 'styled';
-                    const isDelimitedFile = currentFileType === 'csv' || currentFileType === 'tsv';
+                    // Each file type keeps its own values: a CSV never writes the xlsx.* keys.
+                    const prefix = currentFileType === 'csv' || currentFileType === 'tsv' ? currentFileType : 'xlsx';
                     const firstRowIsHeader = !!s.firstRowIsHeader;
                     const stickyHeader = firstRowIsHeader ? !!s.stickyHeader : false;
 
-                    if (scope === 'plain') {
-                        // Plain mode settings: limited set matching CSV/TSV plain mode defaults
-                        const prefix = isDelimitedFile ? currentFileType : 'xlsx';
-                        await cfg.update(`${prefix}.firstRowIsHeader`, firstRowIsHeader, vscode.ConfigurationTarget.Global);
-                        await cfg.update(`${prefix}.stickyToolbar`, !!s.stickyToolbar, vscode.ConfigurationTarget.Global);
-                        await cfg.update(`${prefix}.stickyHeader`, stickyHeader, vscode.ConfigurationTarget.Global);
-                        await cfg.update(`${prefix}.autoSave`, s.autoSave !== false, vscode.ConfigurationTarget.Global);
-                        await cfg.update(`${prefix}.spaciousCells`, !!s.spaciousCells, vscode.ConfigurationTarget.Global);
-                        await cfg.update(`${prefix}.textWrap`, !!s.textWrap, vscode.ConfigurationTarget.Global);
-                    } else {
-                        await cfg.update('xlsx.firstRowIsHeader', firstRowIsHeader, vscode.ConfigurationTarget.Global);
-                        await cfg.update('xlsx.stickyToolbar', !!s.stickyToolbar, vscode.ConfigurationTarget.Global);
-                        await cfg.update('xlsx.stickyHeader', stickyHeader, vscode.ConfigurationTarget.Global);
-                        await cfg.update('xlsx.autoSave', !!s.autoSave, vscode.ConfigurationTarget.Global);
-                        await cfg.update('xlsx.autoSaveMode', s.autoSaveMode === 'controlsOnly' ? 'controlsOnly' : 'all', vscode.ConfigurationTarget.Global);
-                        await cfg.update('xlsx.showManualSavePopup', !!s.showManualSavePopup, vscode.ConfigurationTarget.Global);
-                        await cfg.update('xlsx.allowInteractiveControlsOutsideEditMode', !!s.allowInteractiveControlsOutsideEditMode, vscode.ConfigurationTarget.Global);
+                    await cfg.update(`${prefix}.firstRowIsHeader`, firstRowIsHeader, vscode.ConfigurationTarget.Global);
+                    await cfg.update(`${prefix}.stickyToolbar`, !!s.stickyToolbar, vscode.ConfigurationTarget.Global);
+                    await cfg.update(`${prefix}.stickyHeader`, stickyHeader, vscode.ConfigurationTarget.Global);
+                    await cfg.update(`${prefix}.autoSave`, !!s.autoSave, vscode.ConfigurationTarget.Global);
+                    await cfg.update(`${prefix}.spaciousCells`, !!s.spaciousCells, vscode.ConfigurationTarget.Global);
+                    await cfg.update(`${prefix}.textWrap`, !!s.textWrap, vscode.ConfigurationTarget.Global);
+                    if (prefix === 'xlsx') {
                         await cfg.update('xlsx.hyperlinkPreview', !!s.hyperlinkPreview, vscode.ConfigurationTarget.Global);
-                        await cfg.update('xlsx.spaciousCells', !!s.spaciousCells, vscode.ConfigurationTarget.Global);
                         await cfg.update('xlsx.mergeWarningEnabled', !!s.mergeWarningEnabled, vscode.ConfigurationTarget.Global);
-                        await cfg.update('xlsx.textWrap', !!s.textWrap, vscode.ConfigurationTarget.Global);
                     }
                 } catch (err) {
-                    console.error('Failed to persist XLSX settings:', err);
+                    console.error('Failed to persist spreadsheet settings:', err);
                 }
                 return;
             }
@@ -1192,21 +665,6 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                 return;
             }
 
-            if (message?.command === 'setPreferredViewMode') {
-                try {
-                    const mode = message?.mode === 'styled' ? 'styled' : 'plain';
-                    if (currentFileType === 'csv' || currentFileType === 'tsv') {
-                        await this.styleStorage.setPreferredViewMode(currentUri, mode);
-                        shouldOpenDelimitedInStyledMode = mode === 'styled';
-                    }
-                    // Keep provider-side plain-view state in sync with the webview
-                    currentIsPlainView = mode === 'plain';
-                } catch {
-                    // ignore preferred view mode persistence errors
-                }
-                return;
-            }
-
             if (message?.command === 'requestFreshData') {
                 try {
                     await loadWorkbookPayload();
@@ -1217,38 +675,21 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
                 return;
             }
 
-            if (message?.command === 'requestStyleMode') {
+            if (message?.command === 'convertToXlsx') {
                 try {
-                    if (currentFileType === 'xlsx') {
-                        post({ command: 'styleModeActivated' });
-                        return;
-                    }
-                    post({ command: 'showStyleModeNotice' });
+                    await convertCurrentFileToXlsx();
                 } catch (err) {
-                    post({ command: 'styleModeCancelled' });
-                    vscode.window.showErrorMessage(`Unable to switch to styled mode: ${String(err)}`);
+                    vscode.window.showErrorMessage(`Error converting file: ${err}`);
                 }
                 return;
             }
 
-            if (message?.command === 'styleModeDecision') {
+            if (message?.command === 'dismissLegacyStyles') {
                 try {
-                    const decision = typeof message?.decision === 'string' ? message.decision : 'cancel';
-
-                    if (decision === 'continue') {
-                        post({ command: 'styleModeActivated' });
-                        return;
-                    }
-
-                    if (decision === 'convert') {
-                        await convertCurrentFileToXlsx();
-                        return;
-                    }
-
-                    post({ command: 'styleModeCancelled' });
-                } catch (err) {
-                    post({ command: 'styleModeCancelled' });
-                    vscode.window.showErrorMessage(`Unable to process style mode selection: ${String(err)}`);
+                    await this.styleStorage.clearStyles(currentUri);
+                    legacyStylesNotice = false;
+                } catch {
+                    // ignore: the notice simply shows again next time
                 }
                 return;
             }
@@ -1274,7 +715,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
 
                     const sourceType = detectTabularFileType(currentUri.fsPath) || 'xlsx';
                     if (sourceType === 'csv' || sourceType === 'tsv') {
-                        await saveDelimitedFileAndStyles(sourceType, edits, richEdits, styleEdits, operations, isAutosave);
+                        await saveDelimitedFile(sourceType, edits, operations, isAutosave);
                         // Same as the XLSX path below: every save is a restorable version (deduped by hash).
                         await persistVersionSnapshot();
                         return;
@@ -1634,8 +1075,7 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
         const configChangeDisposable = vscode.workspace.onDidChangeConfiguration(e => {
             if (e.affectsConfiguration('xlsxViewer.xlsx') || e.affectsConfiguration('xlsxViewer') || e.affectsConfiguration('workbench.editorAssociations')) {
                 try {
-                    const persisted = getPersistedSettings();
-                    post({ command: 'settingsUpdated', ...persisted });
+                    post({ command: 'settingsUpdated', settings: getSettings() });
                 } catch {
                     // ignore
                 }

@@ -18,8 +18,8 @@ export function getMutableRowsSnapshot(): any[] {
 export function getEffectiveRowHeightFromValue(height: number): number {
     const normalized = Number.isFinite(height) && height > 0 ? height : ROW_HEIGHT;
 
-    // Plain view follows CSV/TSV row metrics exactly.
-    if (state.isPlainView) {
+    // CSV/TSV (data only) rows are a fixed height.
+    if (state.isDataOnly) {
         return 24;
     }
 

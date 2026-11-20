@@ -11,13 +11,6 @@ import type { XlsxFindManager } from './components/spreadsheetFindComponent';
 
 export const MIN_ROW_HEADER_WIDTH = 40;
 
-const defaultPlainViewSettings: XlsxViewSettings = {
-    ...defaultXlsxViewSettings,
-    autoSave: true,
-    autoSaveMode: 'all',
-    showManualSavePopup: false
-};
-
 export const state = {
     // Data injected from the extension via postMessage
     worksheetsMeta: [] as any[],
@@ -68,8 +61,6 @@ export const state = {
     toolbarManager: null as ToolbarManager | null,
     // Settings (persisted by extension)
     currentSettings: { ...defaultXlsxViewSettings } as XlsxViewSettings,
-    plainModeSettings: { ...defaultPlainViewSettings } as XlsxViewSettings,
-    styledModeSettings: { ...defaultXlsxViewSettings } as XlsxViewSettings,
     hasVirtualTableInit: false,
     // Table edit mode (text-only)
     isEditMode: false,
@@ -95,7 +86,6 @@ export const state = {
     dropdownOptionsResolver: null as ((options: string[] | null) => void) | null,
     mergeWarningPopupEl: null as HTMLElement | null,
     mergeWarningResolver: null as ((confirmed: boolean) => void) | null,
-    styleModeNoticePopupEl: null as HTMLElement | null,
     formatPainterStyle: null as Partial<CellStyleEdit> | null,
     formatPainterArmed: false,
     formatPainterExecuting: false,
@@ -112,12 +102,9 @@ export const state = {
     isVersionPreviewMode: false,
     previewVersionId: null as string | null,
     imagePreviewOverlayEl: null as HTMLElement | null,
-    // Plain view mode (removes all XLSX styling)
-    isPlainView: false,
-    isTemporaryStyleFile: false,
+    // CSV/TSV: data only, no formatting or controls. XLSX is never data-only.
+    isDataOnly: false,
     currentAssociationFileType: 'xlsx',
-    styleModeRequestPending: false,
-    pendingStyleModeAction: null as (() => void) | null,
     baseTotalRows: 0,
     baseRowHeights: [] as number[],
     sourceRowsSnapshot: null as any[] | null,

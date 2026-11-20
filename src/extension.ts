@@ -3,8 +3,8 @@ import * as path from 'path';
 import * as Excel from 'exceljs';
 import { SpreadsheetEditorProvider } from './spreadsheetEditorProvider';
 import { MDEditorProvider } from './mdEditorProvider';
-import { StyleStorageService } from './shared/styleStorageService';
-import { applyStoredStylesToWorksheet } from './spreadsheet/excelStyle';
+import { StyleStorageService, type FileMetadata } from './shared/styleStorageService';
+import { applyStoredMetadataToWorksheet } from './spreadsheet/excelStyle';
 import { registerRenameStateMigration } from './shared/renameStateMigration';
 import { createMarkdownPreferences } from './shared/preferenceStore';
 import type { OpenEditorHandle } from './shared/editorTestHooks';
@@ -82,8 +82,9 @@ function getViewTypeForFileType(fileType: TabularFileType): string | undefined {
     return undefined;
 }
 
-async function applyStoredStylesToXlsxFile(filePath: string, storedStyles: Record<string, any>): Promise<void> {
-    if (!storedStyles || typeof storedStyles !== 'object' || !Object.keys(storedStyles).length) {
+async function applyStoredMetadataToXlsxFile(filePath: string, metadata: FileMetadata): Promise<void> {
+    const hasAny = Object.keys(metadata.cells ?? {}).length > 0 || (metadata.merges ?? []).length > 0;
+    if (!hasAny) {
         return;
     }
 
@@ -94,8 +95,8 @@ async function applyStoredStylesToXlsxFile(filePath: string, storedStyles: Recor
         return;
     }
 
-    // Same code path as the toolbar Convert, so both produce identical styling.
-    applyStoredStylesToWorksheet(worksheet, storedStyles);
+    // Same code path as the notice's Convert to XLSX, so both produce identical output.
+    applyStoredMetadataToWorksheet(worksheet, metadata);
 
     await workbook.xlsx.writeFile(filePath);
 }
@@ -385,9 +386,9 @@ export function activate(context: vscode.ExtensionContext): SheetmarkTestApi | u
                 });
 
                 if ((sourceType === 'csv' || sourceType === 'tsv') && result.targetType === 'xlsx') {
-                    const storedStyles = await styleStorage.getStyles(sourceUri);
-                    if (storedStyles) {
-                        await applyStoredStylesToXlsxFile(finalTargetPath, storedStyles);
+                    const storedMetadata = await styleStorage.getMetadata(sourceUri);
+                    if (storedMetadata) {
+                        await applyStoredMetadataToXlsxFile(finalTargetPath, storedMetadata);
                         await styleStorage.clearStyles(sourceUri);
                     }
                 }

@@ -19,7 +19,11 @@ export type FontChoice = string;
 
 /** Messages any Sheetmark webview may send (feedback modal, settings, history, links). */
 export type CommonWebviewToHost =
-    | { command: 'webviewReady' }
+    /**
+     * `appliedInitialMessages`: the webview already applied the messages the host embedded in its
+     * HTML (Markdown only, see `renderMarkdownHtml`), so the host need not send them again.
+     */
+    | { command: 'webviewReady'; appliedInitialMessages?: boolean }
     | { command: 'setFontFamily'; font: FontChoice }
     | { command: 'requestLocalFonts' }
     | { command: 'requestFreshData' }

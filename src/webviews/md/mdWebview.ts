@@ -70,6 +70,7 @@ import { post } from './messaging';
 import { hideToast, showToast } from './toast';
 import { confirmDiscardAndReload } from './dialogs';
 import { sanitizeMarkdownCopyLinkArtifacts, stripHeadingCopyLinkArtifacts } from './copyLinkArtifacts';
+import { revealAndApplyInitialMessages } from './initialMessages';
 import {
     applyReloadedContent,
     canReloadFromDisk,
@@ -2018,4 +2019,9 @@ if (state.currentSettings) {
     applySettings(state.currentSettings);
 }
 
-post({ command: 'webviewReady' });
+// The host embeds its first messages in the page; deliver them as if they had been posted, so
+// the document renders without waiting for a reply to webviewReady (see initialMessages.ts).
+const appliedInitialMessages = revealAndApplyInitialMessages(document, (message) => {
+    window.dispatchEvent(new MessageEvent('message', { data: message }));
+});
+post({ command: 'webviewReady', appliedInitialMessages });

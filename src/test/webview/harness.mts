@@ -36,6 +36,8 @@ export interface WebviewHarness {
 }
 
 let server: Server | undefined;
+/** Host messages the next Markdown shell embeds (see `initialMessages` in openWebview). */
+let nextInitialMessages: unknown[] | undefined;
 let origin = '';
 let browser: Browser | undefined;
 
@@ -51,7 +53,8 @@ async function startServer(): Promise<void> {
             const asset = (relativePath: string) => `${origin}/${relativePath}`;
             const html = kind === 'spreadsheet'
                 ? renderSpreadsheetHtml({ asset, cspSource: origin })
-                : renderMarkdownHtml({ asset, cspSource: origin, nonce: 'testnonce' });
+                : renderMarkdownHtml({ asset, cspSource: origin, nonce: 'testnonce', initialMessages: nextInitialMessages as any });
+            nextInitialMessages = undefined;
             res.writeHead(200, { 'Content-Type': 'text/html' }).end(html);
             return;
         }
@@ -109,11 +112,23 @@ const INIT_SCRIPT = `
 })();
 `;
 
-export async function openWebview(kind: WebviewKind, options: { extraInitScript?: string } = {}): Promise<WebviewHarness> {
+export interface OpenWebviewOptions {
+    extraInitScript?: string;
+    /** Markdown only: host messages embedded in the page, as `MDEditorProvider` does on open. */
+    initialMessages?: unknown[];
+    /** Runs before the page loads, for example to install `page.route` handlers. */
+    beforeGoto?: (page: Page) => Promise<void>;
+    /** Passed to `page.goto` (default 'load'); 'commit' returns while subresources still load. */
+    waitUntil?: 'load' | 'domcontentloaded' | 'commit';
+}
+
+export async function openWebview(kind: WebviewKind, options: OpenWebviewOptions = {}): Promise<WebviewHarness> {
     await startServer();
     const page = await (await launch()).newPage();
     await page.addInitScript({ content: INIT_SCRIPT + (options.extraInitScript ?? '') });
-    await page.goto(`${origin}/__shell/${kind}`);
+    await options.beforeGoto?.(page);
+    nextInitialMessages = options.initialMessages;
+    await page.goto(`${origin}/__shell/${kind}`, { waitUntil: options.waitUntil ?? 'load' });
 
     const posted = () => page.evaluate(() => (window as any).__posted as any[]);
     return {

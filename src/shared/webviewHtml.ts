@@ -2,7 +2,24 @@
 // that turns an extension-relative path into a webview URI, and the webview tests
 // (src/test/webview) render the same HTML against a local HTTP server.
 
+import type { HostToMarkdownWebview } from '../protocol/markdown';
 import { markdownCsp, spreadsheetCsp } from './webviewCsp';
+
+/** id of the JSON data block that carries the Markdown webview's first host messages. */
+export const INITIAL_MESSAGES_ELEMENT_ID = 'sheetmarkInitialMessages';
+/** id of the inline style that keeps the Markdown page hidden until its bundle has run. */
+export const BOOT_STYLE_ELEMENT_ID = 'sheetmarkBootStyle';
+
+/**
+ * JSON for a `<script type="application/json">` block. `<` is escaped so file content can never
+ * close the element (`</script>`) or open a comment; U+2028/2029 for older JSON-in-JS parsers.
+ */
+export function serializeInitialMessages(messages: readonly HostToMarkdownWebview[]): string {
+    return JSON.stringify(messages)
+        .replace(/</g, '\\u003c')
+        .replace(/\u2028/g, '\\u2028')
+        .replace(/\u2029/g, '\\u2029');
+}
 
 export interface WebviewHtmlOptions {
     /** Webview URI for an extension-relative path, e.g. 'dist/md/mdWebview.js'. */
@@ -50,7 +67,20 @@ export function renderSpreadsheetHtml({ asset, cspSource }: WebviewHtmlOptions):
 </html>`;
 }
 
-export function renderMarkdownHtml({ asset, cspSource, nonce }: WebviewHtmlOptions & { nonce: string }): string {
+export interface MarkdownHtmlOptions extends WebviewHtmlOptions {
+    nonce: string;
+    /**
+     * Host messages (initMarkdown, initSettings, font) the webview applies as soon as its bundle
+     * runs, before it posts `webviewReady`. Saves a round trip to the extension host, which can be
+     * slow while VS Code is still activating extensions.
+     */
+    initialMessages?: readonly HostToMarkdownWebview[];
+}
+
+export function renderMarkdownHtml({ asset, cspSource, nonce, initialMessages }: MarkdownHtmlOptions): string {
+    const initialData = initialMessages?.length
+        ? `<script type="application/json" id="${INITIAL_MESSAGES_ELEMENT_ID}" nonce="${nonce}">${serializeInitialMessages(initialMessages)}</script>`
+        : '';
     return `
         <!DOCTYPE html>
         <html lang="en">
@@ -59,6 +89,11 @@ export function renderMarkdownHtml({ asset, cspSource, nonce }: WebviewHtmlOptio
             <meta http-equiv="Content-Security-Policy" content="${markdownCsp(cspSource, nonce)}">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <title>Sheetmark</title>
+            <!-- VS Code shows a webview after a short timeout even if its stylesheets are still
+                 loading, which painted unstyled buttons and icons. The bundle removes this style
+                 once it has run (scripts wait for the stylesheets); the animation is a fallback
+                 that shows the page anyway if the bundle never runs. -->
+            <style id="${BOOT_STYLE_ELEMENT_ID}">body{visibility:hidden;animation:sheetmark-boot-reveal 0s 4s forwards}@keyframes sheetmark-boot-reveal{to{visibility:visible}}</style>
             <link href="${asset('resources/shared/theme.css')}" rel="stylesheet" />
             <link href="${asset('resources/shared/menuPanel.css')}" rel="stylesheet" />
             <link href="${asset('resources/md/mdWebview.css')}" rel="stylesheet" />
@@ -133,7 +168,7 @@ export function renderMarkdownHtml({ asset, cspSource, nonce }: WebviewHtmlOptio
             <div id="diskDiffBulkActions" class="toast-notification disk-diff-bulk-actions">
                 <div class="toast-header">
                     <div class="toast-icon-wrapper">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
                             <line x1="12" y1="9" x2="12" y2="13"></line>
                             <line x1="12" y1="17" x2="12.01" y2="17"></line>
@@ -185,6 +220,7 @@ export function renderMarkdownHtml({ asset, cspSource, nonce }: WebviewHtmlOptio
                     JavaScript is disabled in this webview, so the Markdown preview cannot load.
                 </div>
             </noscript>
+            ${initialData}
             <script nonce="${nonce}">window.__SPELL_DICT__={aff:${JSON.stringify(asset('resources/spell/en_US.aff'))},dic:${JSON.stringify(asset('resources/spell/en_US.dic'))}};</script>
             <script type="module" nonce="${nonce}" src="${asset('dist/md/mdWebview.js')}"></script>
         </body>

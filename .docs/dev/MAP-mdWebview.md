@@ -15,6 +15,7 @@ around it. This map anchors on names, not line numbers, because names don't drif
 | [saveSync.ts](../../src/webviews/md/saveSync.ts) | Save, autosave, reload from disk, external-change decisions (`onDiskChangedExternally`), save/restore conflicts, version preview. Gets UI callbacks via `initSaveSync(hooks)`. Pinned by `src/test/webview/markdownSaveSync.spec.mts` |
 | [toast.ts](../../src/webviews/md/toast.ts), [dialogs.ts](../../src/webviews/md/dialogs.ts), [messaging.ts](../../src/webviews/md/messaging.ts), [copyLinkArtifacts.ts](../../src/webviews/md/copyLinkArtifacts.ts) | `showToast` / `hideToast`; confirm dialogs (`confirmModal`, `confirmDiscardAndReload`, ...); the typed `post` to the host; heading copy-link cleanup |
 | [livePreview/](../../src/webviews/md/livePreview/) | CodeMirror 6 (CM6) editor plus widgets and keymaps: the only document surface |
+| [initialMessages.ts](../../src/webviews/md/initialMessages.ts) | Boot: reads the host messages embedded in the page (`readInitialMessages`), removes the boot style that keeps the page hidden until styled, and delivers the messages before `webviewReady` (`revealAndApplyInitialMessages`). Pinned by `src/test/webview/markdownBoot.spec.mts` |
 | `frontmatter.ts`, `frontmatterCardUi.ts`, `diffStats.ts`, `markdownStats.ts` | Small pure helpers next to `mdWebview.ts` (see table at the end) |
 
 **Content contract:** `state.currentContent` (in `state.ts`) is the single source of truth. The CM6
@@ -57,7 +58,7 @@ Section headers in the file look like `// ===== Name =====`. Grep for the header
 | Resizable panels and TOC | `Resizable Panels` | `initResizeHandles`, `wireResizeHandle`, `wireTocPanel` |
 | Toolbar tooltips | `Hover Tooltip` | `wireHoverTooltip` |
 | Formatting toolbar | `Formatting Toolbar` | `wireFormattingToolbar` (calls `applyLivePreviewFormat`) |
-| Bootstrap | `Initialize` | the init call list, ending with the final `webviewReady` post |
+| Bootstrap | `Initialize` | the init call list, then `revealAndApplyInitialMessages` and the final `webviewReady` post |
 
 ---
 

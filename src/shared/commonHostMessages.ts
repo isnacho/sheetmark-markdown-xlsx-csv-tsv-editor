@@ -137,14 +137,18 @@ export function syncColorTheme(panel: vscode.WebviewPanel, post: (message: Commo
     return send;
 }
 
+/** The `fontFamilyChanged` message for the current `xlsxViewer.fontFamily` setting. */
+export function fontFamilyMessage(): MessageOf<CommonHostToWebview, 'fontFamilyChanged'> {
+    return { command: 'fontFamilyChanged', font: normalizeFontChoice(vscode.workspace.getConfiguration('xlsxViewer').get('fontFamily')) };
+}
+
 /**
  * Push the `xlsxViewer.fontFamily` setting to the webview now (call the returned function on
  * webviewReady) and whenever it changes, in this panel or any other, until the panel closes.
  */
 export function syncFontFamily(panel: vscode.WebviewPanel, post: (message: CommonHostToWebview) => void): () => void {
     const send = () => {
-        const value = vscode.workspace.getConfiguration('xlsxViewer').get('fontFamily');
-        try { post({ command: 'fontFamilyChanged', font: normalizeFontChoice(value) }); } catch { /* panel gone */ }
+        try { post(fontFamilyMessage()); } catch { /* panel gone */ }
     };
     const subscription = vscode.workspace.onDidChangeConfiguration(e => {
         if (e.affectsConfiguration('xlsxViewer.fontFamily')) { send(); }

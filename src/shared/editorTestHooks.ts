@@ -16,13 +16,20 @@ export interface OpenEditorHandle {
 
 /**
  * Wraps a provider's typed `post` so test runs can read back what the webview was sent. Outside
- * test mode it returns `post` unchanged and records nothing.
+ * test mode it returns `post` unchanged and records nothing. `noteEmbedded` records messages the
+ * host delivers inside the page's HTML instead (Markdown's first messages), so tests see what the
+ * webview received whichever way it travelled.
  */
-export function recordSentInTests<M>(isTestMode: boolean, post: (message: M) => Thenable<boolean>): { post: (message: M) => Thenable<boolean>; sent: () => readonly M[] } {
-    if (!isTestMode) { return { post, sent: () => [] }; }
+export function recordSentInTests<M>(isTestMode: boolean, post: (message: M) => Thenable<boolean>): {
+    post: (message: M) => Thenable<boolean>;
+    noteEmbedded: (messages: readonly M[]) => void;
+    sent: () => readonly M[];
+} {
+    if (!isTestMode) { return { post, noteEmbedded: () => { /* not recorded */ }, sent: () => [] }; }
     const log: M[] = [];
     return {
         post: (message) => { log.push(message); return post(message); },
+        noteEmbedded: (messages) => { log.push(...messages); },
         sent: () => log,
     };
 }

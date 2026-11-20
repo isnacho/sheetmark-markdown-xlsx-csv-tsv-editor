@@ -33,6 +33,15 @@ matched on `type` in `ThemeManager.init`.
 
 ## Notes
 
+- **Markdown boot (embedded first messages).** `MDEditorProvider` embeds `initMarkdown`,
+  `initSettings` and `fontFamilyChanged` in the page (`initialMessages` of `renderMarkdownHtml` in
+  [webviewHtml.ts](../../src/shared/webviewHtml.ts), a `<script type="application/json">` block
+  with `<` escaped by `serializeInitialMessages`). The webview delivers them through its normal
+  `message` listeners at boot ([initialMessages.ts](../../src/webviews/md/initialMessages.ts)) and
+  posts `webviewReady` with `appliedInitialMessages: true`. The embedded copy counts once: on that
+  first `webviewReady` the host re-reads the file and resends `initMarkdown` only if it changed;
+  any later `webviewReady` (Retry, a webview reload that reuses the now stale HTML) gets the full
+  `initMarkdown` + `initSettings` + `fontFamilyChanged` reply. `setTheme` is always a reply.
 - **Shared-module messages.** `getSystemDetails` / `submitFeedback` / `systemDetails` /
   `feedbackResult` (feedback flow), the feedback modal's `openExternal`, and `setTheme` (theming)
   are sent or handled inside `src/webviews/shared/**`

@@ -60,7 +60,7 @@ import { copySelectionToClipboard as copySelectionToClipboardHelper } from './co
 import { parseTsv } from './components/tsvClipboard';
 import { getMutableRowsSnapshot, getEffectiveRowHeightFromValue, invalidateRowMetrics, ensureRowOffsetPrefix, getRowTopOffset, getRowHeightRange, findRowIndexByOffset } from './rowLayout';
 import { applyStyleToCellData, recordLogicalStyleEdit, recordCellStyleEdit, cloneCellStyleEdit } from './styleEdits';
-import { applyWorksheetSnapshotState, captureCellUndoState, captureWorksheetStateSnapshot, pushEditUndoEntry, pushSheetUndoEntry, pushValuesUndoEntry, undoEditAction, redoEditAction, pushSingleCellUndo, initUndo, switchUndoSheet, resetUndoHistory } from './undo';
+import { applyWorksheetSnapshotState, captureCellUndoState, captureWorksheetStateSnapshot, pushEditUndoEntry, pushSheetUndoEntry, pushValuesUndoEntry, undoEditAction, redoEditAction, pushSingleCellUndo, initUndo, switchUndoSheet, resetUndoHistory, canUndo, canRedo } from './undo';
 import { hideLinkTooltip, showImagePreview, hideImagePreview, initializeHyperlinkHover } from './linkPreview';
 import { MenuKeyboard } from '../shared/popupFocus';
 import { confirmMergePreserveTopLeftContent, showLegacyStylesNotice } from './notices';
@@ -73,8 +73,6 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
 
     // ===== Virtual Scrolling Configuration =====
     const { ROW_HEIGHT, BUFFER_ROWS, CHUNK_SIZE } = VirtualScrollConfig;
-    const textColorIcon = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16"/><path d="M8.5 16h7"/><path d="M12 4l4 12"/><path d="M12 4L8 16"/></svg>';
-    const bgColorIcon = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4l8 8-6 6-8-8z"/><path d="M2 20h20"/></svg>';
     const virtualLoader = new VirtualLoader<any[]>('getRows');
 
     const selectionManager = new XlsxSelectionManager({
@@ -106,9 +104,9 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
 
     function updateColorPreview(target: 'text' | 'background' | 'border', color: string) {
         const ids = target === 'text'
-            ? ['formatTextColorButton', 'stripTextColorButton']
+            ? ['stripTextColorButton']
             : target === 'background'
-                ? ['formatBackgroundColorButton', 'stripBgColorButton']
+                ? ['stripBgColorButton']
                 : ['stripBorderColorButton'];
         ids.forEach(id => {
             const btn = document.getElementById(id);
@@ -1138,12 +1136,18 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
         selector.classList.toggle('hidden', !shouldShowSheetSelector());
     }
 
-    /** Save is enabled only while there is something to save; Reload waits for a save to finish. */
+    /**
+     * Save is enabled only while there is something to save; Undo and Redo only while there is
+     * something to undo or redo; Reload and Save wait for a save to finish. Version preview is read-only.
+     */
     function updateToolbarState() {
-        const save = document.getElementById('saveTableEditsButton') as HTMLButtonElement | null;
-        if (save) {save.disabled = !isDirty() || state.isSaving || state.isVersionPreviewMode;}
-        const refresh = document.getElementById('refreshButton') as HTMLButtonElement | null;
-        if (refresh) {refresh.disabled = state.isSaving;}
+        const manager = state.toolbarManager;
+        if (!manager) {return;}
+        const preview = state.isVersionPreviewMode;
+        manager.setButtonEnabled('saveEditsButton', isDirty() && !state.isSaving && !preview);
+        manager.setButtonEnabled('undoEditsButton', canUndo() && !preview);
+        manager.setButtonEnabled('redoEditsButton', canRedo() && !preview);
+        manager.setButtonEnabled('refreshButton', !state.isSaving);
     }
 
     function consumeIncomingSettingsPayload(message: any) {
@@ -2453,50 +2457,13 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
     }
 
     function wireEditFormattingControls() {
-        const buttonIds = [
-            'formatBoldButton',
-            'formatItalicButton',
-            'formatTextColorButton',
-            'formatBackgroundColorButton'
-        ];
-
-        buttonIds.forEach(id => {
-            const button = document.getElementById(id);
-            if (!button) {return;}
-            button.addEventListener('mousedown', (e) => {
-                // Keep text selection in the editable cell while clicking toolbar controls.
-                e.preventDefault();
-                captureEditSelectionRange();
-            });
-        });
-
-        const textColorButton = document.getElementById('formatTextColorButton') as HTMLButtonElement | null;
-        if (textColorButton) {
-            textColorButton.classList.add('color-format-button');
-            updateColorPreview('text', state.selectedTextColor);
-            textColorButton.addEventListener('click', () => {
-                captureEditSelectionRange();
-                showColorPalette(textColorButton, 'text');
-            });
-        }
-
-        const bgColorButton = document.getElementById('formatBackgroundColorButton') as HTMLButtonElement | null;
-        if (bgColorButton) {
-            bgColorButton.classList.add('color-format-button');
-            updateColorPreview('background', state.selectedBgColor);
-            bgColorButton.addEventListener('click', () => {
-                captureEditSelectionRange();
-                showColorPalette(bgColorButton, 'background');
-            });
-        }
-
         document.addEventListener('selectionchange', () => {
             captureEditSelectionRange();
         });
 
         document.addEventListener('click', (e) => {
             const target = e.target as HTMLElement;
-            if (!target.closest('#sheetsColorPalette') && !target.closest('#formatTextColorButton') && !target.closest('#formatBackgroundColorButton') && !target.closest('#stripTextColorButton') && !target.closest('#stripBgColorButton') && !target.closest('#stripBorderColorButton')) {
+            if (!target.closest('#sheetsColorPalette') && !target.closest('#stripTextColorButton') && !target.closest('#stripBgColorButton') && !target.closest('#stripBorderColorButton')) {
                 hideColorPalette();
             }
             if (!target.closest('#xlsxBorderPopup') && !target.closest('#stripBordersButton')) {
@@ -2514,8 +2481,8 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
         if (!toolbar) {return;}
 
         const strip = document.createElement('div');
-        strip.id = 'xlsxEditFormattingStrip';
-        strip.className = 'xlsx-edit-strip hidden';
+        strip.id = 'formattingToolbar';
+        strip.className = 'formatting-toolbar xlsx-edit-strip hidden';
         strip.innerHTML = `
             <div class="edit-strip-group">
                 <select id="editFontFamily" class="edit-strip-select" title="Font family">
@@ -2579,12 +2546,16 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
                 <button id="formatPainterButton" type="button" class="toggle-button" title="Copy style from active cell, then click a target cell">Painter</button>
                 <button id="clearFormatButton" type="button" class="toggle-button" title="Clear formatting">Clear</button>
             </div>
+            <div class="edit-strip-group">
+                <button id="insertControlButton" type="button" class="toggle-button" title="Insert checkbox, dropdown, rating, or date into selected cells">Insert</button>
+            </div>
         `;
 
-        // At the end of the left button group, before the right-end group (Find, History, Convert,
-        // Help, Settings), so the strip scrolls with the edit buttons instead of pushing them aside.
-        const startGroup = toolbar.querySelector(':scope > .toolbar-group-start');
-        (startGroup ?? toolbar).appendChild(strip);
+        // Row 2, right under the main toolbar, in the same wrapper so both move together (sticky or not).
+        const wrapper = toolbar.closest('.toolbar-wrapper') ?? toolbar.parentElement;
+        (wrapper ?? document.body).appendChild(strip);
+        state.toolbarManager?.setStickyCompanion(strip);
+        state.toolbarManager?.setHoverRevealCompanion(strip);
         state.editFormattingStripEl = strip;
 
         const onKeepTextSelection = (event: Event) => {
@@ -2592,6 +2563,7 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
             captureEditSelectionRange();
         };
 
+        const byId = <T extends HTMLElement>(id: string) => strip.querySelector(`#${id}`) as T | null;
         strip.querySelectorAll('button').forEach(el => {
             el.addEventListener('mousedown', onKeepTextSelection);
         });
@@ -2606,7 +2578,10 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
             (el as HTMLElement).classList.add('tooltip');
         });
 
-        const byId = <T extends HTMLElement>(id: string) => strip.querySelector(`#${id}`) as T | null;
+        byId('insertControlButton')?.addEventListener('click', () => {
+            showInsertControlPopup(byId('insertControlButton') as HTMLElement);
+        });
+
 
         byId<HTMLSelectElement>('editFontFamily')?.addEventListener('change', (e) => {
             const value = (e.target as HTMLSelectElement).value;
@@ -3193,7 +3168,7 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
         const formatting = !state.isDataOnly && !state.isVersionPreviewMode;
         document.body.classList.toggle('edit-mode', formatting);
         state.editFormattingStripEl?.classList.toggle('hidden', !formatting);
-        state.toolbarManager?.setButtonVisibility('insertControlButton', formatting);
+        state.toolbarManager?.updateHeaderHeight();
         updateToolbarState();
     }
 
@@ -4890,19 +4865,9 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
 
         toolbar.setButtons(createXlsxToolbarButtons({
             onFind: () => openFindOverlay(),
-            textColorIcon,
-            bgColorIcon,
-            onSaveTableEdits: () => saveEdits(false),
-            onInsertControl: () => {
-                const btn = document.getElementById('insertControlButton') as HTMLElement | null;
-                if (btn) {
-                    showInsertControlPopup(btn);
-                }
-            },
-            onFormatBold: () => applyEditFormatting('bold'),
-            onFormatItalic: () => applyEditFormatting('italic'),
-            onFormatTextColor: () => { },
-            onFormatBackgroundColor: () => { },
+            onSave: () => saveEdits(false),
+            onUndo: () => { exitCellEditMode(); undoEditAction(); },
+            onRedo: () => { exitCellEditMode(); redoEditAction(); },
             onToggleExpand: () => {
                 const btn = document.getElementById('toggleExpandButton');
                 const buttonState = btn?.getAttribute('data-state') || 'default';

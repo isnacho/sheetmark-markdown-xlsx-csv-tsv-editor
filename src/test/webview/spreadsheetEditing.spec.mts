@@ -20,7 +20,7 @@ async function editCell(sheet: SpreadsheetFixture, row: number, col: number, app
 }
 
 const toastText = (sheet: SpreadsheetFixture) => sheet.page.locator('#toastNotification .toast-text').textContent();
-const saveDisabled = (sheet: SpreadsheetFixture) => sheet.page.locator('#saveTableEditsButton').isDisabled();
+const saveDisabled = (sheet: SpreadsheetFixture) => sheet.page.locator('#saveEditsButton').isDisabled();
 
 test('Save posts the changed cell and stays disabled until there is something to save', async () => {
     const sheet = await bootSpreadsheet({ values: VALUES });
@@ -29,7 +29,7 @@ test('Save posts the changed cell and stays disabled until there is something to
     assert.equal(await sheet.page.locator(sheet.cell(1, 0)).textContent(), 'a2X');
     assert.equal(await saveDisabled(sheet), false);
 
-    await sheet.page.click('#saveTableEditsButton');
+    await sheet.page.click('#saveEditsButton');
     const save = await sheet.waitForPosted('saveXlsxEdits');
     assert.deepEqual(save.edits, [{ row: 2, col: 1, value: 'a2X' }]);
     assert.equal(save.isAutosave, false);
@@ -37,7 +37,7 @@ test('Save posts the changed cell and stays disabled until there is something to
     assert.deepEqual(save.operations, []);
 
     await sheet.send({ command: 'saveResult', ok: true, isAutosave: false } satisfies HostToSpreadsheetWebview);
-    await sheet.page.waitForFunction(() => (document.getElementById('saveTableEditsButton') as HTMLButtonElement).disabled);
+    await sheet.page.waitForFunction(() => (document.getElementById('saveEditsButton') as HTMLButtonElement).disabled);
     assert.equal(await toastText(sheet), 'Saved');
     assert.equal(await sheet.page.locator(sheet.cell(1, 0)).textContent(), 'a2X', 'the grid keeps the saved value');
     await sheet.stop();
@@ -73,7 +73,7 @@ test('formatting a selected cell is saved as a style edit', async () => {
     const sheet = await bootSpreadsheet({ values: VALUES });
     await sheet.page.click(sheet.cell(0, 0));
     await sheet.page.keyboard.press('Control+b');
-    await sheet.page.click('#saveTableEditsButton');
+    await sheet.page.click('#saveEditsButton');
     const save = await sheet.waitForPosted('saveXlsxEdits');
     assert.deepEqual(save.styleEdits, [{ row: 1, col: 1, fontWeight: 'bold' }]);
     assert.deepEqual(save.edits, []);
@@ -85,7 +85,7 @@ test('CSV has no formatting: Ctrl+B changes nothing', async () => {
     await sheet.page.click(sheet.cell(0, 0));
     await sheet.page.keyboard.press('Control+b');
     assert.equal(await saveDisabled(sheet), true);
-    assert.equal(await sheet.page.locator('#xlsxEditFormattingStrip:visible').count(), 0);
+    assert.equal(await sheet.page.locator('#formattingToolbar:visible').count(), 0);
     assert.equal(await sheet.page.locator('#insertControlButton:visible').count(), 0);
     await sheet.stop();
 });
@@ -93,7 +93,7 @@ test('CSV has no formatting: Ctrl+B changes nothing', async () => {
 test('a failed save shows an error and keeps the edit pending', async () => {
     const sheet = await bootSpreadsheet({ values: VALUES });
     await editCell(sheet, 1, 1, '?');
-    await sheet.page.click('#saveTableEditsButton');
+    await sheet.page.click('#saveEditsButton');
     await sheet.waitForPosted('saveXlsxEdits');
     await sheet.send({ command: 'saveResult', ok: false, error: 'disk full', isAutosave: false } satisfies HostToSpreadsheetWebview);
     await sheet.page.waitForFunction(() => document.querySelector('#toastNotification .toast-text')?.textContent === 'Error saving');
@@ -129,7 +129,7 @@ test('bug: an edited cell scrolled out of view and back is still saved', async (
     await sheet.page.dblclick(sheet.cell(1, 0));
     await sheet.page.keyboard.press('Escape');
 
-    await sheet.page.click('#saveTableEditsButton');
+    await sheet.page.click('#saveEditsButton');
     const save = await sheet.waitForPosted('saveXlsxEdits');
     assert.deepEqual(save.edits, [{ row: 2, col: 1, value: 'r2aX' }]);
     await sheet.stop();
@@ -166,7 +166,7 @@ test('bug: edits stay with their sheet when the user switches sheets before savi
     await sheet.page.selectOption('#sheetSelector', '0');
     await sheet.page.waitForFunction(() => document.querySelector('td[data-row="0"][data-col="0"]')?.textContent === 'a1A');
 
-    await sheet.page.click('#saveTableEditsButton');
+    await sheet.page.click('#saveEditsButton');
     const first = await sheet.waitForPosted('saveXlsxEdits');
     assert.equal(first.sheetIndex, 0);
     assert.deepEqual(first.edits, [{ row: 1, col: 1, value: 'a1A' }]);
@@ -207,7 +207,7 @@ test('bug: Escape inside a cell cancels only that cell, never the other unsaved 
     assert.equal(await sheet.page.locator(sheet.cell(2, 1)).textContent(), 'b3');
     assert.equal(await sheet.page.locator(sheet.cell(0, 0)).textContent(), 'a1kept');
 
-    await sheet.page.click('#saveTableEditsButton');
+    await sheet.page.click('#saveEditsButton');
     const save = await sheet.waitForPosted('saveXlsxEdits');
     assert.deepEqual(save.edits, [{ row: 1, col: 1, value: 'a1kept' }]);
     await sheet.stop();
@@ -283,7 +283,7 @@ test('undo and redo a text edit (Ctrl+Z / Ctrl+Y), and Save sends the redone val
     await sheet.page.keyboard.press('Control+y');
     assert.equal(await sheet.page.locator(sheet.cell(0, 0)).textContent(), 'a1Q');
 
-    await sheet.page.click('#saveTableEditsButton');
+    await sheet.page.click('#saveEditsButton');
     const save = await sheet.waitForPosted('saveXlsxEdits');
     assert.deepEqual(save.edits, [{ row: 1, col: 1, value: 'a1Q' }]);
     await sheet.stop();
@@ -297,7 +297,7 @@ test('undoing a style edit drops it from the save and keeps earlier ones', async
     await sheet.page.keyboard.press('Control+b');
     await sheet.page.keyboard.press('Control+z');
     assert.equal(await sheet.page.locator(sheet.cell(0, 0)).evaluate(td => (td as HTMLElement).style.fontWeight), '');
-    await sheet.page.click('#saveTableEditsButton');
+    await sheet.page.click('#saveEditsButton');
     const save = await sheet.waitForPosted('saveXlsxEdits');
     assert.deepEqual(save.styleEdits, [{ row: 2, col: 2, fontWeight: 'bold' }]);
     await sheet.stop();

@@ -15,7 +15,7 @@ test('Insert Control > Checkbox turns the selected cell into a checkbox, and Sav
     await sheet.page.waitForSelector(sheet.cell(1, 1) + ' input.xlsx-cell-checkbox');
     assert.equal(await sheet.page.locator(sheet.cell(1, 1)).getAttribute('data-cell-type'), 'checkbox');
 
-    await sheet.page.click('#saveTableEditsButton');
+    await sheet.page.click('#saveEditsButton');
     const save = await sheet.waitForPosted('saveXlsxEdits');
     // The insertControl op carries the control's value; no separate cell edit is needed.
     assert.deepEqual(save.edits, []);
@@ -45,7 +45,7 @@ test('merging asks first; Cancel queues nothing and Merge queues a mergeRange op
 
     await sheet.page.click('#mergeCellsButton');
     await sheet.page.click('#mergeWarningConfirm');
-    await sheet.page.click('#saveTableEditsButton');
+    await sheet.page.click('#saveEditsButton');
     const save = await sheet.waitForPosted('saveXlsxEdits');
     assert.deepEqual(save.operations.map((op: any) => op.type), ['mergeRange']);
     await sheet.stop();

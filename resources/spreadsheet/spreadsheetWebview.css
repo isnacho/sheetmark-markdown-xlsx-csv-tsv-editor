@@ -66,15 +66,23 @@ body.sticky-toolbar-enabled {
     box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--color-action) 62%, transparent);
 }
 
-.xlsx-edit-strip {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    margin-left: 4px;
-    padding: 4px 6px;
-    border: 1px solid var(--color-border-default);
-    border-radius: 10px;
-    background: var(--color-surface-glass-strong);
+/* Row 2 of the toolbar (XLSX only): the shared .formatting-toolbar row. With a sticky toolbar it is
+   fixed under the main toolbar, and ToolbarManager adds its height to --header-height. */
+/* The main toolbar must not grow with the second row (--header-height counts both rows). */
+body.sticky-toolbar-enabled #toolbar.toolbar {
+    min-height: var(--main-toolbar-height);
+}
+
+body.sticky-toolbar-enabled #formattingToolbar.formatting-toolbar {
+    position: fixed;
+    top: var(--main-toolbar-height);
+    left: 0;
+    right: 0;
+    z-index: 9999;
+}
+
+body.sticky-toolbar-enabled #formattingToolbar.formatting-toolbar.hidden {
+    display: none;
 }
 
 .xlsx-edit-strip .tooltip {
@@ -775,15 +783,15 @@ body:not(.edit-mode) .xlsx-dropdown-edit-button {
     white-space: nowrap;
 }
 
-body:not(.edit-mode):not(.controls-editable-outside-edit-mode) .xlsx-cell-checkbox,
-body:not(.edit-mode):not(.controls-editable-outside-edit-mode) .xlsx-cell-dropdown,
-body:not(.edit-mode):not(.controls-editable-outside-edit-mode) .xlsx-rating-star,
-body:not(.edit-mode):not(.controls-editable-outside-edit-mode) .xlsx-cell-date {
+body:not(.edit-mode) .xlsx-cell-checkbox,
+body:not(.edit-mode) .xlsx-cell-dropdown,
+body:not(.edit-mode) .xlsx-rating-star,
+body:not(.edit-mode) .xlsx-cell-date {
     pointer-events: none;
 }
 
-body:not(.edit-mode):not(.controls-editable-outside-edit-mode) .xlsx-cell-date,
-body:not(.edit-mode):not(.controls-editable-outside-edit-mode) .xlsx-cell-dropdown {
+body:not(.edit-mode) .xlsx-cell-date,
+body:not(.edit-mode) .xlsx-cell-dropdown {
     border-color: transparent;
     background: transparent;
     padding: 0;

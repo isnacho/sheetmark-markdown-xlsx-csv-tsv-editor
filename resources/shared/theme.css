@@ -1181,6 +1181,55 @@ body:not(.sticky-toolbar-enabled) #tableContainer {
     color: var(--color-toast-text);
 }
 
+/* ===== Formatting toolbar (the second row under the main toolbar; Markdown and spreadsheets) ===== */
+/* One row. In a narrow window it scrolls sideways; the thin scrollbar shows there is more and
+   works with a mouse (it used to be hidden, so the cut-off icons looked like the end of the row). */
+.formatting-toolbar {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 2px;
+    padding: 4px 12px;
+    background: var(--md-surface-raised, var(--color-surface-raised));
+    border-bottom: 1px solid var(--md-border, var(--color-border-default));
+    overflow-x: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-scrollbar-thumb) transparent;
+    z-index: 19;
+}
+
+.formatting-toolbar.hidden {
+    display: none;
+}
+
+@media (hover: hover) {
+    body.toolbar-hover-reveal-armed:not(.sticky-toolbar-enabled) #formattingToolbar.formatting-toolbar {
+        position: fixed;
+        top: var(--toolbar-hover-reveal-main-height);
+        right: 0;
+        left: 0;
+        width: 100%;
+        z-index: 9999;
+        opacity: 0;
+        pointer-events: none;
+        transform: translateY(calc(-100% - var(--toolbar-hover-reveal-main-height)));
+        transition: opacity 120ms ease, transform 120ms ease;
+    }
+
+    body.toolbar-hover-reveal-visible:not(.sticky-toolbar-enabled) #formattingToolbar.formatting-toolbar {
+        opacity: 1;
+        pointer-events: auto;
+        transform: translateY(0);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    body.toolbar-hover-reveal-armed:not(.sticky-toolbar-enabled) #formattingToolbar.formatting-toolbar {
+        transition: none;
+    }
+}
+
 /* Menus and dialogs take focus on their own container when they open (popupFocus.ts), so the
    arrow keys and Escape reach them. The container draws no ring; the controls inside do. */
 [role="menu"]:focus,

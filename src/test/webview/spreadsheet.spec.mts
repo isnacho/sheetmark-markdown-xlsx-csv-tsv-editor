@@ -89,7 +89,7 @@ test('CSV renders text only: no markup, no rich text', async () => {
     assert.equal(await webview.page.locator('td[data-row="1"][data-col="1"] b').count(), 0);
     assert.equal((await webview.page.locator('td[data-row="1"][data-col="1"]').innerText()).trim(), 'bold');
     assert.equal(await webview.page.evaluate(() => document.body.classList.contains('data-only')), true);
-    assert.equal(await webview.page.locator('#xlsxEditFormattingStrip:visible').count(), 0);
+    assert.equal(await webview.page.locator('#formattingToolbar:visible').count(), 0);
 });
 
 test('pasting a quoted multi-line cell writes it to one cell', async () => {

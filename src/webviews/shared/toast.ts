@@ -7,6 +7,14 @@ const $ = (id: string): HTMLElement | null => document.getElementById(id);
 let toastDismissTimer: number | null = null;
 let toastOnDismiss: (() => void) | null = null;
 
+type ToastOptions = { persistent?: boolean; onDismiss?: () => void; icon?: 'success' | 'warning'; hideCloseButton?: boolean; durationMs?: number };
+
+// The persistent toast that is waiting for the user ("File changed on disk", a notice with buttons).
+// There is one toast element, so a short toast ("Saved", "Copied") shown meanwhile takes its place;
+// when that one expires the persistent toast comes back. Only hideToast(), the close button, or a
+// newer persistent toast clears it.
+let persistentToast: { message: string; action: ToastAction | ToastAction[] | undefined; opts: ToastOptions } | null = null;
+
 // Same outline/gray style for both — only the shape differs. Success: plain
 // checkmark for positive acknowledgements (Saved, Copied, Reloaded, ...).
 // Warning: caution triangle for anything the user should pay attention to
@@ -17,6 +25,7 @@ const TOAST_ICON_WARNING = '<path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a
     + '<line x1="12" y1="17" x2="12.01" y2="17"></line>';
 
 export function hideToast() {
+    persistentToast = null;
     const toast = $('toastNotification');
     if (toastDismissTimer !== null) {
         window.clearTimeout(toastDismissTimer);
@@ -24,6 +33,11 @@ export function hideToast() {
     }
     toast?.classList.remove('show');
     toastOnDismiss = null;
+}
+
+/** The thing the persistent toast was about is resolved: do not bring it back, without touching the toast on screen. */
+export function forgetPersistentToast() {
+    persistentToast = null;
 }
 
 export interface ToastAction {
@@ -34,8 +48,11 @@ export interface ToastAction {
 export function showToast(
     message: string,
     action?: ToastAction | ToastAction[],
-    opts?: { persistent?: boolean; onDismiss?: () => void; icon?: 'success' | 'warning'; hideCloseButton?: boolean; durationMs?: number }
+    opts?: ToastOptions
 ) {
+    if (opts?.persistent) {
+        persistentToast = { message, action, opts };
+    }
     // Three slots: the disk-change toast carries Load disk changes, Review changes,
     // and Keep local version.
     const actions = action ? (Array.isArray(action) ? action : [action]) : [];
@@ -102,6 +119,10 @@ export function showToast(
                 toast!.classList.remove('show');
                 toastDismissTimer = null;
                 toastOnDismiss = null;
+                // A persistent toast was waiting behind this one: bring it back.
+                if (persistentToast) {
+                    showToast(persistentToast.message, persistentToast.action, persistentToast.opts);
+                }
             }, opts?.durationMs ?? (actions.length ? 8000 : 6000));
         }
     }

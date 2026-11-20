@@ -160,3 +160,36 @@ test('Restore from a version preview asks first when there are unsaved edits', a
     await sheet.waitForPosted('restoreVersion');
     await sheet.stop();
 });
+
+test('bug: a short toast does not replace the "File changed on disk" toast for good', async () => {
+    const sheet = await bootSpreadsheet({ values: VALUES });
+    await editCell(sheet, 0, 0, 'mine');
+    await diskChanged(sheet);
+    await sheet.page.waitForSelector('#toastNotification.show .toast-action:has-text("Keep my edits")');
+
+    // Any short toast takes the single toast slot (here: the host reports a cancelled preview).
+    await sheet.send({ command: 'versionPreviewCancelledXlsx' } satisfies HostToSpreadsheetWebview);
+    await sheet.page.waitForFunction(() => document.querySelector('#toastNotification .toast-text')?.textContent === 'Preview canceled');
+    assert.equal(await toastAction(sheet, 'Load disk changes').count(), 0, 'the short toast is on screen');
+
+    // When it expires the disk toast is back, with its buttons, and still works.
+    await sheet.page.waitForFunction(() => document.querySelector('#toastNotification.show .toast-text')?.textContent === 'File changed on disk', undefined, { timeout: 8000 });
+    assert.equal(await toastAction(sheet, 'Load disk changes').count(), 1);
+    assert.equal(await toastAction(sheet, 'Keep my edits').count(), 1);
+    await toastAction(sheet, 'Load disk changes').click();
+    await sheet.page.waitForSelector('.feedback-modal.active');
+    await sheet.stop();
+});
+
+test('a resolved "File changed on disk" toast does not come back after a short toast', async () => {
+    const sheet = await bootSpreadsheet({ values: VALUES });
+    await diskChanged(sheet);
+    await toastAction(sheet, 'Load disk changes').click();
+    await sheet.waitForPosted('requestFreshData');
+    await sheet.reinit({ reason: 'reload' });
+    await sheet.page.waitForFunction(() => document.querySelector('#toastNotification .toast-text')?.textContent === 'Reloaded from disk');
+    await sheet.page.waitForFunction(() => !document.querySelector('#toastNotification.show'), undefined, { timeout: 8000 });
+    await sheet.page.waitForTimeout(500);
+    assert.equal(await sheet.page.locator('#toastNotification.show').count(), 0, 'nothing is waiting any more');
+    await sheet.stop();
+});

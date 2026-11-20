@@ -18,7 +18,7 @@ import { sanitizeMarkdownCopyLinkArtifacts } from './copyLinkArtifacts';
 import { confirmDiscardAndReload, confirmOverwriteConflict, confirmOverwriteWithLocal, confirmRestoreConflict } from './dialogs';
 import { post } from './messaging';
 import { state } from './state';
-import { hideToast, showToast } from '../shared/toast';
+import { forgetPersistentToast, hideToast, showToast } from '../shared/toast';
 import type { MessageOf } from '../../protocol/common';
 import type { HostToMarkdownWebview } from '../../protocol/markdown';
 
@@ -271,6 +271,7 @@ export function onDiskChangedExternally(m: MessageOf<HostToMarkdownWebview, 'dis
 
     // A real change supersedes any prior "deleted" notification.
     state.pendingDiskDeleted = false;
+    forgetPersistentToast();
 
     const incomingContent = m.content || '';
 
@@ -295,6 +296,7 @@ export function onDiskChangedExternally(m: MessageOf<HostToMarkdownWebview, 'dis
     if (wasManualReload || !state.isEditMode) {
         state.pendingDiskContent = null;
         applyReloadedContent(incomingContent);
+        hideToast(); // the disk-change toast, if one was waiting, is resolved
         showToast(
             incomingLabel ? `Reloaded from disk \u00B7 ${incomingLabel}` : 'Reloaded from disk',
             hooks.diff.hasBaseline() && state.currentSettings.diffReviewEnabled
@@ -330,6 +332,7 @@ export function onDiskChangedExternally(m: MessageOf<HostToMarkdownWebview, 'dis
         if (state.pendingDiskContent === null) {return;}
         applyReloadedContent(state.pendingDiskContent);
         state.pendingDiskContent = null;
+        hideToast();
         showToast('Reloaded from disk');
     };
     const reloadPending = () => {
@@ -402,6 +405,7 @@ export function onSaveResult(m: MessageOf<HostToMarkdownWebview, 'saveResult'>) 
         state.pendingSaveContent = null;
         // A successful save recreates the file if it had been deleted externally.
         state.pendingDiskDeleted = false;
+        forgetPersistentToast();
         // The saved document is the new reference point; the old baseline
         // no longer describes anything the user can act on.
         hooks.diff.hide(true);

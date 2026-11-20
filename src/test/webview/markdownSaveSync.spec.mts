@@ -96,6 +96,22 @@ test('an external change to a dirty editor asks; Load disk changes then Discard 
     await webview.close();
 });
 
+test('bug: a short toast does not replace the "File changed on disk" toast for good', async () => {
+    const webview = await boot('one\n');
+    await typeAtEndOfFirstLine(webview, ' local');
+    await webview.send({ command: 'diskChangedExternally', ...payload('two\n') } satisfies HostToMarkdownWebview);
+    await webview.page.waitForSelector('#toastNotification.show .toast-action:has-text("Load disk changes")');
+
+    await webview.send({ command: 'versionPreviewCancelledMd' } satisfies HostToMarkdownWebview);
+    await webview.page.waitForFunction(() => document.querySelector('#toastNotification .toast-text')?.textContent === 'Preview canceled');
+    assert.equal(await webview.page.locator('#toastNotification.show .toast-action:has-text("Load disk changes")').count(), 0);
+
+    // The short toast expires and the decision is on screen again.
+    await webview.page.waitForSelector('#toastNotification.show .toast-action:has-text("Load disk changes")', { timeout: 10000 });
+    assert.match(await toastText(webview), /^File changed on disk/);
+    await webview.close();
+});
+
 test('the confirm dialog takes focus, so typing does not reach the editor; Escape cancels and returns focus', async () => {
     const webview = await boot('one\n');
     await typeAtEndOfFirstLine(webview, ' local');

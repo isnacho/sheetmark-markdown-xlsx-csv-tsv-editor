@@ -70,6 +70,8 @@ const MUTATIONS = [
       find: 'entry.data.original = sent;', replace: 'void sent;' },
     { id: 'sheet-undo-waits-for-save', file: 'src/webviews/spreadsheet/undo.ts',
       find: 'if (!entry || !state.isSaving) {return false;}', replace: 'if (!entry || !state.isSaving || Date.now() > 0) {return false;}' },
+    { id: 'toast-persistent-comes-back', file: 'src/webviews/shared/toast.ts',
+      find: "if (persistentToast) {\n                    showToast(persistentToast.message, persistentToast.action, persistentToast.opts);\n                }", replace: 'void persistentToast;' },
     { id: 'sheet-saved-structure-undo-dropped', file: 'src/webviews/spreadsheet/undo.ts',
       find: "const unrecoverable = (entry: EditUndoEntry) => entry.seq <= upToSeq && (entry.kind === 'sheet' || changesFormatting(entry));", replace: "const unrecoverable = (entry: EditUndoEntry) => entry.seq <= upToSeq && Date.now() < 0 && (entry.kind === 'sheet' || changesFormatting(entry));" },
     { id: 'sheet-saved-structure-undo-drops-older-entries', file: 'src/webviews/spreadsheet/undo.ts',

@@ -20,6 +20,7 @@ import { initDiskSync, onDiskChangedExternally, onSaveConflict, refreshDiskChang
 import { clearAutoSaveTimer, initPersistence, isDirty, onSaveConflictResult, onSaveResult, recordCellValue, recordChange, saveEdits } from './persistence';
 import { getPendingStyle, ledger } from './ledger';
 import { confirmModal } from '../shared/confirmModal';
+import { hideToast } from '../shared/toast';
 import type { HostToSpreadsheetWebview } from '../../protocol/spreadsheet';
 import type { HandledByFeedbackModal } from '../../protocol/common';
 import { createXlsxRowHtml, getExcelColumnLabel } from './components/spreadsheetRenderComponent';
@@ -5044,6 +5045,7 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
             if (message.reason === 'reload' || message.reason === 'restore') {
                 discardUnsavedEdits();
                 state.diskChanged = false;
+                hideToast(); // a waiting "File changed on disk" toast is resolved
                 if (message.reason === 'reload') {showToast('Reloaded from disk');}
             }
 

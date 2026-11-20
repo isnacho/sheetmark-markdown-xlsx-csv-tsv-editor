@@ -258,7 +258,9 @@ Phase 1 (Steps 0 to 6) is implemented on branch `spreadsheet-one-mode`, one comm
 
 Every step: `npm run verify` green. `npm run test:integration` green after steps 2, 3 and 5 (23 tests at the end).
 `npm run test:ui` (the spreadsheet spec only, not the Markdown UI specs) after steps 0, 2, 3 and 4, light and dark PNGs read.
-`npm run test:regressions` at the end of Phase 1: see the result line in the report that came with this log.
+`npm run test:regressions`: the full run did not complete here (its baseline `npm run verify` in the temporary worktree hung twice on a first browser test, and a mutation that breaks basic editing makes the whole webview suite wait for timeouts, so one entry can take up to 20 minutes). Instead every new or touched entry was re-broken by hand in the working tree and the one test that should notice was run: all of `sheet-*`, `xlsx-css-style-edits-saved`, `csv-save-stores-nothing-aside`, `convert-styles`, `convert-notice-metadata`, `csv-version-history`, `paste-multiline`, `xss-cell-sanitize`, `xss-cell-style-attr` and `resize-listeners-once` fail when re-broken (the `knownGap` entry is meant to survive). A final stale-pattern check of all 81 entries found two stale ones that are not from this work and are stale on `main` too: `md-toggle-handle-centred` and `md-cursor-clear-of-stats`. Run the full `npm run test:regressions` on a quiet machine before the PR.
+`npm run test:ui` (all UI specs, spreadsheet and Markdown) was green at the end: 13 tests.
+Webview tests flaked three times in total, always the first test of `markdown.spec.mts` failing or hanging and the rest of that file cascading; the same files pass alone and on re-run, and the failures were not in spreadsheet code.
 
 ### Deviations from the plan
 

@@ -22,7 +22,6 @@ export type FileMetadata = Omit<StructuredStyleData, 'schemaVersion'>;
 
 const STORAGE_KEY_PREFIX = 'xlsxViewer.styles.';
 const STORAGE_INDEX_KEY = 'xlsxViewer.styleIndex';
-const STORAGE_VIEW_MODE_KEY_PREFIX = 'xlsxViewer.viewMode.';
 // 48 hours in milliseconds
 const EXPIRATION_MS = 48 * 60 * 60 * 1000;
 
@@ -159,10 +158,6 @@ export class StyleStorageService {
         return this.getStyles(vscode.Uri.file(fsPath));
     }
 
-    private getViewModeStorageKey(uri: vscode.Uri): string {
-        return `${STORAGE_VIEW_MODE_KEY_PREFIX}${uri.fsPath.toLowerCase()}`;
-    }
-
     /**
      * Loads styles for a specific URI and prunes them if they are older than 48 hours.
      * The lastModified timestamp tracks edit activity only and is not extended on read.
@@ -229,34 +224,6 @@ export class StyleStorageService {
         await this.removeIndexEntry(uri);
     }
 
-    public getPreferredViewMode(uri: vscode.Uri): 'plain' | 'styled' | undefined {
-        const key = this.getViewModeStorageKey(uri);
-        let stored = this.context.workspaceState.get<string>(key);
-        if (!stored) {
-            const legacyKey = `${STORAGE_VIEW_MODE_KEY_PREFIX}${uri.fsPath}`;
-            stored = this.context.workspaceState.get<string>(legacyKey);
-            if (stored) {
-                // Migrate to case-insensitive key
-                this.context.workspaceState.update(key, stored);
-                this.context.workspaceState.update(legacyKey, undefined);
-            }
-        }
-        if (stored === 'plain' || stored === 'styled') {
-            return stored;
-        }
-        return undefined;
-    }
-
-    public async setPreferredViewMode(uri: vscode.Uri, mode: 'plain' | 'styled'): Promise<void> {
-        const key = this.getViewModeStorageKey(uri);
-        await this.context.workspaceState.update(key, mode);
-    }
-
-    public async clearPreferredViewMode(uri: vscode.Uri): Promise<void> {
-        const key = this.getViewModeStorageKey(uri);
-        await this.context.workspaceState.update(key, undefined);
-    }
-
     /**
      * Utility to clean up all expired styles in workspaceState.
      */
@@ -276,25 +243,6 @@ export class StyleStorageService {
                 if (legacyStyles !== undefined) {
                     await this.context.workspaceState.update(newLegacyKey, legacyStyles);
                     await this.context.workspaceState.update(oldLegacyKey, undefined);
-                }
-            }
-        }
-
-        const oldViewKey = this.getViewModeStorageKey(oldUri);
-        const newViewKey = this.getViewModeStorageKey(newUri);
-        if (oldViewKey !== newViewKey) {
-            const viewMode = this.context.workspaceState.get<string>(oldViewKey);
-            if (viewMode !== undefined) {
-                await this.context.workspaceState.update(newViewKey, viewMode);
-                await this.context.workspaceState.update(oldViewKey, undefined);
-            }
-            const oldLegacyViewKey = `${STORAGE_VIEW_MODE_KEY_PREFIX}${oldUri.fsPath}`;
-            const newLegacyViewKey = `${STORAGE_VIEW_MODE_KEY_PREFIX}${newUri.fsPath}`;
-            if (oldLegacyViewKey !== newLegacyViewKey) {
-                const legacyViewMode = this.context.workspaceState.get<string>(oldLegacyViewKey);
-                if (legacyViewMode !== undefined) {
-                    await this.context.workspaceState.update(newLegacyViewKey, legacyViewMode);
-                    await this.context.workspaceState.update(oldLegacyViewKey, undefined);
                 }
             }
         }

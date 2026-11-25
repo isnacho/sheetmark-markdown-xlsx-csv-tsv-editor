@@ -333,26 +333,7 @@
                 "xlsxViewer.xlsx.autoSave": {
                     "type": "boolean",
                     "default": false,
-                    "description": "Automatically save XLSX edits shortly after text, checkbox, dropdown, formatting, or structure changes."
-                },
-                "xlsxViewer.xlsx.autoSaveMode": {
-                    "type": "string",
-                    "default": "all",
-                    "enum": [
-                        "all",
-                        "controlsOnly"
-                    ],
-                    "description": "Choose whether XLSX autosave applies to all changes or only checkbox/dropdown changes."
-                },
-                "xlsxViewer.xlsx.showManualSavePopup": {
-                    "type": "boolean",
-                    "default": true,
-                    "description": "When XLSX autosave is off, show a brief reminder popup to save manually after edits."
-                },
-                "xlsxViewer.xlsx.allowInteractiveControlsOutsideEditMode": {
-                    "type": "boolean",
-                    "default": true,
-                    "description": "Allow checkbox and dropdown cells to be edited without entering table edit mode."
+                    "description": "Automatically save XLSX edits shortly after you make them. Off by default: an XLSX save rewrites the whole workbook, so you decide when it happens."
                 },
                 "xlsxViewer.xlsx.hyperlinkPreview": {
                     "type": "boolean",

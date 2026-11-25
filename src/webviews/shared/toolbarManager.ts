@@ -16,6 +16,7 @@ export class ToolbarManager {
     private container: HTMLElement;
     private buttons: Map<string, HTMLButtonElement> = new Map();
     private startGroup: HTMLElement | null = null;
+    private stickyCompanion: HTMLElement | null = null;
     private endGroup: HTMLElement | null = null;
     private resizeObserver: ResizeObserver | null = null;
     private isSticky: boolean = false;
@@ -56,6 +57,18 @@ export class ToolbarManager {
     /** Optional hook fired after each header-height recompute (e.g. MD formatting bar). */
     setHeaderHeightHook(hook: (() => void) | null) {
         this.headerHeightHook = hook;
+    }
+
+    /**
+     * A second row fixed under the main toolbar when the toolbar is sticky (the spreadsheet's
+     * formatting row). Its height is added to `--header-height`; `--main-toolbar-height` stays the
+     * main row's, so the row can be placed right under it.
+     */
+    setStickyCompanion(element: HTMLElement | null) {
+        this.stickyCompanion = element;
+        if (element && typeof ResizeObserver !== 'undefined') {
+            new ResizeObserver(() => this.updateHeaderHeight()).observe(element);
+        }
     }
 
     setHoverRevealCompanion(element: HTMLElement | null) {
@@ -236,12 +249,15 @@ export class ToolbarManager {
             return;
         }
 
-        let height = Math.max(6, Math.ceil(this.container.getBoundingClientRect().height));
+        const mainHeight = Math.max(6, Math.ceil(this.container.getBoundingClientRect().height));
+        const companionHeight = this.stickyCompanion && !this.stickyCompanion.classList.contains('hidden')
+            ? Math.ceil(this.stickyCompanion.getBoundingClientRect().height)
+            : 0;
         const maxHeightStr = getComputedStyle(document.documentElement).getPropertyValue('--header-height-max');
         const maxHeight = parseInt(maxHeightStr, 10) || 96;
-        height = Math.min(height, maxHeight);
+        const height = Math.min(mainHeight + companionHeight, maxHeight);
 
-        document.documentElement.style.setProperty('--main-toolbar-height', height + 'px');
+        document.documentElement.style.setProperty('--main-toolbar-height', Math.min(mainHeight, maxHeight) + 'px');
         document.documentElement.style.setProperty('--header-height', height + 'px');
 
         if (headerBg) {

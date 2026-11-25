@@ -3,18 +3,10 @@ import { ToolbarButton } from '../../shared/toolbarManager';
 
 export interface CreateXlsxToolbarButtonsOptions {
     onFind: () => void;
-    textColorIcon: string;
-    bgColorIcon: string;
-    onToggleTableEdit: () => void;
-    onSaveTableEdits: () => void;
-    onCancelTableEdits: () => void;
-    onInsertControl: () => void;
-    onFormatBold: () => void;
-    onFormatItalic: () => void;
-    onFormatTextColor: () => void;
-    onFormatBackgroundColor: () => void;
+    onSave: () => void;
+    onUndo: () => void;
+    onRedo: () => void;
     onToggleExpand: () => void;
-    onTogglePlainView: () => void;
     onVersionHistory: () => void;
     onOpenSettings: () => void;
     onHelp: () => void;
@@ -27,64 +19,30 @@ export function createXlsxToolbarButtons(options: CreateXlsxToolbarButtonsOption
         {
             id: 'refreshButton',
             icon: Icons.Refresh,
-            tooltip: 'Reload file from disk',
+            tooltip: 'Reload from Disk',
             cls: 'icon-only',
             onClick: options.onRefresh
         },
         {
-            id: 'toggleTableEditButton',
-            icon: '',
-            label: 'Edit Table',
-            tooltip: 'Edit XLSX directly in the table (text only)',
-            onClick: options.onToggleTableEdit
-        },
-        {
-            id: 'saveTableEditsButton',
+            id: 'saveEditsButton',
             icon: Icons.Save,
-            tooltip: 'Save table edits',
+            tooltip: 'Save Changes (Ctrl/Cmd+S)',
             cls: 'icon-only',
-            hidden: true,
-            onClick: options.onSaveTableEdits
+            onClick: options.onSave
         },
         {
-            id: 'cancelTableEditsButton',
-            icon: Icons.Cancel,
-            label: 'Cancel',
-            tooltip: 'Cancel table edits',
-            hidden: true,
-            onClick: options.onCancelTableEdits
+            id: 'undoEditsButton',
+            icon: Icons.Undo,
+            tooltip: 'Undo (Ctrl/Cmd+Z)',
+            cls: 'icon-only',
+            onClick: options.onUndo
         },
         {
-            id: 'formatBoldButton',
-            icon: Icons.Bold,
+            id: 'redoEditsButton',
+            icon: Icons.Redo,
+            tooltip: 'Redo (Ctrl/Cmd+Shift+Z)',
             cls: 'icon-only',
-            tooltip: 'Bold selected text (Ctrl/Cmd+B)',
-            hidden: true,
-            onClick: options.onFormatBold
-        },
-        {
-            id: 'formatItalicButton',
-            icon: Icons.Italic,
-            cls: 'icon-only',
-            tooltip: 'Italic selected text (Ctrl/Cmd+I)',
-            hidden: true,
-            onClick: options.onFormatItalic
-        },
-        {
-            id: 'formatTextColorButton',
-            icon: options.textColorIcon,
-            cls: 'icon-only',
-            tooltip: 'Set selected text color',
-            hidden: true,
-            onClick: options.onFormatTextColor
-        },
-        {
-            id: 'formatBackgroundColorButton',
-            icon: options.bgColorIcon,
-            cls: 'icon-only',
-            tooltip: 'Set selected text background color',
-            hidden: true,
-            onClick: options.onFormatBackgroundColor
+            onClick: options.onRedo
         },
         {
             id: 'toggleExpandButton',
@@ -92,21 +50,6 @@ export function createXlsxToolbarButtons(options: CreateXlsxToolbarButtonsOption
             cls: 'icon-only',
             tooltip: 'Toggle Column Widths (Default / Expand All)',
             onClick: options.onToggleExpand
-        },
-        {
-            id: 'togglePlainViewButton',
-            icon: Icons.Table,
-            cls: 'icon-only',
-            tooltip: 'Toggle Plain View (removes all styling)',
-            onClick: options.onTogglePlainView
-        },
-        {
-            id: 'insertControlButton',
-            icon: Icons.TableInsert,
-            label: 'Insert',
-            tooltip: 'Insert checkbox, dropdown, rating, or date into selected cells',
-            hidden: true,
-            onClick: options.onInsertControl
         },
         // Right end, in the Markdown toolbar's order: find first, settings last.
         {

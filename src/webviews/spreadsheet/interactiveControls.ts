@@ -1,11 +1,12 @@
-// Interactive cell controls (checkbox, dropdown, rating, date): enabling them for the current mode,
+// Interactive cell controls (checkbox, dropdown, rating, date): enabling them (XLSX, not in version preview),
 // updating their presentation after a value change, the Insert Control and dropdown-options popups,
 // and inserting a control into the selection. Runtime: WEBVIEW (browser).
 
 import { Utils } from '../shared/utils';
 import { state } from './state';
 import { getCellNormalizedValue, getCellType, getOrCreateRowCellData, normalizeCellText, normalizeDateInputValue, normalizeRatingValue, parseBooleanCellValue } from './cellValues';
-import { scheduleAutoSave } from './persistence';
+import { recordChange } from './persistence';
+import { ledger } from './ledger';
 import { renderDropdownCellContent } from './components/spreadsheetRenderComponent';
 import type { InsertControlType } from './components/spreadsheetTypes';
 import { captureWorksheetStateSnapshot, pushSheetUndoEntry } from './undo';
@@ -65,8 +66,8 @@ export function hideInsertControlPopup() {
 }
 
 export function showInsertControlPopup(anchor: HTMLElement) {
-    if (!state.isEditMode) {
-        showToast('Enter edit mode to insert controls');
+    if (!areInteractiveControlsEnabled()) {
+        if (state.isVersionPreviewMode) {showToast('Version preview is read-only');}
         return;
     }
 
@@ -207,8 +208,8 @@ export function getDropdownOptionsFromCell(cell: HTMLElement): string[] {
 }
 
 export async function editDropdownOptionsForCell(cell: HTMLElement) {
-    if (!state.isEditMode) {
-        showToast('Enter edit mode to edit dropdown options');
+    if (!areInteractiveControlsEnabled()) {
+        if (state.isVersionPreviewMode) {showToast('Version preview is read-only');}
         return;
     }
 
@@ -243,7 +244,7 @@ export async function editDropdownOptionsForCell(cell: HTMLElement) {
     const rowNumber = row + 1;
     const colNumber = col + 1;
 
-    state.pendingWorksheetOps.push({
+    ledger.recordOp(state.currentWorksheet, {
         type: 'insertControl',
         row: rowNumber,
         col: colNumber,
@@ -256,14 +257,14 @@ export async function editDropdownOptionsForCell(cell: HTMLElement) {
         options: configuredOptions,
         selectedValue: nextValue,
         allowInteractiveControls: areInteractiveControlsEnabled(),
-        showEditButton: state.isEditMode
+        showEditButton: areInteractiveControlsEnabled()
     });
     updateDropdownCellPresentation(cell, nextValue);
     applyInteractiveControlState(cell);
 
     const afterSnapshot = captureWorksheetStateSnapshot();
     pushSheetUndoEntry(beforeSnapshot, afterSnapshot);
-    scheduleAutoSave('control');
+    recordChange('control');
     showToast('Dropdown options updated');
 }
 
@@ -287,7 +288,7 @@ export function createInsertedControlInnerHtml(controlType: InsertControlType, d
             options: dropdownOptions,
             selectedValue: safeDefault,
             allowInteractiveControls: true,
-            showEditButton: state.isEditMode
+            showEditButton: areInteractiveControlsEnabled()
         });
     }
 
@@ -339,8 +340,8 @@ export function applyInsertedControlToDomCell(cell: HTMLElement, controlType: In
 export async function insertControlIntoSelection(controlType: InsertControlType) {
     hideInsertControlPopup();
 
-    if (!state.isEditMode) {
-        showToast('Enter edit mode to insert controls');
+    if (!areInteractiveControlsEnabled()) {
+        if (state.isVersionPreviewMode) {showToast('Version preview is read-only');}
         return;
     }
 
@@ -406,7 +407,7 @@ export async function insertControlIntoSelection(controlType: InsertControlType)
                 cellData.value = defaultValue;
             }
 
-            state.pendingWorksheetOps.push({
+            ledger.recordOp(state.currentWorksheet, {
                 type: 'insertControl',
                 row: rowNumber,
                 col: colNumber,
@@ -430,7 +431,7 @@ export async function insertControlIntoSelection(controlType: InsertControlType)
 
     applyInteractiveControlState();
     showToast('Inserted control');
-    scheduleAutoSave('control');
+    recordChange('control');
 }
 
 export function updateCheckboxCellPresentation(cell: HTMLElement, checked: boolean) {
@@ -484,20 +485,14 @@ export function updateDateCellPresentation(cell: HTMLElement, value: string) {
     cell.setAttribute('data-date-value', normalized);
 }
 
-export function canUseInteractiveControlsOutsideEditMode(): boolean {
-    return !!state.currentSettings.allowInteractiveControlsOutsideEditMode && !state.isVersionPreviewMode;
-}
-
+/** Controls work with one click for XLSX, except in version preview. CSV/TSV hold data only. */
 export function areInteractiveControlsEnabled(): boolean {
-    return state.isEditMode || canUseInteractiveControlsOutsideEditMode();
+    return !state.isVersionPreviewMode && !state.isDataOnly;
 }
 
 export function applyInteractiveControlState(root?: ParentNode | null) {
     const scope = root || document;
     const controlsEnabled = areInteractiveControlsEnabled();
-    const outsideEditEnabled = !state.isEditMode && controlsEnabled;
-
-    document.body.classList.toggle('controls-editable-outside-edit-mode', outsideEditEnabled);
 
     scope.querySelectorAll('.xlsx-cell-checkbox').forEach((el) => {
         const input = el as HTMLInputElement;
@@ -521,6 +516,6 @@ export function applyInteractiveControlState(root?: ParentNode | null) {
 
     scope.querySelectorAll('.xlsx-dropdown-edit-button').forEach((el) => {
         const button = el as HTMLButtonElement;
-        button.disabled = !state.isEditMode;
+        button.disabled = !controlsEnabled;
     });
 }

@@ -1,16 +1,16 @@
-// `npm run shot -- <file.md> [--theme light|dark|hc|hc-light|"<VS Code theme>"] [--width N] [--height N]
+// `npm run shot -- <file.md|.xlsx|.csv|.tsv> [--theme light|dark|hc|hc-light|"<VS Code theme>"] [--width N] [--height N]
 //                  [--out name] [--set key=value ...] [--wait ms]`
 //
-// Opens a Markdown file in the real Sheetmark editor inside a real VS Code window, waits for the
+// Opens a Markdown or spreadsheet file in the real Sheetmark editor inside a real VS Code window, waits for the
 // editor, writes a screenshot of the window to .vscode-test/ui-shots/<name>.png and exits. The
 // file is opened in place (so relative images resolve) and never edited. `--set` adds a VS Code
 // user setting; the value is parsed as JSON when it can be (`--set xlsxViewer.md.wordWrap=false`).
 
-import { basename, resolve } from 'node:path';
+import { basename, extname, resolve } from 'node:path';
 import { existsSync } from 'node:fs';
 import { LIGHT, THEME_ALIASES, withEditor } from './harness.mts';
 
-const USAGE = 'usage: npm run shot -- <file.md> [--theme light|dark|hc|hc-light|"<theme>"] [--width N] [--height N] [--out name] [--set key=value] [--wait ms]';
+const USAGE = 'usage: npm run shot -- <file.md|.xlsx|.csv|.tsv> [--theme light|dark|hc|hc-light|"<theme>"] [--width N] [--height N] [--out name] [--set key=value] [--wait ms]';
 
 function parseValue(text: string): unknown {
     try { return JSON.parse(text); } catch { return text; }
@@ -48,7 +48,9 @@ for (let i = 0; i < args.length; i++) {
 if (!file) { throw new Error(USAGE); }
 const path = resolve(file);
 if (!existsSync(path)) { throw new Error(`no such file: ${path}`); }
-const name = out ?? `${basename(path).replace(/\.md$/i, '')}-${Object.entries(THEME_ALIASES).find(([, full]) => full === theme)?.[0] ?? 'theme'}${width ? `-${width}` : ''}`;
+const ext = extname(path).slice(1).toLowerCase();
+// Markdown keeps the plain name; spreadsheets add the extension so test.xlsx and test.csv do not collide.
+const name = out ?? `${basename(path).replace(/\.[^.]+$/, '')}${ext && ext !== 'md' ? `-${ext}` : ''}-${Object.entries(THEME_ALIASES).find(([, full]) => full === theme)?.[0] ?? 'theme'}${width ? `-${width}` : ''}`;
 
 await withEditor({ file: path }, theme, async editor => {
     if (wait) { await editor.page.waitForTimeout(wait); }

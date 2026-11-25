@@ -66,15 +66,23 @@ body.sticky-toolbar-enabled {
     box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--color-action) 62%, transparent);
 }
 
-.xlsx-edit-strip {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    margin-left: 4px;
-    padding: 4px 6px;
-    border: 1px solid var(--color-border-default);
-    border-radius: 10px;
-    background: var(--color-surface-glass-strong);
+/* Row 2 of the toolbar (XLSX only): the shared .formatting-toolbar row. With a sticky toolbar it is
+   fixed under the main toolbar, and ToolbarManager adds its height to --header-height. */
+/* The main toolbar must not grow with the second row (--header-height counts both rows). */
+body.sticky-toolbar-enabled #toolbar.toolbar {
+    min-height: var(--main-toolbar-height);
+}
+
+body.sticky-toolbar-enabled #formattingToolbar.formatting-toolbar {
+    position: fixed;
+    top: var(--main-toolbar-height);
+    left: 0;
+    right: 0;
+    z-index: 9999;
+}
+
+body.sticky-toolbar-enabled #formattingToolbar.formatting-toolbar.hidden {
+    display: none;
 }
 
 .xlsx-edit-strip .tooltip {
@@ -205,56 +213,6 @@ body.sticky-toolbar-enabled {
     gap: 8px;
 }
 
-.xlsx-style-mode-notice-popup {
-    position: fixed;
-    inset: 0;
-    z-index: 200220;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 16px;
-    background: color-mix(in srgb, var(--vscode-editor-background) 58%, transparent);
-}
-
-.xlsx-style-mode-notice-popup.hidden {
-    display: none;
-}
-
-.xlsx-style-mode-notice-dialog {
-    width: min(520px, calc(100vw - 28px));
-    border: 1px solid var(--color-border-default);
-    border-radius: 12px;
-    background: var(--color-surface-overlay);
-    box-shadow: var(--shadow-lg);
-    padding: 14px;
-}
-
-.style-mode-notice-title {
-    font-size: 15px;
-    font-weight: 700;
-    color: var(--color-text-primary);
-    margin-bottom: 8px;
-}
-
-.style-mode-notice-message {
-    font-size: 12.5px;
-    color: var(--color-text-primary);
-    line-height: 1.45;
-    margin-bottom: 8px;
-}
-
-.style-mode-notice-message:last-of-type {
-    color: var(--color-text-secondary);
-    margin-bottom: 12px;
-}
-
-.style-mode-notice-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 8px;
-    flex-wrap: wrap;
-}
-
 body.format-painter-armed #xlsxTable td {
     cursor: copy;
 }
@@ -287,49 +245,6 @@ body.format-painter-armed #xlsxTable td {
 
 td[data-hyperlink] {
     cursor: pointer;
-}
-
-/* Toast notification */
-.toast-notification {
-    position: fixed;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%) scale(0.9);
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 12px 24px;
-    border-radius: 999px;
-    background: var(--color-surface-glass-heavy);
-    border: 1px solid var(--color-border-default);
-    color: var(--color-text-primary);
-    backdrop-filter: blur(18px) saturate(180%);
-    -webkit-backdrop-filter: blur(18px) saturate(180%);
-    box-shadow: var(--glass-shadow);
-    opacity: 0;
-    pointer-events: none;
-    z-index: 10005;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.toast-notification.show {
-    opacity: 1;
-    transform: translate(-50%, -50%) scale(1);
-}
-
-.toast-notification.autosave-toast {
-    top: auto;
-    bottom: 20px;
-    left: 50%;
-    transform: translateX(-50%) scale(0.9);
-}
-
-.toast-notification.autosave-toast.show {
-    transform: translateX(-50%) scale(1);
-}
-
-.toast-notification:not(.autosave-toast).show {
-    transform: translate(-50%, -50%) scale(1);
 }
 
 .version-preview-banner {
@@ -376,22 +291,6 @@ td[data-hyperlink] {
 
 body.preview-mode td {
     cursor: default;
-}
-
-.toast-icon-wrapper {
-    width: 22px;
-    height: 22px;
-    border-radius: 999px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    background: var(--color-status-success-subtle);
-    color: var(--color-status-success);
-}
-
-.toast-icon-wrapper svg {
-    width: 14px;
-    height: 14px;
 }
 
 /* Edit mode */
@@ -884,15 +783,15 @@ body:not(.edit-mode) .xlsx-dropdown-edit-button {
     white-space: nowrap;
 }
 
-body:not(.edit-mode):not(.controls-editable-outside-edit-mode) .xlsx-cell-checkbox,
-body:not(.edit-mode):not(.controls-editable-outside-edit-mode) .xlsx-cell-dropdown,
-body:not(.edit-mode):not(.controls-editable-outside-edit-mode) .xlsx-rating-star,
-body:not(.edit-mode):not(.controls-editable-outside-edit-mode) .xlsx-cell-date {
+body:not(.edit-mode) .xlsx-cell-checkbox,
+body:not(.edit-mode) .xlsx-cell-dropdown,
+body:not(.edit-mode) .xlsx-rating-star,
+body:not(.edit-mode) .xlsx-cell-date {
     pointer-events: none;
 }
 
-body:not(.edit-mode):not(.controls-editable-outside-edit-mode) .xlsx-cell-date,
-body:not(.edit-mode):not(.controls-editable-outside-edit-mode) .xlsx-cell-dropdown {
+body:not(.edit-mode) .xlsx-cell-date,
+body:not(.edit-mode) .xlsx-cell-dropdown {
     border-color: transparent;
     background: transparent;
     padding: 0;
@@ -1486,7 +1385,7 @@ body.spacious-cells.sticky-header-enabled tbody tr.header-row th.row-header {
    PLAIN VIEW MODE
    Removes all XLSX styling to display like CSV/TSV
    ========================= */
-body.plain-view table {
+body.data-only table {
     border-collapse: separate;
     width: max-content;
     min-width: 0;
@@ -1501,8 +1400,8 @@ body.plain-view table {
     overflow-anchor: none;
 }
 
-body.plain-view.spacious-cells #xlsxTable th,
-body.plain-view.spacious-cells #xlsxTable td {
+body.data-only.spacious-cells #xlsxTable th,
+body.data-only.spacious-cells #xlsxTable td {
     height: 24px;
     line-height: 24px;
     padding: 2px 6px;
@@ -1510,14 +1409,14 @@ body.plain-view.spacious-cells #xlsxTable td {
     font-size: 10.5pt;
 }
 
-body.plain-view th {
+body.data-only th {
     background-color: var(--color-surface-raised);
     font-weight: 500;
     color: var(--color-text-secondary);
     text-align: center;
 }
 
-body.plain-view td {
+body.data-only td {
     background-color: var(--color-surface-default);
     color: var(--color-text-primary);
     font-weight: normal;
@@ -1527,11 +1426,11 @@ body.plain-view td {
     vertical-align: top;
 }
 
-body.plain-view td.merged-cell {
+body.data-only td.merged-cell {
     display: table-cell;
 }
 
-body.plain-view td span.cell-content {
+body.data-only td span.cell-content {
     display: block;
     user-select: none;
     pointer-events: none;
@@ -1539,28 +1438,28 @@ body.plain-view td span.cell-content {
     text-overflow: ellipsis;
 }
 
-body.plain-view.first-row-as-header tbody tr.header-row td {
+body.data-only.first-row-as-header tbody tr.header-row td {
     font-weight: 700;
     background-color: var(--color-surface-raised);
 }
 
-body.plain-view.sticky-header-enabled tbody tr.header-row td,
-body.plain-view.sticky-header-enabled tbody tr.header-row th {
+body.data-only.sticky-header-enabled tbody tr.header-row td,
+body.data-only.sticky-header-enabled tbody tr.header-row th {
     position: sticky;
     top: 24px;
     z-index: 10;
     background-color: var(--color-surface-raised);
 }
 
-body.plain-view.spacious-cells.sticky-header-enabled tbody tr.header-row td,
-body.plain-view.spacious-cells.sticky-header-enabled tbody tr.header-row th {
+body.data-only.spacious-cells.sticky-header-enabled tbody tr.header-row td,
+body.data-only.spacious-cells.sticky-header-enabled tbody tr.header-row th {
     position: sticky;
     top: 28px;
     z-index: 10;
     background-color: var(--color-surface-raised);
 }
 
-body.plain-view.sticky-header-enabled tbody tr.header-row th.row-header {
+body.data-only.sticky-header-enabled tbody tr.header-row th.row-header {
     position: sticky;
     top: 24px;
     left: 0 !important;
@@ -1568,7 +1467,7 @@ body.plain-view.sticky-header-enabled tbody tr.header-row th.row-header {
     background-color: var(--color-surface-raised);
 }
 
-body.plain-view.spacious-cells.sticky-header-enabled tbody tr.header-row th.row-header {
+body.data-only.spacious-cells.sticky-header-enabled tbody tr.header-row th.row-header {
     position: sticky;
     top: 28px;
     left: 0 !important;

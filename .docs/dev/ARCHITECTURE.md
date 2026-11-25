@@ -97,10 +97,23 @@ The webview "Open by default" checkbox does not use these two commands; it sends
 ## Key data flows
 
 ### Save (spreadsheet)
-Webview collects edits into `{ edits, richEdits, styleEdits, operations }` and posts `saveXlsxEdits`
-(manual via `saveEdits`, or debounced via `scheduleAutoSave`). Host applies them (exceljs for XLSX;
-delimited write for CSV/TSV), snapshots a version, and posts `saveResult { ok, isAutosave }`.
-Autosave behavior is gated by the `xlsxViewer.*.autoSave` / `autoSaveMode` settings.
+There is one editing surface (no Edit Table mode) and one **edit ledger** per sheet
+([pendingEdits.ts](../../src/webviews/spreadsheet/pendingEdits.ts), instance in `ledger.ts`): every
+unsaved cell value, rich-text run, style edit and structure operation is recorded there, in the sheet's
+current coordinates. `saveEdits` takes a payload `{ edits, richEdits, styleEdits, operations }` for one
+sheet at a time and posts `saveXlsxEdits { sheetIndex, ... }`; with autosave on, `recordChange`
+schedules it 1.1 s after the last change. The host applies it (exceljs for XLSX; delimited write for
+CSV/TSV), snapshots a version, and posts `saveResult { ok, isAutosave }`; on success `settleSaved`
+removes exactly the entries that were sent, so edits made while the save was in flight stay pending.
+Autosave defaults: on for CSV/TSV, off for XLSX (an XLSX save rewrites the whole workbook), set by
+`xlsxViewer.<type>.autoSave`. Undo and redo are kept per sheet and are recorded into the ledger too, so
+they are saved; undo of a structure edit or formatting that is already on disk is not available: when a
+save writes one, the sheet's undo history up to that save is cleared (`dropUnrecoverableUndoEntries`),
+because older entries hold addresses and styles from before it.
+
+Rows fetched again (`rowsData`) get the pending values laid over them (`overlayRows`), so an edit
+survives scrolling, sorting and switching sheets. A sheet with unsaved structure edits keeps its local
+rows in `state.sheetStash` while another sheet is on screen.
 
 ### Virtualization (large tables)
 The webview never holds the whole sheet. On scroll it asks the host for row windows: `requestRows`
@@ -108,12 +121,15 @@ The webview never holds the whole sheet. On scroll it asks the host for row wind
 `rowsData { requestId, rows }` → `VirtualLoader.resolveRequest`. Geometry constants
 (`ROW_HEIGHT`, `BUFFER_ROWS`, `CHUNK_SIZE`) live in [common.ts](../../src/webviews/shared/common.ts).
 
-### Styled mode for CSV/TSV
-Delimited files can't store formatting. When a CSV/TSV is put in "styled mode", formatting is kept
-in extension state via [StyleStorageService](../../src/shared/styleStorageService.ts), keyed `row:col`,
-independent of the file bytes. This is why there's a `requestStyleMode` / `styleModeDecision`
-handshake and a "styled vs plain" view distinction. XLSX stores styles natively (via exceljs), no
-side storage. Styled CSV/TSV formatting can be carried into an XLSX on conversion.
+### CSV/TSV hold data only
+Delimited files can't store formatting, so CSV/TSV open as data only (`state.isDataOnly`): no formatting
+row, no Insert control, no stored styles in the payload, and saves write only the file. Older versions
+kept formatting in extension state ([StyleStorageService](../../src/shared/styleStorageService.ts),
+keyed `row:col`, expiring 48 hours after the last edit). If a file still has some, `initVirtualTable`
+carries `legacyStylesNotice` and the webview shows a notice with Convert to XLSX (`convertToXlsx`: keeps
+the styles, merges and checkbox/dropdown controls via `applyStoredMetadataToWorksheet`) and Dismiss
+(`dismissLegacyStyles`: deletes them). XLSX stores everything natively (exceljs); there is no
+Plain/Styled view for any file type.
 
 ### Conversion
 [fileConversionService.ts](../../src/shared/fileConversionService.ts) converts csv↔tsv↔xlsx, reachable
@@ -162,12 +178,21 @@ a disk-vs-editor diff instead (see the disk-diff cluster in [MAP-mdWebview.md](M
 the UX flowchart in [flow.md](../flow.md)). `saveMarkdown` has a host-side conflict check →
 `saveConflict`. `requestFreshData` triggers a manual re-read.
 
-**Spreadsheet:** same watcher: change reloads and re-sends `initVirtualTable`; delete →
+**Spreadsheet:** same watcher, but a change is never applied silently. The provider keeps a SHA-1 of the
+file as it last loaded or saved it ([fileHash.ts](../../src/shared/fileHash.ts)); on a change it hashes the
+file again, ignores its own save (same hash) and otherwise posts `diskChangedExternally`. The webview
+([diskSync.ts](../../src/webviews/spreadsheet/diskSync.ts)) shows a persistent toast, "File changed on
+disk", with Load disk changes (confirms first if there are unsaved edits, then `requestFreshData`) and,
+with unsaved edits, Keep my edits (confirms "Save your edits into the changed file?", then saves with
+`force`). `saveXlsxEdits` without `force` checks the hash first and answers `saveConflict` without
+writing; a manual save then asks the same question, autosave shows the toast and pauses. A spreadsheet
+save is read-modify-write, so forcing keeps the other changes on disk. `initVirtualTable.reason` says why
+the table is sent (`reload` and `restore` drop unsaved edits; `save` keeps them). Delete →
 `diskDeletedExternally`.
 
 **Renames (both editors):** VS Code closes the open editor and opens a new one at the new path.
 `registerRenameStateMigration` ([renameStateMigration.ts](../../src/shared/renameStateMigration.ts))
-handles `onWillRenameFiles`: it waits for the panel's queued saves, then moves styles, view mode,
+handles `onWillRenameFiles`: it waits for the panel's queued saves, then moves styles,
 Markdown preferences and version history via `migrateFileUriState`, before VS Code renames, so the
 new editor loads them. Renames outside VS Code aren't reported and look like a delete.
 

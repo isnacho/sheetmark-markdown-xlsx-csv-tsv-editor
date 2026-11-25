@@ -1,9 +1,9 @@
 ---
 title: One-mode spreadsheet editor with Markdown parity
 slug: spreadsheet-editor-refresh
-status: to-implement
+status: completed
 created: 2026-11-20
-updated: 2026-11-20
+updated: 2026-11-25
 ---
 
 # One-mode spreadsheet editor with Markdown parity
@@ -241,8 +241,84 @@ Regression entry `sheet-edit-strip-in-start-group` gets repointed.
 
 ## Implementation Log
 
-_Not started._
+Phase 1 (Steps 0 to 6) is implemented on branch `spreadsheet-one-mode`, one commit per step. Phase 2
+(selection stats, sheet tabs, faster open, UI review) is not started.
+
+| Step | Commit | What changed |
+|---|---|---|
+| 0 | c5fc57c | `src/test/ui/harness.mts` opens `.xlsx`/`.csv`/`.tsv` (Buffer or string sources with an extension, editor associations, waits for the first `td` and the loading overlay), `shot.mts` names shots by extension, new `spreadsheetUi.spec.mts` (type + save + file bytes for xlsx/csv/tsv, light/dark shots) |
+| 1 | 2a534c9 | `md/toast.ts` to `shared/toast.ts` (`durationMs` option), `confirmModal` to `shared/confirmModal.ts`, toast and confirm CSS to `resources/shared/theme.css`, `Utils.showToast` is a wrapper, spreadsheet toast CSS removed, `guide.md` and MAP updated |
+| 2 | 5f5e7d8 | Plain/Styled and settings scopes removed (`src/protocol/spreadsheet.ts`, provider `getSettings(fileType)`, `state.isDataOnly`), CSV/TSV data only, `legacyStylesNotice` + `convertToXlsx` + `dismissLegacyStyles`, `applyStoredMetadataToWorksheet` (convert keeps merges and controls) in `excelStyle.ts` and `extension.ts`, three settings removed from `package.json`, preferred view mode removed from `styleStorageService.ts`, tests and fixtures updated, integration tests for convert and the notice |
+| 3 | 8d03e4d | New `pendingEdits.ts` (+ test) and `ledger.ts`; `persistence.ts` rewritten (`recordChange`, `saveEdits`, `onSaveResult`); `undo.ts` per-sheet stacks, values entries, saved undo; `interactiveControls.ts`, `styleEdits.ts`, `spreadsheetWebview.ts` lose `isEditMode`/`setEditMode` and every mode gate; host fix so CSS-form style edits reach the XLSX (`excelStyle.ts` `withLogicalStyleFields`); new and rewritten webview tests for the six bugs; regression entries |
+| 4 | a0e5fa3 | Two-row toolbar: `spreadsheetToolbarComponent.ts` (Reload, Save, Undo, Redo, Column widths), row 2 is `#formattingToolbar.formatting-toolbar` built by `ensureEditFormattingStrip` (Insert at its end), `ToolbarManager.setStickyCompanion`, base `.formatting-toolbar` CSS moved to `resources/shared/theme.css`, new `spreadsheetToolbar.spec.mts` |
+| 5 | 84c215a | `src/shared/fileHash.ts` (+ test), provider baseline hash, watcher posts `diskChangedExternally`, `saveXlsxEdits.force` + `saveConflict`, `initVirtualTable.reason`, new `diskSync.ts`, `spreadsheetDiskSync.spec.mts`, integration tests for watcher, own-save echo and conflict |
+| 6 | 8a6ca52 | MAP, MESSAGE-PROTOCOL, ARCHITECTURE, AGENTS.md, CHANGELOG, `guide.md` |
+
+### Verification
+
+Every step: `npm run verify` green. `npm run test:integration` green after steps 2, 3 and 5 (23 tests at the end).
+`npm run test:ui` (the spreadsheet spec only, not the Markdown UI specs) after steps 0, 2, 3 and 4, light and dark PNGs read.
+`npm run test:regressions`: the full run did not complete here (its baseline `npm run verify` in the temporary worktree hung twice on a first browser test, and a mutation that breaks basic editing makes the whole webview suite wait for timeouts, so one entry can take up to 20 minutes). Instead every new or touched entry was re-broken by hand in the working tree and the one test that should notice was run: all of `sheet-*`, `xlsx-css-style-edits-saved`, `csv-save-stores-nothing-aside`, `convert-styles`, `convert-notice-metadata`, `csv-version-history`, `paste-multiline`, `xss-cell-sanitize`, `xss-cell-style-attr` and `resize-listeners-once` fail when re-broken (the `knownGap` entry is meant to survive). A final stale-pattern check of all 81 entries found two stale ones that are not from this work and are stale on `main` too: `md-toggle-handle-centred` and `md-cursor-clear-of-stats`. Run the full `npm run test:regressions` on a quiet machine before the PR.
+`npm run test:ui` (all UI specs, spreadsheet and Markdown) was green at the end: 13 tests.
+Webview tests flaked three times in total, always the first test of `markdown.spec.mts` failing or hanging and the rest of that file cascading; the same files pass alone and on re-run, and the failures were not in spreadsheet code.
+
+### Deviations from the plan
+
+- **Step 1: the spreadsheet toast looks different.** Because `Utils.showToast` is now the shared toast, spreadsheet messages ("Saved" and the rest) use the dark bottom-centre toast of the Markdown editor instead of the round one in the middle. The plan asked for this wrapper; it is a visible change, so it has a changelog line.
+- **Step 2: stored legacy styles are not remapped on CSV saves.** `saveDelimitedFile` no longer touches `StyleStorageService`, so if a user inserts a row in a CSV that still has legacy formatting, that formatting no longer lines up (it expires after 48 hours or on Dismiss/Convert). The plan asked to stop remapping; the effect on Convert after structure edits is noted here.
+- **Step 3: an extra bug fix.** The webview sends style edits in CSS form (`backgroundColor`, `fontWeight`, ...) but the host's `applyStyleEditToCell` read only logical names (`bgColor`, `bold`, ...), so colours, font and alignment set from the toolbar were never written to the XLSX (bold only reached the file through rich-text runs). `withLogicalStyleFields` maps both forms; unit and integration tests and a regression entry added. Not one of the six listed bugs.
+- **Step 3: rich runs only when there is real formatting.** The old edit-mode save also wrote rich text for every edited cell whose HTML changed, so a plain edit became a rich-text cell. The ledger records runs only when `hasRunFormatting`.
+- **Step 3: typing is committed at Enter/Tab/leaving the cell, not per keystroke.** The old edit mode autosaved while a cell was still being typed in (and Cancel then saved it: bug 5). Autosave now waits for the commit.
+- **Step 3: structure edits are blocked while a save is in flight** ("Saving, try again in a moment"), because the host reloads the sheet when a save carried structure edits and local rows would be replaced.
+- **Step 3: `body.edit-mode` and `td.editable-cell` kept as styling hooks only.** Nothing in code reads them as a mode; `syncEditableSurface` sets `edit-mode` on the body for XLSX outside version preview so the existing stylesheet keeps working, and the 46 CSS rules were not rewritten (only `plain-view` became `data-only` and the dead `controls-editable-outside-edit-mode` selector part was dropped). The plan listed removing or re-keying them in Step 4; they are re-keyed by this single class, which a later cleanup can rename.
+- **Step 3: inverse operations were not attempted** (see Known gaps).
+- **Step 3/4: Save/Undo/Redo ids.** Step 3 kept `#saveTableEditsButton` as the only Save button; Step 4 renamed it to `#saveEditsButton` and added `#undoEditsButton`/`#redoEditsButton` (Markdown ids). The sheet selector dropdown stays at the very left of row 1 until the Phase 2 tabs.
+- **Step 4: `--header-height` counts both rows.** `ToolbarManager.setStickyCompanion` adds the formatting row; `--main-toolbar-height` stays the main row, and the main toolbar's `min-height` is keyed to it in `spreadsheetWebview.css` (otherwise the two feed each other).
+- **Step 5: no `reason` on every message**, only on `initVirtualTable`; `saveResult` and the rest are unchanged.
+- **Test harness:** the fixture's `reinit` now waits for row 15 (not the last row), so tests can use sheets bigger than one screen.
+
+### Known gaps
+
+- **Undo of already-saved structure edits and formatting.** Inverse operations for rows, columns, cells, merges, inserted controls and formatting that are already on disk were not built. The fallback from the plan is in place: when a save writes one of those, `dropUnrecoverableUndoEntries` clears the sheet's whole undo and redo history up to that save (older entries hold addresses and styles from before the change, so keeping them would write into the wrong cell; see Review fixes). Entries made after the save was sent stay. Typed values, paste, clear and control changes remain undoable after a save that carried only those. Structure edits and formatting are fully undoable while unsaved (ledger snapshots). Pinned by the tests "a structure edit that is already saved cannot be undone" and "after a structure edit is saved, Undo does not write an old value into a shifted cell", and by the `knownGap` regression entry `sheet-saved-structure-undo-inverse-ops`.
+- **No separate manual test in a real window** for: the legacy notice appearance, the disk-change toast, the confirm dialogs and the narrow-window toolbar scroll (only headless Chrome tests and the light/dark shots of the grid and toolbar).
+
+
+### Review fixes
+
+Found in review after Phase 1; one commit each, each with a test that fails without the fix and a regression entry.
+
+| Fix | Commit | What changed |
+|---|---|---|
+| Undo after a saved row insert wrote into the wrong cell (HIGH) | 0589972 | `dropUnrecoverableUndoEntries` now clears every entry up to the save when it drops any 'sheet' or formatting entry (it used to keep older text and value entries, which still held pre-insert addresses; Redo had the mirror problem). Test: CSV, type in B5, insert a row above row 3, autosave, then Undo and Redo write nothing and leave the cells alone. Entries `sheet-saved-structure-undo-drops-older-entries` (and `sheet-saved-structure-undo-dropped` repointed). Changelog and ARCHITECTURE wording updated |
+| A value changed back while its save is in flight was lost (MEDIUM) | 0a5a3f8 | `PendingEdits` remembers the in-flight mark (set in `takePayload`, cleared by `settleSaved`, new `releaseInFlight` on a failed or refused save, and `clearAll`/`clearSheet`). `recordValue` never drops a key that is in it. `settleSaved` sets `original` of every kept sent entry to the value that was sent and drops the entry if its value now equals that; `SentMark` carries the sent values. Unit tests for both cases in `pendingEdits.test.mts` plus a webview test (type, autosave goes out, Undo before the result, the old value is sent next). Entries `sheet-inflight-value-not-dropped`, `sheet-settle-rebases-original` |
+| Undo or redo of a structure or formatting step while a save is in flight (MEDIUM) | 9f77ab8 | While `state.isSaving` those two kinds show "Saving, try again in a moment" and do nothing; text and value entries stay allowed. Webview tests for a row insert and for formatting. Entry `sheet-undo-waits-for-save` |
+| A short toast replaced the persistent "File changed on disk" toast for good (MEDIUM) | 9e665ed | `shared/toast.ts` remembers the current persistent toast (message, actions, options) and shows it again when a short toast expires. `hideToast()`, the close button or a newer persistent toast clears it; new `forgetPersistentToast()` clears it without touching the screen. Markdown: `hideToast()` added before its "Reloaded from disk" toasts and `forgetPersistentToast()` when a change or a save supersedes "File deleted from disk". Spreadsheet: `hideToast()` when a reload or restore resolves the toast. Webview tests: spreadsheet (both directions) and Markdown. This replaces the known gap about the legacy notice, which now comes back too. Changelog bullet for both editors. Entry `toast-persistent-comes-back` |
+| Home/End/scroll while editing a cell lost the typing (investigated, then fixed) | 3fa263c | **Reproduces on `main` (d13f756)**, in both view mode and Edit Table mode: with a 400-row sheet, F2 then typing then End scrolls the grid to the bottom and the cell is gone (checked by building `main` in a temporary worktree and running the same steps). Cause: the browser's default End in the cell scrolls the grid; the row window is then re-rendered and replaces the cell. Also seen here: mouse-wheel scrolling the cell out of view loses it; Ctrl+arrow, Home, Ctrl+End and PageDown kept the cell. Fix: Home and End (with Ctrl/Cmd, with Shift) now move the caret inside the cell (`Selection.modify`), and `renderVirtualRows` and `renderWorksheet` commit the cell being edited before they replace rows. Webview tests with a 400-row sheet for End/Home and for wheel scrolling. Entries `sheet-home-end-move-caret`, `sheet-render-commits-edited-cell`. Changelog bullet |
+
+Full `npm run test:regressions` after the review fixes: the baseline `verify` and integration passed in the temporary worktree, then the run was stopped by hand at entry 8 of 83 (`md-boot-hidden-until-styled`, a Markdown entry) after about 45 minutes. It did not hang; each mutated run of the webview suite took 5 to 9 minutes on this busy machine (load average 6 to 7), which would make the whole run take many hours. The script prints its per-entry results only at the end, so nothing from that partial run is reported. All new and touched `sheet-*`, `toast-*`, `xlsx-css-*`, `csv-*`, `convert-*` entries were re-broken by hand instead and fail as they should.
+
+Because of the first fix, "Known gaps" above now says the undo history is cleared (not just skipped) when a save writes a structure or formatting step. The two known gaps about End and about the legacy notice being replaced by another toast are fixed by the last two fixes and no longer apply.
+
 
 ## QA
 
-_Not started._
+**2026-11-25, Phase 1.** Build `847ab49` (this branch with `main` merged in, so it includes the XLSX colour fix from PR #12), run by the owner in their everyday Cursor through the local install. The owner went through this checklist and reported it complete, with no failures:
+
+| # | Check | Expected |
+|---|---|---|
+| 1 | Open an XLSX | No View/Edit or Plain/Styled buttons; row 1 Reload, Save, Undo, Redo; row 2 formatting |
+| 2 | Type in a cell, then Enter, Tab or Escape | Enter and Tab keep the value; Escape cancels only that cell |
+| 3 | Save before and after an edit | Disabled until something changes; Cmd+S saves |
+| 4 | Edit, scroll far away and back, save, reopen | The edit is kept |
+| 5 | Edit two sheets, switch, Save | Each edit lands on its own sheet |
+| 6 | Insert or delete a row, Undo before saving | Undone cleanly |
+| 7 | Bold and fill colour, save, reopen | Formatting kept |
+| 8 | Click a checkbox | Toggles in one click |
+| 9 | Open a CSV | No formatting row; edits save |
+| 10 | Change the file outside Cursor, clean and with unsaved edits | "File changed on disk" toast with Load disk changes, plus Keep my edits when dirty; no silent reload |
+| 11 | Preview or restore a version while dirty | Asks first |
+| 12 | Narrow window | Toolbar scrolls sideways |
+
+Automated on the same commit: `npm run verify` (623 unit, 138 webview tests) and `npm run test:integration` (23) green. The full `npm run test:regressions` was started after QA; anything it finds goes into a follow-up change.
+
+**Result: passed.** Phase 2 (selection stats, sheet tabs, faster open, UI review) was split into its own idea, `.docs/ideas/3-to-implement/spreadsheet-parity-add-ons.md`, so this one closes with Phase 1 shipped.

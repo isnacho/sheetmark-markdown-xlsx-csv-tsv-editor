@@ -14,12 +14,16 @@ import { VirtualLoader } from '../shared/virtualLoader';
 import { state, MIN_ROW_HEADER_WIDTH } from './state';
 import { filterAndSortRows } from './dataOps';
 import { post } from './messaging';
-import { captureOriginalCellValues, hideLoading, setLoadingText, showLoading } from './ui';
+import { hideLoading, setLoadingText, showLoading } from './ui';
 import { getCellNormalizedValue, getCellType, getOrCreateRowCellData, normalizeCellText, normalizeDateInputValue, normalizeRatingValue, parseBooleanCellValue } from './cellValues';
-import { clearAutoSaveTimer, hasPendingXlsxEdits, initPersistence, onSaveResult, persistInteractiveControlEdit, persistPlainTextEdit, removePendingOutsideControlEdit, saveEdits, scheduleAutoSave, showManualSaveReminderIfNeeded, syncLocalSnapshotValue, upsertPendingOutsideControlEdit } from './persistence';
+import { initDiskSync, onDiskChangedExternally, onSaveConflict, refreshDiskChangedToast } from './diskSync';
+import { clearAutoSaveTimer, initPersistence, isDirty, onSaveConflictResult, onSaveResult, recordCellValue, recordChange, saveEdits } from './persistence';
+import { getPendingStyle, ledger } from './ledger';
+import { confirmModal } from '../shared/confirmModal';
+import { hideToast } from '../shared/toast';
 import type { HostToSpreadsheetWebview } from '../../protocol/spreadsheet';
 import type { HandledByFeedbackModal } from '../../protocol/common';
-import { createXlsxRowHtml, getExcelColumnLabel, renderDropdownCellContent } from './components/spreadsheetRenderComponent';
+import { createXlsxRowHtml, getExcelColumnLabel } from './components/spreadsheetRenderComponent';
 import { XlsxSelectionManager } from './components/spreadsheetSelectionComponent';
 import { createXlsxToolbarButtons } from './components/spreadsheetToolbarComponent';
 import { FeedbackModal } from '../shared/feedbackModal';
@@ -44,6 +48,8 @@ import {
 import type { StructuralOpType, HorizontalAlign, VerticalAlign, WrapMode, StructuralOp, BorderStyleEdit, CellStyleEdit, CellUndoState, FilterMode } from './components/spreadsheetTypes';
 import { cloneCellData, getCellFromRow, setCellOnRow, normalizeRowsAfterStructureChange } from './components/spreadsheetSheetDataComponent';
 import {
+    getCellRichRuns,
+    hasRunFormatting,
     normalizeColorToHex,
 } from './components/spreadsheetRichTextComponent';
 import {
@@ -55,22 +61,25 @@ import { XlsxFindManager } from './components/spreadsheetFindComponent';
 import { copySelectionToClipboard as copySelectionToClipboardHelper } from './components/spreadsheetCopyComponent';
 import { parseTsv } from './components/tsvClipboard';
 import { getMutableRowsSnapshot, getEffectiveRowHeightFromValue, invalidateRowMetrics, ensureRowOffsetPrefix, getRowTopOffset, getRowHeightRange, findRowIndexByOffset } from './rowLayout';
-import { recordLogicalStyleEdit, recordCellStyleEdit, cloneCellStyleEdit } from './styleEdits';
-import { captureCellUndoState, captureWorksheetStateSnapshot, pushEditUndoEntry, pushSheetUndoEntry, undoEditAction, redoEditAction, pushSingleCellUndo, initUndo } from './undo';
+import { applyStyleToCellData, recordLogicalStyleEdit, recordCellStyleEdit, cloneCellStyleEdit } from './styleEdits';
+import { applyWorksheetSnapshotState, captureCellUndoState, captureWorksheetStateSnapshot, pushEditUndoEntry, pushSheetUndoEntry, pushValuesUndoEntry, undoEditAction, redoEditAction, pushSingleCellUndo, initUndo, switchUndoSheet, resetUndoHistory, canUndo, canRedo } from './undo';
 import { hideLinkTooltip, showImagePreview, hideImagePreview, initializeHyperlinkHover } from './linkPreview';
 import { MenuKeyboard } from '../shared/popupFocus';
-import { confirmMergePreserveTopLeftContent, hideStyleModeNoticePopup, showStyleModeNoticePopup } from './notices';
-import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateRatingCellPresentation, updateDateCellPresentation, areInteractiveControlsEnabled, applyInteractiveControlState, hideInsertControlPopup, showInsertControlPopup, hideDropdownOptionsPopup, getDropdownOptionsFromCell, editDropdownOptionsForCell, initInteractiveControls } from './interactiveControls';
+import { confirmMergePreserveTopLeftContent, showLegacyStylesNotice } from './notices';
+import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateRatingCellPresentation, updateDateCellPresentation, areInteractiveControlsEnabled, applyInteractiveControlState, hideInsertControlPopup, showInsertControlPopup, hideDropdownOptionsPopup, editDropdownOptionsForCell, initInteractiveControls } from './interactiveControls';
 
 (function () {
-    initPersistence({ setEditMode });
+    initPersistence({ updateToolbarState, commitActiveCellEdit: () => exitCellEditMode(), onSaveConflict: (wasAutosave) => { void onSaveConflict(wasAutosave); } });
+    initDiskSync({
+        isDirty: () => isDirty() || state.isCellEditing,
+        saveOverChangedFile: () => saveEdits(false, true),
+        reloadFromDisk: () => { discardUnsavedEdits(); post({ command: 'requestFreshData' }); },
+    });
     initUndo({ clearSelection, hideHeaderContextMenu, rerenderCurrentSheetFromLocalState, applyFindHighlightsInVisibleCells });
     initInteractiveControls({ getLogicalSelectionBounds, ensureAllRowsLoadedForStructureEdits });
 
     // ===== Virtual Scrolling Configuration =====
     const { ROW_HEIGHT, BUFFER_ROWS, CHUNK_SIZE } = VirtualScrollConfig;
-    const textColorIcon = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16"/><path d="M8.5 16h7"/><path d="M12 4l4 12"/><path d="M12 4L8 16"/></svg>';
-    const bgColorIcon = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4l8 8-6 6-8-8z"/><path d="M2 20h20"/></svg>';
     const virtualLoader = new VirtualLoader<any[]>('getRows');
 
     const selectionManager = new XlsxSelectionManager({
@@ -97,16 +106,14 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
     const AUTO_SCROLL_THRESHOLD = 40; // px
     const AUTO_SCROLL_STEP = 20;
 
-    type SettingsScope = 'plain' | 'styled';
-
     const MAX_ROWS_FOR_CLIENT_DATA_OPS = 120000;
 
 
     function updateColorPreview(target: 'text' | 'background' | 'border', color: string) {
         const ids = target === 'text'
-            ? ['formatTextColorButton', 'stripTextColorButton']
+            ? ['stripTextColorButton']
             : target === 'background'
-                ? ['formatBackgroundColorButton', 'stripBgColorButton']
+                ? ['stripBgColorButton']
                 : ['stripBorderColorButton'];
         ids.forEach(id => {
             const btn = document.getElementById(id);
@@ -161,7 +168,7 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
         const rowNum = parseInt(cell.getAttribute('data-rownum') || '0', 10);
         const colNum = parseInt(cell.getAttribute('data-colnum') || '0', 10);
         const key = rowNum > 0 && colNum > 0 ? `${rowNum}:${colNum}` : '';
-        const pending = key ? state.pendingCellStyleEdits.get(key) : undefined;
+        const pending = key ? getPendingStyle(key) : undefined;
 
         const copied = copyFormattingFromCell(cell);
         const border = (pending?.border || copied.border) as BorderStyleEdit | undefined;
@@ -376,21 +383,16 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
             showToast('Version preview is read-only');
             return false;
         }
+        if (state.isSaving) {
+            // The host reloads the sheet when a save carried structure edits; wait for it.
+            showToast('Saving, try again in a moment');
+            return false;
+        }
         return true;
     }
 
     function persistStructureChange() {
-        if (state.isEditMode) {
-            scheduleAutoSave('structure');
-            return;
-        }
-
-        if (state.currentSettings.autoSave) {
-            saveEdits(false, true);
-            return;
-        }
-
-        showManualSaveReminderIfNeeded();
+        recordChange('structure');
     }
 
     async function applyStructureOperation(op: StructuralOp) {
@@ -458,7 +460,7 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
             }
         }
 
-        state.pendingWorksheetOps.push(op);
+        ledger.recordOp(state.currentWorksheet, op);
         normalizeRowsAfterStructureChange(rows, state.rowCache);
         state.mergedCells = [];
 
@@ -560,7 +562,7 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
             }
         }
 
-        state.pendingWorksheetOps.push({ type, row: rowNumber, col: colNumber });
+        ledger.recordOp(state.currentWorksheet, { type, row: rowNumber, col: colNumber });
         normalizeRowsAfterStructureChange(rows, state.rowCache);
 
         const afterSnapshot = captureWorksheetStateSnapshot();
@@ -609,7 +611,7 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
             }
         }
 
-        state.pendingWorksheetOps.push({ type, row: rowNumber, col: colNumber });
+        ledger.recordOp(state.currentWorksheet, { type, row: rowNumber, col: colNumber });
         normalizeRowsAfterStructureChange(rows, state.rowCache);
 
         const afterSnapshot = captureWorksheetStateSnapshot();
@@ -677,30 +679,33 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
             menu.appendChild(btn);
         });
 
-        // Add Text wrap menu option for row/column selection
-        const menuSeparator = document.createElement('div');
-        menuSeparator.className = 'header-context-separator';
-        menu.appendChild(menuSeparator);
+        // Text wrap is formatting: CSV/TSV hold data only.
+        if (!state.isDataOnly) {
+            // Add Text wrap menu option for row/column selection
+            const menuSeparator = document.createElement('div');
+            menuSeparator.className = 'header-context-separator';
+            menu.appendChild(menuSeparator);
 
-        const sampleCell = targetType === 'row'
-            ? document.querySelector(`td[data-row="${targetIndexZeroBased}"][data-col="0"]`) as HTMLElement | null
-            : document.querySelector(`td[data-row="0"][data-col="${targetIndexZeroBased}"]`) as HTMLElement | null;
-        const isWrapped = sampleCell ? sampleCell.style.whiteSpace === 'pre-wrap' : false;
+            const sampleCell = targetType === 'row'
+                ? document.querySelector(`td[data-row="${targetIndexZeroBased}"][data-col="0"]`) as HTMLElement | null
+                : document.querySelector(`td[data-row="0"][data-col="${targetIndexZeroBased}"]`) as HTMLElement | null;
+            const isWrapped = sampleCell ? sampleCell.style.whiteSpace === 'pre-wrap' : false;
 
-        const wrapBtn = document.createElement('button');
-        wrapBtn.type = 'button';
-        wrapBtn.className = 'header-context-item';
-        wrapBtn.textContent = isWrapped ? '✓ Text wrap' : 'Text wrap';
-        wrapBtn.addEventListener('click', () => {
-            hideHeaderContextMenu();
-            const nextMode: WrapMode = isWrapped ? 'overflow' : 'wrap';
-            if (targetType === 'row') {
-                applyWrapModeToRange(targetIndexZeroBased, targetIndexZeroBased, 0, state.columnCount - 1, nextMode);
-            } else {
-                applyWrapModeToRange(0, state.totalRows - 1, targetIndexZeroBased, targetIndexZeroBased, nextMode);
-            }
-        });
-        menu.appendChild(wrapBtn);
+            const wrapBtn = document.createElement('button');
+            wrapBtn.type = 'button';
+            wrapBtn.className = 'header-context-item';
+            wrapBtn.textContent = isWrapped ? '✓ Text wrap' : 'Text wrap';
+            wrapBtn.addEventListener('click', () => {
+                hideHeaderContextMenu();
+                const nextMode: WrapMode = isWrapped ? 'overflow' : 'wrap';
+                if (targetType === 'row') {
+                    applyWrapModeToRange(targetIndexZeroBased, targetIndexZeroBased, 0, state.columnCount - 1, nextMode);
+                } else {
+                    applyWrapModeToRange(0, state.totalRows - 1, targetIndexZeroBased, targetIndexZeroBased, nextMode);
+                }
+            });
+            menu.appendChild(wrapBtn);
+        }
 
         if (targetType === 'column') {
             const appendSeparator = () => {
@@ -1022,23 +1027,25 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
             }
         });
 
-        const isWrapped = cell.style.whiteSpace === 'pre-wrap';
-        appendAction(isWrapped ? '✓ Text wrap' : 'Text wrap', () => {
-            hideHeaderContextMenu();
-            const nextMode: WrapMode = isWrapped ? 'overflow' : 'wrap';
-            const targets = getEditTargetCells();
-            const inSelection = targets.some(c => c === cell);
-            if (inSelection) {
-                const bounds = getLogicalSelectionBounds();
-                if (bounds) {
-                    applyWrapModeToRange(bounds.minRow, bounds.maxRow, bounds.minCol, bounds.maxCol, nextMode);
+        if (!state.isDataOnly) {
+            const isWrapped = cell.style.whiteSpace === 'pre-wrap';
+            appendAction(isWrapped ? '✓ Text wrap' : 'Text wrap', () => {
+                hideHeaderContextMenu();
+                const nextMode: WrapMode = isWrapped ? 'overflow' : 'wrap';
+                const targets = getEditTargetCells();
+                const inSelection = targets.some(c => c === cell);
+                if (inSelection) {
+                    const bounds = getLogicalSelectionBounds();
+                    if (bounds) {
+                        applyWrapModeToRange(bounds.minRow, bounds.maxRow, bounds.minCol, bounds.maxCol, nextMode);
+                    }
+                } else {
+                    const r = parseInt(cell.getAttribute('data-row') || '0', 10);
+                    const c = parseInt(cell.getAttribute('data-col') || '0', 10);
+                    applyWrapModeToRange(r, r, c, c, nextMode);
                 }
-            } else {
-                const r = parseInt(cell.getAttribute('data-row') || '0', 10);
-                const c = parseInt(cell.getAttribute('data-col') || '0', 10);
-                applyWrapModeToRange(r, r, c, c, nextMode);
-            }
-        });
+            });
+        }
 
         const topSeparator = document.createElement('div');
         topSeparator.className = 'header-context-separator';
@@ -1069,7 +1076,6 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
     }
 
     function captureEditSelectionRange() {
-        if (!state.isEditMode) {return;}
         const selection = window.getSelection();
         if (!selection || selection.rangeCount === 0) {return;}
 
@@ -1126,25 +1132,6 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
         }
     }
 
-    function updatePlainViewButtonLabel() {
-        const btn = document.getElementById('togglePlainViewButton');
-        if (!btn) {return;}
-
-        const labelSpan = btn.querySelector('.btn-label');
-        if (labelSpan) {
-            labelSpan.textContent = state.isPlainView ? 'Styled' : 'Plain';
-        }
-    }
-
-    function syncPlainViewUiState() {
-        document.body.classList.toggle('plain-view', state.isPlainView);
-        updatePlainViewButtonLabel();
-    }
-
-    function isPlainDirectEditMode() {
-        return state.isPlainView && !state.isVersionPreviewMode;
-    }
-
     function shouldShowSheetSelector() {
         // Show sheet selector if there are multiple sheets, regardless of file type
         return state.worksheetsMeta && state.worksheetsMeta.length > 1;
@@ -1153,152 +1140,30 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
     function syncSheetSelectorVisibility() {
         const selector = document.getElementById('sheetSelector');
         if (!selector) {return;}
-        selector.classList.toggle('hidden', state.isEditMode || !shouldShowSheetSelector());
+        selector.classList.toggle('hidden', !shouldShowSheetSelector());
     }
 
-    function syncTemporaryFileToolbarActions() {
-        const togglePlainViewButton = document.getElementById('togglePlainViewButton');
-        const toggleTableEditButton = document.getElementById('toggleTableEditButton');
-        const hideEditTableButton = isPlainDirectEditMode();
-
-        if (state.toolbarManager) {
-            state.toolbarManager.setButtonVisibility('togglePlainViewButton', !state.isEditMode || state.isPlainView);
-            state.toolbarManager.setButtonVisibility('toggleTableEditButton', !state.isEditMode && !hideEditTableButton);
-            return;
-        }
-
-        if (togglePlainViewButton) {
-            togglePlainViewButton.classList.toggle('hidden', state.isEditMode && !state.isPlainView);
-        }
-        if (toggleTableEditButton) {
-            toggleTableEditButton.classList.toggle('hidden', state.isEditMode || hideEditTableButton);
-        }
-    }
-
-    function resolveSettingsScope(scope: any): SettingsScope {
-        return scope === 'plain' ? 'plain' : 'styled';
-    }
-
-    function getCurrentSettingsScope(): SettingsScope {
-        return state.isPlainView ? 'plain' : 'styled';
-    }
-
-    function getStoredSettingsForScope(scope: SettingsScope): XlsxViewSettings {
-        return scope === 'plain' ? state.plainModeSettings : state.styledModeSettings;
-    }
-
-    function setStoredSettingsForScope(scope: SettingsScope, settings: XlsxViewSettings) {
-        if (scope === 'plain') {
-            state.plainModeSettings = { ...settings };
-            return;
-        }
-        state.styledModeSettings = { ...settings };
-    }
-
-    function normalizeSettingsForScope(scope: SettingsScope, incoming: any, previous: XlsxViewSettings): XlsxViewSettings {
-        const normalized = normalizeXlsxSettings(incoming, previous);
-        if (scope === 'plain') {
-            normalized.autoSaveMode = 'all';
-            normalized.showManualSavePopup = false;
-        }
-        return normalized;
-    }
-
-    function ingestSettingsForScope(scope: SettingsScope, incoming: any) {
-        const previous = getStoredSettingsForScope(scope);
-        const normalized = normalizeSettingsForScope(scope, incoming, previous);
-        setStoredSettingsForScope(scope, normalized);
-    }
-
-    function applySettingsForScope(scope: SettingsScope) {
-        applySettings(getStoredSettingsForScope(scope), scope);
+    /**
+     * Save is enabled only while there is something to save; Undo and Redo only while there is
+     * something to undo or redo; Reload and Save wait for a save to finish. Version preview is read-only.
+     */
+    function updateToolbarState() {
+        const manager = state.toolbarManager;
+        if (!manager) {return;}
+        const preview = state.isVersionPreviewMode;
+        manager.setButtonEnabled('saveEditsButton', isDirty() && !state.isSaving && !preview);
+        manager.setButtonEnabled('undoEditsButton', canUndo() && !preview);
+        manager.setButtonEnabled('redoEditsButton', canRedo() && !preview);
+        manager.setButtonEnabled('refreshButton', !state.isSaving);
+        refreshDiskChangedToast();
     }
 
     function consumeIncomingSettingsPayload(message: any) {
-        const incomingScope = resolveSettingsScope(message?.settingsScope);
-
-        if (message?.plainSettings) {
-            ingestSettingsForScope('plain', message.plainSettings);
-        }
-        if (message?.styledSettings) {
-            ingestSettingsForScope('styled', message.styledSettings);
-        }
-
-        if (message?.settings) {
-            const shouldIngestPlain = incomingScope === 'plain' && !message?.plainSettings;
-            const shouldIngestStyled = incomingScope === 'styled' && !message?.styledSettings;
-            if (shouldIngestPlain) {
-                ingestSettingsForScope('plain', message.settings);
-            }
-            if (shouldIngestStyled) {
-                ingestSettingsForScope('styled', message.settings);
-            }
-        }
-
-        const scopeToApply = state.hasVirtualTableInit ? getCurrentSettingsScope() : incomingScope;
-        applySettingsForScope(scopeToApply);
-    }
-
-    function requestStyledMode(nextAction?: () => void) {
-        if (!state.isTemporaryStyleFile || !state.isPlainView) {
-            return false;
-        }
-
-        state.pendingStyleModeAction = nextAction ?? null;
-        if (!state.styleModeRequestPending) {
-            state.styleModeRequestPending = true;
-            post({ command: 'requestStyleMode' });
-        }
-        return true;
-    }
-
-    function activateStyledMode() {
-        state.styleModeRequestPending = false;
-        hideStyleModeNoticePopup();
-        state.isPlainView = false;
-        syncPlainViewUiState();
-        syncTemporaryFileToolbarActions();
-        if (state.isTemporaryStyleFile) {
-            post({ command: 'setPreferredViewMode', mode: 'styled' });
-        }
-        applySettingsForScope('styled');
-
-        // Flush any pending plain-mode edits before switching so data is not lost.
-        // Then request a full re-init from the provider to get fresh data (the
-        // provider re-reads the file which contains the auto-saved plain edits).
-        if (state.pendingOutsideControlEdits.length > 0) {
-            saveEdits(false, true);
-        }
-        state.rowCache.clear();
-        state.currentVisibleStart = 0;
-        state.currentVisibleEnd = 0;
-        renderWorksheet(state.currentWorksheet);
-
-        const nextAction = state.pendingStyleModeAction;
-        state.pendingStyleModeAction = null;
-        if (nextAction) {
-            setTimeout(() => {
-                try {
-                    nextAction();
-                } catch {
-                    // ignore
-                }
-            }, 100);
-        }
-    }
-
-    function cancelStyledModeRequest() {
-        state.styleModeRequestPending = false;
-        hideStyleModeNoticePopup();
-        state.pendingStyleModeAction = null;
+        applySettings(message?.settings);
     }
 
     function applyEditFormatting(command: string, value?: string) {
-        if (requestStyledMode(() => applyEditFormatting(command, value))) {
-            return;
-        }
-
-        if (!state.isEditMode) {return;}
+        if (state.isDataOnly) {return;}
 
         const selection = window.getSelection();
         const hasLiveSelection = !!selection && selection.rangeCount > 0 && !selection.isCollapsed;
@@ -1356,9 +1221,7 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
     }
 
     function applyFormatToLogicalSelection(styleChanges: Partial<CellStyleEdit>, mode: 'set' | 'toggle' = 'set', toggleKey?: keyof CellStyleEdit) {
-        if (requestStyledMode(() => applyFormatToLogicalSelection(styleChanges, mode, toggleKey))) {
-            return;
-        }
+        if (state.isDataOnly) {return;}
 
         const bounds = getLogicalSelectionBounds();
         if (!bounds) {
@@ -1389,7 +1252,7 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
                 let targetStyle = { ...styleChanges };
 
                 if (mode === 'toggle' && toggleKey) {
-                    const currentPending = state.pendingCellStyleEdits.get(key);
+                    const currentPending = getPendingStyle(key);
                     const domCell = document.querySelector(`td[data-row="${r}"][data-col="${c}"]`) as HTMLElement | null;
                     let currentlyEnabled = false;
 
@@ -1417,7 +1280,7 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
                 }
 
                 // Gather before state
-                const pendingStyle = state.pendingCellStyleEdits.has(key) ? cloneCellStyleEdit(state.pendingCellStyleEdits.get(key)) : null;
+                const pendingStyle = cloneCellStyleEdit(getPendingStyle(key) || null);
                 const domCell = document.querySelector(`td[data-row="${r}"][data-col="${c}"]`) as HTMLElement | null;
                 beforeStates.push({
                     row: r, col: c, key,
@@ -1434,14 +1297,14 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
                         row: r, col: c, key,
                         styleAttr: domCell.getAttribute('style') || '',
                         innerHtml: domCell.innerHTML,
-                        pendingStyle: cloneCellStyleEdit(state.pendingCellStyleEdits.get(key))
+                        pendingStyle: cloneCellStyleEdit(getPendingStyle(key) || null)
                     });
                 } else {
                     afterStates.push({
                         row: r, col: c, key,
                         styleAttr: '',
                         innerHtml: '',
-                        pendingStyle: cloneCellStyleEdit(state.pendingCellStyleEdits.get(key))
+                        pendingStyle: cloneCellStyleEdit(getPendingStyle(key) || null)
                     });
                 }
             }
@@ -1522,9 +1385,7 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
     }
 
     function applyHorizontalAlign(value: HorizontalAlign) {
-        if (requestStyledMode(() => applyHorizontalAlign(value))) {
-            return;
-        }
+        if (state.isDataOnly) {return;}
 
         const cells = getEditableCellsOrToast('Select cells to align');
         if (!cells.length) {return;}
@@ -1536,9 +1397,7 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
     }
 
     function applyVerticalAlign(value: VerticalAlign) {
-        if (requestStyledMode(() => applyVerticalAlign(value))) {
-            return;
-        }
+        if (state.isDataOnly) {return;}
 
         const cells = getEditableCellsOrToast('Select cells to align');
         if (!cells.length) {return;}
@@ -1550,9 +1409,7 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
     }
 
     function applyFontSize(value: number) {
-        if (requestStyledMode(() => applyFontSize(value))) {
-            return;
-        }
+        if (state.isDataOnly) {return;}
 
         const cells = getEditableCellsOrToast('Select cells to set font size');
         if (!cells.length) {return;}
@@ -1578,9 +1435,7 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
     }
 
     function applyFontFamily(value: string) {
-        if (requestStyledMode(() => applyFontFamily(value))) {
-            return;
-        }
+        if (state.isDataOnly) {return;}
 
         const cells = getEditableCellsOrToast('Select cells to set font family');
         if (!cells.length) {return;}
@@ -1592,9 +1447,7 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
     }
 
     function applyWrapModeToRange(minRow: number, maxRow: number, minCol: number, maxCol: number, wrapMode: WrapMode) {
-        if (requestStyledMode(() => applyWrapModeToRange(minRow, maxRow, minCol, maxCol, wrapMode))) {
-            return;
-        }
+        if (state.isDataOnly) {return;}
 
         const beforeStates: CellUndoState[] = [];
         const afterStates: CellUndoState[] = [];
@@ -1605,7 +1458,7 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
                 const colNum = c + 1;
                 const key = rowNum + ':' + colNum;
 
-                const pendingStyle = state.pendingCellStyleEdits.has(key) ? cloneCellStyleEdit(state.pendingCellStyleEdits.get(key)) : null;
+                const pendingStyle = cloneCellStyleEdit(getPendingStyle(key) || null);
                 const domCell = document.querySelector(`td[data-row="${r}"][data-col="${c}"]`) as HTMLElement | null;
 
                 beforeStates.push({
@@ -1623,14 +1476,14 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
                         row: r, col: c, key,
                         styleAttr: domCell.getAttribute('style') || '',
                         innerHtml: domCell.innerHTML,
-                        pendingStyle: cloneCellStyleEdit(state.pendingCellStyleEdits.get(key))
+                        pendingStyle: cloneCellStyleEdit(getPendingStyle(key) || null)
                     });
                 } else {
                     afterStates.push({
                         row: r, col: c, key,
                         styleAttr: '',
                         innerHtml: '',
-                        pendingStyle: cloneCellStyleEdit(state.pendingCellStyleEdits.get(key))
+                        pendingStyle: cloneCellStyleEdit(getPendingStyle(key) || null)
                     });
                 }
             }
@@ -1642,9 +1495,7 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
     }
 
     function applyIndent(delta: number) {
-        if (requestStyledMode(() => applyIndent(delta))) {
-            return;
-        }
+        if (state.isDataOnly) {return;}
 
         const cells = getEditableCellsOrToast('Select cells to indent');
         if (!cells.length) {return;}
@@ -1658,9 +1509,7 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
     }
 
     function applyStrikeThrough() {
-        if (requestStyledMode(() => applyStrikeThrough())) {
-            return;
-        }
+        if (state.isDataOnly) {return;}
 
         const selection = window.getSelection();
         const hasTextSelection = !!selection && selection.rangeCount > 0 && !selection.isCollapsed;
@@ -1695,9 +1544,7 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
     }
 
     function applyBorderPreset(mode: BorderMode) {
-        if (requestStyledMode(() => applyBorderPreset(mode))) {
-            return;
-        }
+        if (state.isDataOnly) {return;}
 
         state.selectedBorderMode = mode;
         const bounds = getLogicalSelectionBounds();
@@ -1724,7 +1571,7 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
                 const key = rowNum + ':' + colNum;
 
                 // Gather before state
-                const pendingStyle = state.pendingCellStyleEdits.has(key) ? cloneCellStyleEdit(state.pendingCellStyleEdits.get(key)) : null;
+                const pendingStyle = cloneCellStyleEdit(getPendingStyle(key) || null);
                 beforeStates.push({
                     row: r, col: c, key,
                     styleAttr: domCell ? (domCell.getAttribute('style') || '') : '',
@@ -1795,14 +1642,14 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
                         row: r, col: c, key,
                         styleAttr: domCell.getAttribute('style') || '',
                         innerHtml: domCell.innerHTML,
-                        pendingStyle: cloneCellStyleEdit(state.pendingCellStyleEdits.get(key))
+                        pendingStyle: cloneCellStyleEdit(getPendingStyle(key) || null)
                     });
                 } else {
                     afterStates.push({
                         row: r, col: c, key,
                         styleAttr: '',
                         innerHtml: '',
-                        pendingStyle: cloneCellStyleEdit(state.pendingCellStyleEdits.get(key))
+                        pendingStyle: cloneCellStyleEdit(getPendingStyle(key) || null)
                     });
                 }
             }
@@ -1814,9 +1661,7 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
     }
 
     function applyBorderColorToSelection(color: string) {
-        if (requestStyledMode(() => applyBorderColorToSelection(color))) {
-            return;
-        }
+        if (state.isDataOnly) {return;}
 
         state.selectedBorderColor = color;
 
@@ -1836,7 +1681,7 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
                 const rowNum = r + 1;
                 const colNum = c + 1;
                 const key = rowNum + ':' + colNum;
-                const pendingStyle = state.pendingCellStyleEdits.has(key) ? cloneCellStyleEdit(state.pendingCellStyleEdits.get(key)) : null;
+                const pendingStyle = cloneCellStyleEdit(getPendingStyle(key) || null);
                 const existingBorder = (pendingStyle?.border || (domCell ? copyFormattingFromCell(domCell).border : null)) as BorderStyleEdit | null;
 
                 const hasSides = !!existingBorder && !existingBorder.clear && (!!existingBorder.top || !!existingBorder.right || !!existingBorder.bottom || !!existingBorder.left);
@@ -1880,7 +1725,7 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
                     key,
                     styleAttr: domCell ? (domCell.getAttribute('style') || '') : '',
                     innerHtml: domCell ? domCell.innerHTML : '',
-                    pendingStyle: cloneCellStyleEdit(state.pendingCellStyleEdits.get(key))
+                    pendingStyle: cloneCellStyleEdit(getPendingStyle(key) || null)
                 });
             }
         }
@@ -1896,9 +1741,7 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
     }
 
     function clearFormattingOnSelection() {
-        if (requestStyledMode(() => clearFormattingOnSelection())) {
-            return;
-        }
+        if (state.isDataOnly) {return;}
 
         applyFormatToLogicalSelection({
             clearFormatting: true,
@@ -1994,7 +1837,7 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
     }
 
     function applyClearedValueToDomCell(cell: HTMLElement, cellType: string, value: string) {
-        if (state.isPlainView) {
+        if (state.isDataOnly) {
             setPlainCellContent(cell, value);
         } else if (cellType === 'checkbox') {
             updateCheckboxCellPresentation(cell, false);
@@ -2046,6 +1889,7 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
                     if (before) {beforeStates.push(before);}
                 }
 
+                recordCellValue(rowNumber, colNumber, clearedValue);
                 const rowData = state.rowCache.get(r);
                 if (rowData) {
                     let cellData = getCellFromRow(rowData, colNumber);
@@ -2055,8 +1899,6 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
                     applyClearedValueToCellData(cellData, cellType, clearedValue);
                 }
 
-                syncLocalSnapshotValue(rowNumber, colNumber, clearedValue);
-                upsertPendingOutsideControlEdit(rowNumber, colNumber, clearedValue);
                 hasChanges = true;
 
                 if (domCell) {
@@ -2073,17 +1915,7 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
 
         if (!hasChanges) {return;}
 
-        if (state.isEditMode) {
-            scheduleAutoSave('text');
-            return;
-        }
-
-        if (state.currentSettings.autoSave) {
-            saveEdits(false, true);
-            return;
-        }
-
-        showManualSaveReminderIfNeeded();
+        recordChange('text');
     }
 
     async function queueMergeOperation(type: 'mergeRange' | 'unmergeRange') {
@@ -2211,14 +2043,14 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
             void updateVisibleRows();
         });
 
-        state.pendingWorksheetOps.push({
+        ledger.recordOp(state.currentWorksheet, {
             type,
             startRow,
             startCol,
             endRow,
             endCol
         });
-        scheduleAutoSave('structure');
+        recordChange('structure');
 
         const afterSnapshot = captureWorksheetStateSnapshot();
         pushSheetUndoEntry(beforeSnapshot, afterSnapshot);
@@ -2511,8 +2343,8 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
                 const startCell = startEl ? startEl.closest('td[contenteditable="true"]') : null;
                 const endCell = endEl ? endEl.closest('td[contenteditable="true"]') : null;
 
-                // In edit mode, text color formatting should not span across multiple cells.
-                if (!state.isEditMode || (startCell && endCell && startCell === endCell)) {
+                // Text color on a live text selection must stay inside one cell.
+                if (startCell && endCell && startCell === endCell) {
                     applyEditFormatting('foreColor', color);
                     return;
                 }
@@ -2633,50 +2465,13 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
     }
 
     function wireEditFormattingControls() {
-        const buttonIds = [
-            'formatBoldButton',
-            'formatItalicButton',
-            'formatTextColorButton',
-            'formatBackgroundColorButton'
-        ];
-
-        buttonIds.forEach(id => {
-            const button = document.getElementById(id);
-            if (!button) {return;}
-            button.addEventListener('mousedown', (e) => {
-                // Keep text selection in the editable cell while clicking toolbar controls.
-                e.preventDefault();
-                captureEditSelectionRange();
-            });
-        });
-
-        const textColorButton = document.getElementById('formatTextColorButton') as HTMLButtonElement | null;
-        if (textColorButton) {
-            textColorButton.classList.add('color-format-button');
-            updateColorPreview('text', state.selectedTextColor);
-            textColorButton.addEventListener('click', () => {
-                captureEditSelectionRange();
-                showColorPalette(textColorButton, 'text');
-            });
-        }
-
-        const bgColorButton = document.getElementById('formatBackgroundColorButton') as HTMLButtonElement | null;
-        if (bgColorButton) {
-            bgColorButton.classList.add('color-format-button');
-            updateColorPreview('background', state.selectedBgColor);
-            bgColorButton.addEventListener('click', () => {
-                captureEditSelectionRange();
-                showColorPalette(bgColorButton, 'background');
-            });
-        }
-
         document.addEventListener('selectionchange', () => {
             captureEditSelectionRange();
         });
 
         document.addEventListener('click', (e) => {
             const target = e.target as HTMLElement;
-            if (!target.closest('#sheetsColorPalette') && !target.closest('#formatTextColorButton') && !target.closest('#formatBackgroundColorButton') && !target.closest('#stripTextColorButton') && !target.closest('#stripBgColorButton') && !target.closest('#stripBorderColorButton')) {
+            if (!target.closest('#sheetsColorPalette') && !target.closest('#stripTextColorButton') && !target.closest('#stripBgColorButton') && !target.closest('#stripBorderColorButton')) {
                 hideColorPalette();
             }
             if (!target.closest('#xlsxBorderPopup') && !target.closest('#stripBordersButton')) {
@@ -2694,8 +2489,8 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
         if (!toolbar) {return;}
 
         const strip = document.createElement('div');
-        strip.id = 'xlsxEditFormattingStrip';
-        strip.className = 'xlsx-edit-strip hidden';
+        strip.id = 'formattingToolbar';
+        strip.className = 'formatting-toolbar xlsx-edit-strip hidden';
         strip.innerHTML = `
             <div class="edit-strip-group">
                 <select id="editFontFamily" class="edit-strip-select" title="Font family">
@@ -2759,12 +2554,16 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
                 <button id="formatPainterButton" type="button" class="toggle-button" title="Copy style from active cell, then click a target cell">Painter</button>
                 <button id="clearFormatButton" type="button" class="toggle-button" title="Clear formatting">Clear</button>
             </div>
+            <div class="edit-strip-group">
+                <button id="insertControlButton" type="button" class="toggle-button" title="Insert checkbox, dropdown, rating, or date into selected cells">Insert</button>
+            </div>
         `;
 
-        // At the end of the left button group, before the right-end group (Find, History, Convert,
-        // Help, Settings), so the strip scrolls with the edit buttons instead of pushing them aside.
-        const startGroup = toolbar.querySelector(':scope > .toolbar-group-start');
-        (startGroup ?? toolbar).appendChild(strip);
+        // Row 2, right under the main toolbar, in the same wrapper so both move together (sticky or not).
+        const wrapper = toolbar.closest('.toolbar-wrapper') ?? toolbar.parentElement;
+        (wrapper ?? document.body).appendChild(strip);
+        state.toolbarManager?.setStickyCompanion(strip);
+        state.toolbarManager?.setHoverRevealCompanion(strip);
         state.editFormattingStripEl = strip;
 
         const onKeepTextSelection = (event: Event) => {
@@ -2772,6 +2571,7 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
             captureEditSelectionRange();
         };
 
+        const byId = <T extends HTMLElement>(id: string) => strip.querySelector(`#${id}`) as T | null;
         strip.querySelectorAll('button').forEach(el => {
             el.addEventListener('mousedown', onKeepTextSelection);
         });
@@ -2786,7 +2586,10 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
             (el as HTMLElement).classList.add('tooltip');
         });
 
-        const byId = <T extends HTMLElement>(id: string) => strip.querySelector(`#${id}`) as T | null;
+        byId('insertControlButton')?.addEventListener('click', () => {
+            showInsertControlPopup(byId('insertControlButton') as HTMLElement);
+        });
+
 
         byId<HTMLSelectElement>('editFontFamily')?.addEventListener('change', (e) => {
             const value = (e.target as HTMLSelectElement).value;
@@ -2869,52 +2672,6 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
         byId<HTMLButtonElement>('clearFormatButton')?.addEventListener('click', () => clearFormattingOnSelection());
 
         wireDelayedToolbarTooltips(strip);
-    }
-
-    function reorderToolbarAroundFind(isEditModeEnabled: boolean) {
-        const toolbar = document.getElementById('toolbar');
-        if (!toolbar) {return;}
-
-        const findButton = document.getElementById('findButton');
-        const settingsButton = document.getElementById('openSettingsButton');
-        const insertButton = document.getElementById('insertControlButton');
-        const plainButton = document.getElementById('togglePlainViewButton');
-        const strip = document.getElementById('xlsxEditFormattingStrip');
-
-        const findWrapper = findButton ? findButton.closest('.tooltip') as HTMLElement | null : null;
-        const settingsWrapper = settingsButton ? settingsButton.closest('.tooltip') as HTMLElement | null : null;
-        const insertWrapper = insertButton ? insertButton.closest('.tooltip') as HTMLElement | null : null;
-        const plainWrapper = plainButton ? plainButton.closest('.tooltip') as HTMLElement | null : null;
-
-        if (!findWrapper || !settingsWrapper || findWrapper.parentElement !== toolbar || settingsWrapper.parentElement !== toolbar) {
-            return;
-        }
-
-        if (isEditModeEnabled) {
-            if (findWrapper.nextElementSibling !== settingsWrapper) {
-                findWrapper.insertAdjacentElement('afterend', settingsWrapper);
-            }
-
-            if (insertWrapper && insertWrapper.parentElement === toolbar && settingsWrapper.nextElementSibling !== insertWrapper) {
-                settingsWrapper.insertAdjacentElement('afterend', insertWrapper);
-            }
-
-            if (strip && strip.parentElement === toolbar) {
-                const anchor = insertWrapper && insertWrapper.parentElement === toolbar ? insertWrapper : settingsWrapper;
-                if (anchor.nextElementSibling !== strip) {
-                    anchor.insertAdjacentElement('afterend', strip);
-                }
-            }
-            return;
-        }
-
-        if (plainWrapper && plainWrapper.parentElement === toolbar && plainWrapper.nextElementSibling !== settingsWrapper) {
-            plainWrapper.insertAdjacentElement('afterend', settingsWrapper);
-        }
-
-        if (insertWrapper && insertWrapper.parentElement === toolbar && settingsWrapper.nextElementSibling !== insertWrapper) {
-            settingsWrapper.insertAdjacentElement('afterend', insertWrapper);
-        }
     }
 
     function getTableContainer(): HTMLElement | null {
@@ -3034,8 +2791,8 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
             rowHeight: height,
             columnCount: state.columnCount,
             columnWidths: state.columnWidths,
-            isPlainView: state.isPlainView,
-            isEditMode: state.isEditMode,
+            dataOnly: state.isDataOnly,
+            editable: !state.isVersionPreviewMode && !state.isDataOnly,
             allowInteractiveControls: areInteractiveControlsEnabled()
         });
     }
@@ -3125,12 +2882,14 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
     }
 
     const syncColumnWidthsToCurrentMode = debounce(() => {
-        if (state.isEditMode) {return;}
         adjustColumnWidths(document.body.classList.contains('expanded-mode') ? 'expand' : 'default');
     }, 100);
 
     function renderVirtualRows(startIndex: number, endIndex: number, rowsData: any[], cacheRows = true) {
         if (state.isRendering) {return;}
+        // Rendering replaces the rows, including a cell that is being typed in: commit it first so the
+        // typing is recorded and not lost.
+        if (state.isCellEditing) {exitCellEditMode();}
         state.isRendering = true;
 
         const tbody = document.querySelector('#xlsxTable tbody');
@@ -3180,9 +2939,6 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
         reapplySelection();
         applyFindHighlightsInVisibleCells();
         syncColumnWidthsToCurrentMode();
-        if (state.isEditMode) {
-            captureOriginalCellValues();
-        }
         state.isRendering = false;
     }
 
@@ -3405,8 +3161,15 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
             const restoreBtn = document.getElementById('restoreVersionButton') as HTMLButtonElement | null;
             const cancelBtn = document.getElementById('cancelVersionPreviewButton') as HTMLButtonElement | null;
             restoreBtn?.addEventListener('click', () => {
-                if (!state.previewVersionId) {return;}
-                post({ command: 'restoreVersion', versionId: state.previewVersionId });
+                const versionId = state.previewVersionId;
+                if (!versionId) {return;}
+                void (async () => {
+                    if (isDirty()) {
+                        const outcome = await confirmModal('Restore Version', 'Discard unsaved changes and restore this version?', 'Discard & Restore');
+                        if (outcome !== 'confirm') {return;}
+                    }
+                    post({ command: 'restoreVersion', versionId });
+                })();
             });
             cancelBtn?.addEventListener('click', () => {
                 post({ command: 'cancelVersionPreview' });
@@ -3415,9 +3178,22 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
         return banner;
     }
 
+    /**
+     * The grid is always editable; only version preview (and, for formatting, CSV/TSV) turn parts of it off.
+     * `edit-mode` on the body is what the stylesheet keys the editable look on.
+     */
+    function syncEditableSurface() {
+        const formatting = !state.isDataOnly && !state.isVersionPreviewMode;
+        document.body.classList.toggle('edit-mode', formatting);
+        state.editFormattingStripEl?.classList.toggle('hidden', !formatting);
+        state.toolbarManager?.updateHeaderHeight();
+        updateToolbarState();
+    }
+
     function setVersionPreviewMode(isPreview: boolean, label?: string) {
         state.isVersionPreviewMode = isPreview;
         document.body.classList.toggle('preview-mode', isPreview);
+        syncEditableSurface();
         applyInteractiveControlState();
         if (isPreview) {
             hideImagePreview();
@@ -3438,6 +3214,7 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
 
     function renderWorksheet(index: number) {
         if (!state.worksheetsMeta || !state.worksheetsMeta.length) {return;}
+        if (state.isCellEditing) {exitCellEditMode();}
 
         showLoading();
 
@@ -3457,6 +3234,13 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
         state.columnWidths = wsMeta.columnWidths || [];
         state.mergedCells = wsMeta.mergedCells || [];
         state.allRowHeights = [...state.baseRowHeights];
+
+        // A sheet with unsaved structure edits comes back as the user left it: the host does not have those edits yet.
+        const stash = state.sheetStash.get(index);
+        if (stash) {
+            state.sheetStash.delete(index);
+            applyWorksheetSnapshotState(stash);
+        }
 
         if (state.sourceRowsSnapshot) {
             rebuildFilteredRows();
@@ -3530,7 +3314,6 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
             }
 
             if (target && target.classList && target.classList.contains('row-resize-handle')) {
-                if (state.isEditMode) {return;}
                 e.preventDefault();
                 e.stopPropagation();
 
@@ -3633,7 +3416,6 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
                 e.preventDefault();
                 autoFitColumn(parseInt(target.dataset.col!, 10));
             } else if (target && target.classList && target.classList.contains('row-resize-handle')) {
-                if (state.isEditMode) {return;}
                 e.preventDefault();
                 autoFitRow(parseInt(target.dataset.row!, 10));
             } else if (!state.isVersionPreviewMode) {
@@ -3811,6 +3593,10 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
     }
 
     function pasteTextAtSelection(text: string) {
+        if (state.isVersionPreviewMode) {
+            showToast('Version preview is read-only');
+            return;
+        }
         const bounds = getLogicalSelectionBounds();
         if (!bounds) {
             showToast('Select a cell to paste');
@@ -3827,9 +3613,9 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
             return;
         }
 
-        const beforeSnapshot = captureWorksheetStateSnapshot();
         let anyChanged = false;
-        const editsList: Array<{ row: number; col: number; value: string }> = [];
+        const beforeValues: Array<{ row: number; col: number; value: string }> = [];
+        const afterValues: Array<{ row: number; col: number; value: string }> = [];
 
         for (let r = 0; r < grid.length; r++) {
             const rowIndex = startRow + r;
@@ -3857,18 +3643,16 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
                 }
 
                 if (cellData.value !== parsedValue) {
-                    cellData.value = parsedValue;
-                    syncLocalSnapshotValue(rowNumber, colNumber, parsedValue);
-                    upsertPendingOutsideControlEdit(rowNumber, colNumber, parsedValue);
-                    editsList.push({ row: rowNumber, col: colNumber, value: parsedValue });
+                    beforeValues.push({ row: rowNumber, col: colNumber, value: String(cellData.value ?? '') });
+                    afterValues.push({ row: rowNumber, col: colNumber, value: parsedValue });
+                    recordCellValue(rowNumber, colNumber, parsedValue);
                     anyChanged = true;
                 }
             }
         }
 
         if (anyChanged) {
-            const afterSnapshot = captureWorksheetStateSnapshot();
-            pushSheetUndoEntry(beforeSnapshot, afterSnapshot);
+            pushValuesUndoEntry(beforeValues, afterValues);
 
             // Trigger a complete table redraw
             rerenderCurrentSheetFromLocalState();
@@ -3878,25 +3662,7 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
             const endCol = Math.min(state.columnCount - 1, startCol + grid[0].length - 1);
             selectRange(startRow, startCol, endRow, endCol);
 
-            // Save or schedule auto-save according to settings
-            if (state.isEditMode) {
-                scheduleAutoSave('text');
-            } else {
-                if (state.currentSettings.autoSave) {
-                    editsList.forEach(e => removePendingOutsideControlEdit(e.row, e.col));
-                    post({
-                        command: 'saveXlsxEdits',
-                        sheetIndex: state.currentWorksheet,
-                        edits: editsList,
-                        richEdits: [],
-                        styleEdits: [],
-                        operations: [],
-                        isAutosave: true
-                    });
-                } else {
-                    showManualSaveReminderIfNeeded();
-                }
-            }
+            recordChange('text');
         }
     }
 
@@ -3983,7 +3749,10 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
         });
 
         table.addEventListener('selectstart', (e) => {
-            if (state.isEditMode) {return;}
+            // Text can be selected only inside the cell being typed in; cells are selected by the grid.
+            const targetNode = e.target as Node | null;
+            const targetEl = (targetNode && targetNode.nodeType === Node.ELEMENT_NODE ? targetNode : targetNode?.parentElement) as HTMLElement | null;
+            if (state.isCellEditing && targetEl && targetEl.closest('td[contenteditable="true"]')) {return;}
             e.preventDefault();
             return false;
         });
@@ -4009,7 +3778,7 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
                 cellTarget.classList.contains('row-header') ||
                 cellTarget.classList.contains('corner-cell');
 
-            if (!state.isEditMode && cellTarget.tagName === 'TD' && !isHeaderInteraction) {
+            if (cellTarget.tagName === 'TD' && !isHeaderInteraction) {
                 const cellType = getCellType(cellTarget);
                 const controlTarget = target.closest('.xlsx-cell-checkbox, .xlsx-cell-dropdown, .xlsx-dropdown-edit-button, .xlsx-rating-star, .xlsx-cell-date') as HTMLElement | null;
                 const canEditControls = areInteractiveControlsEnabled();
@@ -4269,18 +4038,6 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
             startAutoScroll();
         });
 
-        table.addEventListener('input', (e) => {
-            if (!state.isEditMode) {return;}
-
-            const target = e.target as HTMLElement | null;
-            if (!target) {return;}
-
-            const editableCell = target.closest('td[contenteditable="true"]') as HTMLElement | null;
-            if (!editableCell) {return;}
-
-            scheduleAutoSave('text');
-        });
-
         table.addEventListener('focusin', (e) => {
             const target = e.target as HTMLElement | null;
             if (!target) {return;}
@@ -4313,11 +4070,7 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
                 updateCheckboxCellPresentation(cell, !!checkbox.checked);
                 const after = captureCellUndoState(cell);
                 pushSingleCellUndo(before, after);
-                if (state.isEditMode) {
-                    scheduleAutoSave('control');
-                } else {
-                    persistInteractiveControlEdit(cell);
-                }
+                commitControlEdit(cell);
                 return;
             }
 
@@ -4330,11 +4083,7 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
                 updateDropdownCellPresentation(cell, dropdown.value);
                 const after = captureCellUndoState(cell);
                 pushSingleCellUndo(before, after);
-                if (state.isEditMode) {
-                    scheduleAutoSave('control');
-                } else {
-                    persistInteractiveControlEdit(cell);
-                }
+                commitControlEdit(cell);
                 return;
             }
 
@@ -4347,11 +4096,7 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
                 updateDateCellPresentation(cell, dateInput.value);
                 const after = captureCellUndoState(cell);
                 pushSingleCellUndo(before, after);
-                if (state.isEditMode) {
-                    scheduleAutoSave('control');
-                } else {
-                    persistInteractiveControlEdit(cell);
-                }
+                commitControlEdit(cell);
             }
         });
 
@@ -4384,11 +4129,7 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
                 const after = captureCellUndoState(cell);
                 pushSingleCellUndo(before, after);
 
-                if (state.isEditMode) {
-                    scheduleAutoSave('control');
-                } else {
-                    persistInteractiveControlEdit(cell);
-                }
+                commitControlEdit(cell);
 
                 e.preventDefault();
                 e.stopPropagation();
@@ -4614,22 +4355,14 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
                 const active = document.activeElement as HTMLElement | null;
                 const isEditingCell = !!active && active.tagName === 'TD' && active.getAttribute('contenteditable') === 'true';
 
-                if (isEditingCell && state.isEditMode) {
+                // Inside a cell that is being typed in, undo and redo belong to its text.
+                if (!isEditingCell) {
                     e.preventDefault();
-                    exitCellEditMode();
-                }
-
-                const handled = isRedoShortcut ? redoEditAction() : undoEditAction();
-                if (handled) {
-                    e.preventDefault();
-                    if (state.isEditMode) {
-                        scheduleAutoSave('text');
+                    if (isRedoShortcut) {
+                        redoEditAction();
+                    } else {
+                        undoEditAction();
                     }
-                    return;
-                }
-
-                if (state.isEditMode) {
-                    e.preventDefault();
                     return;
                 }
             }
@@ -4671,15 +4404,19 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
                     return;
                 }
             } else {
+                // Inside a cell being edited, Home and End move the caret (the browser would scroll the grid instead,
+                // which removes the cell and loses what was typed).
+                if (e.key === 'Home' || e.key === 'End') {
+                    e.preventDefault();
+                    window.getSelection()?.modify(e.shiftKey ? 'extend' : 'move', e.key === 'End' ? 'forward' : 'backward', (e.ctrlKey || e.metaKey) ? 'documentboundary' : 'lineboundary');
+                    return;
+                }
                 if (e.key === 'Enter') {
                     e.preventDefault();
                     if (e.shiftKey) {
                         const editableCell = document.activeElement as HTMLElement | null;
                         if (editableCell && editableCell.tagName === 'TD') {
                             insertLineBreakAtCaret(editableCell);
-                            if (state.isEditMode) {
-                                scheduleAutoSave('text');
-                            }
                         }
                         return;
                     }
@@ -4697,6 +4434,7 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
                     e.preventDefault();
                     const active = document.activeElement as HTMLElement;
                     if (active && active.tagName === 'TD') {
+                        // Escape cancels only what was typed in this cell; every other unsaved edit stays.
                         active.innerHTML = active.dataset.originalHtml || '';
                     }
                     exitCellEditMode();
@@ -4705,34 +4443,25 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
                 }
             }
 
-            const canClearValues = state.isEditMode || isPlainDirectEditMode();
-            if ((e.key === 'Delete' || e.key === 'Backspace') && canClearValues && !state.isCellEditing) {
+            if ((e.key === 'Delete' || e.key === 'Backspace') && !state.isVersionPreviewMode && !state.isCellEditing) {
                 e.preventDefault();
                 clearSelectionContents();
                 return;
             }
 
-            if (state.isEditMode) {
-                if (isCmdOrCtrl && e.key.toLowerCase() === 'b') {
-                    e.preventDefault();
-                    applyEditFormatting('bold');
-                    return;
+            if (isCmdOrCtrl && ['b', 'i', 'u'].includes(e.key.toLowerCase())) {
+                // Formatting shortcuts: XLSX only. CSV/TSV hold data, so the browser's own rich-text shortcut must not run either.
+                e.preventDefault();
+                if (!state.isDataOnly && !state.isVersionPreviewMode) {
+                    if (e.key.toLowerCase() === 'b') {applyEditFormatting('bold');}
+                    else if (e.key.toLowerCase() === 'i') {applyEditFormatting('italic');}
+                    else {applyStrikeThrough();}
                 }
-
-                if (isCmdOrCtrl && e.key.toLowerCase() === 'i') {
-                    e.preventDefault();
-                    applyEditFormatting('italic');
-                    return;
-                }
-
-                if (isCmdOrCtrl && e.key.toLowerCase() === 'u') {
-                    e.preventDefault();
-                    applyStrikeThrough();
-                    return;
-                }
-
                 return;
             }
+
+            // While a cell's text is being edited, copy and select-all belong to that text.
+            if (state.isCellEditing) {return;}
 
             if (isCmdOrCtrl && e.key.toLowerCase() === 'c') {
                 e.preventDefault();
@@ -4785,11 +4514,50 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
                 exitCellEditMode();
             }
 
-            if (state.isEditMode) {return;}
-            if (!target.closest('table') && !target.closest('.toolbar')) {
+            // Clicking the empty area around the grid clears the selection; toolbars, menus and popups keep it.
+            if (target.closest('#content') && !target.closest('table')) {
                 clearSelection();
             }
         });
+    }
+
+    /** Throws away every unsaved edit and the undo history: used when the file is reloaded from disk. */
+    function discardUnsavedEdits() {
+        exitCellEditMode();
+        clearAutoSaveTimer();
+        ledger.clearAll();
+        state.sheetStash.clear();
+        state.saveQueued = null;
+        resetUndoHistory();
+        updateToolbarState();
+    }
+
+    /** Reload from Disk: asks first when there are unsaved edits. */
+    async function reloadFromDisk() {
+        if (state.isSaving) {return;}
+        if (isDirty() || state.isCellEditing) {
+            const outcome = await confirmModal('Reload from Disk', 'Discard unsaved changes and reload from disk?', 'Discard & Reload');
+            if (outcome !== 'confirm') {return;}
+        }
+        discardUnsavedEdits();
+        post({ command: 'requestFreshData' });
+    }
+
+    /** Switches sheet. Unsaved edits stay with their sheet (the ledger is per sheet), as does its undo history. */
+    function switchWorksheet(next: number) {
+        const previous = state.currentWorksheet;
+        if (next === previous || !Number.isFinite(next)) {return;}
+        exitCellEditMode();
+        // A sheet with unsaved structure edits keeps its local rows, which the host does not have yet.
+        if (ledger.hasOps(previous)) {
+            state.sheetStash.set(previous, captureWorksheetStateSnapshot());
+        }
+        switchUndoSheet(previous, next);
+        state.currentWorksheet = next;
+        clearDataTransforms();
+        clearSelection();
+        renderWorksheet(next);
+        updateToolbarState();
     }
 
     function setSettingItemHidden(id: string, hidden: boolean) {
@@ -4799,61 +4567,26 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
         settingItem.style.display = hidden ? 'none' : '';
     }
 
-    function resetStyledOnlySettingsVisibility() {
-        const styledOnlySettingIds = [
-            'chkAllowInteractiveControlsOutsideEditMode',
-            'chkHyperlinkPreview',
-            'chkMergeWarningEnabled',
-            'radioAutoSaveAll',
-            'radioAutoSaveControlsOnly',
-            'chkShowManualSavePopup'
-        ];
+    // Settings rows that only mean something for XLSX (CSV/TSV hold data only).
+    const XLSX_ONLY_SETTING_IDS = ['chkHyperlinkPreview', 'chkMergeWarningEnabled'];
 
-        styledOnlySettingIds.forEach((id) => setSettingItemHidden(id, false));
+    function syncSettingsVisibilityForFileType() {
+        XLSX_ONLY_SETTING_IDS.forEach((id) => setSettingItemHidden(id, state.isDataOnly));
     }
 
-    function hideStyledOnlySettingsForPlainMode() {
-        const styledOnlySettingIds = [
-            'chkAllowInteractiveControlsOutsideEditMode',
-            'chkHyperlinkPreview',
-            'chkMergeWarningEnabled',
-            'radioAutoSaveAll',
-            'radioAutoSaveControlsOnly',
-            'chkShowManualSavePopup'
-        ];
-
-        styledOnlySettingIds.forEach((id) => setSettingItemHidden(id, true));
-    }
-
-    function applySettings(settings: any, scopeOverride?: SettingsScope) {
-        const scope = scopeOverride || getCurrentSettingsScope();
+    function applySettings(settings: any) {
         const previousSpacious = !!state.currentSettings.spaciousCells;
-        const previousSettings = getStoredSettingsForScope(scope);
-        state.currentSettings = normalizeSettingsForScope(scope, settings, previousSettings);
-        setStoredSettingsForScope(scope, state.currentSettings);
+        state.currentSettings = normalizeXlsxSettings(settings, state.currentSettings);
 
         if (!state.currentSettings.autoSave) {
             clearAutoSaveTimer();
-            if (!state.isEditMode && state.pendingOutsideControlEdits.length > 0) {
-                showManualSaveReminderIfNeeded();
-            }
-        } else {
-            if (state.isEditMode && hasPendingXlsxEdits()) {
-                scheduleAutoSave('text');
-            } else if (!state.isEditMode && state.pendingOutsideControlEdits.length > 0) {
-                saveEdits(false, true);
-            }
+        } else if (isDirty()) {
+            // Autosave was just turned on with unsaved edits waiting: save them shortly.
+            recordChange('text');
         }
 
-        if (state.currentSettings.autoSave) {
-            state.manualSaveReminderUntil = 0;
-        }
-
-        resetStyledOnlySettingsVisibility();
         syncSettingsCheckboxes(state.currentSettings);
-        if (scope === 'plain') {
-            hideStyledOnlySettingsForPlainMode();
-        }
+        syncSettingsVisibilityForFileType();
 
         document.body.classList.toggle('sticky-header-enabled', !!state.currentSettings.stickyHeader);
         document.body.classList.toggle('first-row-as-header', !!state.currentSettings.firstRowIsHeader);
@@ -4862,7 +4595,6 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
 
         applyToolbarLayout(state.toolbarManager, {
             stickyToolbar: !!state.currentSettings.stickyToolbar,
-            forceSticky: state.isEditMode,
             scrollTarget: '#content',
             onLayoutApplied: initializeVirtualScrolling
         });
@@ -4882,9 +4614,18 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
     function postSettings() {
         post({
             command: 'updateSettings',
-            settingsScope: getCurrentSettingsScope(),
             settings: state.currentSettings
         });
+    }
+
+    /** A checkbox, dropdown, rating or date cell changed: record its value and save as set up. */
+    function commitControlEdit(cell: HTMLElement) {
+        if (state.isVersionPreviewMode) {return;}
+        const rowNum = parseInt(cell.getAttribute('data-rownum') || '0', 10);
+        const colNum = parseInt(cell.getAttribute('data-colnum') || '0', 10);
+        if (!rowNum || !colNum) {return;}
+        recordCellValue(rowNum, colNum, getCellNormalizedValue(cell).replace(/\u00a0/g, ''));
+        recordChange('control');
     }
 
     function enterCellEditMode(cell: HTMLElement, clearContent = false) {
@@ -4899,11 +4640,7 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
                 updateCheckboxCellPresentation(cell, next);
                 const after = captureCellUndoState(cell);
                 pushSingleCellUndo(before, after);
-                if (state.isEditMode) {
-                    scheduleAutoSave('control');
-                } else {
-                    persistInteractiveControlEdit(cell);
-                }
+                commitControlEdit(cell);
             }
             return;
         }
@@ -4923,11 +4660,7 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
             updateRatingCellPresentation(cell, next);
             const after = captureCellUndoState(cell);
             pushSingleCellUndo(before, after);
-            if (state.isEditMode) {
-                scheduleAutoSave('control');
-            } else {
-                persistInteractiveControlEdit(cell);
-            }
+            commitControlEdit(cell);
             return;
         }
 
@@ -4998,23 +4731,20 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
             td.removeAttribute('contenteditable');
         });
 
-        if (changed) {
+        if (changed && editableCell && !state.isVersionPreviewMode) {
             pushSingleCellUndo(state.activeTextEditBeforeState, afterState);
-            if (state.isEditMode) {
-                if (editableCell) {
-                    const rowNum = parseInt(editableCell.getAttribute('data-rownum') || '0', 10);
-                    const colNum = parseInt(editableCell.getAttribute('data-colnum') || '0', 10);
-                    if (rowNum && colNum) {
-                        const cellData = getOrCreateRowCellData(rowNum - 1, colNum - 1);
-                        if (cellData) {
-                            const current = getCellNormalizedValue(editableCell).replace(/\u00a0/g, '');
-                            cellData.value = current;
-                        }
+            const rowNum = parseInt(editableCell.getAttribute('data-rownum') || '0', 10);
+            const colNum = parseInt(editableCell.getAttribute('data-colnum') || '0', 10);
+            if (rowNum && colNum) {
+                recordCellValue(rowNum, colNum, getCellNormalizedValue(editableCell).replace(/\u00a0/g, ''));
+                // Bold, italic or colour typed inside the cell travels as rich-text runs.
+                if (!state.isDataOnly && getCellType(editableCell) === 'text') {
+                    const runs = getCellRichRuns(editableCell);
+                    if (hasRunFormatting(runs)) {
+                        ledger.recordRich(state.currentWorksheet, rowNum, colNum, runs);
                     }
                 }
-                scheduleAutoSave('text');
-            } else if (editableCell && !state.isVersionPreviewMode) {
-                persistPlainTextEdit(editableCell);
+                recordChange('text');
             }
         }
 
@@ -5088,151 +4818,6 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
         }
     }
 
-    function setEditMode(enabled: boolean, preserveSelection: boolean = false) {
-        if (enabled && state.isVersionPreviewMode) {
-            showToast('Version preview is read-only');
-            return;
-        }
-
-        state.isEditMode = !!enabled;
-        document.body.classList.toggle('edit-mode', state.isEditMode);
-        hideImagePreview();
-
-        const toolbarEl = document.getElementById('toolbar') as HTMLElement | null;
-        if (toolbarEl) {
-            toolbarEl.classList.remove('hidden');
-            toolbarEl.style.removeProperty('display');
-        }
-
-        ensureHeaderVisible();
-
-        if (state.isEditMode) {
-            const globalTip = document.querySelector('.global-tooltip') as HTMLElement | null;
-            if (globalTip) {
-                globalTip.style.opacity = '0';
-                globalTip.style.visibility = 'hidden';
-            }
-        }
-
-        applyToolbarLayout(state.toolbarManager, {
-            stickyToolbar: !!state.currentSettings.stickyToolbar,
-            forceSticky: state.isEditMode,
-            scrollTarget: '#content',
-            onLayoutApplied: initializeVirtualScrolling
-        });
-
-        const toggleExpandButton = document.getElementById('toggleExpandButton');
-        const togglePlainViewButton = document.getElementById('togglePlainViewButton');
-        const versionHistoryButton = document.getElementById('versionHistoryButton');
-        const openSettingsButton = document.getElementById('openSettingsButton');
-        const helpButton = document.getElementById('helpButton');
-        const convertFileButton = document.getElementById('convertFileButton');
-        const refreshButton = document.getElementById('refreshButton');
-
-        const toggleTableEditButton = document.getElementById('toggleTableEditButton');
-        const saveTableEditsButton = document.getElementById('saveTableEditsButton');
-        const cancelTableEditsButton = document.getElementById('cancelTableEditsButton');
-        const insertControlButton = document.getElementById('insertControlButton');
-        const formatBoldButton = document.getElementById('formatBoldButton');
-        const formatItalicButton = document.getElementById('formatItalicButton');
-        const formatTextColorButton = document.getElementById('formatTextColorButton');
-        const formatBackgroundColorButton = document.getElementById('formatBackgroundColorButton');
-
-        if (state.toolbarManager) {
-            state.toolbarManager.setButtonVisibility('toggleTableEditButton', !state.isEditMode && !isPlainDirectEditMode());
-            state.toolbarManager.setButtonVisibility('saveTableEditsButton', state.isEditMode);
-            state.toolbarManager.setButtonVisibility('cancelTableEditsButton', state.isEditMode);
-            state.toolbarManager.setButtonVisibility('insertControlButton', state.isEditMode);
-            state.toolbarManager.setButtonVisibility('formatBoldButton', false);
-            state.toolbarManager.setButtonVisibility('formatItalicButton', false);
-            state.toolbarManager.setButtonVisibility('formatTextColorButton', false);
-            state.toolbarManager.setButtonVisibility('formatBackgroundColorButton', false);
-            state.toolbarManager.setButtonVisibility('refreshButton', !state.isEditMode);
-        } else {
-            if (toggleTableEditButton) {toggleTableEditButton.classList.toggle('hidden', state.isEditMode || isPlainDirectEditMode());}
-            if (saveTableEditsButton) {saveTableEditsButton.classList.toggle('hidden', !state.isEditMode);}
-            if (cancelTableEditsButton) {cancelTableEditsButton.classList.toggle('hidden', !state.isEditMode);}
-            if (insertControlButton) {insertControlButton.classList.toggle('hidden', !state.isEditMode);}
-            if (formatBoldButton) {formatBoldButton.classList.add('hidden');}
-            if (formatItalicButton) {formatItalicButton.classList.add('hidden');}
-            if (formatTextColorButton) {formatTextColorButton.classList.add('hidden');}
-            if (formatBackgroundColorButton) {formatBackgroundColorButton.classList.add('hidden');}
-        }
-
-        if (state.editFormattingStripEl) {
-            state.editFormattingStripEl.classList.toggle('hidden', !state.isEditMode);
-        }
-
-        syncSheetSelectorVisibility();
-        if (toggleExpandButton) {toggleExpandButton.classList.remove('hidden');}
-        if (togglePlainViewButton) {togglePlainViewButton.classList.toggle('hidden', state.isEditMode && !state.isPlainView);}
-        if (versionHistoryButton) {versionHistoryButton.classList.toggle('hidden', state.isEditMode);}
-        if (openSettingsButton) {openSettingsButton.classList.remove('hidden');}
-        if (helpButton) {helpButton.classList.toggle('hidden', state.isEditMode);}
-        if (convertFileButton) {convertFileButton.classList.toggle('hidden', state.isEditMode);}
-        if (refreshButton) {refreshButton.classList.toggle('hidden', state.isEditMode);}
-
-        reorderToolbarAroundFind(state.isEditMode);
-
-        if (!state.isEditMode) {
-            exitCellEditMode();
-            hideLinkTooltip();
-            hideHeaderContextMenu();
-            hideColorPalette();
-            hideBorderPopup();
-            hideInsertControlPopup();
-            clearAutoSaveTimer();
-            applyInteractiveControlState();
-
-            if (!preserveSelection) {clearSelection();}
-            state.lastEditRange = null;
-            state.pendingWorksheetOps = [];
-            state.pendingCellStyleEdits.clear();
-            state.editUndoStack.length = 0;
-            state.editRedoStack.length = 0;
-            state.formatPainterArmed = false;
-            state.formatPainterStyle = null;
-            document.body.classList.remove('format-painter-armed');
-            return;
-        }
-
-        if (!preserveSelection) {clearSelection();}
-        state.editUndoStack.length = 0;
-        state.editRedoStack.length = 0;
-        hideInsertControlPopup();
-
-        // Enable contenteditable for table cells
-        const table = document.querySelector('#tableContainer table');
-        if (!table) {return;}
-
-        // Rebuild visible dropdown controls when entering edit mode so the inline Edit button appears immediately.
-        table.querySelectorAll('td[data-cell-type="dropdown"]').forEach((td) => {
-            const cell = td as HTMLElement;
-            const options = getDropdownOptionsFromCell(cell);
-            const selectedValue = getCellNormalizedValue(cell);
-
-            cell.innerHTML = renderDropdownCellContent({
-                options,
-                selectedValue,
-                allowInteractiveControls: areInteractiveControlsEnabled(),
-                showEditButton: true
-            });
-            updateDropdownCellPresentation(cell, selectedValue);
-        });
-
-        applyInteractiveControlState(table);
-
-        table.querySelectorAll('td').forEach(td => {
-            td.classList.add('editable-cell');
-            const htmlTd = td as HTMLElement;
-            const currentText = getCellNormalizedValue(htmlTd);
-            htmlTd.dataset.originalText = currentText;
-            htmlTd.dataset.originalHtml = htmlTd.innerHTML;
-        });
-
-        captureOriginalCellValues();
-    }
-
     function setExpandedMode(isExpanded: boolean) {
         document.body.classList.toggle('expanded-mode', !!isExpanded);
 
@@ -5278,7 +4863,7 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
 
         if (typeof ThemeManager !== 'undefined') {
             new ThemeManager('themeSelect', {
-                onBeforeCycle: () => !state.isEditMode
+                onBeforeCycle: () => !state.isCellEditing
             }, vscode);
         }
 
@@ -5301,43 +4886,14 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
         sheetSelector.className = 'sheet-selector';
         sheetSelector.title = 'Select sheet';
         sheetSelector.addEventListener('change', (e) => {
-            if (state.isEditMode) {return;}
-            state.currentWorksheet = parseInt((e.target as HTMLSelectElement).value, 10);
-            clearDataTransforms();
-            clearSelection();
-            renderWorksheet(state.currentWorksheet);
+            switchWorksheet(parseInt((e.target as HTMLSelectElement).value, 10));
         });
 
         toolbar.setButtons(createXlsxToolbarButtons({
             onFind: () => openFindOverlay(),
-            textColorIcon,
-            bgColorIcon,
-            onToggleTableEdit: () => setEditMode(true),
-            onSaveTableEdits: () => saveEdits(true),
-            onCancelTableEdits: () => {
-                setEditMode(false);
-                renderWorksheet(state.currentWorksheet);
-                setTimeout(() => {
-                    hideLoading();
-                    ensureHeaderVisible();
-                    const toolbarEl = document.getElementById('toolbar') as HTMLElement | null;
-                    if (toolbarEl) {
-                        toolbarEl.classList.remove('hidden');
-                        toolbarEl.style.display = 'flex';
-                    }
-                    state.toolbarManager?.updateHeaderHeight();
-                }, 180);
-            },
-            onInsertControl: () => {
-                const btn = document.getElementById('insertControlButton') as HTMLElement | null;
-                if (btn) {
-                    showInsertControlPopup(btn);
-                }
-            },
-            onFormatBold: () => applyEditFormatting('bold'),
-            onFormatItalic: () => applyEditFormatting('italic'),
-            onFormatTextColor: () => { },
-            onFormatBackgroundColor: () => { },
+            onSave: () => saveEdits(false),
+            onUndo: () => { exitCellEditMode(); undoEditAction(); },
+            onRedo: () => { exitCellEditMode(); redoEditAction(); },
             onToggleExpand: () => {
                 const btn = document.getElementById('toggleExpandButton');
                 const buttonState = btn?.getAttribute('data-state') || 'default';
@@ -5351,26 +4907,7 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
                     setExpandedMode(false);
                 }
             },
-            onTogglePlainView: () => {
-                if (state.isEditMode) {return;}
-                if (state.isPlainView && state.isTemporaryStyleFile) {
-                    requestStyledMode();
-                    return;
-                }
-                state.isPlainView = !state.isPlainView;
-                syncPlainViewUiState();
-                syncTemporaryFileToolbarActions();
-                // Always notify the provider so it stays in sync for all file types
-                post({ command: 'setPreferredViewMode', mode: state.isPlainView ? 'plain' : 'styled' });
-                applySettingsForScope(getCurrentSettingsScope());
-
-                state.rowCache.clear();
-                state.currentVisibleStart = 0;
-                state.currentVisibleEnd = 0;
-                renderWorksheet(state.currentWorksheet);
-            },
             onVersionHistory: () => {
-                if (state.isEditMode) {return;}
                 post({ command: 'showVersionHistory' });
             },
             onOpenSettings: () => { },
@@ -5378,29 +4915,20 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
                 FeedbackModal.show();
             },
             onConvertFile: () => {
-                if (state.isEditMode) {return;}
                 post({ command: 'convertFile' });
             },
-            onRefresh: () => {
-                if (state.isEditMode) {return;}
-                post({ command: 'requestFreshData' });
-            }
+            onRefresh: () => { void reloadFromDisk(); }
         }));
 
         toolbar.prependElement(sheetSelector);
 
         // Inject tooltip if variables are present
 
-        // Ensure the "Plain/Styled" toggle shows the correct label on initial render
-        const togglePlainViewBtn = document.getElementById('togglePlainViewButton');
-        if (togglePlainViewBtn) {
-            updatePlainViewButtonLabel();
-        }
-
         wireEditFormattingControls();
 
         wireSettingsUI();
         wireDelayedToolbarTooltips();
+        syncEditableSurface();
 
         document.addEventListener('click', (e) => {
             const target = e.target as HTMLElement | null;
@@ -5460,6 +4988,16 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
             return;
         }
 
+        if (message.command === 'diskChangedExternally') {
+            onDiskChangedExternally();
+            return;
+        }
+
+        if (message.command === 'saveConflict') {
+            onSaveConflictResult();
+            return;
+        }
+
         if (message.command === 'saveResult') {
             onSaveResult(message);
             return;
@@ -5490,21 +5028,6 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
             return;
         }
 
-        if (message.command === 'styleModeActivated') {
-            activateStyledMode();
-            return;
-        }
-
-        if (message.command === 'showStyleModeNotice') {
-            showStyleModeNoticePopup();
-            return;
-        }
-
-        if (message.command === 'styleModeCancelled') {
-            cancelStyledModeRequest();
-            return;
-        }
-
         if (message.command === 'diskDeletedExternally') {
             showToast('File deleted from disk', false, 10000);
             return;
@@ -5512,7 +5035,13 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
 
         // Handle rowsData response for virtual scrolling
         if (message.command === 'rowsData') {
-            virtualLoader.resolveRequest(message.requestId, message.rows || []);
+            // Unsaved edits are laid over rows that come from disk, so an edited cell keeps its edit
+            // when its rows are fetched again (scrolling away and back, sort, filter).
+            const incomingRows = message.rows || [];
+            if (!state.isVersionPreviewMode) {
+                ledger.overlayRows(state.currentWorksheet, incomingRows, applyStyleToCellData);
+            }
+            virtualLoader.resolveRequest(message.requestId, incomingRows);
             return;
         }
 
@@ -5523,22 +5052,29 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
             state.currentWorksheet = Math.min(Math.max(previousWorksheet, 0), Math.max(state.worksheetsMeta.length - 1, 0));
             clearDataTransforms();
 
+            // The file was loaded again (Reload from Disk, Restore): unsaved edits and undo history belong to the old one.
+            if (message.reason === 'reload' || message.reason === 'restore') {
+                discardUnsavedEdits();
+                state.diskChanged = false;
+                hideToast(); // a waiting "File changed on disk" toast is resolved
+                if (message.reason === 'reload') {showToast('Reloaded from disk');}
+            }
+
             state.hasVirtualTableInit = true;
-            state.isTemporaryStyleFile = message.fileType === 'csv' || message.fileType === 'tsv';
+            state.isDataOnly = message.fileType === 'csv' || message.fileType === 'tsv';
             state.currentAssociationFileType = typeof message.fileType === 'string' ? message.fileType : 'xlsx';
-            state.isPlainView = message.isPlainView !== undefined ? !!message.isPlainView : state.isTemporaryStyleFile;
-            syncPlainViewUiState();
+            document.body.classList.toggle('data-only', state.isDataOnly);
+            syncEditableSurface();
 
             const rowHeaderWidth = typeof message.rowHeaderWidth === 'number' ? message.rowHeaderWidth : MIN_ROW_HEADER_WIDTH;
             setRowHeaderWidth(rowHeaderWidth, true);
 
             attachHandlersOnce();
-            syncTemporaryFileToolbarActions();
             populateSheetSelector();
             const selector = document.getElementById('sheetSelector') as HTMLSelectElement | null;
             if (selector) {selector.value = String(state.currentWorksheet);}
 
-            applySettingsForScope(getCurrentSettingsScope());
+            applySettings(state.currentSettings);
             const expandBtn = document.getElementById('toggleExpandButton');
             if (expandBtn) {expandBtn.setAttribute('data-state', 'default');}
             setExpandedMode(false);
@@ -5554,6 +5090,7 @@ import { updateCheckboxCellPresentation, updateDropdownCellPresentation, updateR
             }
 
             renderWorksheet(state.currentWorksheet);
+            if (message.legacyStylesNotice && state.isDataOnly) {showLegacyStylesNotice();}
             return;
         }
 

@@ -66,6 +66,17 @@ matched on `type` in `ThemeManager.init`.
   webview edits flow back via `updateSettings`. Shapes are defined in
   [settingsManager.ts](../../src/webviews/shared/settingsManager.ts) and, for the spreadsheet,
   [spreadsheetSettingsComponent.ts](../../src/webviews/spreadsheet/components/spreadsheetSettingsComponent.ts).
+- **Spreadsheet saves and disk sync.** `saveXlsxEdits { sheetIndex, edits, richEdits, styleEdits,
+  operations, isAutosave, force? }` saves one sheet's pending edits; the host answers `saveResult`, or
+  `saveConflict` (nothing written) when the file changed on disk and `force` is not set.
+  `diskChangedExternally` (host to webview, no payload) means the file changed outside the editor; the
+  webview decides (see ARCHITECTURE, "Spreadsheet: same watcher"). `initVirtualTable.reason`
+  (`open | reload | save | preview | previewEnd | restore`) tells the webview whether to keep unsaved
+  edits. `convertToXlsx` and `dismissLegacyStyles` come from the CSV/TSV legacy-formatting notice
+  (`initVirtualTable.legacyStylesNotice`). The old `setPreferredViewMode`, `requestStyleMode`,
+  `styleModeDecision`, `styleModeActivated`, `showStyleModeNotice` and `styleModeCancelled` messages and
+  the `settingsScope` / `plainSettings` / `styledSettings` fields are gone: `initSettings` and
+  `settingsUpdated` carry one `settings` for the file's type.
 - **Disk-vs-editor diff.** The overlay itself is entirely webview-side: the baseline is
   `currentContent` captured in the existing `diskChangedExternally` handler, and the new content
   already arrives in that message's `content` field. The settings payloads gained fields

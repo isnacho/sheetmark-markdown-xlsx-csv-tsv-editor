@@ -1,4 +1,4 @@
-// Helpers to drive the real Sheetmark Markdown editor inside a real VS Code window (Electron,
+// Helpers to drive the real Sheetmark editors (Markdown and spreadsheets) inside a real VS Code window (Electron,
 // through playwright-core), with the real theme, webview sandbox and CSP. Used by the UI specs
 // (`npm run test:ui`) and by `npm run shot` (shot.mts). Needs a display and a built `dist/`
 // (`node esbuild.js`); the first run downloads VS Code into .vscode-test/. Set
@@ -32,8 +32,10 @@ export interface Editor {
     page: Page;
     frame: Frame;
     file: string;
-    /** The file's bytes on disk (save first to see edits). */
+    /** The file's text on disk (save first to see edits). */
     raw(): string;
+    /** The file's bytes on disk (save first to see edits); use for .xlsx. */
+    bytes(): Buffer;
     /** Screenshot of the whole VS Code window to .vscode-test/ui-shots/<name>.png; returns the path. */
     shot(name: string): Promise<string>;
     /** Text the editor shows (hidden markup is not in the DOM). */
@@ -51,13 +53,40 @@ export interface EditorOptions {
     settings?: Record<string, unknown>;
 }
 
-/** Open `content` in a temp file, or an existing file in place with `{ file }` (it is only read). */
-export type EditorSource = string | { file: string };
+/** Extensions the harness knows how to open. */
+export type SourceExtension = 'md' | 'xlsx' | 'csv' | 'tsv';
+
+/**
+ * Open `content` in a temp file (a string is Markdown), `{ content, ext }` for any supported type
+ * (a Buffer for .xlsx), or an existing file in place with `{ file }` (it is only read).
+ */
+export type EditorSource = string | { file: string } | { content: string | Buffer; ext: SourceExtension };
+
+/** True for the extensions the spreadsheet editor serves. */
+export function isSpreadsheetFile(file: string): boolean {
+    return /\.(xlsx|csv|tsv)$/i.test(file);
+}
 
 let vscodePath: string | undefined;
 export async function vscodeExecutable(): Promise<string> {
     vscodePath ??= process.env.SHEETMARK_VSCODE_PATH ?? await downloadAndUnzipVSCode('stable');
     return vscodePath;
+}
+
+/**
+ * The spreadsheet webview iframe, once its first data cell is on screen and the loading overlay is
+ * hidden, or undefined if that does not happen in `timeoutMs`.
+ */
+export async function findSpreadsheetFrame(page: Page, timeoutMs = 30000): Promise<Frame | undefined> {
+    for (let waited = 0; waited < timeoutMs; waited += 500) {
+        await page.waitForTimeout(500);
+        for (const candidate of page.frames()) {
+            if (!await candidate.locator('#xlsxTable td[data-row]').count().catch(() => 0)) { continue; }
+            const overlayHidden = await candidate.evaluate(() => document.getElementById('loadingOverlay')?.classList.contains('hidden') ?? true).catch(() => false);
+            if (overlayHidden) { return candidate; }
+        }
+    }
+    return undefined;
 }
 
 /** The webview iframe that hosts the CM6 editor, or undefined if it does not appear in `timeoutMs`. */
@@ -82,12 +111,18 @@ export async function withEditor(source: EditorSource, theme: string, run: (edit
     if (typeof source === 'string') {
         file = join(dir, 'doc.md');
         writeFileSync(file, source);
-    } else {
+    } else if ('file' in source) {
         file = source.file;
+    } else {
+        file = join(dir, `doc.${source.ext}`);
+        writeFileSync(file, source.content);
     }
+    const spreadsheet = isSpreadsheetFile(file);
     mkdirSync(join(dir, 'User'), { recursive: true });
     writeFileSync(join(dir, 'User', 'settings.json'), JSON.stringify({
-        'workbench.editorAssociations': { '*.md': 'xlsxViewer.md' },
+        'workbench.editorAssociations': {
+            '*.md': 'xlsxViewer.md', '*.xlsx': 'xlsxViewer.xlsx', '*.csv': 'xlsxViewer.csv', '*.tsv': 'xlsxViewer.tsv',
+        },
         'workbench.colorTheme': theme,
         'workbench.startupEditor': 'none',
         'security.workspace.trust.enabled': false,
@@ -113,14 +148,15 @@ export async function withEditor(source: EditorSource, theme: string, run: (edit
                 win.setSize(size.width ?? w, size.height ?? h);
             }, { width: options.width, height: options.height });
         }
-        const frame = await findEditorFrame(page);
-        assert.ok(frame, 'the Sheetmark Markdown editor did not open');
+        const frame = await (spreadsheet ? findSpreadsheetFrame(page) : findEditorFrame(page));
+        assert.ok(frame, `the Sheetmark ${spreadsheet ? 'spreadsheet' : 'Markdown'} editor did not open`);
         await page.waitForTimeout(1000);
         const editor: Editor = {
             app, page, frame, file,
             raw: () => readFileSync(file, 'utf8'),
+            bytes: () => readFileSync(file),
             shot: async name => { const path = shotPath(name); await page.screenshot({ path }); return path; },
-            visible: () => frame.locator('.cm-content').innerText(),
+            visible: () => frame.locator(spreadsheet ? '#xlsxTable' : '.cm-content').innerText(),
             save: async () => { await page.keyboard.press(`${MOD}+s`); await page.waitForTimeout(800); },
             title: text => frame.locator('.cm-content').getByText(text).first(),
         };
@@ -128,6 +164,11 @@ export async function withEditor(source: EditorSource, theme: string, run: (edit
     } finally {
         await app.close();
     }
+}
+
+/** The spreadsheet's `td` at zero-based `row` and `col`. */
+export function cell(editor: Editor, row: number, col: number): ReturnType<Frame['locator']> {
+    return editor.frame.locator(`#xlsxTable td[data-row="${row}"][data-col="${col}"]`);
 }
 
 /** Click the line with `text`, move to its start, optionally step right, then type. */

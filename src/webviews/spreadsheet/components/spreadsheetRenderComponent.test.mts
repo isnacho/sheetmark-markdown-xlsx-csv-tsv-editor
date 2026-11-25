@@ -18,15 +18,15 @@ const ATTACKS = [
     '"><img src=x onerror=alert(1)>',
 ];
 
-function renderRow(cell: Record<string, unknown>, isPlainView = false): Element {
+function renderRow(cell: Record<string, unknown>, dataOnly = false): Element {
     const html = createXlsxRowHtml({
         rowData: { rowNumber: 1, cells: [{ colNumber: 1, rowNumber: 1, ...cell }] },
         rowIndex: 1,
         rowHeight: 20,
         columnCount: 1,
         columnWidths: [80],
-        isPlainView,
-        isEditMode: false,
+        dataOnly,
+        editable: true,
         allowInteractiveControls: true,
     });
     const table = document.createElement('table');

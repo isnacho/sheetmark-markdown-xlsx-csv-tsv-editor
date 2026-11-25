@@ -111,7 +111,7 @@ npm run test:integration  # REQUIRED when you touch src/*.ts, src/shared/** or s
 npm run test:unit         # unit tests only (node:test through tsx)
 npm run test:webview      # built webviews in headless Chrome (needs Chrome or Edge installed)
 npm run test:ui           # real VS Code window driven by Playwright, writes screenshots (slow, needs a display; not in verify)
-npm run shot -- samples/test.md --theme dark   # one screenshot of a file in real VS Code, to .vscode-test/ui-shots/ (options: src/test/ui/shot.mts)
+npm run shot -- samples/test.md --theme dark   # one screenshot of a file (.md, .xlsx, .csv or .tsv) in real VS Code, to .vscode-test/ui-shots/ (options: src/test/ui/shot.mts)
 node --import tsx --test src/webviews/md/livePreview/tableWidget.test.mts   # one test file
 npm run test:regressions  # re-breaks each past fix and checks a test fails (slow; run after fixing a bug)
 npm run watch             # watch build; what F5 uses
@@ -216,12 +216,18 @@ npm run package           # production build (also runs unit tests); used by vsc
   reorders blocks must remap both (see `remapTableIndexMap` and `remapToggleState` in `blockModel.ts`).
 - **External disk sync** uses `fileExternalChangeWatcher.ts` (change, debounced delete).
 - **Renames:** VS Code closes an open Sheetmark editor when its file is renamed and opens a new one
-  at the new path. Per-file state (styles, view mode, Markdown prefs, version history) moves in
+  at the new path. Per-file state (styles, Markdown prefs, version history) moves in
   `onWillRenameFiles` (`renameStateMigration.ts`), which VS Code waits for, so the new editor finds
   it. Don't add in-panel move handling: that panel is already closing.
 - **Large tables are virtualized**: the webview requests row windows (`getRows` → `rowsData`) and
   never holds the whole file. Tunables are in `VirtualScrollConfig` ([common.ts](src/webviews/shared/common.ts)).
-- **CSV/TSV can't store styles**, so styled mode persists formatting in extension state via
-  `StyleStorageService` (keyed `row:col`), separate from the file bytes. XLSX stores styles natively.
+- **CSV/TSV hold data only** (`state.isDataOnly` in the webview): no formatting, no controls, nothing
+  stored on the side. Formatting that older versions kept in `StyleStorageService` (keyed `row:col`,
+  expires 48 h after the last edit) is not shown; the webview offers Convert to XLSX or Dismiss.
+  XLSX stores styles natively.
+- **One editing surface, one edit ledger.** There is no Edit Table or Plain/Styled mode. Every change to
+  a spreadsheet is recorded in the per-sheet ledger (`pendingEdits.ts`, `ledger.ts`) and saved through
+  `persistence.ts`; do not keep a second record of unsaved edits in the DOM or in `state`. Disk changes
+  are never applied silently (`diskSync.ts`, hash baseline in `src/shared/fileHash.ts`).
 - **Version history** snapshots live under `context.globalStorageUri`, indexed per file.
 - Settings are read host-side and pushed to the webview as `initSettings` / `settingsUpdated`.

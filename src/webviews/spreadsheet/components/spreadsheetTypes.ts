@@ -1,4 +1,5 @@
 import type { BorderLineStyle } from './spreadsheetBorderComponent';
+import type { SheetSnapshot } from '../pendingEdits';
 
 export type StructuralOpType =
     | 'insertRowAbove'
@@ -101,12 +102,24 @@ export interface CellUndoState {
     dataRatingValue?: string;
     dataDateValue?: string;
     pendingStyle: CellStyleEdit | null;
+    /** The cell's text at that moment, so undoing it can record the value into the edit ledger. */
+    value?: string;
 }
 
+/** Every undo entry carries `seq` (when it was made), so a save can drop only the entries it made unrecoverable. */
 export interface StyleEditUndoEntry {
     kind: 'style';
+    seq: number;
     before: CellUndoState[];
     after: CellUndoState[];
+}
+
+/** Cell values only (paste, clear): addresses are 1-based, so the entry needs no DOM. */
+export interface ValuesUndoEntry {
+    kind: 'values';
+    seq: number;
+    before: Array<{ row: number; col: number; value: string }>;
+    after: Array<{ row: number; col: number; value: string }>;
 }
 
 export interface WorksheetStateSnapshot {
@@ -116,16 +129,18 @@ export interface WorksheetStateSnapshot {
     columnWidths: number[];
     allRowHeights: number[];
     mergedCells: any[];
-    pendingWorksheetOps: WorksheetOp[];
+    /** The ledger of this sheet at that moment, so undoing an unsaved structure edit also undoes what it queued. */
+    pending: SheetSnapshot;
 }
 
 export interface SheetEditUndoEntry {
     kind: 'sheet';
+    seq: number;
     before: WorksheetStateSnapshot;
     after: WorksheetStateSnapshot;
 }
 
-export type EditUndoEntry = StyleEditUndoEntry | SheetEditUndoEntry;
+export type EditUndoEntry = StyleEditUndoEntry | ValuesUndoEntry | SheetEditUndoEntry;
 
 export type FilterMode = 'contains' | 'equals' | 'startsWith' | 'nonEmpty';
 export type SortDirection = 'asc' | 'desc';

@@ -1,25 +1,33 @@
-// Saving the spreadsheet: building the saveXlsxEdits payload, autosave scheduling, edits made
-// outside edit mode, and the host's saveResult. Pinned by src/test/webview/spreadsheetEditing.spec.mts.
-// Runtime: WEBVIEW (browser).
+// Saving the spreadsheet. Every change is recorded into the edit ledger (ledger.ts); this module turns
+// the ledger into `saveXlsxEdits` messages, schedules autosave, and settles the ledger when the host
+// says a save worked. There is one path for every kind of edit and every file type.
+// Pinned by src/test/webview/spreadsheetEditing.spec.mts. Runtime: WEBVIEW (browser).
 
 import { Utils } from '../shared/utils';
-import { getCellRichRuns, hasRunFormatting } from './components/spreadsheetRichTextComponent';
+import { getOrCreateRowCellData } from './cellValues';
 import { getCellFromRow } from './components/spreadsheetSheetDataComponent';
-import type { CellStyleEdit, WorksheetOp } from './components/spreadsheetTypes';
-import { getCellNormalizedValue, getCellType, getOrCreateRowCellData, parseBooleanCellValue } from './cellValues';
+import { dropUnrecoverableUndoEntries, lastUndoSeq } from './undo';
+import { isDiskChangePending } from './diskSync';
+import { ledger } from './ledger';
 import { post } from './messaging';
 import { state } from './state';
-import { captureOriginalCellValues, hideLoading, setButtonsEnabled, setLoadingText, showLoading } from './ui';
+import { hideLoading, setLoadingText, showLoading } from './ui';
 import type { MessageOf } from '../../protocol/common';
 import type { HostToSpreadsheetWebview } from '../../protocol/spreadsheet';
+import type { SentMark } from './pendingEdits';
 
 const showToast = Utils.showToast;
 
-export type XlsxAutoSaveChangeKind = 'text' | 'control' | 'format' | 'structure';
+export type ChangeKind = 'text' | 'control' | 'format' | 'structure';
 
 /** What persistence needs from the rest of the webview. */
 export interface PersistenceHooks {
-    setEditMode(enabled: boolean, preserveSelection?: boolean): void;
+    /** Refresh Save / Undo / Redo enablement. */
+    updateToolbarState(): void;
+    /** Commit the cell being typed in, so a save includes it. */
+    commitActiveCellEdit(): void;
+    /** The host refused a save because the file changed on disk. */
+    onSaveConflict(wasAutosave: boolean): void;
 }
 
 let hooks: PersistenceHooks;
@@ -29,117 +37,35 @@ export function initPersistence(h: PersistenceHooks): void {
     hooks = h;
 }
 
-export function showManualSaveReminderIfNeeded() {
-    const isAutosaveOff = !state.currentSettings.autoSave;
-    const shouldShowForPlain = state.isPlainView && !state.isVersionPreviewMode && isAutosaveOff;
-    const shouldShowForStyled = !state.isPlainView && !state.isEditMode && !state.isVersionPreviewMode && isAutosaveOff && state.currentSettings.showManualSavePopup;
+/** The save that is waiting for the host's answer. */
+let inFlight: { mark: SentMark; isAutosave: boolean; undoSeq: number } | null = null;
 
-    if (!shouldShowForPlain && !shouldShowForStyled) {
-        return;
-    }
-
-    const now = Date.now();
-    if (now < state.manualSaveReminderUntil) {
-        return;
-    }
-
-    state.manualSaveReminderUntil = now + 2500;
-    showToast('Autosave is off. Press Ctrl/Cmd+S to save or enable it in settings', false, 1800);
+/** True when any sheet has changes that are not on disk yet. */
+export function isDirty(): boolean {
+    return ledger.isDirty();
 }
 
-export function upsertPendingOutsideControlEdit(row: number, col: number, value: string) {
-    const existingIndex = state.pendingOutsideControlEdits.findIndex((edit) => edit.row === row && edit.col === col);
-    const next = { row, col, value };
-
-    if (existingIndex >= 0) {
-        state.pendingOutsideControlEdits[existingIndex] = next;
-        return;
+/**
+ * Records a cell value on the current sheet (and in the cached row data, so the cell keeps it when it
+ * scrolls out of view and back). `value` is the text the cell shows; the original comes from the cache.
+ */
+export function recordCellValue(rowNum: number, colNum: number, value: string): void {
+    if (!rowNum || !colNum) {return;}
+    const rowKnown = state.rowCache.has(rowNum - 1);
+    const cellData = getOrCreateRowCellData(rowNum - 1, colNum - 1);
+    // A row that was never loaded has no known original: keep the entry whatever the value is.
+    let original: string | undefined = !rowKnown ? undefined : (cellData && cellData.value !== undefined && cellData.value !== null ? String(cellData.value) : '');
+    // TRUE and true are the same checkbox value.
+    if (original !== undefined && /^(true|false)$/i.test(original) && value.toLowerCase() === original.toLowerCase()) {original = value;}
+    ledger.recordValue(state.currentWorksheet, rowNum, colNum, value, original);
+    if (cellData) {
+        cellData.value = value;
+        cellData.isEmpty = value === '';
+        if (typeof cellData.checkboxChecked === 'boolean') {
+            cellData.checkboxChecked = /^(true|1|yes|checked)$/i.test(value.trim());
+        }
     }
-
-    state.pendingOutsideControlEdits.push(next);
-}
-
-export function removePendingOutsideControlEdit(row: number, col: number) {
-    state.pendingOutsideControlEdits = state.pendingOutsideControlEdits.filter((edit) => edit.row !== row || edit.col !== col);
-}
-
-export function clearPendingOutsideControlEdits() {
-    state.pendingOutsideControlEdits = [];
-}
-
-export function shouldScheduleAutosaveForChange(kind: XlsxAutoSaveChangeKind): boolean {
-    if (state.isTemporaryStyleFile && (kind === 'format' || kind === 'structure')) {
-        return true;
-    }
-
-    if (!state.currentSettings.autoSave) {
-        return false;
-    }
-
-    const mode = state.currentSettings.autoSaveMode === 'controlsOnly' ? 'controlsOnly' : 'all';
-    if (mode === 'all') {
-        return true;
-    }
-
-    return kind === 'control';
-}
-
-export function persistInteractiveControlEdit(cell: HTMLElement) {
-    if (state.isVersionPreviewMode || state.isEditMode) {return;}
-
-    const row = parseInt(cell.getAttribute('data-rownum') || '0', 10);
-    const col = parseInt(cell.getAttribute('data-colnum') || '0', 10);
-    if (!row || !col) {return;}
-
-    const value = getCellNormalizedValue(cell).replace(/\u00a0/g, '');
-    syncLocalSnapshotValue(row, col, value);
-
-    if (!state.currentSettings.autoSave) {
-        upsertPendingOutsideControlEdit(row, col, value);
-        showManualSaveReminderIfNeeded();
-        return;
-    }
-
-    removePendingOutsideControlEdit(row, col);
-    post({
-        command: 'saveXlsxEdits',
-        sheetIndex: state.currentWorksheet,
-        edits: [{ row, col, value }],
-        richEdits: [],
-        styleEdits: [],
-        operations: [],
-        isAutosave: true
-    });
-}
-
-export function persistPlainTextEdit(cell: HTMLElement) {
-    if (state.isVersionPreviewMode || state.isEditMode) {return;}
-
-    const row = parseInt(cell.getAttribute('data-rownum') || '0', 10);
-    const col = parseInt(cell.getAttribute('data-colnum') || '0', 10);
-    if (!row || !col) {return;}
-
-    const value = getCellNormalizedValue(cell).replace(/\u00a0/g, '');
-    syncLocalSnapshotValue(row, col, value);
-    cell.dataset.originalText = value;
-    cell.dataset.originalHtml = cell.innerHTML;
-
-    if (!state.currentSettings.autoSave) {
-        upsertPendingOutsideControlEdit(row, col, value);
-        showManualSaveReminderIfNeeded();
-        return;
-    }
-
-    removePendingOutsideControlEdit(row, col);
-    post({
-        command: 'saveXlsxEdits',
-        sheetIndex: state.currentWorksheet,
-        edits: [{ row, col, value }],
-        richEdits: [],
-        styleEdits: [],
-        operations: [],
-        isAutosave: true
-    });
+    syncLocalSnapshotValue(rowNum, colNum, value);
 }
 
 export function syncLocalSnapshotValue(rowNumber: number, colNumber: number, value: string) {
@@ -165,28 +91,6 @@ export function syncLocalSnapshotValue(rowNumber: number, colNumber: number, val
     applyValue(state.transformedRowsSnapshot);
 }
 
-export function hasPendingXlsxEdits(): boolean {
-    if (state.pendingOutsideControlEdits.length > 0) {
-        return true;
-    }
-
-    if (state.pendingWorksheetOps.length > 0 || state.pendingCellStyleEdits.size > 0) {
-        return true;
-    }
-
-    const table = document.querySelector('#tableContainer table');
-    if (!table) {return false;}
-
-    const editedCell = Array.from(table.querySelectorAll('td.editable-cell')).find((td) => {
-        const htmlTd = td as HTMLElement;
-        const original = (htmlTd.dataset.originalText || '').replace(/\u00a0/g, '');
-        const current = getCellNormalizedValue(htmlTd).replace(/\u00a0/g, '');
-        return current !== original;
-    });
-
-    return !!editedCell;
-}
-
 export function clearAutoSaveTimer() {
     if (state.autoSaveTimer) {
         clearTimeout(state.autoSaveTimer);
@@ -194,172 +98,124 @@ export function clearAutoSaveTimer() {
     }
 }
 
-export function scheduleAutoSave(kind: XlsxAutoSaveChangeKind = 'text') {
-    if (!state.isEditMode || state.isVersionPreviewMode || state.isSaving) {
-        if (state.isPlainView && !state.isVersionPreviewMode && !state.currentSettings.autoSave) {
-            showManualSaveReminderIfNeeded();
-        }
-        return;
-    }
-    if (!shouldScheduleAutosaveForChange(kind)) {
-        if (!state.currentSettings.autoSave) {
-            showManualSaveReminderIfNeeded();
-        }
-        return;
-    }
+/**
+ * Call after anything was recorded into the ledger. Updates the toolbar and, with Autosave on,
+ * saves shortly after the last change. With Autosave off nothing else happens: the enabled Save
+ * button is the signal.
+ */
+export function recordChange(kind: ChangeKind = 'text'): void {
+    void kind;
+    if (state.isVersionPreviewMode) {return;}
+    hooks.updateToolbarState();
+    if (!state.currentSettings.autoSave) {return;}
 
     clearAutoSaveTimer();
     state.autoSaveTimer = setTimeout(() => {
         state.autoSaveTimer = null;
-        if ((!state.currentSettings.autoSave && !(state.isTemporaryStyleFile && (kind === 'format' || kind === 'structure'))) || !state.isEditMode || state.isVersionPreviewMode || state.isSaving) {
+        if (!state.currentSettings.autoSave || state.isVersionPreviewMode || !isDirty()) {
             return;
         }
-        if (!hasPendingXlsxEdits()) {
-            return;
-        }
-        saveEdits(false, true);
+        saveEdits(true);
     }, 1100);
 }
 
-export function saveEdits(shouldExit = false, isAutosave = false) {
-    if (state.isSaving) {return;}
+/**
+ * Saves the unsaved changes, one sheet per message. A save asked for while one is in flight waits for
+ * it. A manual save continues through every dirty sheet; autosave only saves what is dirty now.
+ */
+export function saveEdits(isAutosave = false, force = false): void {
+    if (state.isVersionPreviewMode) {return;}
     if (isAutosave && !state.currentSettings.autoSave) {return;}
-
-    const table = document.querySelector('#tableContainer table');
-    const hasPendingStyleOrStructureChanges = state.pendingCellStyleEdits.size > 0 || state.pendingWorksheetOps.length > 0;
-    const canSaveFromEditMode = state.isEditMode && !!table;
-    const canSaveOutsideEditMode = !state.isEditMode && (state.pendingOutsideControlEdits.length > 0 || hasPendingStyleOrStructureChanges);
-
-    if (!canSaveFromEditMode && !canSaveOutsideEditMode) {
+    // The file changed on disk: autosave waits until the user has chosen what to do.
+    if (isAutosave && isDiskChangePending()) {return;}
+    if (state.isSaving) {
+        state.saveQueued = { manual: !!state.saveQueued?.manual || !isAutosave };
         return;
     }
 
+    if (!isAutosave) {hooks.commitActiveCellEdit();}
     clearAutoSaveTimer();
-    state.isSaving = true;
-    state.exitAfterSave = canSaveFromEditMode && !isAutosave ? !!shouldExit : false;
-    if (canSaveFromEditMode) {
-        if (!isAutosave) {
-            setButtonsEnabled(false);
 
-            if (document.activeElement && document.activeElement.tagName === 'TD') {
-                (document.activeElement as HTMLElement).blur();
-            }
-            // Don't clear the logical cell selection on save; keep selected cells highlighted.
-            if (window.getSelection) {
-                window.getSelection()!.removeAllRanges();
-            }
-        }
-    }
-
-    const edits: any[] = [];
-    const richEdits: any[] = [];
-    let styleEdits: CellStyleEdit[] = [];
-    let operations: WorksheetOp[] = [];
-
-    if (canSaveFromEditMode && table) {
-        table.querySelectorAll('td.editable-cell').forEach(td => {
-            const htmlTd = td as HTMLElement;
-            const row = parseInt(htmlTd.getAttribute('data-rownum') || '0', 10);
-            const col = parseInt(htmlTd.getAttribute('data-colnum') || '0', 10);
-            if (!row || !col) {return;}
-
-            const cellType = getCellType(htmlTd);
-            const original = (htmlTd.dataset.originalText || '').replace(/\u00a0/g, '');
-            const current = getCellNormalizedValue(htmlTd).replace(/\u00a0/g, '');
-            const originalHtml = (htmlTd.dataset.originalHtml || '').trim();
-            const currentHtml = (htmlTd.innerHTML || '').trim();
-
-            const runs = cellType === 'text' ? getCellRichRuns(htmlTd) : [];
-            const shouldSaveRuns = cellType === 'text' && (hasRunFormatting(runs) || currentHtml !== originalHtml);
-
-            if (shouldSaveRuns) {
-                richEdits.push({ row, col, runs });
-            }
-
-            if (current !== original) {
-                edits.push({ row, col, value: current });
-                const cellData = getOrCreateRowCellData(row - 1, col - 1);
-                if (cellData) {
-                    cellData.value = current;
-                    if (cellType === 'checkbox') {
-                        cellData.checkboxChecked = parseBooleanCellValue(current) === true;
-                    }
-                }
-            }
-        });
-
-        styleEdits = Array.from(state.pendingCellStyleEdits.values());
-        operations = state.pendingWorksheetOps;
-    } else {
-        state.pendingOutsideControlEdits.forEach((edit) => {
-            const cellData = getOrCreateRowCellData(edit.row - 1, edit.col - 1);
-            if (cellData) {
-                cellData.value = edit.value;
-            }
-            edits.push({ row: edit.row, col: edit.col, value: edit.value });
-        });
-
-        styleEdits = Array.from(state.pendingCellStyleEdits.values());
-        operations = state.pendingWorksheetOps;
-    }
-
-    if (canSaveFromEditMode && state.pendingOutsideControlEdits.length > 0) {
-        state.pendingOutsideControlEdits.forEach((edit) => {
-            const cellData = getOrCreateRowCellData(edit.row - 1, edit.col - 1);
-            if (cellData) {
-                cellData.value = edit.value;
-            }
-            const existingIndex = edits.findIndex((candidate) => candidate.row === edit.row && candidate.col === edit.col);
-            if (existingIndex >= 0) {
-                edits[existingIndex].value = edit.value;
-                return;
-            }
-            edits.push({ row: edit.row, col: edit.col, value: edit.value });
-        });
-    }
-
-    if (!edits.length && !richEdits.length && !styleEdits.length && !operations.length) {
-        state.isSaving = false;
-        if (canSaveFromEditMode) {
-            setButtonsEnabled(true);
-        }
+    const dirty = ledger.dirtySheets();
+    if (!dirty.length) {
+        hooks.updateToolbarState();
         return;
     }
+    const sheet = dirty.includes(state.currentWorksheet) ? state.currentWorksheet : dirty[0];
+    const { payload, mark } = ledger.takePayload(sheet);
 
+    state.isSaving = true;
+    inFlight = { mark, isAutosave, undoSeq: lastUndoSeq() };
+    hooks.updateToolbarState();
     if (!isAutosave) {
         setLoadingText('Saving worksheet...');
         showLoading();
     }
-    post({ command: 'saveXlsxEdits', sheetIndex: state.currentWorksheet, edits, richEdits, styleEdits, operations, isAutosave });
+    post({
+        command: 'saveXlsxEdits',
+        sheetIndex: sheet,
+        edits: payload.edits,
+        richEdits: payload.richEdits,
+        styleEdits: payload.styleEdits,
+        operations: payload.operations,
+        isAutosave,
+        ...(force ? { force: true } : {}),
+    });
+}
+
+/** The host did not save because the file changed on disk. The edits stay pending; the user decides. */
+export function onSaveConflictResult() {
+    hideLoading();
+    setLoadingText('Rendering worksheet...');
+    state.isSaving = false;
+    const sent = inFlight;
+    inFlight = null;
+    if (sent) {ledger.releaseInFlight(sent.mark.sheet);}
+    state.saveQueued = null;
+    hooks.updateToolbarState();
+    hooks.onSaveConflict(!!sent?.isAutosave);
 }
 
 export function onSaveResult(message: MessageOf<HostToSpreadsheetWebview, 'saveResult'>) {
     hideLoading();
     setLoadingText('Rendering worksheet...');
     state.isSaving = false;
-    setButtonsEnabled(true);
-    if (message.ok) {
-        const thead = document.querySelector('#xlsxTable thead') as HTMLElement | null;
-        if (thead) {thead.style.display = 'table-header-group';}
-        const isAutosaveResult = !!message.isAutosave;
-        if (!isAutosaveResult) {
-            showToast('Saved', false, 1000);
-        }
-        state.pendingWorksheetOps = [];
-        state.pendingCellStyleEdits.clear();
-        clearPendingOutsideControlEdits();
-        state.manualSaveReminderUntil = 0;
+    const sent = inFlight;
+    inFlight = null;
 
-        const shouldExitAfterManualSave = !isAutosaveResult || state.exitAfterSave;
-        if (shouldExitAfterManualSave) {
-            state.exitAfterSave = false;
-            // Preserve selection when save requests exit so user doesn't lose context
-            hooks.setEditMode(false, true);
-        } else if (state.isEditMode) {
-            captureOriginalCellValues();
-        }
-    } else {
+    if (!message.ok) {
+        if (sent) {ledger.releaseInFlight(sent.mark.sheet);}
+        state.saveQueued = null;
+        hooks.updateToolbarState();
         const isAutosaveResult = !!message.isAutosave;
         showToast(isAutosaveResult ? 'Autosave failed' : 'Error saving', isAutosaveResult, 1000);
+        return;
+    }
+
+    const thead = document.querySelector('#xlsxTable thead') as HTMLElement | null;
+    if (thead) {thead.style.display = 'table-header-group';}
+
+    if (sent) {
+        // Only what was sent is settled: edits made while the save was in flight stay pending.
+        ledger.settleSaved(sent.mark);
+        // Structure edits and formatting that are on disk now cannot be undone by restoring a snapshot.
+        dropUnrecoverableUndoEntries(sent.mark.sheet, sent.undoSeq);
+        if (!ledger.hasOps(sent.mark.sheet)) {state.sheetStash.delete(sent.mark.sheet);}
+    }
+
+    const queued = state.saveQueued;
+    state.saveQueued = null;
+    const manualRun = !!sent && !sent.isAutosave;
+    if (isDirty() && (queued || manualRun)) {
+        saveEdits(!(queued?.manual || manualRun));
+        return;
+    }
+
+    hooks.updateToolbarState();
+    if (manualRun) {
+        showToast('Saved', false, 1000);
+    }
+    if (isDirty() && state.currentSettings.autoSave) {
+        recordChange('text');
     }
 }

@@ -1,9 +1,9 @@
 ---
 title: One-mode spreadsheet editor with Markdown parity
 slug: spreadsheet-editor-refresh
-status: to-qa
+status: completed
 created: 2026-11-20
-updated: 2026-11-20
+updated: 2026-11-25
 ---
 
 # One-mode spreadsheet editor with Markdown parity
@@ -302,4 +302,23 @@ Because of the first fix, "Known gaps" above now says the undo history is cleare
 
 ## QA
 
-_Not started._
+**2026-11-25, Phase 1.** Build `847ab49` (this branch with `main` merged in, so it includes the XLSX colour fix from PR #12), run by the owner in their everyday Cursor through the local install. The owner went through this checklist and reported it complete, with no failures:
+
+| # | Check | Expected |
+|---|---|---|
+| 1 | Open an XLSX | No View/Edit or Plain/Styled buttons; row 1 Reload, Save, Undo, Redo; row 2 formatting |
+| 2 | Type in a cell, then Enter, Tab or Escape | Enter and Tab keep the value; Escape cancels only that cell |
+| 3 | Save before and after an edit | Disabled until something changes; Cmd+S saves |
+| 4 | Edit, scroll far away and back, save, reopen | The edit is kept |
+| 5 | Edit two sheets, switch, Save | Each edit lands on its own sheet |
+| 6 | Insert or delete a row, Undo before saving | Undone cleanly |
+| 7 | Bold and fill colour, save, reopen | Formatting kept |
+| 8 | Click a checkbox | Toggles in one click |
+| 9 | Open a CSV | No formatting row; edits save |
+| 10 | Change the file outside Cursor, clean and with unsaved edits | "File changed on disk" toast with Load disk changes, plus Keep my edits when dirty; no silent reload |
+| 11 | Preview or restore a version while dirty | Asks first |
+| 12 | Narrow window | Toolbar scrolls sideways |
+
+Automated on the same commit: `npm run verify` (623 unit, 138 webview tests) and `npm run test:integration` (23) green. The full `npm run test:regressions` was started after QA; anything it finds goes into a follow-up change.
+
+**Result: passed.** Phase 2 (selection stats, sheet tabs, faster open, UI review) was split into its own idea, `.docs/ideas/3-to-implement/spreadsheet-parity-add-ons.md`, so this one closes with Phase 1 shipped.

@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { createHash } from 'crypto';
 import { VERSION_HISTORY_RETENTION_MS, getVersionHistoryDir, pickVersionHistoryEntry } from './shared/versionHistory';
-import { convertARGBToRGBA, isShadeOfBlack, isShadeOfWhite } from './spreadsheet/spreadsheetUtilities';
+import { convertARGBToRGBA, excelFillColor, isShadeOfBlack, isShadeOfWhite } from './spreadsheet/spreadsheetUtilities';
 import { applyStoredMetadataToWorksheet, applyStyleEditToCell } from './spreadsheet/excelStyle';
 import { convertTabularFile, readTabularFile, detectTabularFileType, writeTabularFile, TabularFileType } from './shared/fileConversionService';
 import { StyleStorageService } from './shared/styleStorageService';
@@ -1798,16 +1798,13 @@ export class SpreadsheetEditorProvider implements vscode.CustomReadonlyEditorPro
         let hasWhiteBackground = false;
 
         // Background color
-        if (cell.fill && cell.fill.type === 'pattern' && (cell.fill as any).fgColor) {
-            const color = (cell.fill as any).fgColor;
-            if (color.argb) {
-                const bgColor = convertARGBToRGBA(color.argb);
-                style.backgroundColor = bgColor;
-                // Check if background is black or shade of black - be very strict
-                hasBlackBackground = isShadeOfBlack(bgColor);
-                // Check if background is white or shade of white
-                hasWhiteBackground = isShadeOfWhite(bgColor);
-            }
+        const bgColor = excelFillColor(cell.fill);
+        if (bgColor) {
+            style.backgroundColor = bgColor;
+            // Check if background is black or shade of black - be very strict
+            hasBlackBackground = isShadeOfBlack(bgColor);
+            // Check if background is white or shade of white
+            hasWhiteBackground = isShadeOfWhite(bgColor);
         }
 
         // Font

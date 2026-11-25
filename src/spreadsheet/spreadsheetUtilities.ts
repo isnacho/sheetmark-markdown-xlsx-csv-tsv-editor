@@ -1,14 +1,30 @@
+/**
+ * An XLSX colour (`AARRGGBB`) as CSS. The alpha byte is ignored, as Excel and Google Sheets do:
+ * openpyxl and other writers store `00` there ("001F3864"), and reading it as transparency made
+ * those fills, text and borders invisible.
+ */
 export function convertARGBToRGBA(argb: string): string {
     if (!argb || argb.length !== 8) {
         return 'rgba(0, 0, 0, 1)';
     }
-    
-    const a = parseInt(argb.substring(0, 2), 16) / 255;
+
     const r = parseInt(argb.substring(2, 4), 16);
     const g = parseInt(argb.substring(4, 6), 16);
     const b = parseInt(argb.substring(6, 8), 16);
-    
-    return `rgba(${r}, ${g}, ${b}, ${a})`;
+
+    return `rgba(${r}, ${g}, ${b}, 1)`;
+}
+
+/**
+ * The CSS background of an exceljs cell fill, or undefined when the cell has none. A pattern fill
+ * whose pattern is missing or `none` draws nothing in Excel even if it carries a colour.
+ */
+export function excelFillColor(fill: unknown): string | undefined {
+    const pattern = fill as { type?: string; pattern?: string; fgColor?: { argb?: string } } | null | undefined;
+    if (!pattern || pattern.type !== 'pattern') {return undefined;}
+    if (!pattern.pattern || pattern.pattern === 'none') {return undefined;}
+    const argb = pattern.fgColor?.argb;
+    return argb ? convertARGBToRGBA(argb) : undefined;
 }
 
 export function isShadeOfBlack(color: string): boolean {
